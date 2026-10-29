@@ -18,7 +18,14 @@ import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { useDocVersion } from '../../canvas/hooks'
 import { useCanvas } from '../../stores/canvas'
 import { mockFetch } from '../../testing/fetch'
-import { renderApp, resetStoreAfterEach, screen, within } from '../../testing/render'
+import {
+  act,
+  fireEvent,
+  renderApp,
+  resetStoreAfterEach,
+  screen,
+  within,
+} from '../../testing/render'
 import { useStale } from '../runs/stale'
 import { creationGuideFacts } from './facts'
 import { ProductionOverview } from './ProductionOverview'
@@ -298,4 +305,47 @@ it('尚未确认的成片仍显示实际时长与分辨率', () => {
   updateElement(f.doc, film, { deliveries: [record] })
   f.render()
   expect(screen.getByText('交付：当前成片未确认 · 实际 5.0 秒 · 720×1280')).toBeTruthy()
+})
+
+it('后台定时刷新期间保持上次成功结果，不闪成读取中', async () => {
+  vi.useFakeTimers()
+  try {
+    const f = fixture()
+    f.node('image', 1, '画面')
+    let mode: 'success' | 'pending' = 'success'
+    let requests = 0
+    let release: ((response: Response) => void) | undefined
+    mockFetch(() => {
+      requests++
+      if (mode === 'pending')
+        return new Promise<Response>((resolve) => {
+          release = resolve
+        })
+      return Response.json({ jobs: [] })
+    })
+    f.render()
+    fireEvent.click(screen.getByRole('button', { name: '检查任务' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.getByText('当前未发现待处理事项。')).toBeTruthy()
+    expect(screen.getByText('阻塞、待审与任务（0）')).toBeTruthy()
+    expect(requests).toBe(1)
+    mode = 'pending'
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000)
+    })
+    expect(screen.queryByText('正在读取任务')).toBeNull()
+    expect(screen.getByText('当前未发现待处理事项。')).toBeTruthy()
+    expect(screen.getByText('阻塞、待审与任务（0）')).toBeTruthy()
+    expect(requests).toBe(2)
+    expect(release).toBeDefined()
+    mode = 'success'
+    release!(Response.json({ jobs: [] }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+  } finally {
+    vi.useRealTimers()
+  }
 })
