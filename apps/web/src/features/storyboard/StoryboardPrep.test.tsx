@@ -9,6 +9,7 @@ import {
 } from '@plein/doc'
 import { expect, it } from 'vite-plus/test'
 import { mockFetch } from '../../testing/fetch'
+import { useCanvas } from '../../stores/canvas'
 import { act, fireEvent, renderApp, screen, waitFor, within } from '../../testing/render'
 import { StoryboardEditor } from './StoryboardEditor'
 import { storyboardFixture } from './testing'
@@ -193,6 +194,22 @@ it('场景与缺失筛选只改显示，全选仅保留当前可见镜头', asyn
   expect(screen.queryByRole('row', { name: '镜头 01' })).toBeNull()
   expect(screen.getByRole('row', { name: '镜头 02' })).toBeDefined()
   expect(f.read()).toEqual(before)
+})
+
+it('唯一绑定场景的筛选旁可打开场景准备', async () => {
+  const f = storyboardFixture({ count: 1 })
+  f.write([{ ...f.read()[0]!, characters: ['教室'], dialogue: [] }])
+  const classroom = assetCard(f.doc, '教室')
+  act(f.flush)
+  const app = renderApp(<StoryboardEditor />)
+  expect(screen.queryByRole('button', { name: '场景准备' })).toBeNull()
+
+  await app.user.selectOptions(screen.getByRole('combobox', { name: '按场景筛选' }), [
+    `asset:${classroom}`,
+  ])
+  await app.user.click(screen.getByRole('button', { name: '场景准备' }))
+  expect(useCanvas.getState().scenePrep).toBe(classroom)
+  expect(useCanvas.getState().storyboard).toBeNull()
 })
 
 it('选中项被筛掉后，本地补齐仍只写完整选择且按钮保持所选范围', async () => {

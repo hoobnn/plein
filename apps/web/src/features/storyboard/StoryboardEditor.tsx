@@ -650,6 +650,11 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           shown={visibleShots.length}
           total={shots.length}
           onScene={setSceneFilter}
+          onScenePrep={
+            sceneValue.startsWith('asset:')
+              ? () => useCanvas.getState().openScenePrep(sceneValue.slice(6))
+              : undefined
+          }
           onMissingOnly={setMissingOnly}
         />
       )}

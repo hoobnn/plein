@@ -44,6 +44,8 @@ interface CanvasStore extends EngineState {
   menu: CanvasMenuEvent | null
   /** 打开表格编辑器的分镜节点 */
   storyboard: string | null
+  /** 打开准备视图的场景节点 */
+  scenePrep: string | null
   shotWorkbench: { boardId: string; shotId: string } | null
   /** 打开编辑器的序列节点 */
   sequence: string | null
@@ -84,6 +86,7 @@ interface CanvasStore extends EngineState {
   setCanvasId(id: string | null): void
   setMenu(menu: CanvasMenuEvent | null): void
   openStoryboard(id: string | null): void
+  openScenePrep(id: string | null): void
   openShotWorkbench(target: { boardId: string; shotId: string } | null): void
   openSequence(id: string | null, clipInstanceId?: string, returnBoardId?: string): void
   consumeSequenceFocus(requestId: number): void
@@ -126,6 +129,7 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
   canvasId: null,
   menu: null,
   storyboard: null,
+  scenePrep: null,
   shotWorkbench: null,
   sequence: null,
   sequenceReturn: null,
@@ -165,6 +169,7 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
           : {}),
         menu: null,
         storyboard: null,
+        scenePrep: null,
         shotWorkbench: null,
         sequence: null,
         sequenceReturn: null,
@@ -187,13 +192,19 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
   setCanvasId: (canvasId) => set({ canvasId }),
   setMenu: (menu) => set({ menu }),
   openStoryboard: (storyboard) =>
-    set({ storyboard, ...(storyboard ? { shotWorkbench: null } : {}) }),
+    set({ storyboard, ...(storyboard ? { scenePrep: null, shotWorkbench: null } : {}) }),
+  openScenePrep: (scenePrep) =>
+    set({
+      scenePrep,
+      ...(scenePrep ? { storyboard: null, shotWorkbench: null } : {}),
+    }),
   openShotWorkbench: (shotWorkbench) =>
     set({
       shotWorkbench,
       ...(shotWorkbench
         ? {
             storyboard: null,
+            scenePrep: null,
             sequence: null,
             sequenceReturn: null,
             sequenceFocus: null,

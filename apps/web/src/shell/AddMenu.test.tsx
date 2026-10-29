@@ -136,6 +136,29 @@ it('只读右键菜单禁止修改，仍允许缩放到选中', async () => {
   expect(engine.zoomToFit).toHaveBeenCalledWith([id])
 })
 
+it('场景节点右键可打开准备视图，只读画布也保留入口', async () => {
+  const engine = engineForMenu()
+  const id = createElement(engine.doc, {
+    kind: 'node',
+    nodeType: 'plein/scene',
+    name: '天台',
+    x: 0,
+    y: 0,
+    w: 200,
+    h: 160,
+  })
+  engine.selection.set([id])
+  engine.doc.readOnly = true
+  useCanvas.setState({
+    engine,
+    menu: { kind: 'context', target: id, client: { x: 100, y: 100 }, world: { x: 100, y: 100 } },
+  })
+  const { user } = renderApp(<CanvasMenus canImport={false} />)
+  await user.click(screen.getByRole('menuitem', { name: '场景准备' }))
+  expect(useCanvas.getState().scenePrep).toBe(id)
+  expect(useCanvas.getState().menu).toBeNull()
+})
+
 it('创建菜单已打开时变为只读，旧 Enter 不创建并退出', () => {
   const engine = engineForMenu()
   const onClose = vi.fn()

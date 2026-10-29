@@ -300,6 +300,12 @@ function ContextMenu({
             <Sep />
           </>
         )}
+        {single?.nodeType === 'plein/scene' && (
+          <Item
+            label="场景准备"
+            onClick={act(() => useCanvas.getState().openScenePrep(single.id))}
+          />
+        )}
         <Item
           label="复制一份"
           hint={shortcut('mod+d')}

@@ -7,6 +7,7 @@ export function StoryboardPrepFilter({
   shown,
   total,
   onScene,
+  onScenePrep,
   onMissingOnly,
 }: {
   scenes: ShotScene[]
@@ -15,6 +16,7 @@ export function StoryboardPrepFilter({
   shown: number
   total: number
   onScene(value: string): void
+  onScenePrep?(): void
   onMissingOnly(value: boolean): void
 }) {
   const filtered = !!scene || missingOnly
@@ -40,6 +42,11 @@ export function StoryboardPrepFilter({
           ))}
         </select>
       </label>
+      {onScenePrep && (
+        <button type="button" className="ui-btn ui-btn-secondary ui-btn-sm" onClick={onScenePrep}>
+          场景准备
+        </button>
+      )}
       <label className="flex items-center gap-2">
         <input
           type="checkbox"

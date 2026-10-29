@@ -6,6 +6,9 @@ import { LoadingPanel } from '../ui/LoadingPanel'
 const StoryboardEditor = lazy(() =>
   import('../features/storyboard/StoryboardEditor').then((m) => ({ default: m.StoryboardEditor })),
 )
+const ScenePrep = lazy(() =>
+  import('../features/scene-prep/ScenePrep').then((m) => ({ default: m.ScenePrep })),
+)
 const ShotWorkbench = lazy(() =>
   import('../features/storyboard/ShotWorkbench').then((m) => ({ default: m.ShotWorkbench })),
 )
@@ -31,9 +34,10 @@ function DeferredPanel({
 }
 
 export function EditorPanels() {
-  const { storyboard, shotWorkbench, sequence } = useCanvas(
+  const { storyboard, scenePrep, shotWorkbench, sequence } = useCanvas(
     useShallow((s) => ({
       storyboard: !!s.storyboard,
+      scenePrep: !!s.scenePrep,
       shotWorkbench: !!s.shotWorkbench,
       sequence: !!s.sequence,
     })),
@@ -42,6 +46,9 @@ export function EditorPanels() {
     <>
       <DeferredPanel active={storyboard} label="正在打开分镜表…">
         <StoryboardEditor />
+      </DeferredPanel>
+      <DeferredPanel active={scenePrep} label="正在打开场景准备…">
+        <ScenePrep />
       </DeferredPanel>
       <DeferredPanel active={shotWorkbench} label="正在打开镜头工作台…">
         <ShotWorkbench />
