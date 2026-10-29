@@ -10,6 +10,7 @@ import { Presence } from '../../ui/Presence'
 import { useLibrary } from '../library/store'
 import {
   scenePrep,
+  type ScenePrepAmbiguousShot,
   type ScenePrepContinuity,
   type ScenePrepMissingShot,
   type ScenePrepShot,
@@ -166,6 +167,9 @@ function ScenePrepContent({ engine, sceneId }: { engine: Engine; sceneId: string
           {model.unspecified.length > 0 && (
             <ShotGroup title="未指定视角" shots={model.unspecified} onOpen={openShot} />
           )}
+          {model.ambiguous.length > 0 && (
+            <ShotGroup title="引用不唯一" shots={model.ambiguous} onOpen={openShot} />
+          )}
           {model.missing.length > 0 && (
             <ShotGroup title="视角不存在" shots={model.missing} onOpen={openShot} />
           )}
@@ -181,7 +185,7 @@ function ShotGroup({
   onOpen,
 }: {
   title: string
-  shots: Array<ScenePrepShot | ScenePrepMissingShot>
+  shots: Array<ScenePrepShot | ScenePrepAmbiguousShot | ScenePrepMissingShot>
   onOpen(shot: ScenePrepShot): void
 }) {
   return (
@@ -200,7 +204,7 @@ function ShotList({
   onOpen,
   empty,
 }: {
-  shots: Array<ScenePrepShot | ScenePrepMissingShot>
+  shots: Array<ScenePrepShot | ScenePrepAmbiguousShot | ScenePrepMissingShot>
   onOpen(shot: ScenePrepShot): void
   empty?: string
 }) {
@@ -226,6 +230,15 @@ function ShotList({
                     className="block text-xs break-all text-warning"
                   >
                     未匹配「{problem.viewName || '空视角'}」 · 原文：{problem.reference}
+                  </span>
+                ))}
+              {'ambiguities' in shot &&
+                shot.ambiguities.map((problem) => (
+                  <span
+                    key={`${problem.problem}:${problem.reference}`}
+                    className="block text-xs break-all text-warning"
+                  >
+                    {problem.problem} · 原文：{problem.reference}
                   </span>
                 ))}
               <ContinuitySummary continuity={shot.continuity} />

@@ -72,7 +72,8 @@ describe('场景准备模型', () => {
       shot('a10', 10, '', '镜头转向@天台/门口'),
       shot('a2', 2, '@天台/门口'),
       shot('a3', 3, '@天台/远处'),
-      Shot.parse({ id: 'other', no: 4, description: '别的场景' }),
+      shot('a4', 4, '在@天台/门口，远景@天台'),
+      Shot.parse({ id: 'other', no: 5, description: '别的场景' }),
     ])
 
     const result = scenePrep(doc, sceneId)!
@@ -84,7 +85,7 @@ describe('场景准备模型', () => {
         shots: shots.map((shot) => shot.shotId),
       })),
     ).toEqual([
-      { id: 'door', shots: ['a2', 'a10', 'b1'] },
+      { id: 'door', shots: ['a2', 'a4', 'a10', 'b1'] },
       { id: 'wide', shots: ['a3'] },
     ])
     expect(result.unspecified.map((shot) => shot.shotId)).toEqual(['b3'])
@@ -99,21 +100,43 @@ describe('场景准备模型', () => {
     ])
   })
 
-  it('场景绑定不唯一时不猜，未写场景视角的已绑定镜头归入未指定', () => {
+  it('重名与序号越界保留原文和消歧提示，未绑定重名场景仍不猜', () => {
     const { doc, sceneId, board, shot } = fixture()
     createElement(doc, node({ id: 'scene-duplicate', nodeType: 'plein/scene', name: '天台' }))
     const bound = shot('bound', 1)
-    const ambiguous = Shot.parse({
-      id: 'ambiguous',
-      no: 2,
-      description: '重名场景',
+    const ambiguous = shot('ambiguous', 2, '@天台/门口')
+    const outOfRange = shot('out-of-range', 3, '@天台#3/门口')
+    const unbound = Shot.parse({
+      id: 'unbound',
+      no: 4,
+      description: '未绑定的重名场景',
       characters: ['天台'],
       imagePrompt: '@天台/门口',
     })
-    board('board', '分镜表', [bound, ambiguous])
+    board('board', '分镜表', [bound, ambiguous, outOfRange, unbound])
 
     const result = scenePrep(doc, sceneId)!
     expect(result.unspecified.map((shot) => shot.shotId)).toEqual(['bound'])
+    expect(result.ambiguous).toEqual([
+      expect.objectContaining({
+        shotId: 'ambiguous',
+        ambiguities: [
+          {
+            reference: '@天台/门口',
+            problem: '画布上有 2 个「天台」，请写成 @天台#1 或 @天台#2',
+          },
+        ],
+      }),
+      expect.objectContaining({
+        shotId: 'out-of-range',
+        ambiguities: [
+          {
+            reference: '@天台#3/门口',
+            problem: '「@天台#3」不存在，画布上「天台」只有 @天台#1、@天台#2',
+          },
+        ],
+      }),
+    ])
     expect(result.views.every(({ shots }) => shots.length === 0)).toBe(true)
     expect(result.missing).toEqual([])
   })
