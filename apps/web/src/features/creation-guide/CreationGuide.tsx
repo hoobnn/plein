@@ -120,10 +120,13 @@ function Guide({
     setPreferences(next)
     setError('')
   }
+  const staleIds = new Set([...stale].filter(([, kind]) => kind !== 'kept').map(([id]) => id))
+  const keptIds = new Set([...stale].filter(([, kind]) => kind === 'kept').map(([id]) => id))
   const facts = creationGuideFacts(engine.doc, {
     ...preferences,
     canvasId,
-    staleIds: new Set([...stale].filter(([, kind]) => kind !== 'kept').map(([id]) => id)),
+    staleIds,
+    keptIds,
   })
   const floating = presentation === 'floating' && !preferences.collapsed && facts.boards.length > 0
   useEffect(() => {
@@ -146,12 +149,12 @@ function Guide({
       setError('画布已切换，本次操作未执行')
       return null
     }
+    const currentStale = useStale.getState().nodes
     const current = creationGuideFacts(engine.doc, {
       ...preferencesRef.current,
       canvasId,
-      staleIds: new Set(
-        [...useStale.getState().nodes].filter(([, kind]) => kind !== 'kept').map(([id]) => id),
-      ),
+      staleIds: new Set([...currentStale].filter(([, kind]) => kind !== 'kept').map(([id]) => id)),
+      keptIds: new Set([...currentStale].filter(([, kind]) => kind === 'kept').map(([id]) => id)),
     })
     if (!current.board || current.board.id !== facts.board?.id) {
       setError('分镜选择已变化，请重新选择后继续')
@@ -176,7 +179,8 @@ function Guide({
     trigger?.focus()
   }
   const runAction = (action: GuideAction) => {
-    const current = readCurrent()
+    // 新建样片会快照当前分镜计划，必须沿用同帧计划校验。
+    const current = readCurrent(action.target.kind === 'animatic')
     if (!current) return
     if (JSON.stringify(actionTarget(current, action)) !== JSON.stringify(action.target)) {
       setError('定位目标已变化，请核对当前步骤后重试')

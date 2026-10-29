@@ -3,9 +3,12 @@ import type { Engine } from '@plein/canvas-core'
 import {
   addResults,
   adoptResult,
+  confirmProductionContent,
   connect,
   createElement,
+  creativeReviewTarget,
   deleteElements,
+  recordCreativeReview,
   selectProductionTarget,
   setParams,
   updateElement,
@@ -19,6 +22,7 @@ import { useCanvas } from '../../stores/canvas'
 import { useSession } from '../../stores/session'
 import { act, fireEvent, renderApp, screen, within } from '../../testing/render'
 import { CreationGuide } from './CreationGuide'
+import { creationGuideFacts } from './facts'
 import { writeGuidePreferences } from './preferences'
 
 const docs: PleinDoc[] = []
@@ -193,6 +197,7 @@ it('唯一成片变为多个和候选改变时拒绝旧定位，重新选择后�
     image = media(f, 'image')
     video = media(f, 'video')
     first = sequence(f, video)
+    selectProductionTarget(f.doc, f.ids[0]!, { trialShotId: 's1' })
   })
   const oldDelivery = within(step('delivery')).getByRole('button')
   let second = ''
@@ -240,7 +245,9 @@ it('代表镜头删除后保留失效身份、禁止审片；撤销恢复且只�
   expect(step('trial').dataset.guideState).toBe('done')
   change(f, () => {
     f.doc.undo.stopCapturing()
-    setParams(f.doc, f.ids[0]!, { shots: [f.shots[0]] })
+    setParams(f.doc, f.ids[0]!, {
+      shots: [f.shots[0], Shot.parse({ id: 's3', no: 3, description: '画面3' })],
+    })
   })
   expect(step('trial').dataset.guideState).toBe('attention')
   expect(within(step('review')).getByRole<HTMLButtonElement>('button').disabled).toBe(true)
@@ -269,17 +276,97 @@ it('当前步骤只有一个主操作，试做子步骤按固定顺序定位并�
       (el) => el.dataset.guideSubstep,
     ),
   ).toEqual(['shot', 'input', 'generate', 'review', 'sample'])
-  const generate = within(trial).getByRole('button', { name: /^生成并采用候选 / })
-  fireEvent.click(generate)
-  expect(useCanvas.getState().shotWorkbench).toEqual({ boardId: f.ids[0], shotId: 's1' })
+  const generate = within(trial).getByRole<HTMLButtonElement>('button', {
+    name: /^生成并采用候选 /,
+  })
+  expect(generate.disabled).toBe(true)
   fireEvent.click(within(trial).getByRole('button', { name: /选代表镜头/ }))
   expect(document.activeElement?.id).toBe('c1-guide-shot')
+  change(f, () => selectProductionTarget(f.doc, f.ids[0]!, { trialShotId: 's1' }))
+  const selected = within(step('trial')).getByRole<HTMLButtonElement>('button', {
+    name: /^生成并采用候选 /,
+  })
+  fireEvent.click(selected)
+  expect(useCanvas.getState().shotWorkbench).toEqual({ boardId: f.ids[0], shotId: 's1' })
   act(() => {
     selectProductionTarget(f.doc, f.ids[0]!, { trialShotId: 's2' })
-    fireEvent.click(generate)
+    fireEvent.click(selected)
   })
   expect(screen.getByRole('alert').textContent).toContain('定位目标已变化')
   expect(useCanvas.getState().shotWorkbench).toEqual({ boardId: f.ids[0], shotId: 's1' })
+  f.host.remove()
+})
+
+it('多镜未选时显示占位，选择首镜也会保存并推进进度', async () => {
+  const f = fixture()
+  change(f, () => {
+    media(f, 'image', 's1')
+    media(f, 'video', 's1')
+  })
+  expect(step('review').dataset.guideState).toBe('todo')
+  expect(step('trial').dataset.guideState).toBe('ready')
+  const trigger = screen.getByRole('combobox', { name: '创作引导试做镜头' })
+  expect(trigger.textContent).toContain('请选择试做镜头')
+  await f.user.click(trigger)
+  await f.user.click(screen.getByRole('option', { name: '镜头 1 · 画面1' }))
+  change(f, () => {})
+  expect(f.doc.get(f.ids[0]!)?.production?.selection?.trialShotId).toBe('s1')
+  expect(step('trial').dataset.guideState).toBe('done')
+  expect(step('review').dataset.guideState).toBe('ready')
+  f.host.remove()
+})
+
+it('同帧分镜计划变化时拒绝用旧界面创建样片', () => {
+  const f = fixture()
+  const sample = within(step('trial')).getByRole('button', { name: /^做样片 / })
+  act(() => {
+    setParams(f.doc, f.ids[0]!, {
+      shots: f.shots.map((shot) => ({ ...shot, description: '计划已改' })),
+    })
+    fireEvent.click(sample)
+  })
+  expect(screen.getByRole('alert').textContent).toContain('分镜计划已变化')
+  expect([...f.doc.elements()].some((el) => el.nodeType === 'plein/animatic')).toBe(false)
+  f.host.remove()
+})
+
+it('没有镜头时做样片只打开分镜表，不创建空草稿', () => {
+  const f = fixture()
+  change(f, () => setParams(f.doc, f.ids[0]!, { shots: [] }))
+  const before = [...f.doc.elements()].length
+  fireEvent.click(within(step('trial')).getByRole('button', { name: /^选代表镜头 / }))
+  expect(useCanvas.getState().storyboard).toBe(f.ids[0])
+  fireEvent.click(within(step('trial')).getByRole('button', { name: /^做样片 / }))
+  expect(useCanvas.getState().storyboard).toBe(f.ids[0])
+  expect([...f.doc.elements()]).toHaveLength(before)
+  f.host.remove()
+})
+
+it('零序列且交付为当前步骤时，主按钮回到分镜表连接序列', () => {
+  const f = fixture()
+  change(f, () => {
+    for (const shot of ['s1', 's2'])
+      for (const role of ['image', 'video'] as const) {
+        const id = media(f, role, shot)
+        recordCreativeReview(f.doc, id, {
+          target: creativeReviewTarget(f.doc.get(id))!,
+          status: 'usable',
+        })
+      }
+    selectProductionTarget(f.doc, f.ids[0]!, { trialShotId: 's1' })
+    confirmProductionContent(f.doc, {
+      scope: { canvasId: 'c1', boardId: f.ids[0]! },
+      expectedSnapshot: creationGuideFacts(f.doc, {
+        canvasId: 'c1',
+        boardId: f.ids[0],
+      }).planSignature!,
+      version: 'v1',
+      userId: LOCAL_PRINCIPAL.id,
+    })
+  })
+  expect(step('delivery').dataset.guideState).toBe('todo')
+  fireEvent.click(screen.getByRole('button', { name: '打开分镜表连接序列' }))
+  expect(useCanvas.getState().storyboard).toBe(f.ids[0])
   f.host.remove()
 })
 
@@ -384,6 +471,7 @@ it('只读时已有样片可打开，无样片时说明原因且不创建', () =
   })
   fireEvent.click(screen.getByRole('button', { name: /做样片/ }))
   expect(useCanvas.getState().sequence).toBe(animatic)
+  expect(within(step('trial')).getByText('已有样片草稿')).toBeTruthy()
   expect([...f.doc.elements()]).toHaveLength(2)
   f.host.remove()
 })
