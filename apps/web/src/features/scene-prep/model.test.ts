@@ -100,6 +100,21 @@ describe('场景准备模型', () => {
     ])
   })
 
+  it('裸场景引用与错误视角并存时只归入视角不存在', () => {
+    const { doc, sceneId, board, shot } = fixture()
+    board('board', '分镜表', [shot('mixed', 1, '@天台，再看@天台/水塔')])
+
+    const result = scenePrep(doc, sceneId)!
+    expect(result.unspecified).toEqual([])
+    expect(result.ambiguous).toEqual([])
+    expect(result.missing).toEqual([
+      expect.objectContaining({
+        shotId: 'mixed',
+        references: [{ viewName: '水塔', reference: '@天台/水塔' }],
+      }),
+    ])
+  })
+
   it('重名与序号越界保留原文和消歧提示，未绑定重名场景仍不猜', () => {
     const { doc, sceneId, board, shot } = fixture()
     createElement(doc, node({ id: 'scene-duplicate', nodeType: 'plein/scene', name: '天台' }))

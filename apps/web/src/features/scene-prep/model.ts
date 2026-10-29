@@ -177,7 +177,13 @@ export function scenePrep(doc: PleinDoc, sceneElementId: string): ScenePrepResul
       }
       if (ambiguities.length) ambiguous.push({ ...base, ambiguities })
       if (problems.length) missing.push({ ...base, references: problems })
-      if (hasUnspecified && mentionedViews.size === 0) unspecified.push(base)
+      if (
+        hasUnspecified &&
+        mentionedViews.size === 0 &&
+        problems.length === 0 &&
+        ambiguities.length === 0
+      )
+        unspecified.push(base)
     }
   }
 
