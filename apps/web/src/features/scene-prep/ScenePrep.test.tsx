@@ -1,12 +1,21 @@
 // @vitest-environment happy-dom
 import type { Engine } from '@plein/canvas-core'
-import { appendShotPlan, createElement, registerContinuitySubject, type PleinDoc } from '@plein/doc'
+import {
+  appendShotPlan,
+  createElement,
+  registerContinuitySubject,
+  setParam,
+  type PleinDoc,
+} from '@plein/doc'
 import { node, openDoc } from '@plein/doc/testing'
 import { Shot } from '@plein/nodes'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { useCanvas } from '../../stores/canvas'
-import { renderApp, screen, within } from '../../testing/render'
+import { renderApp, resetStoreAfterEach, screen, waitFor, within } from '../../testing/render'
+import { useLibrary } from '../library/store'
 import { ScenePrep } from './ScenePrep'
+
+resetStoreAfterEach(useLibrary)
 
 const docs: PleinDoc[] = []
 afterEach(() => docs.splice(0).forEach((doc) => doc.destroy()))
@@ -96,4 +105,25 @@ it('没有命名视角时可去编辑；未关联资产库条目的场景只选�
   expect(engine.zoomToFit).toHaveBeenCalledWith([sceneId])
   expect(useCanvas.getState().scenePrep).toBeNull()
   expect(doc.get(sceneId)?.params).toEqual(before)
+})
+
+it('已关联资产库的场景加载后直接编辑最新关联条目', async () => {
+  const { doc, sceneId } = fixture()
+  setParam(doc, sceneId, 'libraryId', 'lib-old')
+  useLibrary.setState({
+    items: [
+      { id: 'lib-old', kind: 'scene', name: '旧场景' },
+      { id: 'lib-new', kind: 'scene', name: '新场景' },
+    ] as never,
+  })
+  vi.spyOn(useLibrary.getState(), 'load').mockImplementation(async () => {
+    // 模拟等待列表时协作者更新了卡片关联。
+    setParam(doc, sceneId, 'libraryId', 'lib-new')
+  })
+  const { user } = renderApp(<ScenePrep />)
+  const dialog = await screen.findByRole('dialog', { name: '场景准备：天台' })
+  await user.click(within(dialog).getByRole('button', { name: '编辑视角' }))
+
+  await waitFor(() => expect(useLibrary.getState().open).toBe('scene'))
+  expect(useLibrary.getState().focus).toBe('lib-new')
 })

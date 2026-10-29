@@ -59,7 +59,8 @@ function ScenePrepContent({ engine, sceneId }: { engine: Engine; sceneId: string
     if (typeof libraryId !== 'string' || !libraryId) return
     await useLibrary.getState().load()
     if (useCanvas.getState().engine !== engine) return
-    const item = useLibrary.getState().items.find((item) => item.id === libraryId)
+    const latestLibraryId = engine.doc.get(sceneId)?.params?.libraryId
+    const item = useLibrary.getState().items.find((item) => item.id === latestLibraryId)
     if (item) useLibrary.getState().edit(item)
   }
   const openShot = (shot: ScenePrepShot) =>
