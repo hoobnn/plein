@@ -12,6 +12,7 @@ import {
   PLUGIN_API_VERSION,
   type PluginManifestInput,
   type PollResult,
+  type ProviderContext,
   type ProviderRequest,
   type SubmitResult,
   ProviderError,
@@ -686,12 +687,14 @@ describe('模型调用记录', () => {
 
   /** 异步平台：提交得到远端任务，轮询结果由各用例决定；模型不支持种子 */
   function asyncHost(timeoutMs?: number) {
-    const submit = vi.fn(async (_req: ProviderRequest): Promise<SubmitResult> => ({
-      state: 'pending',
-      remoteId: 'r1',
-      pollAfterMs: 1,
-    }))
-    const poll = vi.fn(async (): Promise<PollResult> => ({
+    const submit = vi.fn(
+      async (_req: ProviderRequest, _ctx: ProviderContext): Promise<SubmitResult> => ({
+        state: 'pending',
+        remoteId: 'r1',
+        pollAfterMs: 1,
+      }),
+    )
+    const poll = vi.fn(async (_remoteId: string, _ctx: ProviderContext): Promise<PollResult> => ({
       state: 'succeeded',
       outputs: [{ type: 'text', text: '好了' }],
     }))
@@ -699,21 +702,26 @@ describe('模型调用记录', () => {
       id: 'acme/async',
       title: 'Async',
       settings: z.object({}),
-      secrets: [],
+      secrets: [{ name: 'ASYNC_KEY', title: 'Key', required: true }],
       models: [{ id: 'm', title: 'M', capabilities: ['image.generate'], limits: { seed: false } }],
       submit,
       poll,
     })
-    const host = new PluginHost(
-      new PluginRegistry(),
-      new ProviderConfigStore(tempDir(), new Set(['acme/async'])),
-      s.server.assets,
-      { timeoutMs, log: () => {} },
-    )
+    const configs = new ProviderConfigStore(tempDir(), new Set(['acme/async']))
+    configs.update('acme/async', { secrets: { ASYNC_KEY: 'one' } })
+    const host = new PluginHost(new PluginRegistry(), configs, s.server.assets, {
+      timeoutMs,
+      log: () => {},
+    })
     host.load(
       [
         defineServerPlugin(
-          definePlugin({ manifest: manifest({ contributes: { providers: ['acme/async'] } }) }),
+          definePlugin({
+            manifest: manifest({
+              contributes: { providers: ['acme/async'] },
+              permissions: { secrets: ['ASYNC_KEY'] },
+            }),
+          }),
           { providers: [provider] },
         ),
       ],
@@ -721,6 +729,7 @@ describe('模型调用记录', () => {
     )
     const records = Object.assign(new Map<string, CallRecord>(), { id: 'async-host-journal' })
     const stages: CallStage['phase'][] = []
+    const vias: string[] = []
     const call = () =>
       host.call(
         'image.generate',
@@ -729,10 +738,13 @@ describe('模型调用记录', () => {
         {
           ownerId: 'local',
           journal: { store: records, key: 'k' },
-          onStage: ({ phase }) => stages.push(phase),
+          onStage: ({ phase, via }) => {
+            stages.push(phase)
+            vias.push(via)
+          },
         },
       )
-    return { submit, poll, records, stages, call }
+    return { configs, submit, poll, records, stages, vias, call }
   }
 
   it('提交受理后立即更新，只有平台明确报告时才展示排队或生成', async () => {
@@ -802,6 +814,52 @@ describe('模型调用记录', () => {
     await call()
     expect(submit).toHaveBeenCalledTimes(1)
     expect(records.get('k')).toMatchObject({ state: 'done', remoteId: 'r1' })
+  })
+
+  it('切换当前密钥组后，恢复轮询仍使用提交时的组', async () => {
+    const { configs, submit, poll, records, vias, call } = asyncHost()
+    const originalId = configs.get('acme/async').activeCredential!
+    const seen: string[] = []
+    submit.mockImplementationOnce(async (_req, ctx) => {
+      seen.push(ctx.secret('ASYNC_KEY')!)
+      return { state: 'pending', remoteId: 'r1', pollAfterMs: 1 }
+    })
+    poll.mockImplementationOnce(async (_remoteId, ctx) => {
+      seen.push(ctx.secret('ASYNC_KEY')!)
+      throw new ProviderError('unavailable', '稍后再查', { retryable: true })
+    })
+    await expect(call()).rejects.toMatchObject({ code: 'unavailable' })
+    expect(records.get('k')).toMatchObject({ state: 'pending', credentialId: originalId })
+
+    const withTeam = configs.addCredential('acme/async', '团队', { ASYNC_KEY: 'two' })
+    configs.setActiveCredential('acme/async', withTeam.credentials[1]!.id)
+    poll.mockImplementationOnce(async (_remoteId, ctx) => {
+      seen.push(ctx.secret('ASYNC_KEY')!)
+      return { state: 'succeeded', outputs: [{ type: 'text', text: '原组结果' }] }
+    })
+    await call()
+    expect(seen).toEqual(['one', 'one', 'one'])
+    expect(submit).toHaveBeenCalledTimes(1)
+    expect(records.get('k')).toMatchObject({ state: 'done', credentialId: originalId })
+    expect(vias.at(-1)).toBe('Async（默认）· M')
+  })
+
+  it('原密钥组删除后恢复为 auth 失败，不重新提交', async () => {
+    const { configs, submit, poll, records, call } = asyncHost()
+    const originalId = configs.get('acme/async').activeCredential!
+    poll.mockRejectedValueOnce(new ProviderError('unavailable', '稍后再查', { retryable: true }))
+    await expect(call()).rejects.toMatchObject({ code: 'unavailable' })
+    const withTeam = configs.addCredential('acme/async', '团队', { ASYNC_KEY: 'two' })
+    configs.setActiveCredential('acme/async', withTeam.credentials[1]!.id)
+    configs.removeCredential('acme/async', originalId)
+
+    await expect(call()).rejects.toMatchObject({
+      code: 'auth',
+      message: expect.stringContaining('已删除'),
+    })
+    expect(submit).toHaveBeenCalledTimes(1)
+    expect(poll).toHaveBeenCalledTimes(1)
+    expect(records.get('k')).toMatchObject({ state: 'pending', credentialId: originalId })
   })
 
   it('提交发出后取消，未知记录不能当成未提交丢弃', async () => {

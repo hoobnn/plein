@@ -130,7 +130,7 @@ export interface SubmissionTrace {
   logId?: string
   httpStatus?: number
 }
-export type CallRecord = { trace?: SubmissionTrace } & (
+export type CallRecord = { trace?: SubmissionTrace; credentialId?: string } & (
   | { state: 'submitting'; at: number }
   | { state: 'unknown'; at: number; message: string }
   | { state: 'pending'; remoteId: string; canceled?: true }
@@ -501,10 +501,11 @@ export class PluginHost {
       }
     }
     let trace = recorded?.trace
+    let credentialId = recorded?.credentialId
     const record = (r: CallRecord, kind?: SubmissionAudit['kind']) => {
       journal?.store.set(
         journal.key,
-        { ...r, ...(trace ? { trace } : {}) },
+        { ...r, ...(trace ? { trace } : {}), ...(credentialId ? { credentialId } : {}) },
         kind
           ? {
               id: randomUUID(),
@@ -545,15 +546,22 @@ export class PluginHost {
     const idempotencyKey = journal?.store.id
       ? `plein-${createHash('sha256').update(`${journal.store.id}\n${journal.key}`).digest('hex').slice(0, 32)}`
       : undefined
+    const providerConfig = this.configs.get(parsed.provider)
+    credentialId ??= providerConfig.activeCredential
     const ctx = this.providerContext(parsed.provider, opts.ownerId, signal, {
       requireEnabled: true,
       idempotencyKey,
+      credentialId,
     })
     const { onDelta } = opts
     if (onDelta) ctx.stream = (d) => onDelta(d.text)
     const { def } = entry
     const limiter = this.limiter(parsed.provider, def.limits)
-    const via = `${def.title} · ${model.title}`
+    const credential = providerConfig.credentials.find((item) => item.id === credentialId)
+    const via =
+      providerConfig.credentials.length >= 2 && credential
+        ? `${def.title}（${credential.label}）· ${model.title}`
+        : `${def.title} · ${model.title}`
     const stage = (phase: CallStage['phase']) => opts.onStage?.({ phase, via })
     // 远端已受理、且没有明确失败：此后的错误（轮询或下载结果时网络抖动、超时、用户取消）
     // 保留调用记录，重试、重启或重新获取时接着轮询，不能重新提交付费任务
@@ -658,7 +666,7 @@ export class PluginHost {
               parsed.provider,
               opts.ownerId,
               AbortSignal.timeout(10_000),
-              { requireEnabled: false },
+              { requireEnabled: false, credentialId },
             )
             await def.cancel(remoteId, cancelCtx).catch(() => {})
           }

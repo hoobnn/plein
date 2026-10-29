@@ -201,6 +201,7 @@ export class JobStore {
             state: 'pending',
             remoteId: remoteId!,
             ...(old?.trace ? { trace: old.trace } : {}),
+            ...(old?.credentialId ? { credentialId: old.credentialId } : {}),
           }
       }
       tx.update(jobs)

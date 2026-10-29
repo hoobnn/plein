@@ -242,6 +242,7 @@ export function subtitleRoutes({
                 state: 'pending',
                 remoteId: operation.remoteId,
                 ...(record.trace ? { trace: record.trace } : {}),
+                ...(record.credentialId ? { credentialId: record.credentialId } : {}),
               },
               audit: [...(stored.audit ?? []), audit('manual_attach')],
               history: [...(stored.history ?? []), { record, at: Date.now(), action: 'attach' }],
