@@ -45,9 +45,14 @@ export function ProductionOverview({
   const scope = goalScopeOf(facts, canvasId)
   const heads = scope ? productionGoalHeads(facts.board, scope) : []
   const revision = heads.length === 1 ? heads[0] : undefined
-  const duration = facts.board
+  const duration = scope
     ? goalDurationState(heads, overview.planDuration)
     : ({ state: 'unscoped' } as const)
+  const tasksKnown = nodeIds.length === 0 || (tasksChecked && jobs.isSuccess)
+  const tasksLoading = tasksChecked && nodeIds.length > 0 && !jobs.isSuccess && jobs.isPending
+  const deliveryMeta = overview.delivery
+    ? `${overview.delivery.duration.toFixed(1)} 秒 · ${overview.delivery.width}×${overview.delivery.height}`
+    : ''
   const required = revision
     ? Object.entries(requirementLabels)
         .filter(([key]) => revision.content[key as keyof typeof requirementLabels] === 'required')
@@ -132,18 +137,17 @@ export function ProductionOverview({
       <p className="break-words">
         交付：
         {overview.delivered
-          ? `当前成片已确认${
-              overview.delivery
-                ? ` · ${overview.delivery.duration.toFixed(1)} 秒 · ${overview.delivery.width}×${overview.delivery.height}`
-                : ''
-            }`
+          ? `当前成片已确认${deliveryMeta ? ` · ${deliveryMeta}` : ''}`
           : facts.sequence
-            ? '当前成片未确认'
+            ? `当前成片未确认${deliveryMeta ? ` · 实际 ${deliveryMeta}` : ''}`
             : '尚未选择成片序列'}
       </p>
       <div className="flex flex-col gap-1">
         <div className="flex items-center justify-between gap-2">
-          <h4 className="font-medium">阻塞、待审与任务（{overview.issues.length}）</h4>
+          <h4 className="font-medium">
+            阻塞、待审与任务（
+            {tasksKnown ? overview.issues.length : `本地 ${overview.issues.length}`}）
+          </h4>
           {!!nodeIds.length && (
             <button
               type="button"
@@ -157,12 +161,11 @@ export function ProductionOverview({
             </button>
           )}
         </div>
-        {tasksChecked && nodeIds.length > 0 && jobs.isPending && (
-          <p role="status">正在读取最新任务，恢复状态尚未知。</p>
-        )}
+        {!!nodeIds.length && !tasksChecked && <p role="status">任务尚未检查</p>}
+        {tasksLoading && !jobs.error && <p role="status">正在读取任务</p>}
         {jobs.error && (
           <p role="status">
-            任务读取失败：{jobs.error.message}{' '}
+            任务读取失败（重试）：{jobs.error.message}{' '}
             <button type="button" className="underline" onClick={() => void jobs.refetch()}>
               重试
             </button>
@@ -183,7 +186,7 @@ export function ProductionOverview({
             </li>
           ))}
         </ul>
-        {!overview.issues.length && <p>当前未发现待处理事项。</p>}
+        {!overview.issues.length && tasksKnown && <p>当前未发现待处理事项。</p>}
       </div>
       <div className="grid grid-cols-2 gap-1" aria-label="制作事实统计">
         <span>
