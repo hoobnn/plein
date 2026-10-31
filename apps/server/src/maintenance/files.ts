@@ -122,6 +122,24 @@ export async function scanTree(
   return walk(root, prefix, { stats: false, skip: new Set(skip) })
 }
 
+/**
+ * 实际移动、恢复、删除前的逐层检查：从 dataDir 起相对路径的每一级（含末项）
+ * 都不能是符号链接，否则抛错。扫描阶段的检查只是快照，目录可能在操作前被
+ * 换成链接；不存在的层级停止检查（恢复目标本来就尚未建立）。
+ */
+export async function assertInsideDataDir(dataDir: string, rel: string) {
+  let current = dataDir
+  for (const part of rel.split('/')) {
+    current = join(current, part)
+    const stat = await lstat(current).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return null
+      throw error
+    })
+    if (!stat) return
+    if (stat.isSymbolicLink()) throw new Error(`路径包含符号链接，已停止操作：${rel}`)
+  }
+}
+
 export async function hashFile(path: string) {
   const hash = createHash('sha256')
   for await (const chunk of createReadStream(path)) hash.update(chunk)

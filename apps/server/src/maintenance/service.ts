@@ -19,7 +19,7 @@ import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
 import { canvasState, documentReferences, readDocument } from '../media-index/references'
 import { backupInfo, backupManifest, restoreBackup, writeBackup } from './backup'
-import { atomicJson, filesIn, jsonFile, scanTree } from './files'
+import { atomicJson, assertInsideDataDir, filesIn, jsonFile, scanTree } from './files'
 
 const DAY = 86_400_000
 const TTL = 10 * 60_000
@@ -520,6 +520,9 @@ export class MaintenanceService {
           await setImmediate()
           this.assertRevision(plan.revision)
           for (const file of item.files) {
+            // 预检只是快照；真正移动前逐层确认源和回收站目标没有穿过链接。
+            await assertInsideDataDir(this.deps.dataDir, file.path)
+            await assertInsideDataDir(dir, file.path)
             const stat = lstatSync(join(this.deps.dataDir, file.path))
             if (!stat.isFile() || stat.size !== file.bytes || stat.mtimeMs !== file.mtime)
               throw new MaintenanceError('changed', '素材文件已变化，请重新预检')
@@ -549,6 +552,9 @@ export class MaintenanceService {
       for (const file of item.files) {
         const source = join(root, file.path),
           target = join(this.deps.dataDir, file.path)
+        // 必须在 mkdir 之前检查：穿过链接的 mkdir 本身就会在目录外落文件。
+        await assertInsideDataDir(root, file.path)
+        await assertInsideDataDir(this.deps.dataDir, file.path)
         await mkdir(dirname(target), { recursive: true, mode: 0o700 })
         const sourceExists = await lstat(source).then(
           () => true,
@@ -615,6 +621,9 @@ export class MaintenanceService {
         this.assertRevision(snapshot.revision)
         const source = join(this.root, 'trash', trash.id),
           target = join(this.root, 'trash', `.purging-${trash.id}`)
+        // 删除同样不越过链接：回收站路径可能整目录被换成指向外部的链接。
+        await assertInsideDataDir(this.deps.dataDir, `maintenance/trash/${trash.id}`)
+        await assertInsideDataDir(this.deps.dataDir, `maintenance/trash/.purging-${trash.id}`)
         renameSync(source, target)
         await rm(target, { recursive: true, force: true })
       }

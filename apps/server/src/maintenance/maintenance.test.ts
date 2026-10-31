@@ -769,6 +769,73 @@ describe('本机数据维护', () => {
     ])
   })
 
+  it('预检后 assets 被换成链接时清理拒绝，不搬走目录外的文件', async () => {
+    const f = await fixture(),
+      asset = await f.asset()
+    const preview = await f.service.preview()
+    // 预检之后、清理之前，assets 整目录被换成指向外部的链接。
+    const external = await mkdtemp(join(tmpdir(), 'plein-external-'))
+    cleanup.push(async () => rm(external, { recursive: true, force: true }))
+    const assetsDir = join(f.root, 'assets')
+    await rename(assetsDir, join(external, 'assets'))
+    await symlink(join(external, 'assets'), assetsDir)
+    // 末级 lstat 会穿过链接看到普通文件，必须在移动前逐层拒绝。
+    await expect(f.service.cleanup(preview.token)).rejects.toThrow('符号链接')
+    expect(existsSync(join(external, 'assets', asset.id.slice(0, 2), asset.id))).toBe(true)
+  })
+
+  it('清理后 assets 被换成链接时恢复回收站拒绝，文件不落目录外也不丢失', async () => {
+    const f = await fixture(),
+      asset = await f.asset()
+    await f.service.settings(MaintenanceSettings.parse({ autoBackup: false, trashDays: 1 }))
+    const result = await f.service.cleanup((await f.service.preview()).token)
+    const external = await mkdtemp(join(tmpdir(), 'plein-external-'))
+    cleanup.push(async () => rm(external, { recursive: true, force: true }))
+    const assetsDir = join(f.root, 'assets')
+    await rename(assetsDir, join(external, 'assets'))
+    await symlink(join(external, 'assets'), assetsDir)
+    // 恢复必须在 mkdir 之前拒绝，否则目录里已经落了文件。
+    await expect(f.service.restoreTrash(result.id!)).rejects.toThrow('符号链接')
+    expect(existsSync(join(external, 'assets', asset.id.slice(0, 2), asset.id))).toBe(false)
+    // 回收站里的文件仍在：清单停在 pending，链接修复后重启即可恢复。
+    expect(
+      existsSync(
+        join(f.root, 'maintenance', 'trash', result.id!, 'assets', asset.id.slice(0, 2), asset.id),
+      ),
+    ).toBe(true)
+  })
+
+  it('到期清除前发现回收站路径穿过链接时拒绝删除', async () => {
+    const f = await fixture(),
+      asset = await f.asset()
+    await f.service.settings(MaintenanceSettings.parse({ autoBackup: false, trashDays: 1 }))
+    const result = await f.service.cleanup((await f.service.preview()).token)
+    const external = await mkdtemp(join(tmpdir(), 'plein-external-'))
+    cleanup.push(async () => rm(external, { recursive: true, force: true }))
+    // maintenance 整目录换成链接：清单仍然可见，但删除路径穿过了链接。
+    const maintenanceDir = join(f.root, 'maintenance')
+    await rename(maintenanceDir, join(external, 'maintenance'))
+    await symlink(join(external, 'maintenance'), maintenanceDir)
+    f.advance(DAY + 1)
+    await f.service.tick()
+    expect((await f.service.status()).lastError).toContain('符号链接')
+    // 链接目标里的文件没有被删，链接本身也在。
+    expect(
+      existsSync(
+        join(
+          external,
+          'maintenance',
+          'trash',
+          result.id!,
+          'assets',
+          asset.id.slice(0, 2),
+          asset.id,
+        ),
+      ),
+    ).toBe(true)
+    expect(existsSync(maintenanceDir)).toBe(true)
+  })
+
   it('未完成的回收清单在重启时自动恢复，保留文件和登记信息', async () => {
     const f = await fixture(),
       asset = await f.asset()
