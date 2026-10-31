@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { existsSync, statSync } from 'node:fs'
-import { mkdtemp, mkdir, readFile, rm, symlink, utimes, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rename, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
@@ -633,6 +633,26 @@ describe('本机数据维护', () => {
     const dest = join(f.root, 'restore-should-fail')
     await expect(restoreBackup(backup.path, dest)).rejects.toThrow('符号链接')
     expect(existsSync(dest)).toBe(false)
+  })
+
+  it('assets 整个目录是链接时不跟随：预检和清理都不碰链接目标里的文件', async () => {
+    const f = await fixture(),
+      asset = await f.asset()
+    await f.service.settings(MaintenanceSettings.parse({ autoBackup: false }))
+    // 常见外置盘做法：真实 assets 挪到 dataDir 外，原位置换成链接。
+    const external = await mkdtemp(join(tmpdir(), 'plein-external-'))
+    cleanup.push(async () => rm(external, { recursive: true, force: true }))
+    const assetsDir = join(f.root, 'assets')
+    await rename(assetsDir, join(external, 'assets'))
+    await symlink(join(external, 'assets'), assetsDir)
+    const target = join(external, 'assets', asset.id.slice(0, 2), asset.id)
+    const preview = await f.service.preview()
+    expect(preview.assets).toBe(0)
+    expect((await f.service.cleanup(preview.token)).assets).toBe(0)
+    // 目标文件留在原地，链接本身也保留
+    expect(existsSync(target)).toBe(true)
+    expect(existsSync(assetsDir)).toBe(true)
+    expect((await f.service.status()).skippedSymlinks).toContain('assets')
   })
 
   it('未完成的回收清单在重启时自动恢复，保留文件和登记信息', async () => {

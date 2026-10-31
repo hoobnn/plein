@@ -115,24 +115,22 @@ export async function writeBackup(deps: {
         sha256: await hashFile(join(part, 'plein.db')),
       },
     ]
-    const physical = await filesIn(join(deps.dataDir, 'assets'))
+    const physical = await filesIn(deps.dataDir, 'assets')
     const physicalPaths = new Set(physical.map((file) => file.path))
-    // 遍历到的符号链接不打包也不让备份失败，只把路径记进清单供用户查看。
-    const skippedSymlinks = (await symlinksIn(join(deps.dataDir, 'assets'))).map(
-      (path) => `assets/${path}`,
-    )
+    // 遍历到的符号链接不打包也不让备份失败，只把路径记进清单供用户查看；
+    // assets 整体被换成链接时这里的值就是 ['assets']。
+    const skippedSymlinks = await symlinksIn(deps.dataDir, 'assets')
     for (const id of assetIds) {
-      if (!physicalPaths.has(`${id.slice(0, 2)}/${id}`))
+      if (!physicalPaths.has(`assets/${id.slice(0, 2)}/${id}`))
         throw new Error(`素材文件缺失，未生成不完整备份：${id}`)
     }
     for (const file of physical) {
-      const id = file.path.split('/')[1]?.split('.')[0]
-      if (!id || !assetIds.has(id) || !allowedPath(`assets/${file.path}`)) continue
-      const path = `assets/${file.path}`
-      const copied = await copyChecked(join(deps.dataDir, path), join(part, path))
-      if (file.path === `${id.slice(0, 2)}/${id}` && copied.sha256 !== id)
+      const id = file.path.split('/')[2]?.split('.')[0]
+      if (!id || !assetIds.has(id) || !allowedPath(file.path)) continue
+      const copied = await copyChecked(join(deps.dataDir, file.path), join(part, file.path))
+      if (file.path === `assets/${id.slice(0, 2)}/${id}` && copied.sha256 !== id)
         throw new Error(`素材哈希不匹配：${id}`)
-      files.push({ path, ...copied })
+      files.push({ path: file.path, ...copied })
     }
     if (spoolRefs.length) {
       const root = await lstat(join(deps.dataDir, 'job-outputs'))
@@ -165,12 +163,14 @@ export async function writeBackup(deps: {
     }
     for (const directory of ['plugins', 'subtitle-recognition']) {
       skippedSymlinks.push(
-        ...(await symlinksIn(join(deps.dataDir, directory))).map((path) => `${directory}/${path}`),
+        ...(await symlinksIn(deps.dataDir, directory)).map((path) => `${directory}/${path}`),
       )
-      for (const file of await filesIn(join(deps.dataDir, directory))) {
-        const path = `${directory}/${file.path}`
-        if (!allowedPath(path)) continue
-        files.push({ path, ...(await copyChecked(join(deps.dataDir, path), join(part, path))) })
+      for (const file of await filesIn(deps.dataDir, directory)) {
+        if (!allowedPath(file.path)) continue
+        files.push({
+          path: file.path,
+          ...(await copyChecked(join(deps.dataDir, file.path), join(part, file.path))),
+        })
       }
     }
     const manifest: BackupManifest = {

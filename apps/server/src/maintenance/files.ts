@@ -32,15 +32,18 @@ interface WalkOptions {
 }
 
 /**
- * 递归遍历 root/prefix。符号链接一律不跟随、不读取、不删除：
+ * 递归遍历扫描根 join(root, prefix)。符号链接一律不跟随、不读取、不删除：
  * 文件统计里跳过，路径单独收集给调用方上报，维护因此不会越出数据目录。
+ * prefix 非空时先用 lstat 检查扫描根本身（如整个 assets 目录被换成链接）
+ * ，所以扫描子目录请传前缀而不是拼接好的绝对路径；prefix 为空时 root
+ * 就是用户选定的数据目录锄点，可能本身是系统级链接（如 macOS /var），照常跟随。
  */
 async function walk(
   root: string,
   prefix: string,
   options: WalkOptions,
 ): Promise<{ files: Array<{ path: string; bytes: number; mtime: number }>; symlinks: string[] }> {
-  // prefix 本身若是符号链接（如整个 assets 目录被替换），同样不进入。
+  // 扫描根本身若是符号链接（如整个 assets 目录被替换），同样不进入。
   if (prefix) {
     if (options.skip.has(prefix)) return { files: [], symlinks: [] }
     const stat = await lstat(join(root, prefix)).catch((error: NodeJS.ErrnoException) => {

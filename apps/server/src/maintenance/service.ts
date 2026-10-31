@@ -366,13 +366,10 @@ export class MaintenanceService {
       await setImmediate()
     }
     // 识别journal属于持久任务事实：unknown/pending也必须保护，不能当缓存清理。
-    for (const file of await filesIn(join(this.deps.dataDir, 'subtitle-recognition'))) {
+    // 传前缀而不是拼接绝对路径，subtitle-recognition 被换成链接时不会跟随。
+    for (const file of await filesIn(this.deps.dataDir, 'subtitle-recognition')) {
       if (file.path.endsWith('.json'))
-        scan(
-          JSON.stringify(
-            await jsonFile(join(this.deps.dataDir, 'subtitle-recognition', file.path)),
-          ),
-        )
+        scan(JSON.stringify(await jsonFile(join(this.deps.dataDir, file.path))))
     }
     this.assertRevision(revision)
     return { refs, revision }
@@ -398,10 +395,7 @@ export class MaintenanceService {
     const rows = this.deps.db.$client
       .prepare('SELECT * FROM assets ORDER BY id,owner_id')
       .all() as AssetRow[]
-    const disk = (await filesIn(join(this.deps.dataDir, 'assets'))).map((f) => ({
-      ...f,
-      path: `assets/${f.path}`,
-    }))
+    const disk = await filesIn(this.deps.dataDir, 'assets')
     const cutoff = this.now() - this.state.settings.unusedDays * DAY
     const groups = new Map<string, Candidate>()
     for (const row of rows) {

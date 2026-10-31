@@ -243,9 +243,10 @@ export async function storedOutputSpoolRefs(
     }
   }
   const { filesIn, jsonFile } = await import('../maintenance/files')
-  for (const file of await filesIn(join(dataDir, 'subtitle-recognition'))) {
+  // 传前缀而不是拼接绝对路径，subtitle-recognition 被换成链接时不会跟随。
+  for (const file of await filesIn(dataDir, 'subtitle-recognition')) {
     if (file.path.endsWith('.json')) {
-      const stored = await jsonFile(join(dataDir, 'subtitle-recognition', file.path))
+      const stored = await jsonFile(join(dataDir, file.path))
       // 兼容旧版直接存 CallRecord；新版只扫描当前record，history是追溯元数据，不pin字节。
       const current =
         stored && typeof stored === 'object' && 'record' in stored
