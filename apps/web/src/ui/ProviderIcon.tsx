@@ -1,26 +1,34 @@
+import bailianLogo from './provider-icons/bailian.svg'
+import doubaoLogo from './provider-icons/doubao.svg'
+import minimaxLogo from './provider-icons/minimax.svg'
+import volcengineLogo from './provider-icons/volcengine.svg'
+
 /**
- * 平台图标：自绘的圆角方块 + 品牌色 + 一个字或字母，不引用官方商标素材。
- * 图标本身就是颜色标识，明暗主题下都保留同一底色，只把描边交给主题 token。
+ * 平台图标：有官方 logo 的平台用 logo 形状做 mask、填品牌色，并垫一层浅浅的品牌色圆角底；
+ * 没有 logo 的平台画彩色字母/几何块，未知平台按 id 哈希取色。商标素材只在本目录，MIT 许可见其 LICENSE。
  */
 interface Brand {
-  /** 底色；有 to 时与它做对角渐变 */
+  /** 品牌主色；有 to 时与它做对角渐变 */
   from: string
   to?: string
+  /** 没有 logo 的平台用这个字或字母 */
   glyph: string
+  /** logo 的 SVG 地址；有值时不再画字母块 */
+  logo?: string
 }
 
 const BRANDS: Record<string, Brand> = {
-  'volc/ark': { from: '#3370FF', glyph: '火' },
-  'volc/ark-plan': { from: '#3370FF', to: '#6E9BFF', glyph: '火' },
-  'aliyun/bailian': { from: '#FF6A00', glyph: '百' },
+  'volc/ark': { from: '#3370FF', glyph: '火', logo: volcengineLogo },
+  'volc/ark-plan': { from: '#3370FF', glyph: '火', logo: volcengineLogo },
+  'aliyun/bailian': { from: '#FF6A00', glyph: '百', logo: bailianLogo },
   // 豆包与方舟同为蓝色系，用青色渐变拉开区分
-  'doubao/speech': { from: '#1E6FFF', to: '#12C8C8', glyph: '豆' },
-  'minimax/api': { from: '#E7336B', glyph: 'M' },
+  'doubao/speech': { from: '#1E6FFF', to: '#12C8C8', glyph: '豆', logo: doubaoLogo },
+  'minimax/api': { from: '#E7336B', glyph: 'M', logo: minimaxLogo },
   'plein/compatible': { from: '#6B7280', glyph: '兼' },
   'plein/mock': { from: '#9CA3AF', glyph: 'M' },
 }
 
-/** 同厂商的其他平台沿用厂商品牌色（如 volc 的新平台） */
+/** 同厂商的其他平台沿用厂商品牌色和 logo（如 volc 的新平台） */
 const VENDORS: Record<string, string> = {
   volc: 'volc/ark',
   aliyun: 'aliyun/bailian',
@@ -52,9 +60,47 @@ export function providerBrand(provider: string): Brand {
   }
 }
 
-/** 平台图标用于设置卡片、模型选择的分组标题和音色列表的平台前缀 */
-export function ProviderIcon({ provider, size = 16 }: { provider: string; size?: number }) {
-  const brand = providerBrand(provider)
+/** 品牌色的浅底与主题描边：明暗主题下都只借一点点品牌色，不抢内容 */
+const tint = (brand: Brand) => `color-mix(in srgb, ${brand.from} 14%, transparent)`
+
+/** 有 logo 的平台：浅色圆角底 + 品牌色（豆包带青色渐变）填充的 logo 形状 */
+function LogoIcon({ provider, brand, size }: { provider: string; brand: Brand; size: number }) {
+  const glyphSize = Math.round(size * 0.64)
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-flex flex-none items-center justify-center"
+      data-provider-icon={provider}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: '30%',
+        background: tint(brand),
+        boxShadow: 'inset 0 0 0 1px var(--line-strong)',
+      }}
+    >
+      <span
+        className="inline-block"
+        style={{
+          width: glyphSize,
+          height: glyphSize,
+          background: brand.to ? `linear-gradient(135deg, ${brand.from}, ${brand.to})` : brand.from,
+          maskImage: `url("${brand.logo}")`,
+          maskSize: 'contain',
+          maskRepeat: 'no-repeat',
+          maskPosition: 'center',
+          WebkitMaskImage: `url("${brand.logo}")`,
+          WebkitMaskSize: 'contain',
+          WebkitMaskRepeat: 'no-repeat',
+          WebkitMaskPosition: 'center',
+        }}
+      />
+    </span>
+  )
+}
+
+/** 没有 logo 的平台：自绘的彩色圆角块，叠一个字或字母 */
+function GlyphIcon({ provider, brand, size }: { provider: string; brand: Brand; size: number }) {
   const gradientId = `provider-icon-${provider.replace(/[^\w-]/g, '-')}`
   return (
     <svg
@@ -94,4 +140,11 @@ export function ProviderIcon({ provider, size = 16 }: { provider: string; size?:
       </text>
     </svg>
   )
+}
+
+/** 平台图标用于设置卡片、模型选择的分组标题和音色列表的平台前缀 */
+export function ProviderIcon({ provider, size = 16 }: { provider: string; size?: number }) {
+  const brand = providerBrand(provider)
+  if (brand.logo) return <LogoIcon provider={provider} brand={brand} size={size} />
+  return <GlyphIcon provider={provider} brand={brand} size={size} />
 }
