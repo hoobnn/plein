@@ -1,17 +1,20 @@
 import type {
+  DesktopUpdatePreferences,
   DesktopUpdateProgress,
   DesktopUpdateRelease,
   DesktopUpdateState,
 } from '@plein/protocol'
+import { UpdatePreferences } from '@plein/protocol'
 import { app, autoUpdater as nativeUpdater, type BrowserWindow } from 'electron'
 import electronUpdater, { type UpdateInfo } from 'electron-updater'
+import { readUpdatePreferences, writeUpdatePreferences } from './prefs'
 import { canUpdate, readProfile } from './profile'
 
 const { autoUpdater } = electronUpdater
 
 /** 启动后等一会儿再查，不和服务端启动抢资源 */
 const FIRST_CHECK_MS = 15_000
-const CHECK_EVERY_MS = 6 * 60 * 60 * 1000
+const HOUR_MS = 60 * 60 * 1000
 
 type ReleaseInfo = Pick<UpdateInfo, 'version' | 'releaseName' | 'releaseDate' | 'releaseNotes'>
 type Operation = 'check' | 'download' | 'install'
@@ -49,6 +52,19 @@ export function setupUpdater(
   const profile = readProfile(app.isPackaged, app.getAppPath())
   const enabled = canUpdate(profile, app.isPackaged, process.platform, process.env.PLEIN_UPDATE)
   let state: DesktopUpdateState = { phase: 'idle', currentVersion: app.getVersion() }
+  let preferences = readUpdatePreferences()
+  let nextCheckAt: number | undefined
+  let timer: ReturnType<typeof setTimeout> | null = null
+  /** 启动时的首次检查还没做；改偏好时它优先于定期检查 */
+  let launchPending = false
+
+  /** 校验并保存更新偏好；取值不合法时抛错，原设置保持不变 */
+  const savePreferences = (next: unknown): DesktopUpdatePreferences => {
+    const parsed = UpdatePreferences.safeParse(next)
+    if (!parsed.success) throw new Error('更新偏好取值不合法')
+    preferences = writeUpdatePreferences(parsed.data)
+    return { ...preferences }
+  }
 
   const getState = (): DesktopUpdateState => ({
     ...state,
@@ -57,6 +73,7 @@ export function setupUpdater(
     }),
     ...(state.progress && { progress: { ...state.progress } }),
     ...(state.error && { error: { ...state.error } }),
+    ...(nextCheckAt !== undefined && { nextCheckAt }),
   })
 
   if (!enabled) {
@@ -77,6 +94,8 @@ export function setupUpdater(
       checkForUpdates: () => Promise.resolve(),
       download: () => Promise.resolve(),
       install: () => Promise.resolve(),
+      getPreferences: () => ({ ...preferences }),
+      setPreferences: (next: unknown) => savePreferences(next),
       get installationRequested() {
         return false
       },
@@ -102,6 +121,10 @@ export function setupUpdater(
 
   const publish = (next: DesktopUpdateState) => {
     state = next
+    publishSnapshot()
+  }
+  /** 把当前状态推给页面；检查计划变化时也要通知页面 */
+  const publishSnapshot = () => {
     const win = getWindow()
     if (!win || win.isDestroyed()) return
     win.setProgressBar(state.phase === 'downloading' ? (state.progress?.percent ?? 0) / 100 : -1)
@@ -191,6 +214,54 @@ export function setupUpdater(
     else if (canApplyCheck()) fail('check', error, checking)
   })
 
+  const clearTimer = () => {
+    if (timer) clearTimeout(timer)
+    timer = null
+  }
+
+  /** 安排下一次自动检查；due 是计划检查的时刻 */
+  const arm = (due: number) => {
+    clearTimer()
+    nextCheckAt = due
+    timer = setTimeout(() => onTimer(), Math.max(0, due - Date.now()))
+    publishSnapshot()
+  }
+
+  /** 按上次检查时间安排下一次检查；间隔为 0 时不再定期检查 */
+  const scheduleNext = () => {
+    clearTimer()
+    nextCheckAt = undefined
+    const interval = preferences.intervalHours * HOUR_MS
+    if (interval <= 0) {
+      publishSnapshot()
+      return
+    }
+    arm((state.checkedAt ?? Date.now()) + interval)
+  }
+
+  const onTimer = () => {
+    timer = null
+    launchPending = false
+    const interval = preferences.intervalHours * HOUR_MS
+    // 下载中或已下载待安装时跳过这次检查，等下载结束后按间隔重新安排。
+    if (state.phase === 'downloading' || state.phase === 'downloaded') {
+      if (interval > 0) arm(Date.now() + interval)
+      else publishSnapshot()
+      return
+    }
+    void checkForUpdates()
+  }
+
+  /** 偏好变化后立即重排：启动检查还没做时保留它，其余按上次检查时间计算 */
+  const reschedule = () => {
+    if (launchPending && preferences.checkOnLaunch) {
+      arm(nextCheckAt ?? Date.now() + FIRST_CHECK_MS)
+      return
+    }
+    launchPending = false
+    scheduleNext()
+  }
+
   const checkForUpdates = (): Promise<void> => {
     if (state.phase === 'downloading' || state.phase === 'downloaded') return Promise.resolve()
     // error 事件可能早于下载 Promise 结束；等该下载真正结束再开始检查或重试。
@@ -213,6 +284,8 @@ export function setupUpdater(
       .finally(() => {
         if (checkFlight === task) checkFlight = null
         if (checking === flight) checking = null
+        // 检查结束后按这次的检查时间重排下一次
+        scheduleNext()
       })
     checkFlight = task
     return task
@@ -252,8 +325,13 @@ export function setupUpdater(
     return task
   }
 
-  setTimeout(() => void checkForUpdates(), FIRST_CHECK_MS)
-  setInterval(() => void checkForUpdates(), CHECK_EVERY_MS)
+  // 启动时按偏好安排检查：开着启动检查就先等一会儿，之后按间隔轮询。
+  if (preferences.checkOnLaunch) {
+    launchPending = true
+    arm(Date.now() + FIRST_CHECK_MS)
+  } else {
+    scheduleNext()
+  }
 
   return {
     /** 菜单始终打开应用内更新详情；下载中或已下载时保留当前状态。 */
@@ -265,6 +343,15 @@ export function setupUpdater(
     getState,
     checkForUpdates,
     download,
+    /** 读取自动更新偏好 */
+    getPreferences: (): DesktopUpdatePreferences => ({ ...preferences }),
+    /** 保存自动更新偏好并立即重排检查计划 */
+    setPreferences: (next: unknown): DesktopUpdatePreferences => {
+      const saved = savePreferences(next)
+      reschedule()
+      publishSnapshot()
+      return saved
+    },
     /** 原生安装先关闭所有窗口；必须在委托前确认，之后 before-quit 仍等待服务端保存。 */
     install: (): Promise<void> => {
       if (installFlight) return installFlight

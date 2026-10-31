@@ -6,6 +6,10 @@ const desktop = vi.hoisted(() => ({
   canUpdate: vi.fn(() => true),
   readProfile: vi.fn(() => 'production'),
 }))
+const prefs = vi.hoisted(() => ({
+  readUpdatePreferences: vi.fn(() => ({ checkOnLaunch: true, intervalHours: 6 })),
+  writeUpdatePreferences: vi.fn((next: { checkOnLaunch: boolean; intervalHours: number }) => next),
+}))
 vi.mock('electron', async () => {
   const { EventEmitter } = await import('node:events')
   return {
@@ -28,6 +32,7 @@ vi.mock('electron-updater', async () => {
   return { default: { autoUpdater } }
 })
 vi.mock('./profile', () => desktop)
+vi.mock('./prefs', () => prefs)
 
 const { setupUpdater } = await import('./updater')
 const { autoUpdater: nativeUpdater } = await import('electron')
@@ -105,6 +110,7 @@ beforeEach(() => {
   vi.stubEnv('PLEIN_UPDATE_URL', undefined)
   desktop.canUpdate.mockReturnValue(true)
   desktop.readProfile.mockReturnValue('production')
+  prefs.readUpdatePreferences.mockReturnValue({ checkOnLaunch: true, intervalHours: 6 })
   updater.checkForUpdates.mockResolvedValue(null)
   updater.downloadUpdate.mockImplementation(async () => {
     nativeUpdater.emit('update-downloaded')
@@ -154,13 +160,18 @@ describe('应用内更新状态', () => {
     expect(updater.autoInstallOnAppQuit).toBe(true)
     expect(updater.fullChangelog).toBe(true)
     controller.check()
-    expect(controller.send.mock.calls[0]).toEqual(['plein:menu-command', 'updates'])
+    // 菜单命令先发给页面，再是检查中的状态
+    const menuAt = controller.send.mock.calls.findIndex((call) => call[0] === 'plein:menu-command')
+    const checkingAt = controller.send.mock.calls.findIndex((call) => call[1]?.phase === 'checking')
+    expect(menuAt).toBeGreaterThanOrEqual(0)
+    expect(menuAt).toBeLessThan(checkingAt)
     expect(controller.getState().phase).toBe('checking')
     await vi.advanceTimersByTimeAsync(0)
     expect(controller.getState()).toEqual({
       phase: 'idle',
       currentVersion: '0.3.0',
       checkedAt: Date.now(),
+      nextCheckAt: Date.now() + 6 * 60 * 60 * 1000,
     })
     expect(updater.downloadUpdate).not.toHaveBeenCalled()
   })
@@ -195,6 +206,7 @@ describe('应用内更新状态', () => {
         notes: info.releaseNotes,
       },
       checkedAt: Date.now(),
+      nextCheckAt: Date.now() + 6 * 60 * 60 * 1000,
       progress: undefined,
       error: undefined,
     }
@@ -561,5 +573,91 @@ describe('应用内更新状态', () => {
     // 同一次安装未失败时，后续点击不再重复委托。
     await controller.install()
     expect(updater.quitAndInstall).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('更新检查计划', () => {
+  const HOUR = 60 * 60 * 1000
+
+  it('启动时按开关决定是否检查，默认 15 秒后查一次', async () => {
+    const controller = setup()
+    expect(updater.checkForUpdates).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(updater.checkForUpdates).toHaveBeenCalledOnce()
+    expect(controller.getState().phase).toBe('idle')
+    // 之后按间隔轮询
+    expect(controller.getState().nextCheckAt).toBe(Date.now() + 6 * HOUR)
+    await vi.advanceTimersByTimeAsync(6 * HOUR)
+    expect(updater.checkForUpdates).toHaveBeenCalledTimes(2)
+  })
+
+  it('关掉启动检查后不在启动时检查，只按间隔轮询', async () => {
+    prefs.readUpdatePreferences.mockReturnValue({ checkOnLaunch: false, intervalHours: 6 })
+    const controller = setup()
+    const started = Date.now()
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(updater.checkForUpdates).not.toHaveBeenCalled()
+    expect(controller.getState().nextCheckAt).toBe(started + 6 * HOUR)
+    await vi.advanceTimersByTimeAsync(6 * HOUR)
+    expect(updater.checkForUpdates).toHaveBeenCalledOnce()
+  })
+
+  it('间隔改小后按上次检查时间重排，已过期时尽快检查', async () => {
+    const controller = setup()
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(updater.checkForUpdates).toHaveBeenCalledOnce()
+    controller.setPreferences({ checkOnLaunch: true, intervalHours: 24 })
+    expect(controller.getState().nextCheckAt).toBe(Date.now() + 24 * HOUR)
+    await vi.advanceTimersByTimeAsync(2 * HOUR)
+    expect(updater.checkForUpdates).toHaveBeenCalledOnce()
+    controller.setPreferences({ checkOnLaunch: true, intervalHours: 1 })
+    // 上次检查已经超过新间隔，尽快检查
+    await vi.advanceTimersByTimeAsync(0)
+    expect(updater.checkForUpdates).toHaveBeenCalledTimes(2)
+    expect(controller.getState().nextCheckAt).toBe(Date.now() + HOUR)
+  })
+
+  it('间隔设为不定期后不再安排检查，启动检查仍按开关执行', async () => {
+    const controller = setup()
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(updater.checkForUpdates).toHaveBeenCalledOnce()
+    controller.setPreferences({ checkOnLaunch: true, intervalHours: 0 })
+    expect(vi.getTimerCount()).toBe(0)
+    expect(controller.getState().nextCheckAt).toBeUndefined()
+    await vi.advanceTimersByTimeAsync(24 * HOUR)
+    expect(updater.checkForUpdates).toHaveBeenCalledOnce()
+  })
+
+  it('下载中和待安装时跳过定时检查', async () => {
+    const controller = setup()
+    await findUpdate(controller)
+    const pending = deferred<string[]>()
+    updater.downloadUpdate.mockReturnValueOnce(pending.promise)
+    const first = controller.download()
+    await Promise.resolve()
+    expect(controller.getState().phase).toBe('downloading')
+    await vi.advanceTimersByTimeAsync(6 * HOUR)
+    expect(updater.checkForUpdates).toHaveBeenCalledOnce()
+    nativeUpdater.emit('update-downloaded')
+    pending.resolve(['/tmp/Plein.zip'])
+    await first
+    expect(controller.getState().phase).toBe('downloaded')
+    await vi.advanceTimersByTimeAsync(6 * HOUR)
+    expect(updater.checkForUpdates).toHaveBeenCalledOnce()
+  })
+
+  it('保存偏好后落盘，非法取值不写入', () => {
+    const controller = setup()
+    expect(controller.getPreferences()).toEqual({ checkOnLaunch: true, intervalHours: 6 })
+    controller.setPreferences({ checkOnLaunch: false, intervalHours: 3 })
+    expect(prefs.writeUpdatePreferences).toHaveBeenCalledWith({
+      checkOnLaunch: false,
+      intervalHours: 3,
+    })
+    expect(controller.getPreferences()).toEqual({ checkOnLaunch: false, intervalHours: 3 })
+    expect(() => controller.setPreferences({ checkOnLaunch: true, intervalHours: 5 })).toThrow(
+      '更新偏好取值不合法',
+    )
+    expect(prefs.writeUpdatePreferences).toHaveBeenCalledTimes(1)
   })
 })

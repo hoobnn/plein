@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
-import { readPrefs, writePrefs } from './prefs'
+import { readPrefs, readUpdatePreferences, writePrefs, writeUpdatePreferences } from './prefs'
 import { restoreWindowState, trackWindowState } from './window-state'
 
 const electron = vi.hoisted(() => ({
@@ -61,6 +61,38 @@ describe('桌面设置', () => {
     expect(() => writePrefs({ port: 8790 })).not.toThrow()
     expect(warn).toHaveBeenCalledWith('无法保存桌面端设置', expect.any(Error))
     warn.mockRestore()
+  })
+})
+
+describe('更新偏好', () => {
+  it('没有偏好时用默认值', () => {
+    expect(readUpdatePreferences()).toEqual({ checkOnLaunch: true, intervalHours: 6 })
+  })
+
+  it('保存偏好时保留其他桌面设置', () => {
+    writePrefs({ port: 8790 })
+    expect(writeUpdatePreferences({ checkOnLaunch: false, intervalHours: 3 })).toEqual({
+      checkOnLaunch: false,
+      intervalHours: 3,
+    })
+    expect(readPrefs()).toEqual({
+      port: 8790,
+      updates: { checkOnLaunch: false, intervalHours: 3 },
+    })
+    expect(readUpdatePreferences()).toEqual({ checkOnLaunch: false, intervalHours: 3 })
+  })
+
+  it('损坏或非法的偏好回退默认值，非法取值不写入', () => {
+    writeFileSync(
+      join(electron.dir, 'desktop.json'),
+      JSON.stringify({ updates: { checkOnLaunch: 'yes', intervalHours: 5 } }),
+    )
+    expect(readUpdatePreferences()).toEqual({ checkOnLaunch: true, intervalHours: 6 })
+    expect(writeUpdatePreferences({ intervalHours: 5 })).toEqual({
+      checkOnLaunch: true,
+      intervalHours: 6,
+    })
+    expect(readUpdatePreferences()).toEqual({ checkOnLaunch: true, intervalHours: 6 })
   })
 })
 

@@ -36,6 +36,9 @@ const bridge: DesktopBridge = {
   checkForUpdates: () => ipcRenderer.invoke('plein:update-check'),
   downloadUpdate: () => ipcRenderer.invoke('plein:update-download'),
   installUpdate: () => ipcRenderer.invoke('plein:update-install'),
+  getUpdatePreferences: () => ipcRenderer.invoke('plein:update-preferences'),
+  setUpdatePreferences: (preferences) =>
+    ipcRenderer.invoke('plein:update-set-preferences', preferences),
   onUpdateState: (listener) => on('plein:update-state', listener),
 }
 

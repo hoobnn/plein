@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { type GroupRunSummary, type JobStatus } from './runs'
 
 /**
@@ -74,8 +75,34 @@ export interface DesktopUpdateState {
   release?: DesktopUpdateRelease
   progress?: DesktopUpdateProgress
   checkedAt?: number
+  /** 下次自动检查的时刻；没有安排检查时没有 */
+  nextCheckAt?: number
   error?: { operation: 'check' | 'download' | 'install'; message: string }
   reason?: string
+}
+
+/** 应用打开期间的检查间隔（小时）；0 表示不定期检查 */
+export const UpdateIntervalHours = z.union([
+  z.literal(0),
+  z.literal(1),
+  z.literal(3),
+  z.literal(6),
+  z.literal(12),
+  z.literal(24),
+])
+export type DesktopUpdateIntervalHours = z.infer<typeof UpdateIntervalHours>
+
+/** 自动更新偏好：启动时是否检查、应用打开期间多久检查一次 */
+export const UpdatePreferences = z.object({
+  checkOnLaunch: z.boolean(),
+  intervalHours: UpdateIntervalHours,
+})
+export type DesktopUpdatePreferences = z.infer<typeof UpdatePreferences>
+
+/** 默认启动时检查一次，应用打开期间每 6 小时检查一次 */
+export const DEFAULT_UPDATE_PREFERENCES: DesktopUpdatePreferences = {
+  checkOnLaunch: true,
+  intervalHours: 6,
 }
 
 export interface DesktopBridge {
@@ -95,4 +122,8 @@ export interface DesktopBridge {
   downloadUpdate(): Promise<void>
   installUpdate(): Promise<void>
   onUpdateState(listener: (state: DesktopUpdateState) => void): () => void
+  /** 读取自动更新偏好 */
+  getUpdatePreferences(): Promise<DesktopUpdatePreferences>
+  /** 保存自动更新偏好；取值不合法时主进程拒绝写入 */
+  setUpdatePreferences(preferences: DesktopUpdatePreferences): Promise<DesktopUpdatePreferences>
 }

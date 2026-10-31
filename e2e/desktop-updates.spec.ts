@@ -85,6 +85,14 @@ async function bridge(
             })
           return Promise.resolve(state)
         },
+        getUpdatePreferences: () => {
+          calls.push('preferences')
+          return Promise.resolve({ checkOnLaunch: true, intervalHours: 6 })
+        },
+        setUpdatePreferences: (preferences) => {
+          calls.push('set-preferences')
+          return Promise.resolve(preferences)
+        },
         checkForUpdates: async () => {
           calls.push('check')
           emit({ ...state, phase: 'checking', error: undefined })

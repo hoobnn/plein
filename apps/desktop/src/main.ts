@@ -147,21 +147,23 @@ async function boot() {
       : null,
   )
   // 更新操作只接受当前主页面；页面重载或窗口重建后先读取主进程快照。
-  const updateHandlers = {
+  const updateHandlers: Record<string, (...args: unknown[]) => unknown> = {
     'plein:update-state': () => updater.getState(),
     'plein:update-check': () => updater.checkForUpdates(),
     'plein:update-download': () => updater.download(),
     'plein:update-install': () => updater.install(),
+    'plein:update-preferences': () => updater.getPreferences(),
+    'plein:update-set-preferences': (preferences) => updater.setPreferences(preferences),
   }
   for (const [channel, handle] of Object.entries(updateHandlers)) {
-    ipcMain.handle(channel, (event) => {
+    ipcMain.handle(channel, (event, ...args) => {
       if (
         !window ||
         event.sender !== window.webContents ||
         event.senderFrame !== window.webContents.mainFrame
       )
         throw new Error('更新操作仅限当前主窗口')
-      return handle()
+      return handle(...args)
     })
   }
   const dir = dataDir()

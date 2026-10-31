@@ -51,6 +51,8 @@ describe('桌面页面桥', () => {
     await bridge.checkForUpdates()
     await bridge.downloadUpdate()
     await bridge.installUpdate()
+    await bridge.getUpdatePreferences()
+    await bridge.setUpdatePreferences({ checkOnLaunch: false, intervalHours: 3 })
     expect(electron.invoke.mock.calls).toEqual([
       ['plein:native-edit', 'undo'],
       ['plein:open-data-dir'],
@@ -59,6 +61,8 @@ describe('桌面页面桥', () => {
       ['plein:update-check'],
       ['plein:update-download'],
       ['plein:update-install'],
+      ['plein:update-preferences'],
+      ['plein:update-set-preferences', { checkOnLaunch: false, intervalHours: 3 }],
     ])
   })
 
