@@ -1,4 +1,4 @@
-import type { CleanupPreview } from '@plein/protocol'
+import type { BackupRestored, CleanupPreview } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useId, useRef, useState } from 'react'
 import { Switch } from '../../ui/Switch'
@@ -42,7 +42,7 @@ export function DataMaintenance() {
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [preview, setPreview] = useState<CleanupPreview | null>(null)
-  const [restored, setRestored] = useState<string | null>(null)
+  const [restored, setRestored] = useState<BackupRestored | null>(null)
   const feedback = useRef<HTMLDivElement>(null)
   const cleanupPreview = useRef<HTMLDivElement>(null)
   const inspectButton = useRef<HTMLButtonElement>(null)
@@ -121,8 +121,14 @@ export function DataMaintenance() {
           {restored && (
             <div className="rounded-lg bg-surface-2 p-3 text-xs">
               <p>
-                已恢复到：<code className="break-all">{restored}</code>
+                已恢复到：<code className="break-all">{restored.path}</code>
               </p>
+              {restored.missingAssets.length > 0 && (
+                <p className="mt-2">
+                  备份时有 {restored.missingAssets.length}{' '}
+                  个素材因符号链接未纳入副本，恢复结果里同样缺失。
+                </p>
+              )}
               <p className="mt-2 text-ink-subtle">
                 当前数据仍在使用。先关闭 Plein，再以此目录作为 PLEIN_DATA_DIR
                 启动服务；桌面端可将副本中的文件复制到原数据目录。不要在运行时覆盖数据库。
@@ -427,7 +433,7 @@ export function DataMaintenance() {
               onClick={() =>
                 void perform(async () => {
                   const copy = await maintenanceApi.restoreCopy(backup.id)
-                  setRestored(copy.path)
+                  setRestored(copy)
                   return '完整性校验通过，已恢复到新目录'
                 })
               }

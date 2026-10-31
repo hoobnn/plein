@@ -23,6 +23,8 @@ export interface LocalBackup {
   path: string
   /** 未纳入备份的符号链接路径（相对数据目录）。 */
   skippedSymlinks: string[]
+  /** 原文件被符号链接替换而未纳入备份的素材 id。 */
+  missingAssets: string[]
 }
 
 export interface MaintenanceStatus {
@@ -75,4 +77,6 @@ export interface BackupRestored {
   path: string
   /** 在一个新目录生成完整副本；切换前先关闭 Plein。 */
   restartRequired: true
+  /** 备份时原文件是符号链接而未纳入副本的素材 id。 */
+  missingAssets: string[]
 }

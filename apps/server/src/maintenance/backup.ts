@@ -32,6 +32,8 @@ const Manifest = z.object({
   files: z.array(File),
   /** 打包时遇到、未纳入备份的符号链接（相对数据目录）；旧清单没有该字段。 */
   skippedSymlinks: z.array(z.string()).default([]),
+  /** 原文件被符号链接替换而未纳入备份的素材 id；旧清单没有该字段。 */
+  missingAssets: z.array(z.string().regex(/^[0-9a-f]{64}$/)).default([]),
 })
 export type BackupManifest = z.infer<typeof Manifest>
 const CONFIGS = new Set([
@@ -76,6 +78,7 @@ export function backupInfo(dir: string, m: BackupManifest): LocalBackup {
     files: m.files.length,
     path: dir,
     skippedSymlinks: m.skippedSymlinks,
+    missingAssets: m.missingAssets,
   }
 }
 
@@ -120,9 +123,20 @@ export async function writeBackup(deps: {
     // 遍历到的符号链接不打包也不让备份失败，只把路径记进清单供用户查看；
     // assets 整体被换成链接时这里的值就是 ['assets']。
     const skippedSymlinks = await symlinksIn(deps.dataDir, 'assets')
+    const missingAssets = new Set<string>()
+    const rootLinked = skippedSymlinks.includes('assets')
     for (const id of assetIds) {
-      if (!physicalPaths.has(`assets/${id.slice(0, 2)}/${id}`))
-        throw new Error(`素材文件缺失，未生成不完整备份：${id}`)
+      const path = `assets/${id.slice(0, 2)}/${id}`
+      if (physicalPaths.has(path)) continue
+      // 原文件被换成链接（或整个 assets 目录是链接）时跳过并登记缺失，
+      // 备份照常生成；除链接之外的原因缺失仍然拒绝，不产生不完整备份。
+      if (rootLinked) {
+        missingAssets.add(id)
+        continue
+      }
+      const stat = await lstat(join(deps.dataDir, path)).catch(() => null)
+      if (!stat?.isSymbolicLink()) throw new Error(`素材文件缺失，未生成不完整备份：${id}`)
+      missingAssets.add(id)
     }
     for (const file of physical) {
       const id = file.path.split('/')[2]?.split('.')[0]
@@ -138,6 +152,11 @@ export async function writeBackup(deps: {
     }
     for (const ref of spoolRefs) {
       const path = `job-outputs/${ref.id}`
+      // 暂存文件被换成链接同样跳过并记录，恢复时按 skippedSymlinks 放行。
+      if ((await lstat(join(deps.dataDir, path)).catch(() => null))?.isSymbolicLink()) {
+        skippedSymlinks.push(path)
+        continue
+      }
       try {
         const copied = await copyChecked(join(deps.dataDir, path), join(part, path))
         if (copied.bytes !== ref.bytes || copied.sha256 !== ref.sha256)
@@ -181,6 +200,7 @@ export async function writeBackup(deps: {
       containsCredentials: true,
       files,
       skippedSymlinks,
+      missingAssets: [...missingAssets],
     }
     await atomicJson(join(part, 'manifest.json'), manifest)
     await rename(part, dest)
@@ -194,8 +214,9 @@ export async function writeBackup(deps: {
 /**
  * 可独立调用的离线恢复入口：目标必须不存在；完整校验后原子发布新目录。
  * 不覆盖正在运行的 dataDir；服务切换目录前必须关闭。
+ * 返回已登记缺失（missingAssets）而未纳入副本的素材 id，供调用方提示。
  */
-export async function restoreBackup(source: string, destination: string): Promise<void> {
+export async function restoreBackup(source: string, destination: string): Promise<string[]> {
   if (!(await lstat(source)).isDirectory()) throw new Error('备份目录不合法')
   const manifest = await backupManifest(source)
   try {
@@ -221,18 +242,24 @@ export async function restoreBackup(source: string, destination: string): Promis
       const assetId = /^assets\/[0-9a-f]{2}\/([0-9a-f]{64})$/.exec(file.path)?.[1]
       if (assetId && assetId !== copied.sha256) throw new Error(`素材哈希不匹配：${file.path}`)
     }
+    const missingAssets: string[] = []
     const sqlite = new Database(join(part, 'plein.db'), { readonly: true })
     try {
       if (sqlite.pragma('integrity_check', { simple: true }) !== 'ok')
         throw new Error('备份数据库完整性检查失败')
       const rows = sqlite.prepare('SELECT DISTINCT id FROM assets').all() as Array<{ id: string }>
       const paths = new Set(manifest.files.map((f) => f.path))
-      if (rows.some((r) => !paths.has(`assets/${r.id.slice(0, 2)}/${r.id}`)))
-        throw new Error('备份缺少数据库引用的素材')
+      for (const row of rows) {
+        const path = `assets/${row.id.slice(0, 2)}/${row.id}`
+        if (paths.has(path)) continue
+        // 只有清单登记过的缺失（备份时原文件是符号链接）才放行。
+        if (!manifest.missingAssets.includes(row.id)) throw new Error('备份缺少数据库引用的素材')
+        missingAssets.push(row.id)
+      }
       for (const ref of await storedOutputSpoolRefs(sqlite, part)) {
         const path = `job-outputs/${ref.id}`
         const file = manifest.files.find((entry) => entry.path === path)
-        if (!file && ref.state === 'writing') continue
+        if (!file && (ref.state === 'writing' || manifest.skippedSymlinks.includes(path))) continue
         if (!file || file.bytes !== ref.bytes || file.sha256 !== ref.sha256)
           throw new Error(`备份缺少有效的平台输出暂存：${ref.id}`)
       }
@@ -240,6 +267,7 @@ export async function restoreBackup(source: string, destination: string): Promis
       sqlite.close()
     }
     await rename(part, destination)
+    return missingAssets
   } catch (error) {
     await rm(part, { recursive: true, force: true })
     throw error

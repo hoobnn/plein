@@ -303,8 +303,8 @@ export class MaintenanceService {
       const backup = (await this.backupList()).find((b) => b.id === id)
       if (!backup) throw new MaintenanceError('not_found', '备份不存在')
       const path = join(this.root, 'restored', randomUUID())
-      await restoreBackup(backup.path, path)
-      return { path, restartRequired: true }
+      const missingAssets = await restoreBackup(backup.path, path)
+      return { path, restartRequired: true, missingAssets }
     })
   }
 

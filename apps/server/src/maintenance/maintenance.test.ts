@@ -655,6 +655,64 @@ describe('本机数据维护', () => {
     expect((await f.service.status()).skippedSymlinks).toContain('assets')
   })
 
+  it('数据库素材原文件是链接时备份跳过并登记缺失，恢复放行；未登记的缺失仍拒绝', async () => {
+    const f = await fixture(),
+      linked = await f.asset(),
+      kept = await f.asset()
+    const original = f.assets.originalPath(linked.id)
+    await rm(original)
+    await symlink('/private/tmp', original)
+    const backup = await f.service.backup()
+    expect(backup.missingAssets).toEqual([linked.id])
+    expect(backup.skippedSymlinks).toContain(`assets/${linked.id.slice(0, 2)}/${linked.id}`)
+    // 已登记的缺失允许恢复，并在结果里提示
+    const copy = await f.service.restoreCopy(backup.id)
+    expect(copy.missingAssets).toEqual([linked.id])
+    // 未登记的缺失仍然拒绝：清单里抹掉一个正常素材（旧版备份的不一致事实）
+    const manifest = JSON.parse(await readFile(join(backup.path, 'manifest.json'), 'utf8')) as {
+      files: Array<{ path: string }>
+    }
+    manifest.files = manifest.files.filter(
+      (file) => file.path !== `assets/${kept.id.slice(0, 2)}/${kept.id}`,
+    )
+    await atomicJson(join(backup.path, 'manifest.json'), manifest)
+    const dest = join(f.root, 'restore-should-fail')
+    await expect(restoreBackup(backup.path, dest)).rejects.toThrow('备份缺少数据库引用的素材')
+    expect(existsSync(dest)).toBe(false)
+  })
+
+  it('平台输出暂存文件是链接时跳过并记录，备份与恢复照常完成', async () => {
+    const f = await fixture()
+    f.canvas('spool-canvas')
+    const binding = { ownerId: 'local', jobId: 'spool-link', callKey: 'generate', outputIndex: 0 }
+    const bytes = new Uint8Array([1, 2, 3])
+    const ref = await f.assets.outputSpool.write(
+      f.assets.outputSpool.describe(bytes, binding),
+      bytes,
+      binding,
+    )
+    f.db.$client
+      .prepare(
+        'INSERT INTO jobs(id,owner_id,canvas_id,node_id,node_type,status,calls,created_at) VALUES(?,?,?,?,?,?,?,?)',
+      )
+      .run(
+        'spool-link',
+        'local',
+        'spool-canvas',
+        'node',
+        'plein/speech',
+        'failed',
+        JSON.stringify({ generate: { state: 'fetched', outputs: [{ type: 'file', spool: ref }] } }),
+        f.now(),
+      )
+    await rm(join(f.root, 'job-outputs', ref.id))
+    await symlink('/private/tmp', join(f.root, 'job-outputs', ref.id))
+    const backup = await f.service.backup()
+    expect(backup.skippedSymlinks).toContain(`job-outputs/${ref.id}`)
+    const copy = await f.service.restoreCopy(backup.id)
+    expect(copy.missingAssets).toEqual([])
+  })
+
   it('未完成的回收清单在重启时自动恢复，保留文件和登记信息', async () => {
     const f = await fixture(),
       asset = await f.asset()

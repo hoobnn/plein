@@ -52,7 +52,7 @@ function serve({ restore }: Handlers = {}) {
     if (path.includes('/restore-copy'))
       return (
         restore?.(request) ??
-        Response.json({ path: '/tmp/restored/b1', assets: 3, bytes: 10, createdAt: 1 })
+        Response.json({ path: '/tmp/restored/b1', restartRequired: true, missingAssets: [] })
       )
     return undefined
   })
@@ -67,7 +67,7 @@ describe('恢复副本的反馈', () => {
       restore: () =>
         failing
           ? Response.json({ error: 'test_failure', message: '恢复暂不可用' }, { status: 503 })
-          : Response.json({ path: '/tmp/restored/b1', assets: 3, bytes: 10, createdAt: 1 }),
+          : Response.json({ path: '/tmp/restored/b1', restartRequired: true, missingAssets: [] }),
     })
     renderApp(<DataMaintenance />)
     await waitFor(() => expect(restoreButton()).toBeTruthy())
@@ -83,6 +83,23 @@ describe('恢复副本的反馈', () => {
     expect(screen.getByText(/已恢复到：/).textContent).toContain('/tmp/restored/b1')
     // 后续说明要写清楚：当前数据仍在用，怎么用这个副本
     expect(screen.getByText(/当前数据仍在使用/)).toBeTruthy()
+  })
+
+  it('恢复结果提示备份时因符号链接缺失的素材', async () => {
+    serve({
+      restore: () =>
+        Response.json({
+          path: '/tmp/restored/b1',
+          restartRequired: true,
+          missingAssets: ['a'.repeat(64), 'b'.repeat(64)],
+        }),
+    })
+    renderApp(<DataMaintenance />)
+    await waitFor(() => expect(restoreButton()).toBeTruthy())
+
+    restoreButton().click()
+    await waitFor(() => expect(screen.getByText(/已恢复到：/)).toBeTruthy())
+    expect(screen.getByText(/备份时有 2 个素材因符号链接未纳入副本/)).toBeTruthy()
   })
 
   it('恢复完成后执行别的维护操作，不再显示上一次的恢复指引', async () => {
