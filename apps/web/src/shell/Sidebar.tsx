@@ -59,7 +59,8 @@ export function Sidebar({ open }: { open: boolean }) {
       className="plein-sidebar"
       style={{ width }}
     >
-      <div className="px-3 pt-3 pb-1">
+      {/* 紧凑侧栏：外层内边距统一 12（--panel-pad-sm），与搜索、列表、页脚对齐 */}
+      <div className="px-(--panel-pad-sm) pt-3 pb-1">
         <div role="tablist" aria-label="侧栏内容" className="ui-slide flex gap-1">
           <SlidePill variant="tab" />
           {TABS.filter((t) => canvasId || t.id === 'layers').map((t) => (
@@ -91,7 +92,7 @@ export function Sidebar({ open }: { open: boolean }) {
         )}
       </SlideSwap>
       {engine && (
-        <footer className="flex h-10 flex-none items-center border-t border-line px-4">
+        <footer className="flex h-10 flex-none items-center border-t border-line px-(--panel-pad-sm)">
           {current === 'assets' ? <AssetCount /> : <Count engine={engine} />}
         </footer>
       )}
@@ -153,7 +154,7 @@ function Count({ engine }: { engine: Engine }) {
     [engine, version],
   )
   // oxlint-enable react-hooks/exhaustive-deps
-  return <span className="px-2 text-xs text-ink-subtle tabular-nums">共 {n} 个元素</span>
+  return <span className="text-xs text-ink-subtle tabular-nums">共 {n} 个元素</span>
 }
 
 function AssetCount() {
@@ -167,7 +168,7 @@ function AssetCount() {
         ? `共 ${n} 项 · 未更新`
         : '资产库未读取'
       : `共 ${n} 项资产`
-  return <span className="px-2 text-xs text-ink-subtle tabular-nums">{label}</span>
+  return <span className="text-xs text-ink-subtle tabular-nums">{label}</span>
 }
 
 /** 元素中心是否落在没被侧栏等浮层挡住的视口里 */
@@ -460,7 +461,7 @@ function Layers({ engine }: { engine: Engine }) {
 
   return (
     <>
-      <div className="flex flex-none items-center gap-1 px-2 py-2">
+      <div className="flex flex-none items-center gap-1 px-(--panel-pad-sm) py-2">
         {searching ? (
           <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md bg-surface-2 px-2 text-ink-subtle">
             <Icon name="search" size={14} />
@@ -520,7 +521,7 @@ function Layers({ engine }: { engine: Engine }) {
         )}
       </div>
       {searching && type !== 'all' && (
-        <div className="flex flex-none px-3 pb-2">
+        <div className="flex flex-none px-(--panel-pad-sm) pb-2">
           <button
             type="button"
             className="ui-btn ui-btn-secondary ui-btn-sm gap-1.5"
@@ -559,7 +560,7 @@ function Layers({ engine }: { engine: Engine }) {
         role="tree"
         aria-label="画布元素"
         aria-multiselectable="true"
-        className="ui-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-2"
+        className="ui-scrollbar min-h-0 flex-1 overflow-y-auto px-(--panel-pad-sm) pb-2"
       >
         {rows.map((r) => (
           <LayerRow
@@ -668,7 +669,7 @@ const LayerRow = memo(function LayerRow({
           actions.navigate(el.id, key)
         }
       }}
-      style={{ paddingLeft: 4 + depth * 20 }}
+      style={{ paddingLeft: depth * 20 }}
       className="plein-layer group"
     >
       {el.kind === 'frame' && parent ? (
@@ -695,7 +696,8 @@ const LayerRow = memo(function LayerRow({
           value={el.name ?? title}
           label="元素名称"
           onDone={onRenamed}
-          className="h-7 min-w-0 flex-1 rounded-md px-1.5 text-sm"
+          // 内边距与展示态文字一致（0）：进入编辑时文字不跳动，输入框底色与行内容对齐
+          className="h-7 min-w-0 flex-1 rounded-md text-sm"
         />
       ) : (
         <span className="min-w-0 flex-1 truncate text-sm">{title}</span>
@@ -787,7 +789,7 @@ function Assets({ engine }: { engine: Engine | null }) {
 
   return (
     <>
-      <div className="ui-scrollbar min-h-0 flex-1 overflow-y-auto px-2 py-2">
+      <div className="ui-scrollbar min-h-0 flex-1 overflow-y-auto px-(--panel-pad-sm) py-2">
         <LibraryReadStatus loaded={loaded} loading={loading} error={error} load={load} />
         {placement.error && (
           <p role="alert" className="mb-3 rounded-lg bg-danger/5 px-3 py-2 text-xs text-danger">
@@ -854,7 +856,7 @@ function Assets({ engine }: { engine: Engine | null }) {
           />
         )}
       </div>
-      <div className="flex-none px-3 pb-3">
+      <div className="flex-none px-(--panel-pad-sm) pb-3">
         <button
           type="button"
           onClick={() => show('character')}

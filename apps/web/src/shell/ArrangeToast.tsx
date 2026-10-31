@@ -86,9 +86,12 @@ function Bar({
     <div
       role="status"
       {...useExit()}
-      className="ui-bar ui-bar-sm ui-pop ui-pop-up pointer-events-auto gap-3 pr-1.5 pl-4"
+      className="ui-bar ui-bar-sm ui-pop ui-pop-up pointer-events-auto h-auto min-h-10 gap-3 pr-1.5 pl-4"
     >
-      <span>{readOnly ? '当前只读，暂时无法还原' : '是否保留此次整理结果？'}</span>
+      {/* 与带操作的提示条共用 40 高、28 按钮、12 间距；文字折行时自然增高 */}
+      <span className="min-w-0">
+        {readOnly ? '当前只读，暂时无法还原' : '是否保留此次整理结果？'}
+      </span>
       <div className="flex items-center gap-1">
         <button
           type="button"
