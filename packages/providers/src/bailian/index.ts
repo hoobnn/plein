@@ -286,7 +286,7 @@ export const bailianProvider = defineProvider({
       id,
       title: id,
       capabilities: ['image.generate' as const],
-      limits: { aspectRatios: IMAGE_ASPECTS, references: { max: 3 } },
+      limits: { aspectRatios: IMAGE_ASPECTS, count: { max: 6 }, references: { max: 3 } },
       options: z.object({
         negative_prompt: z
           .string()
@@ -299,7 +299,7 @@ export const bailianProvider = defineProvider({
       id: 'wan2.7-image-pro',
       title: 'wan2.7-image-pro',
       capabilities: ['image.generate' as const],
-      limits: { aspectRatios: IMAGE_ASPECTS },
+      limits: { aspectRatios: IMAGE_ASPECTS, count: { max: 4 }, references: { max: 9 } },
       options: z.object({
         negative_prompt: z
           .string()
@@ -316,7 +316,7 @@ export const bailianProvider = defineProvider({
     {
       id: 'wanx2.1-imageedit',
       title: '万相图像编辑（局部重绘）',
-      description: '按蒙版只重绘白色区域，原生蒙版能力',
+      description: 'Legacy，仅华北2（北京）地域；按蒙版只重绘白色区域，原生蒙版能力',
       capabilities: ['image.edit' as const, 'image.process' as const],
       limits: { count: { max: 4 }, imageOperations: ['upscale' as const, 'outpaint' as const] },
     },
@@ -329,7 +329,7 @@ export const bailianProvider = defineProvider({
         resolutions: ['480P', '720P', '1080P'],
         duration: { min: 2, max: 30 },
         references: { max: 10 },
-        referenceMedia: { video: 3, audio: 3 },
+        referenceMedia: { video: 5, audio: 5 },
         videoModes: ['text', 'image', 'frames', 'reference'] as const,
       },
       options: z.object({
@@ -345,6 +345,14 @@ export const bailianProvider = defineProvider({
       title: 'qwen3-tts-flash',
       capabilities: ['audio.speech' as const],
       limits: { speed: false as const, instruction: false },
+    },
+    {
+      id: 'qwen3-tts-instruct-flash',
+      title: 'qwen3-tts-instruct-flash',
+      description: '已于 2026-10-10 下线；仅保留旧画布引用，请改用 qwen3-tts-flash 或豆包语音',
+      deprecated: true,
+      capabilities: ['audio.speech' as const],
+      limits: { speed: false as const },
     },
   ],
   async test(ctx) {

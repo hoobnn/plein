@@ -231,6 +231,20 @@ describe('百炼 API 契约', () => {
     expect(sent.input.messages[0].content[1]).toEqual({ image: 'data:image/png;base64,AQID' })
     expect(sent.parameters).toMatchObject({ size: '1024*1024', n: 2 })
   })
+  it('目录采用官方图像数量与万相视频参考素材上限', () => {
+    expect(
+      bailianProvider.models.find((model) => model.id === 'qwen-image-3.0-pro')?.limits,
+    ).toMatchObject({ count: { max: 6 }, references: { max: 3 } })
+    expect(
+      bailianProvider.models.find((model) => model.id === 'wan2.7-image-pro')?.limits,
+    ).toMatchObject({ count: { max: 4 }, references: { max: 9 } })
+    for (const id of ['wan3.0-video', 'wan3.0-video-prime']) {
+      expect(bailianProvider.models.find((model) => model.id === id)?.limits).toMatchObject({
+        referenceMedia: { video: 5, audio: 5 },
+      })
+    }
+  })
+
   it('异步视频可跨上下文轮询、取消，未知状态不无限轮询', async () => {
     const { ctx, fetch } = setup([
       { output: { task_id: 'task/1', task_status: 'PENDING' } },
@@ -398,8 +412,10 @@ describe('百炼 API 契约', () => {
       language_type: 'Auto',
     })
   })
-  it('下线 instruct 模型和不支持的语气字段在发包前拒绝', async () => {
-    expect(bailianProvider.models.some((m) => m.id === 'qwen3-tts-instruct-flash')).toBe(false)
+  it('下线 instruct 模型保留旧画布引用，不支持的语气字段在发包前拒绝', async () => {
+    expect(
+      bailianProvider.models.find((m) => m.id === 'qwen3-tts-instruct-flash'),
+    ).toMatchObject({ deprecated: true })
     const { ctx, fetch } = setup()
     for (const req of [
       { model: 'qwen3-tts-instruct-flash', input: { text: '你好' } },
