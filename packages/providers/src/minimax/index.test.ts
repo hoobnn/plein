@@ -101,7 +101,10 @@ describe('MiniMax 官方 HTTP 契约', () => {
       { type: 'text', text: '描述图片' },
       { type: 'image_url', image_url: { url: 'data:image/png;base64,AQID' } },
     ])
-    expect(result).toMatchObject({ state: 'succeeded', outputs: [{ type: 'text', text: '一只猫' }] })
+    expect(result).toMatchObject({
+      state: 'succeeded',
+      outputs: [{ type: 'text', text: '一只猫' }],
+    })
   })
 
   it('M2.7 保留迁移标记并拒绝图片，在计费请求前失败', async () => {
