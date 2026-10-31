@@ -42,7 +42,13 @@ export function ModelPicker({
     .filter((p) => p.models.length > 0)
   const current = providers
     .flatMap((p) =>
-      p.models.map((m) => ({ ref: `${p.id}:${m.id}`, title: m.title, provider: p.id })),
+      p.models.map((m) => ({
+        ref: `${p.id}:${m.id}`,
+        title: m.title,
+        provider: p.id,
+        deprecated: m.deprecated,
+        description: m.description,
+      })),
     )
     .find((m) => m.ref === value)
   const pick = (v: string) => {
@@ -80,20 +86,34 @@ export function ModelPicker({
       </span>
     </button>
   )
-  const option = (v: string, title: string, description?: string) => (
+  const deprecatedTag = (description?: string) => (
+    <span className="ui-tag flex-none text-ink-subtle" title={description}>
+      已弃用
+    </span>
+  )
+  const option = (
+    v: string,
+    title: string,
+    description?: string,
+    model?: { deprecated?: true; description?: string },
+  ) => (
     <button
       key={v}
       type="button"
       role="option"
       aria-selected={v === value}
+      title={model?.description ?? description}
       onClick={() => pick(v)}
       className="ui-menu-item items-start"
     >
       <ProviderIcon provider={v.slice(0, v.indexOf(':'))} />
       <span className="ui-menu-text">
-        <span className="truncate">
-          {title}
-          {v === fallback ? ' · 默认' : ''}
+        <span className="flex min-w-0 items-center gap-1">
+          <span className="truncate">
+            {title}
+            {v === fallback ? ' · 默认' : ''}
+          </span>
+          {model?.deprecated && deprecatedTag(model.description)}
         </span>
         <span className="ui-menu-desc truncate">{v}</span>
         {description && <span className="ui-menu-desc line-clamp-2">{description}</span>}
@@ -108,7 +128,7 @@ export function ModelPicker({
         type="button"
         aria-label="模型"
         aria-expanded={!!anchor}
-        title={current?.title ?? '选择模型'}
+        title={current?.description ?? current?.title ?? '选择模型'}
         onClick={(e) => {
           setTab(home)
           setQuery('')
@@ -120,6 +140,7 @@ export function ModelPicker({
         <span className="min-w-0 text-left text-sm whitespace-nowrap">
           {current?.title ?? '选择模型'}
         </span>
+        {current?.deprecated && deprecatedTag(current.description)}
         <Icon name="chevronDown" size={14} />
       </button>
       <Presence>
@@ -143,7 +164,7 @@ export function ModelPicker({
                 className="ui-scrollbar max-h-80 overflow-auto"
               >
                 {matches.length ? (
-                  matches.map((m) => option(m.ref, `${m.provider} · ${m.title}`, m.description))
+                  matches.map((m) => option(m.ref, `${m.provider} · ${m.title}`, m.description, m))
                 ) : (
                   <p className="p-3 text-xs text-ink-muted">没有匹配的模型</p>
                 )}
@@ -158,7 +179,7 @@ export function ModelPicker({
                   >
                     {recent.flatMap((ref) => {
                       const m = all.find((item) => item.ref === ref)
-                      return m ? [option(m.ref, `最近 · ${m.title}`, m.provider)] : []
+                      return m ? [option(m.ref, `最近 · ${m.title}`, m.provider, m)] : []
                     })}
                   </div>
                 )}
@@ -185,7 +206,7 @@ export function ModelPicker({
                       className="flex flex-col gap-0.5"
                     >
                       {shown!.models.map((m) =>
-                        option(`${shown!.id}:${m.id}`, m.title, m.description),
+                        option(`${shown!.id}:${m.id}`, m.title, m.description, m),
                       )}
                     </SlideSwap>
                   </div>
