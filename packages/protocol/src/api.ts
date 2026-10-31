@@ -61,6 +61,8 @@ export const API = {
   /** Provider id 形如 vendor/name，直接作为两段路径 */
   providerConfig: (id: string) => `/api/providers/${id}/config`,
   providerTest: (id: string) => `/api/providers/${id}/test`,
+  /** 远端模型列表：状态随目录返回，手动刷新用 POST …/refresh */
+  providerRemoteModelsRefresh: (id: string) => `/api/providers/${id}/remote-models/refresh`,
   modelDefaults: '/api/model-defaults',
   /** 运行画布上的一个节点；状态与结果经 Yjs 同步回画布 */
   nodeRun: (canvasId: string, nodeId: string) =>

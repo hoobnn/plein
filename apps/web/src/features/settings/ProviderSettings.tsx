@@ -10,6 +10,7 @@ import { Switch } from '../../ui/Switch'
 import { confirmDialog, choiceDialog } from '../../ui/Dialog'
 import { Group } from './SettingsGroup'
 import { ProviderCredentials, authSecretNames } from './ProviderCredentials'
+import { RemoteModels } from './RemoteModels'
 import { removalImpact } from './credentialUsage'
 import {
   credentialCardDirty,
@@ -500,11 +501,27 @@ export function ProviderRow({
     : shown
       ? { message: shown.message, error: shown.status === 'error' }
       : status
+  // 远端合并的标签：remote-only 带「新」，unlisted 标注未在远端列表；
+  // max-w-full + truncate 防长模型 ID 横向溢出，完整 ID 放 title
   const modelTags = (
     <div className="flex flex-wrap gap-1">
       {provider.models.map((m) => (
-        <span key={m.id} className="ui-tag">
-          {m.title}
+        <span
+          key={m.id}
+          className="ui-tag max-w-full"
+          title={
+            m.remoteOnly
+              ? `${m.id}（平台新发现，参数为通用默认）`
+              : m.remote === 'unlisted'
+                ? `${m.id}（平台模型列表里没有这个模型，可能已下线或无权限）`
+                : m.id
+          }
+        >
+          {m.remoteOnly && <span className="ui-tag ui-tag-accent">新</span>}
+          <span className="min-w-0 truncate">
+            {m.title}
+            {m.remote === 'unlisted' && ' · 未在远端列表'}
+          </span>
         </span>
       ))}
     </div>
@@ -698,6 +715,7 @@ export function ProviderRow({
           ) : provider.configured ? (
             <>
               {provider.models.length > 0 && modelTags}
+              <RemoteModels provider={provider} onRefreshed={onSaved} disabled={disabled} />
               <fieldset
                 ref={formFields}
                 disabled={locked}
@@ -868,9 +886,11 @@ function DefaultModels({
   const ready = catalog.providers.filter((p) => p.enabled && p.configured)
   const rows = CAPABILITY_ORDER.map((cap) => ({
     cap,
+    // 默认模型候选排除弃用与 remote-only：弃用不该再被新节点选中，
+    // remote-only 的通用参数未经平台验证
     options: ready.flatMap((p) =>
       p.models
-        .filter((m) => !m.deprecated && m.capabilities.includes(cap))
+        .filter((m) => !m.deprecated && !m.remoteOnly && m.capabilities.includes(cap))
         .map((m) => ({
           value: `${p.id}:${m.id}`,
           label: `${p.title} · ${m.title ?? m.id}`,

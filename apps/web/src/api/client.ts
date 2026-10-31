@@ -62,6 +62,7 @@ import {
   type ProviderConfigUpdate,
   type ProviderConfigView,
   type ProviderTestResult,
+  type RemoteModelsStatus,
   type RewritePrompt,
   type RewritePromptResult,
   type SessionInfo,
@@ -258,6 +259,9 @@ export const api = {
       API.providerTest(id),
       json('POST', credential ? { credential } : {}),
     ),
+  /** 手动刷新平台的远端模型列表；失败原因随返回的 RemoteModelsStatus 给出 */
+  refreshRemoteModels: (id: string) =>
+    request<RemoteModelsStatus>(API.providerRemoteModelsRefresh(id), json('POST', {})),
   rewritePrompt: (body: RewritePrompt, signal?: AbortSignal) =>
     request<RewritePromptResult>(API.promptRewrite, { ...json('POST', body), signal }),
 

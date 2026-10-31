@@ -31,12 +31,20 @@ export function ModelPicker({
   useEffect(() => {
     setRecent(readRecentModels(recentKey))
   }, [recentKey])
+  // remote-only 只有对话类能进生成器（宿主只对覆盖范围内的对话放开提交）；
+  // 其他能力的通用模型参数未经确认，仅在设置的模型列表里展示。
+  // 排序：内置在用在前，remote-only 随后（不会是弃用），已弃用置后
+  const submittable = (m: Catalog['providers'][number]['models'][number]) =>
+    !m.remoteOnly || m.capabilities.includes('text.chat')
   const providers = (catalog?.providers ?? [])
     .filter((p) => p.enabled && p.configured)
     .map((p) => ({
       ...p,
       models: deprecatedLast(
-        p.models.filter((m) => !node.capability || m.capabilities.includes(node.capability)),
+        p.models.filter(
+          (m) =>
+            submittable(m) && (!node.capability || m.capabilities.includes(node.capability)),
+        ),
       ),
     }))
     .filter((p) => p.models.length > 0)
@@ -47,6 +55,7 @@ export function ModelPicker({
         title: m.title,
         provider: p.id,
         deprecated: m.deprecated,
+        remoteOnly: m.remoteOnly,
         description: m.description,
       })),
     )
@@ -91,11 +100,18 @@ export function ModelPicker({
       已弃用
     </span>
   )
+  // remote-only 带「新」徽标：与「已弃用」可以同时出现的场景不冲突（remote-only 不会是弃用，
+  // 但两者共用同一渲染位置）
+  const remoteOnlyTag = () => (
+    <span className="ui-tag ui-tag-accent flex-none" title="平台新发现，参数为通用默认">
+      新
+    </span>
+  )
   const option = (
     v: string,
     title: string,
     description?: string,
-    model?: { deprecated?: true; description?: string },
+    model?: { deprecated?: true; remoteOnly?: boolean; description?: string },
   ) => (
     <button
       key={v}
@@ -113,9 +129,12 @@ export function ModelPicker({
             {title}
             {v === fallback ? ' · 默认' : ''}
           </span>
+          {model?.remoteOnly && remoteOnlyTag()}
           {model?.deprecated && deprecatedTag(model.description)}
         </span>
-        <span className="ui-menu-desc truncate">{v}</span>
+        <span className="ui-menu-desc truncate">
+          {model?.remoteOnly ? '平台新发现 · 参数为通用默认' : v}
+        </span>
         {description && <span className="ui-menu-desc line-clamp-2">{description}</span>}
       </span>
       {v === value && <Icon name="check" size={14} />}
@@ -140,6 +159,7 @@ export function ModelPicker({
         <span className="min-w-0 text-left text-sm whitespace-nowrap">
           {current?.title ?? '选择模型'}
         </span>
+        {current?.remoteOnly && remoteOnlyTag()}
         {current?.deprecated && deprecatedTag(current.description)}
         <Icon name="chevronDown" size={14} />
       </button>
