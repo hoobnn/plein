@@ -3,7 +3,6 @@ import type { Capability } from '@plein/plugin-sdk'
 import type { Catalog, ProviderConfigView, ProviderInfo, ProviderTestResult } from '@plein/protocol'
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api/client'
-import { Icon } from '../../ui/icons'
 import { ProviderIcon } from '../../ui/ProviderIcon'
 import { Select } from '../../ui/Select'
 import { type ObjectSchema, SchemaForm } from '../../ui/SchemaForm'
@@ -514,11 +513,6 @@ export function ProviderRow({
             className={`ui-btn ui-btn-xs flex-none ${open ? 'ui-btn-quiet' : 'ui-btn-secondary'}`}
           >
             {open ? '收起' : provider.configured ? '管理' : '配置密钥'}
-          </span>
-          <span
-            className={`mt-0.5 flex-none text-ink-subtle transition-transform ${open ? 'rotate-90' : ''}`}
-          >
-            <Icon name="chevronRight" size={14} />
           </span>
         </button>
         <Switch

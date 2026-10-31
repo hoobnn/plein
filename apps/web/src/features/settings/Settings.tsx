@@ -109,7 +109,7 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
           <SlideSwap
             index={sections.indexOf(current)}
             axis="y"
-            className="mx-auto flex w-full max-w-3xl flex-col gap-8"
+            className="flex w-full max-w-3xl flex-col gap-8"
             preserveState
           >
             {current.id === 'appearance' && (
