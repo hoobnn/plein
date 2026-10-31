@@ -1168,7 +1168,7 @@ function ShotSummary({
                   >
                     参考图将不送入
                   </span>
-                  {firstFrameCount !== undefined && (
+                  {firstFrameCount !== undefined && firstFrameCount > 0 && (
                     <span className="block text-ink-subtle">
                       首帧：已送入 {firstFrameCount} 张上游分镜图（来自 inputs.images）
                     </span>

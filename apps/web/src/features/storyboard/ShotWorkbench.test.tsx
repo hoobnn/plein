@@ -793,6 +793,32 @@ it('图生视频未送 @ 参考图时同时标明首帧已送入', async () => {
   expect(screen.getByText('首帧：已送入 1 张上游分镜图（来自 inputs.images）')).toBeTruthy()
 })
 
+it('首帧模式没有图片输入时不显示首帧送入数量', async () => {
+  const { doc, board, shots } = fixture(true)
+  addActor(doc)
+  bindCharacter(doc, board, shots, '@角色')
+  const input = summaryInput('video-one', '', [], ['ref'], 'unsupported')
+  input.params.mode = 'image'
+  input.inputs = { images: [] }
+  mockSummary(input)
+  renderApp(<ShotWorkbench />)
+  expect(await screen.findByText('参考图将不送入')).toBeTruthy()
+  expect(screen.queryByText(/首帧：已送入/)).toBeNull()
+})
+
+it('非首帧模式不显示首帧送入数量', async () => {
+  const { doc, board, shots } = fixture(true)
+  addActor(doc)
+  bindCharacter(doc, board, shots, '@角色')
+  const input = summaryInput('video-one', '', [], ['ref'], 'over_limit')
+  input.params.mode = 'reference'
+  input.inputs = { images: [{ type: 'image', assetId: 'connected-image' }] }
+  mockSummary(input)
+  renderApp(<ShotWorkbench />)
+  expect(await screen.findByText('参考图将不送入')).toBeTruthy()
+  expect(screen.queryByText(/首帧：已送入/)).toBeNull()
+})
+
 it('摘要按已有字段区分仅文字设定与已人工认可', async () => {
   const { doc, board, shots } = fixture(true)
   createElement(doc, {
