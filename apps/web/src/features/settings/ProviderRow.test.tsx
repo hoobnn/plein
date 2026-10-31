@@ -806,6 +806,100 @@ describe('密钥组', () => {
     expect(JSON.parse(writes(fetch)[0]![1]!.body as string).credentials.remove).toEqual(['cred-2'])
   })
 
+  it('保存触发后台拉取时 busy 立即解除，连续两次保存只有后一次轮询生效', async () => {
+    const row: ProviderInfo = {
+      ...provider,
+      id: 'plein/compatible',
+      title: '兼容对话渠道',
+      configured: true,
+      credentialCount: 0,
+      testScope: 'configuration',
+      settingsSchema: {
+        type: 'object',
+        properties: {
+          baseURL: { type: 'string', title: 'Base URL' },
+          model: { type: 'string', title: '模型 ID', list: 'compatible-model-ids' },
+        },
+      },
+      secrets: [{ name: 'COMPATIBLE_API_KEY', title: 'API Key' }],
+      supportsRemoteModels: true,
+      remoteModelsScope: [],
+    }
+    // 每次保存后的后台拉取由测试放行；视图按保存次数区分，验证只有最后一次生效
+    let stage: 'idle' | 'save1' | 'save2' | 'settled' = 'idle'
+    const viewFor = (): ProviderConfigView => ({
+      enabled: true,
+      settings: {},
+      secrets: {},
+      credentials: [],
+      activeCredential: null,
+      remoteModelCandidates:
+        stage === 'save1'
+          ? [{ id: 'gpt-1' }]
+          : stage === 'save2'
+            ? [{ id: 'gpt-2' }]
+            : stage === 'settled'
+              ? [{ id: 'gpt-final' }]
+              : [],
+      remoteModelsPending: stage === 'save1' || stage === 'save2',
+    })
+    let saved = 0
+    const stagesSeen: string[] = []
+    // 服务端回显保存后的 settings：保存成功后 dirty 清除，校验连接才可用
+    let savedSettings: Record<string, unknown> = { baseURL: 'https://a.example.com/v1' }
+    const { user } = renderRow(
+      {
+        get: () => {
+          if (stage !== 'idle') stagesSeen.push(stage)
+          return Response.json({ ...viewFor(), settings: savedSettings })
+        },
+        put: async (request) => {
+          const body = (await request.json()) as { settings?: Record<string, unknown> }
+          savedSettings = { ...savedSettings, ...body.settings }
+          stage = stage === 'save1' ? 'save2' : 'save1'
+          return Response.json({ ...viewFor(), settings: savedSettings })
+        },
+      },
+      { row, settings: { baseURL: 'https://a.example.com/v1' }, onSaved: () => (saved += 1) },
+    )
+    const urlInput = await screen.findByRole('textbox', { name: 'Base URL' })
+    const saveButton = () => screen.getByRole('button', { name: '保存' })
+
+    // 第一次保存：返回 pending 视图。busy 只等目录重载，不等后台拉取——
+    // 按钮恢复可用时结果还没放行（stage 仍是 save1），「拉取中」提示承担状态
+    fireEvent.change(urlInput, { target: { value: 'https://b.example.com/v1' } })
+    await user.click(saveButton())
+    await waitFor(() => expect(saveButton()).toHaveProperty('disabled', false))
+    expect(stage).toBe('save1')
+    expect(screen.getByText('正在后台拉取模型候选，完成后自动更新')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '校验连接' })).toHaveProperty('disabled', false)
+    expect(saved).toBe(1)
+
+    // 第二次保存：应中止第一次的等待，只有这一次的轮询结果会生效
+    fireEvent.change(urlInput, { target: { value: 'https://c.example.com/v1' } })
+    await user.click(saveButton())
+    await waitFor(() => expect(saved).toBe(2))
+    expect(saveButton()).toHaveProperty('disabled', false)
+
+    // 放行最终结果：两次被取代/未生效的中间候选都不出现，只有最终值
+    stage = 'settled'
+    await waitFor(
+      () =>
+        expect(document.querySelector('#compatible-model-ids option')?.getAttribute('value')).toBe(
+          'gpt-final',
+        ),
+      { timeout: 4000 },
+    )
+    // 界面上只有最终结果：被中止的第一次等待即便返回也直接丢弃，不会写回旧候选
+    const seen = Array.from(document.querySelectorAll('#compatible-model-ids option')).map(
+      (option) => option.getAttribute('value'),
+    )
+    expect(seen).toEqual(['gpt-final'])
+    expect(seen).not.toContain('gpt-1')
+    expect(seen).not.toContain('gpt-2')
+    expect(saved).toBe(3)
+  })
+
   it('删除当前组触发后台拉取时轮询等待，完成后刷新候选并解除禁用', async () => {
     // 兼容渠道样式的候选平台：列表只作「模型 ID」候选，按平台+密钥上下文缓存
     const row: ProviderInfo = {

@@ -252,18 +252,24 @@ export function ProviderRow({
   // 组件卸载时中止仍在进行的等待，避免对已卸载行继续轮询与刷新
   const remotePullAbort = useRef<AbortController | null>(null)
   useEffect(() => () => remotePullAbort.current?.abort(), [])
-  const settleRemotePull = async (view: ProviderConfigView | null) => {
+  /**
+   * 保存/切换/删除触发了后台拉取：不在当前操作里等它（否则 busy 最长挂住 45 秒），
+   * 立即结束 busy，由 RemoteModels 的「正在后台拉取…」提示承担状态；
+   * 轮询在后台进行，结束时写回视图并重载目录。新一轮开始时丢弃上一次未完成的
+   * 等待（被中止的轮询结果直接丢弃，避免旧结果覆盖新视图）；卸载时同样中止
+   */
+  const settleRemotePull = (view: ProviderConfigView | null) => {
     if (!view?.remoteModelsPending) return
-    remotePullAbort.current = new AbortController()
-    // 等到结束或超时：两种结果都把已知最新视图写回并重载目录，
-    // 目录重载时后台若已完成，结果随之可见；被卸载中止时拿到 null，直接停下
-    const latest = await awaitRemoteModelsSettled(provider.id, {
-      signal: remotePullAbort.current.signal,
-    })
-    if (latest) {
-      setConfig(latest)
-      await onSaved()
-    }
+    remotePullAbort.current?.abort()
+    const controller = new AbortController()
+    remotePullAbort.current = controller
+    void awaitRemoteModelsSettled(provider.id, { signal: controller.signal }).then(
+      async (latest) => {
+        if (controller.signal.aborted || !latest) return
+        setConfig(latest)
+        await onSaved()
+      },
+    )
   }
 
   const save = async (): Promise<ProviderConfigView | null> => {
@@ -363,8 +369,8 @@ export function ProviderRow({
       })
       setStatus({ message: '已保存' })
       await onSaved()
-      // 刚改的密钥或设置触发了后台拉取：等它完成再把目录刷新一次
-      await settleRemotePull(next)
+      // 刚改的密钥或设置触发了后台拉取：不在保存里等它，状态交给「正在后台拉取」提示
+      settleRemotePull(next)
       return next
     } catch (err) {
       setStatus({ message: `保存失败：${(err as Error).message}`, error: true })
@@ -396,8 +402,8 @@ export function ProviderRow({
       const next = await api.updateProviderConfig(provider.id, { activeCredential: key })
       setConfig(next)
       await onSaved()
-      // 切换密钥组也会触发后台拉取，完成后同样刷新
-      await settleRemotePull(next)
+      // 切换密钥组也会触发后台拉取，同样不阻塞本次操作
+      settleRemotePull(next)
     } catch (err) {
       setStatus({ message: `保存失败：${(err as Error).message}`, error: true })
     } finally {
@@ -443,8 +449,8 @@ export function ProviderRow({
       setChecks((current) => keep(current))
       setShownCheck((current) => (current === key ? null : current))
       await onSaved()
-      // 删除组（服务端含删当前组后自动切换）同样会触发后台拉取，完成后刷新候选与目录
-      await settleRemotePull(next)
+      // 删除组（服务端含删当前组后自动切换）同样会触发后台拉取，不阻塞本次操作
+      settleRemotePull(next)
     } catch (err) {
       setStatus({ message: `保存失败：${(err as Error).message}`, error: true })
     } finally {
