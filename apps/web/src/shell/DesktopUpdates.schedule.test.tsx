@@ -99,6 +99,23 @@ it('不提供自动更新的环境里禁用开关和频率，并说明正式版�
   ).toBe(true)
 })
 
+it('保存偏好失败时显示错误且开关保持原值', async () => {
+  bridge.setUpdatePreferences.mockRejectedValueOnce(new Error('磁盘空间不足'))
+  useUpdate.setState({
+    state: { phase: 'idle', currentVersion: '2.1.0' },
+  })
+  const { user } = renderApp(<UpdateContent />)
+  await waitFor(() => expect(bridge.getUpdatePreferences).toHaveBeenCalled())
+  await user.click(screen.getByRole('switch', { name: '启动时自动检查更新' }))
+  await waitFor(() =>
+    expect(screen.getByRole('alert').textContent).toContain('保存检查偏好失败：磁盘空间不足'),
+  )
+  // 没保存成功，开关保持原值
+  expect(
+    screen.getByRole('switch', { name: '启动时自动检查更新' }).getAttribute('aria-checked'),
+  ).toBe('true')
+})
+
 it('读取偏好失败时给出重试入口，写入成功后清掉旧错误', async () => {
   bridge.getUpdatePreferences.mockRejectedValueOnce(new Error('主进程暂时不可用'))
   useUpdate.setState({

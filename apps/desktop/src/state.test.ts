@@ -88,11 +88,20 @@ describe('更新偏好', () => {
       JSON.stringify({ updates: { checkOnLaunch: 'yes', intervalHours: 5 } }),
     )
     expect(readUpdatePreferences()).toEqual({ checkOnLaunch: true, intervalHours: 6 })
-    expect(writeUpdatePreferences({ intervalHours: 5 })).toEqual({
-      checkOnLaunch: true,
-      intervalHours: 6,
-    })
+    expect(writeUpdatePreferences({ intervalHours: 5 })).toBeNull()
     expect(readUpdatePreferences()).toEqual({ checkOnLaunch: true, intervalHours: 6 })
+  })
+
+  it('写盘失败时不更新偏好，调用方能知道失败', () => {
+    expect(writeUpdatePreferences({ intervalHours: 3 })).toEqual({
+      checkOnLaunch: true,
+      intervalHours: 3,
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    rmSync(electron.dir, { recursive: true })
+    expect(writeUpdatePreferences({ intervalHours: 12 })).toBeNull()
+    expect(warn).toHaveBeenCalledWith('无法保存桌面端设置', expect.any(Error))
+    warn.mockRestore()
   })
 })
 

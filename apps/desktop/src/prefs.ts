@@ -40,11 +40,14 @@ export function readPrefs(): Prefs {
   }
 }
 
-export function writePrefs(patch: Prefs) {
+/** 写入桌面设置；失败只记警告，不影响调用方（端口和保存目录沿用这个容错） */
+export function writePrefs(patch: Prefs): boolean {
   try {
     writeFileSync(prefsPath(), JSON.stringify({ ...readPrefs(), ...patch }, null, 2))
+    return true
   } catch (err) {
     console.warn('无法保存桌面端设置', err)
+    return false
   }
 }
 
@@ -53,13 +56,16 @@ export function readUpdatePreferences(): DesktopUpdatePreferences {
   return readPrefs().updates ?? DEFAULT_UPDATE_PREFERENCES
 }
 
-/** 保存更新偏好；取值不合法时不写入，保留原设置 */
-export function writeUpdatePreferences(patch: unknown): DesktopUpdatePreferences {
+/**
+ * 保存更新偏好；取值不合法或写盘失败时不生效，返回 null 让调用方知道失败。
+ * 偏好会决定下次启动是否自动检查，不能当作保存成功。
+ */
+export function writeUpdatePreferences(patch: unknown): DesktopUpdatePreferences | null {
   const current = readUpdatePreferences()
   const merged =
     typeof patch === 'object' && patch !== null ? { ...current, ...(patch as object) } : current
   const parsed = UpdatePreferences.safeParse(merged)
-  if (!parsed.success) return current
-  writePrefs({ updates: parsed.data })
+  if (!parsed.success) return null
+  if (!writePrefs({ updates: parsed.data })) return null
   return parsed.data
 }

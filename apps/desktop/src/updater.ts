@@ -58,11 +58,13 @@ export function setupUpdater(
   /** 启动时的首次检查还没做；改偏好时它优先于定期检查 */
   let launchPending = false
 
-  /** 校验并保存更新偏好；取值不合法时抛错，原设置保持不变 */
+  /** 校验并保存更新偏好；取值不合法或写盘失败时抛错，原设置和调度保持不变 */
   const savePreferences = (next: unknown): DesktopUpdatePreferences => {
     const parsed = UpdatePreferences.safeParse(next)
     if (!parsed.success) throw new Error('更新偏好取值不合法')
-    preferences = writeUpdatePreferences(parsed.data)
+    const saved = writeUpdatePreferences(parsed.data)
+    if (!saved) throw new Error('更新偏好保存失败')
+    preferences = saved
     return { ...preferences }
   }
 

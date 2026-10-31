@@ -8,7 +8,10 @@ const desktop = vi.hoisted(() => ({
 }))
 const prefs = vi.hoisted(() => ({
   readUpdatePreferences: vi.fn(() => ({ checkOnLaunch: true, intervalHours: 6 })),
-  writeUpdatePreferences: vi.fn((next: { checkOnLaunch: boolean; intervalHours: number }) => next),
+  writeUpdatePreferences: vi.fn(
+    (next: { checkOnLaunch: boolean; intervalHours: number }) =>
+      next as { checkOnLaunch: boolean; intervalHours: number } | null,
+  ),
 }))
 vi.mock('electron', async () => {
   const { EventEmitter } = await import('node:events')
@@ -710,6 +713,17 @@ describe('更新检查计划', () => {
     await vi.advanceTimersByTimeAsync(15_000)
     expect(updater.checkForUpdates).toHaveBeenCalledOnce()
     expect(controller.getState().nextCheckAt).toBe(started + 6 * HOUR)
+  })
+
+  it('偏好写盘失败时不改设置也不改调度', () => {
+    prefs.writeUpdatePreferences.mockReturnValueOnce(null)
+    const controller = setup()
+    expect(() => controller.setPreferences({ checkOnLaunch: false, intervalHours: 3 })).toThrow(
+      '更新偏好保存失败',
+    )
+    expect(controller.getPreferences()).toEqual({ checkOnLaunch: true, intervalHours: 6 })
+    // 启动检查仍按原计划进行
+    expect(controller.getState().nextCheckAt).toBe(Date.now() + 15_000)
   })
 
   it('保存偏好后落盘，非法取值不写入', () => {

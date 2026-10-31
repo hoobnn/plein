@@ -342,7 +342,8 @@ function UpdateSchedule({ state }: { state: DesktopUpdateState }) {
     try {
       await writePreferences(next)
     } catch (err) {
-      useUpdate.setState({ bridgeError: err instanceof Error ? err.message : String(err) })
+      const message = err instanceof Error ? err.message : String(err)
+      useUpdate.setState({ bridgeError: `保存检查偏好失败：${message}` })
     }
   }
   if (!preferences)
