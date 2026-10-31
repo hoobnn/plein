@@ -63,11 +63,16 @@ export function normalizeDemoFixture(data: { elements: CanvasElement[]; edges: E
     return normalized
   }
   return {
-    elements: data.elements.map(({ id, parentId, run: _run, ...el }) => ({
-      ...el,
-      id: remap(id),
-      parentId: parentId === null ? null : remap(parentId),
-    })),
+    // 便签高度由应用自身的正文排版量出（fitDemoMarkdown 已校验同轮一致），属于被测结果而非夹具输入；
+    // 计入哈希会让任何字号、行高调整都使基线与候选无法比较。
+    elements: data.elements.map(({ id, parentId, run: _run, ...el }) => {
+      const { h, ...rest } = el
+      return {
+        ...(el.kind === 'markdown' ? rest : { ...rest, h }),
+        id: remap(id),
+        parentId: parentId === null ? null : remap(parentId),
+      }
+    }),
     edges: data.edges
       .map(({ id: _id, from, to, ...edge }) => ({
         ...edge,

@@ -368,6 +368,13 @@ test('demo hashes ignore random IDs and run state while retaining actual geometr
   second.elements[1]!.params!.prompt = 'first'
   second.edges[0]!.to[1] = 'another-port'
   expect(demoContentHash(first)).not.toBe(demoContentHash(second))
+  second.edges[0]!.to[1] = 'in'
+  second.elements[1]!.h++
+  expect(demoContentHash(first)).not.toBe(demoContentHash(second))
+  second.elements[1]!.h--
+  second.elements.push({ ...second.elements[1]!, id: 'note', kind: 'markdown', h: 99 })
+  first.elements.push({ ...first.elements[1]!, id: 'note', kind: 'markdown', h: 100 })
+  expect(demoContentHash(first)).toBe(demoContentHash(second))
   second.edges[0]!.to[0] = 'missing'
   expect(() => demoContentHash(second)).toThrow(/missing element/)
 })
