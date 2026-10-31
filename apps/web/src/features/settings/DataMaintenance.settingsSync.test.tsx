@@ -35,6 +35,7 @@ const statusOf = (settings: typeof defaults) => ({
   lastError: null,
   backups: [],
   trash: [],
+  skippedSymlinks: [],
 })
 
 interface Handlers {

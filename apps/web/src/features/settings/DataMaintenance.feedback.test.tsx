@@ -18,6 +18,7 @@ const status = {
   lastError: null,
   backups: [],
   trash: [],
+  skippedSymlinks: [],
 }
 
 const space = {

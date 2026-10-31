@@ -20,6 +20,7 @@ const status = {
   lastError: null,
   backups: [{ id: 'b1', createdAt: 1, bytes: 10, path: '/tmp/b1' }],
   trash: [],
+  skippedSymlinks: [],
 }
 
 const space = {

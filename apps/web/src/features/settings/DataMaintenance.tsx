@@ -144,6 +144,35 @@ export function DataMaintenance() {
           )}
         </div>
       )}
+      {status.data.skippedSymlinks.length > 0 && (
+        <div role="alert" className="rounded-lg bg-surface-2 p-3 text-xs">
+          <p>
+            以下 {status.data.skippedSymlinks.length}{' '}
+            个条目是指向数据目录外的符号链接，已跳过统计、清理和备份：
+            {status.data.skippedSymlinks.slice(0, 5).map((path, index) => (
+              <span key={path}>
+                {index > 0 && '、'}
+                <code className="break-all">{path}</code>
+              </span>
+            ))}
+            ；如需纳入管理，请把原文件复制回该位置替换链接。
+          </p>
+          {status.data.skippedSymlinks.length > 5 && (
+            <details className="mt-2">
+              <summary className="cursor-pointer text-ink-subtle">
+                其余 {status.data.skippedSymlinks.length - 5} 个
+              </summary>
+              <ul className="mt-1 list-disc pl-5">
+                {status.data.skippedSymlinks.slice(5).map((path) => (
+                  <li key={path}>
+                    <code className="break-all">{path}</code>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
+      )}
       <section className="flex flex-col gap-3" aria-label="自动备份">
         <form
           className="flex flex-col gap-3"
