@@ -100,13 +100,15 @@ export function Modal({
           className={`ui-dialog-scrim pointer-events-auto fixed inset-0 bg-scrim ${top ? 'z-50' : 'z-40'}`}
         />
         <Dialog.Viewport
-          className={`pointer-events-auto fixed inset-0 flex justify-center ${fullScreen ? 'p-0' : 'p-4 sm:p-6'} ${
+          data-fullscreen={fullScreen || undefined}
+          className={`app-dialog-viewport pointer-events-auto fixed inset-0 flex justify-center ${fullScreen ? 'p-0' : 'p-4 sm:p-6'} ${
             top ? 'z-50' : 'z-40'
           } ${align === 'bottom' ? 'items-end pb-16 sm:pb-16' : 'items-center'}`}
         >
           <Dialog.Popup
             ref={popup}
             data-plein-modal-layer={closing ? undefined : top ? 50 : 40}
+            data-fullscreen={fullScreen || undefined}
             aria-label={label}
             onKeyDown={(e) => {
               // 按钮上的原生撤销可能重新激活并修改背景中最后编辑过的文本框。

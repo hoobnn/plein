@@ -80,7 +80,7 @@ export function DialogView({
     >
       <Dialog.Portal>
         <Dialog.Backdrop {...exit} className="ui-dialog-scrim fixed inset-0 z-60 bg-scrim" />
-        <Dialog.Viewport className="fixed inset-0 z-60 flex items-center justify-center p-4 sm:p-6">
+        <Dialog.Viewport className="app-dialog-viewport fixed inset-0 z-60 flex items-center justify-center p-4 sm:p-6">
           <Dialog.Popup
             {...exit}
             aria-label={options.title}

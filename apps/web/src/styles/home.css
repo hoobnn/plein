@@ -1,20 +1,34 @@
 /* ── 桌面端窗口 ───────────────────────────────────── */
 /* macOS 隐藏标题栏后，顶栏承担拖动窗口，并给左上角红绿灯留位 */
-:root[data-desktop="darwin"] .app-drag {
+:root[data-desktop="darwin"] {
+  /* 与 desktop/profile.ts 的窗口按钮位置对应，包含按钮和周围留白。 */
+  --app-titlebar-left: 96px;
+  --app-titlebar-height: 56px;
+}
+:root[data-desktop="darwin"] .app-drag,
+:root[data-desktop="darwin"] .ui-dialog[data-fullscreen] > .ui-dialog-head {
   -webkit-app-region: drag;
   app-region: drag;
 }
-:root[data-desktop="darwin"] .app-drag :is(button, a, input, label, fieldset, [role="menu"]) {
+:root[data-desktop="darwin"]
+  :is(.app-drag, .ui-dialog[data-fullscreen] > .ui-dialog-head)
+  :is(button, a, input, label, fieldset, [role="menu"]) {
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
-:root[data-desktop="darwin"] .app-titlebar {
-  padding-left: 96px;
+:root[data-desktop="darwin"] .app-titlebar,
+:root[data-desktop="darwin"] .ui-dialog[data-fullscreen] > .ui-dialog-head {
+  padding-left: var(--app-titlebar-left);
+  min-height: var(--app-titlebar-height);
+}
+/* 普通面板在矮窗口中也不能进入窗口按钮区；全屏编辑器由自己的标题行让位。 */
+:root[data-desktop="darwin"] .app-dialog-viewport:not([data-fullscreen]) {
+  padding-top: var(--app-titlebar-height);
 }
 /* 首页顶栏和正文共用一条居中的栏：整条顶栏加 96px 会把栏右推、与正文错位。
    改为栏左缘离窗口不足 96px 时，顶栏和正文一起补齐差额，任何窗口宽度都对齐 */
 :root[data-desktop="darwin"] .home-col {
-  padding-left: max(2.5rem, 96px - max(0px, (100vw - 72rem) / 2));
+  padding-left: max(2.5rem, var(--app-titlebar-left) - max(0px, (100vw - 72rem) / 2));
 }
 
 /* 首页顶栏：平时透明，内容滚到下面时才出底色和分隔线 */
