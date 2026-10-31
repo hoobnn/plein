@@ -214,12 +214,12 @@ export function UpdateContent({ scroll = false }: { scroll?: boolean } = {}) {
       ? new Date(release.date).toLocaleDateString('zh-CN')
       : null
   return (
-    <div className="flex min-h-0 min-w-0 flex-col gap-5">
+    <div className="flex min-h-0 min-w-0 flex-col gap-6">
       <div
-        className={`flex min-h-0 flex-col gap-5 ${scroll ? 'ui-scrollbar overflow-y-auto pr-1' : ''}`}
+        className={`flex min-h-0 flex-col gap-6 ${scroll ? 'ui-scrollbar overflow-y-auto pr-1' : ''}`}
       >
         <section
-          className="flex flex-col gap-4 rounded-xl border border-line bg-surface-2 p-4"
+          className="flex flex-col gap-3 rounded-xl border border-line bg-surface-2 p-4"
           aria-label="更新状态"
         >
           <div className="flex items-start gap-3">
@@ -234,7 +234,7 @@ export function UpdateContent({ scroll = false }: { scroll?: boolean } = {}) {
               <p role="status" className="font-semibold">
                 {status.title}
               </p>
-              <p className="mt-1 text-sm leading-6 text-ink-muted">{status.hint}</p>
+              <p className="ui-note mt-1 text-ink-muted">{status.hint}</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm tabular-nums">
@@ -270,9 +270,7 @@ export function UpdateContent({ scroll = false }: { scroll?: boolean } = {}) {
                 </article>
               ))
             ) : (
-              <p className="text-sm leading-6 text-ink-muted">
-                此版本暂未提供更新说明，你仍可继续下载更新。
-              </p>
+              <p className="ui-note text-ink-muted">此版本暂未提供更新说明，你仍可继续下载更新。</p>
             )}
             <a
               className="self-start text-xs text-accent hover:underline"
@@ -368,16 +366,16 @@ function UpdateSchedule({ state }: { state: DesktopUpdateState }) {
   const unavailable = state.phase === 'unavailable'
   return (
     <section
-      className="flex flex-col gap-4 rounded-xl border border-line bg-surface-2 p-4"
+      className="flex flex-col gap-3 rounded-xl border border-line bg-surface-2 p-4"
       aria-label="更新检查计划"
     >
       {unavailable && (
-        <p className="text-xs text-ink-subtle">当前环境不提供自动更新，这里的设置在正式版生效。</p>
+        <p className="ui-note text-ink-muted">当前环境不提供自动更新，这里的设置在正式版生效。</p>
       )}
       <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-sm font-medium">启动时自动检查更新</p>
-          <p className="mt-0.5 text-xs text-ink-subtle">打开 Plein 后自动检查新版本</p>
+        <div className="ui-field min-w-0">
+          <p className="ui-label">启动时自动检查更新</p>
+          <p className="ui-help">打开 Plein 后自动检查新版本</p>
         </div>
         <Switch
           label="启动时自动检查更新"
@@ -387,9 +385,9 @@ function UpdateSchedule({ state }: { state: DesktopUpdateState }) {
         />
       </div>
       <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-sm font-medium">应用打开期间检查频率</p>
-          <p className="mt-0.5 text-xs text-ink-subtle">应用开着的时候多久查一次新版本</p>
+        <div className="ui-field min-w-0">
+          <p className="ui-label">应用打开期间检查频率</p>
+          <p className="ui-help">应用开着的时候多久查一次新版本</p>
         </div>
         <Select
           aria-label="应用打开期间检查频率"
