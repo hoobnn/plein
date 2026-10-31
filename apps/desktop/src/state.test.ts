@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { BrowserWindow } from 'electron'
@@ -11,13 +11,44 @@ const electron = vi.hoisted(() => ({
   dir: '',
   screen: { getPrimaryDisplay: vi.fn(), getDisplayMatching: vi.fn() },
 }))
+/** 模拟磁盘故障：临时文件写不进去、改名失败、临时文件删不掉 */
+const disk = vi.hoisted(() => ({ failPart: false, failRename: false, failCleanup: false }))
 vi.mock('electron', () => ({
   app: { getPath: () => electron.dir },
   screen: electron.screen,
 }))
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  const write = actual.writeFileSync as (...args: unknown[]) => void
+  const rename = actual.renameSync as (...args: unknown[]) => void
+  const rm = actual.rmSync as (...args: unknown[]) => void
+  return {
+    ...actual,
+    writeFileSync: (path: unknown, ...rest: unknown[]) => {
+      // 模拟磁盘满：写到一半就报错，直接覆盖原文件时会把原文件截断
+      if (disk.failPart && String(path).startsWith(electron.dir)) {
+        const data = rest[0]
+        write(path, typeof data === 'string' ? data.slice(0, 8) : data)
+        throw new Error('磁盘已满')
+      }
+      write(path, ...rest)
+    },
+    renameSync: (from: unknown, to: unknown) => {
+      if (disk.failRename) throw new Error('改名失败')
+      rename(from, to)
+    },
+    rmSync: (path: unknown, ...rest: unknown[]) => {
+      if (disk.failCleanup && String(path).endsWith('.part')) throw new Error('临时文件删不掉')
+      rm(path, ...rest)
+    },
+  }
+})
 
 beforeEach(() => {
   electron.dir = mkdtempSync(join(tmpdir(), 'plein-desktop-state-'))
+  disk.failPart = false
+  disk.failRename = false
+  disk.failCleanup = false
   const display = { workArea: { x: 0, y: 0, width: 1920, height: 1080 } }
   electron.screen.getPrimaryDisplay.mockReturnValue(display)
   electron.screen.getDisplayMatching.mockReturnValue(display)
@@ -102,6 +133,46 @@ describe('更新偏好', () => {
     expect(writeUpdatePreferences({ intervalHours: 12 })).toBeNull()
     expect(warn).toHaveBeenCalledWith('无法保存桌面端设置', expect.any(Error))
     warn.mockRestore()
+  })
+
+  it('临时文件写不进去时原文件内容不变', () => {
+    writeUpdatePreferences({ checkOnLaunch: false, intervalHours: 0 })
+    const path = join(electron.dir, 'desktop.json')
+    const before = readFileSync(path, 'utf8')
+    disk.failPart = true
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(writeUpdatePreferences({ checkOnLaunch: true, intervalHours: 24 })).toBeNull()
+    expect(writePrefs({ port: 8790 })).toBe(false)
+    warn.mockRestore()
+    // 原文件仍是旧内容，偏好不会被改成默认值
+    expect(readFileSync(path, 'utf8')).toBe(before)
+    expect(readUpdatePreferences()).toEqual({ checkOnLaunch: false, intervalHours: 0 })
+    expect(existsSync(`${path}.part`)).toBe(false)
+  })
+
+  it('改名失败时删掉临时文件并保留原文件', () => {
+    writePrefs({ port: 8790 })
+    const path = join(electron.dir, 'desktop.json')
+    const before = readFileSync(path, 'utf8')
+    disk.failRename = true
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(writePrefs({ port: 8791 })).toBe(false)
+    warn.mockRestore()
+    expect(readFileSync(path, 'utf8')).toBe(before)
+    expect(readPrefs()).toEqual({ port: 8790 })
+    expect(existsSync(`${path}.part`)).toBe(false)
+  })
+
+  it('临时文件删不掉时仍保留原文件', () => {
+    writePrefs({ port: 8790 })
+    const path = join(electron.dir, 'desktop.json')
+    const before = readFileSync(path, 'utf8')
+    disk.failRename = true
+    disk.failCleanup = true
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(writePrefs({ port: 8791 })).toBe(false)
+    warn.mockRestore()
+    expect(readFileSync(path, 'utf8')).toBe(before)
   })
 })
 

@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   DEFAULT_UPDATE_PREFERENCES,
@@ -40,15 +40,32 @@ export function readPrefs(): Prefs {
   }
 }
 
-/** 写入桌面设置；失败只记警告，不影响调用方（端口和保存目录沿用这个容错） */
-export function writePrefs(patch: Prefs): boolean {
+/**
+ * 原子写：先写同目录临时文件，成功后再改名替换。
+ * 直接覆盖原文件时，中途失败（磁盘满、权限）会把原文件截断，
+ * 重启读到坏文件就会退回默认设置；改成先写临时文件，失败时原文件保持不变。
+ */
+function writeAtomic(path: string, content: string): boolean {
+  const part = `${path}.part`
   try {
-    writeFileSync(prefsPath(), JSON.stringify({ ...readPrefs(), ...patch }, null, 2))
+    writeFileSync(part, content)
+    renameSync(part, path)
     return true
   } catch (err) {
+    // 临时文件写不出来或改名失败：删掉临时文件，原文件不动
+    try {
+      rmSync(part, { force: true })
+    } catch {
+      // 临时文件删不掉时只能留给系统清理，原文件仍然是好的
+    }
     console.warn('无法保存桌面端设置', err)
     return false
   }
+}
+
+/** 写入桌面设置；失败只记警告，不影响调用方（端口和保存目录沿用这个容错） */
+export function writePrefs(patch: Prefs): boolean {
+  return writeAtomic(prefsPath(), JSON.stringify({ ...readPrefs(), ...patch }, null, 2))
 }
 
 /** 更新偏好；文件缺失或损坏时用默认值 */
