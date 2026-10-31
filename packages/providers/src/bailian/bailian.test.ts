@@ -238,6 +238,9 @@ describe('百炼 API 契约', () => {
     expect(
       bailianProvider.models.find((model) => model.id === 'wan2.7-image-pro')?.limits,
     ).toMatchObject({ count: { max: 4 }, references: { max: 9 } })
+    expect(
+      bailianProvider.models.find((model) => model.id === 'wanx2.1-imageedit')?.limits,
+    ).toMatchObject({ count: { max: 1 } })
     for (const id of ['wan3.0-video', 'wan3.0-video-prime']) {
       expect(bailianProvider.models.find((model) => model.id === id)?.limits).toMatchObject({
         referenceMedia: { video: 5, audio: 5 },
@@ -306,7 +309,7 @@ describe('百炼 API 契约', () => {
       new Headers(fetch.mock.calls[2]?.[1]?.headers).get('X-DashScope-OssResourceResolve'),
     ).toBe('enable')
   })
-  it('局部重绘：原图和蒙版上传 OSS，走通用图像编辑的蒙版重绘，轮询取回多张图', async () => {
+  it('局部重绘：原图和蒙版上传 OSS，轮询取回单张编辑结果', async () => {
     const policy = {
       upload_host: 'https://dashscope.oss-cn-beijing.aliyuncs.com',
       upload_dir: 'tmp',
@@ -325,11 +328,7 @@ describe('百炼 API 契约', () => {
       {
         output: {
           task_status: 'SUCCEEDED',
-          results: [
-            { url: 'https://dashscope-result-bj.oss-cn-beijing.aliyuncs.com/e1.png' },
-            { code: 'DataInspectionFailed', message: 'blocked' },
-            { url: 'http://dashscope-result-bj.oss-cn-beijing.aliyuncs.com/e2.png' },
-          ],
+          results: [{ url: 'https://dashscope-result-bj.oss-cn-beijing.aliyuncs.com/e1.png' }],
         },
       },
     ])
@@ -342,7 +341,7 @@ describe('百炼 API 契约', () => {
             prompt: '把杯子换成红色',
             image: { assetId: 'img', kind: 'image' },
             mask: { assetId: 'mask', kind: 'image' },
-            count: 2,
+            count: 1,
             extra: { model: 'evil', n: 9 },
           },
         },
@@ -361,13 +360,10 @@ describe('百炼 API 契约', () => {
       base_image_url: expect.stringMatching(/^oss:\/\/tmp\//),
       mask_image_url: expect.stringMatching(/^oss:\/\/tmp\//),
     })
-    expect(sent.parameters.n).toBe(2)
+    expect(sent.parameters.n).toBe(1)
     expect(await bailianProvider.poll?.('edit/1', ctx)).toMatchObject({
       state: 'succeeded',
-      outputs: [
-        { kind: 'image', url: expect.stringContaining('e1.png') },
-        { kind: 'image', url: expect.stringMatching(/^https:.*e2\.png$/) },
-      ],
+      outputs: [{ kind: 'image', url: expect.stringContaining('e1.png') }],
     })
     await expect(
       bailianProvider.submit(
@@ -384,6 +380,27 @@ describe('百炼 API 契约', () => {
       ),
     ).rejects.toMatchObject({ code: 'invalid_input' })
   })
+  it('局部重绘请求多张时在上传素材前拒绝', async () => {
+    const { ctx, fetch } = setup()
+    await expect(
+      bailianProvider.submit(
+        {
+          capability: 'image.edit',
+          model: 'wanx2.1-imageedit',
+          input: {
+            prompt: '把杯子换成红色',
+            image: { assetId: 'img', kind: 'image' },
+            mask: { assetId: 'mask', kind: 'image' },
+            count: 2,
+          },
+        },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_input', message: '万相图像编辑一次仅支持生成 1 张' })
+    expect(fetch).not.toHaveBeenCalled()
+    expect(ctx.files.read).not.toHaveBeenCalled()
+  })
+
   it('语音 input、音色和业务空间端点符合 Qwen-TTS API', async () => {
     const { ctx, fetch, body } = setup([
       {

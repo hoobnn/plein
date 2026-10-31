@@ -318,7 +318,7 @@ export const bailianProvider = defineProvider({
       title: '万相图像编辑（局部重绘）',
       description: 'Legacy，仅华北2（北京）地域；按蒙版只重绘白色区域，原生蒙版能力',
       capabilities: ['image.edit' as const, 'image.process' as const],
-      limits: { count: { max: 4 }, imageOperations: ['upscale' as const, 'outpaint' as const] },
+      limits: { count: { max: 1 }, imageOperations: ['upscale' as const, 'outpaint' as const] },
     },
     ...['wan3.0-video', 'wan3.0-video-prime'].map((id) => ({
       id,
@@ -528,8 +528,7 @@ export const bailianProvider = defineProvider({
         const input = req.input as CapabilityInput<'image.edit'>
         if (!input.prompt.trim()) throw new ProviderError('invalid_input', '局部重绘需要提示词')
         const count = input.count ?? 1
-        if (!Number.isInteger(count) || count < 1 || count > 4)
-          throw new ProviderError('invalid_input', '万相图像编辑一次生成 1–4 张')
+        if (count !== 1) throw new ProviderError('invalid_input', '万相图像编辑一次仅支持生成 1 张')
         // 通用图像编辑的蒙版重绘：白色区域按提示词重画，其余保持原图；异步任务
         const body = {
           model: req.model,
