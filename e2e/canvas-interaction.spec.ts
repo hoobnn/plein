@@ -26,7 +26,7 @@ test.describe('画布实际渲染与输入关键旅程', { tag: '@core' }, () =>
     const generator = page.getByTestId('generator')
     const inline = generator.getByRole('textbox', { name: '提示词', exact: true })
     await inline.fill('/')
-    const preset = generator.getByRole('listbox', { name: '提示词预设' })
+    const preset = page.getByRole('listbox', { name: '提示词预设' })
     await expect(preset).toBeVisible()
     await inline.dispatchEvent('keydown', { key: 'Enter', code: 'Enter', isComposing: true })
     await expect(inline).toHaveValue('/')
@@ -47,6 +47,25 @@ test.describe('画布实际渲染与输入关键旅程', { tag: '@core' }, () =>
     await generator.getByRole('button', { name: '放大编辑提示词' }).click()
     const editor = page.getByRole('dialog', { name: '编辑提示词', exact: true })
     const expanded = editor.getByRole('textbox', { name: '提示词', exact: true })
+    await expect(expanded).toBeFocused()
+    await page.evaluate(() =>
+      window.__plein.addNode({
+        type: 'plein/character',
+        name: '候选角色',
+        x: 100,
+        y: 100,
+        params: {},
+      }),
+    )
+    await expanded.fill('@候')
+    const references = page.getByRole('dialog', { name: '引用素材', exact: true })
+    const search = references.getByRole('textbox', { name: '搜索引用素材' })
+    // 候选必须能跨出编辑弹窗的边界，搜索框和选项都要实际命中。
+    await search.click()
+    await search.fill('候选角色')
+    await expect(search).toBeFocused()
+    await references.getByRole('option', { name: /候选角色/ }).click()
+    await expect(expanded).toHaveValue('@候选角色 ')
     await expect(expanded).toBeFocused()
     await expanded.fill('放大编辑后的内容')
     await page.keyboard.press('Escape')
