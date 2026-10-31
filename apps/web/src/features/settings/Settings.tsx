@@ -74,11 +74,11 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
       label="设置"
       onClose={onClose}
       top
-      className="settings-dialog h-[min(640px,100%)] max-w-215 sm:flex-row"
+      className="settings-dialog h-[min(780px,100%-48px)] w-full max-w-none sm:w-[min(1080px,100%-48px)] sm:flex-row"
     >
       <nav
         aria-label="设置分区"
-        className="settings-nav ui-slide ui-scrollbar flex min-h-0 flex-none gap-1 overflow-x-auto border-b border-line bg-surface-2 p-2 sm:w-52 sm:flex-col sm:overflow-x-hidden sm:overflow-y-auto sm:border-r sm:border-b-0 sm:p-3"
+        className="settings-nav ui-slide ui-scrollbar flex min-h-0 flex-none gap-1 overflow-x-auto border-b border-line bg-surface-2 p-2 sm:w-56 sm:flex-col sm:overflow-x-hidden sm:overflow-y-auto sm:border-r sm:border-b-0 sm:p-3"
       >
         <h2 className="hidden px-2.5 pt-1.5 pb-3 text-lg font-semibold sm:block">设置</h2>
         <SlidePill variant="seg" />
@@ -104,12 +104,12 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
       </nav>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <ModalHeader title={current.label} onClose={onClose} divider={false} />
-        <div className="settings-content ui-scrollbar flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto px-5 pt-2 pb-5">
+        <div className="settings-content ui-scrollbar flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto px-6 pt-3 pb-6">
           {/* 分区导航是竖排的：内容按上下方向滑入 */}
           <SlideSwap
             index={sections.indexOf(current)}
             axis="y"
-            className="flex flex-col gap-8"
+            className="mx-auto flex w-full max-w-3xl flex-col gap-8"
             preserveState
           >
             {current.id === 'appearance' && (
