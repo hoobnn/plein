@@ -95,7 +95,7 @@ export function ParamsPill({
       <Presence>
         {anchor && (
           <Popover anchor={anchor} onClose={() => setAnchor(null)} label="参数" width={392}>
-            <div className="flex flex-col gap-4 p-3">
+            <div className="flex flex-col gap-4 p-(--panel-pad)">
               {fields.map(([k, f]) => (
                 <ParamControl
                   key={k}

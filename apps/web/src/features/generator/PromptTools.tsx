@@ -198,7 +198,7 @@ export function PromptTools({
                   aria-label="原提示词"
                   readOnly
                   value={draft.base}
-                  className="ui-input min-h-64 flex-1 resize-y"
+                  className="ui-input min-h-64 flex-1 resize-y text-base"
                 />
               </label>
               <label className="flex flex-col gap-2 text-sm">
@@ -208,7 +208,7 @@ export function PromptTools({
                   disabled={draft.busy}
                   value={draft.text}
                   onChange={(e) => setDraft({ ...draft, text: e.target.value })}
-                  className="ui-input min-h-64 flex-1 resize-y"
+                  className="ui-input min-h-64 flex-1 resize-y text-base"
                 />
               </label>
             </div>

@@ -361,7 +361,7 @@ export function PromptBox({
               <span
                 key={part.text}
                 title={part.warning}
-                className="inline-flex h-7 max-w-64 shrink-0 items-center gap-1 whitespace-nowrap text-warning"
+                className="plein-prompt-ref gap-1 text-warning"
               >
                 <Icon name="warning" size={12} />
                 <span className="truncate">未找到：{part.text}</span>
@@ -382,7 +382,7 @@ export function PromptBox({
                 return (
                   <span
                     key={`?${m.name}`}
-                    className="inline-flex h-7 max-w-64 shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-warning/10 px-1.5 py-0.5 text-warning"
+                    className="plein-prompt-ref gap-1 bg-warning/10 px-1.5 text-warning"
                   >
                     <Icon name="warning" size={12} />
                     <span className="truncate" title={mentionProblem(m)}>
@@ -417,7 +417,7 @@ export function PromptBox({
                     }
                   />
                   {warn && (
-                    <span className="inline-flex h-7 max-w-64 shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-warning/10 px-1.5 py-0.5 text-warning">
+                    <span className="plein-prompt-ref gap-1 bg-warning/10 px-1.5 text-warning">
                       <Icon name="warning" size={12} />
                       <span className="truncate" title={warn}>
                         {warn}
@@ -580,7 +580,7 @@ function MentionChip({
         engine.selection.set([target.id])
         engine.zoomToFit([target.id])
       }}
-      className="flex h-7 max-w-64 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md bg-surface-2 pr-2 pl-0.5 text-ink-muted hover:bg-accent-soft hover:text-accent"
+      className="plein-prompt-ref gap-1.5 bg-surface-2 pr-2 pl-0.5 text-ink-muted hover:bg-accent-soft hover:text-accent"
     >
       <Thumb engine={engine} target={target} imageId={imageId} />
       <span className="truncate">{name}</span>

@@ -633,7 +633,7 @@ function RefTile({
           <button
             type="button"
             onClick={onReference}
-            className="ui-btn ui-btn-xs ui-btn-quiet px-0.5 text-2xs"
+            className="ui-btn ui-btn-xs ui-btn-quiet"
             title={`在提示词末尾插入 ${caption}；编号按当前同类素材顺序`}
           >
             {caption}
@@ -817,11 +817,7 @@ function SubmittedTile({
         </span>
       </button>
       {onReference ? (
-        <button
-          type="button"
-          className="ui-btn ui-btn-xs ui-btn-quiet px-0.5 text-2xs"
-          onClick={onReference}
-        >
+        <button type="button" className="ui-btn ui-btn-xs ui-btn-quiet" onClick={onReference}>
           {label}
         </button>
       ) : (
