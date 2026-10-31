@@ -217,7 +217,8 @@ export const minimaxProvider = defineProvider({
     {
       id: 'MiniMax-M2.7',
       title: 'MiniMax M2.7（纯文本）',
-      description: '已停止向新用户开放；按量付费存量用户可调用至 2026-11-18，请提前迁移至 M3.1 Flash',
+      description:
+        '已停止向新用户开放；按量付费存量用户可调用至 2026-11-18，请提前迁移至 M3.1 Flash',
       deprecated: true,
       capabilities: ['text.chat'],
     },

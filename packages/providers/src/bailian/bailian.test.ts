@@ -413,9 +413,9 @@ describe('百炼 API 契约', () => {
     })
   })
   it('下线 instruct 模型保留旧画布引用，不支持的语气字段在发包前拒绝', async () => {
-    expect(
-      bailianProvider.models.find((m) => m.id === 'qwen3-tts-instruct-flash'),
-    ).toMatchObject({ deprecated: true })
+    expect(bailianProvider.models.find((m) => m.id === 'qwen3-tts-instruct-flash')).toMatchObject({
+      deprecated: true,
+    })
     const { ctx, fetch } = setup()
     for (const req of [
       { model: 'qwen3-tts-instruct-flash', input: { text: '你好' } },

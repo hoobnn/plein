@@ -2,13 +2,13 @@
 
 四家平台以内置服务端插件的形式加载，默认关闭，在设置页填好配置后启用。节点里能选哪些模型，由平台自己声明。服务端不替节点挑模型：每种能力（文本、图像、视频、配音、配乐、音效、识别）在「设置 → 模型平台 → 默认模型」里有一个默认模型，新建节点时写进节点，节点上可以另选。还没设默认模型时，启用平台后取它支持该能力的第一个模型并记住，之后再启用别的平台不会改；默认模型所在的平台停用后，换成仍启用的平台里的第一个。打开旧画布时，模型留空的节点补成当前默认模型。生成走的是各平台的按量计费 API，模型出现在目录里，不代表你的账号已经开通了它的权限。
 
-| 平台 / Provider ID              | 已接入能力                                                                                                              | 密钥                                                                      |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| 平台 / Provider ID              | 已接入能力                                                                                                                           | 密钥                                                                      |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
 | MiniMax `minimax/api`           | M3.1 Flash / M3 / M2.7 对话、image-01 图片、H3 / Highspeed / Lite / Max 视频、speech-2.8 配音、声音复刻 / 音色设计、Music 3.0 纯音乐 | `MINIMAX_API_KEY`                                                         |
-| 豆包语音 `doubao/speech`        | TTS 2.0、已有声音复刻 1.0 / 2.0 合成、声音复刻 2.0 / 音色设计、Seed Audio 音乐 / 音效、极速录音识别                     | `VOLC_SPEECH_API_KEY`，或 `VOLC_SPEECH_APP_ID` + `VOLC_SPEECH_ACCESS_KEY` |
-| 百炼 `aliyun/bailian`           | 千问对话、Qwen Image / 万相图片、万相局部重绘、Wan 3.0 视频、Qwen TTS                                                   | `DASHSCOPE_API_KEY`                                                       |
-| 方舟 `volc/ark`                 | Seed 对话、Seedream 图片、Seedance 视频                                                                                 | `ARK_API_KEY`                                                             |
-| 方舟 Agent Plan `volc/ark-plan` | 套餐内 Seedream 图片、Seedance 视频                                                                                     | `ARK_AGENT_PLAN_API_KEY`                                                  |
+| 豆包语音 `doubao/speech`        | TTS 2.0、已有声音复刻 1.0 / 2.0 合成、声音复刻 2.0 / 音色设计、Seed Audio 音乐 / 音效、极速录音识别                                  | `VOLC_SPEECH_API_KEY`，或 `VOLC_SPEECH_APP_ID` + `VOLC_SPEECH_ACCESS_KEY` |
+| 百炼 `aliyun/bailian`           | 千问对话、Qwen Image / 万相图片、万相局部重绘、Wan 3.0 视频、Qwen TTS                                                                | `DASHSCOPE_API_KEY`                                                       |
+| 方舟 `volc/ark`                 | Seed 对话、Seedream 图片、Seedance 视频                                                                                              | `ARK_API_KEY`                                                             |
+| 方舟 Agent Plan `volc/ark-plan` | 套餐内 Seedream 图片、Seedance 视频                                                                                                  | `ARK_AGENT_PLAN_API_KEY`                                                  |
 
 ## 配置
 
