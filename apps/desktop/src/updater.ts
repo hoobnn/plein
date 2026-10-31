@@ -244,9 +244,17 @@ export function setupUpdater(
   const onTimer = () => {
     timer = null
     launchPending = false
+    // 定时器已经消耗掉，原定的下次检查时间不再成立；跳过或重新安排时再给出。
+    nextCheckAt = undefined
     const interval = preferences.intervalHours * HOUR_MS
-    // 下载中或已下载待安装时跳过这次检查，等下载结束后按间隔重新安排。
-    if (state.phase === 'downloading' || state.phase === 'downloaded') {
+    // 下载中、已下载待安装，或下载报错但下载 Promise 还没结束时跳过这次检查；
+    // 上一次检查还没结束时也一样，保留后续调度，等它真正结束后再查。
+    if (
+      checkFlight ||
+      downloadFlight ||
+      state.phase === 'downloading' ||
+      state.phase === 'downloaded'
+    ) {
       if (interval > 0) arm(Date.now() + interval)
       else publishSnapshot()
       return

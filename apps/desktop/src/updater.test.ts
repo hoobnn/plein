@@ -628,6 +628,49 @@ describe('更新检查计划', () => {
     expect(updater.checkForUpdates).toHaveBeenCalledOnce()
   })
 
+  it('下载报错且下载尚未结束时不永久停掉自动检查', async () => {
+    const controller = setup()
+    await findUpdate(controller)
+    const pending = deferred<string[]>()
+    updater.downloadUpdate.mockReturnValueOnce(pending.promise)
+    const first = controller.download()
+    await Promise.resolve()
+    // 下载先报错，下载 Promise 还没结束
+    updater.emit('error', new Error('下载中断'))
+    expect(controller.getState().phase).toBe('error')
+
+    // 定时检查到期：这次跳过，但后续调度要留着
+    await vi.advanceTimersByTimeAsync(6 * HOUR)
+    expect(updater.checkForUpdates).toHaveBeenCalledOnce()
+    expect(controller.getState().nextCheckAt).toBeGreaterThan(Date.now())
+
+    // 下载结束后定时检查继续
+    pending.resolve([])
+    await first
+    await vi.advanceTimersByTimeAsync(6 * HOUR)
+    expect(updater.checkForUpdates).toHaveBeenCalledTimes(2)
+  })
+
+  it('检查还没结束时定时检查不吞掉调度', async () => {
+    const controller = setup()
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(updater.checkForUpdates).toHaveBeenCalledOnce()
+    // 手动检查挂起，定时检查到期
+    const pending = deferred<null>()
+    updater.checkForUpdates.mockReturnValueOnce(pending.promise)
+    const manual = controller.checkForUpdates()
+    await Promise.resolve()
+    expect(controller.getState().phase).toBe('checking')
+    await vi.advanceTimersByTimeAsync(6 * HOUR)
+    expect(updater.checkForUpdates).toHaveBeenCalledTimes(2)
+    // 后续调度要留着，不能停在过去的时间上
+    expect(controller.getState().nextCheckAt).toBeGreaterThan(Date.now())
+    pending.resolve(null)
+    await manual
+    await vi.advanceTimersByTimeAsync(0)
+    expect(controller.getState().nextCheckAt).toBeGreaterThan(Date.now())
+  })
+
   it('下载中和待安装时跳过定时检查', async () => {
     const controller = setup()
     await findUpdate(controller)
