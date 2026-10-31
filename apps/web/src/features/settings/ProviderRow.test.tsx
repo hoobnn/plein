@@ -332,6 +332,20 @@ describe('平台保存与检查', () => {
     expect(fetch.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
   })
 
+  it('没有密钥组时行级校验的请求体不带 credential，仍能检查平台配置', async () => {
+    const bodies: unknown[] = []
+    const { user } = renderRow({
+      test: async (request) => {
+        bodies.push(await request.json())
+        return Response.json(testOk)
+      },
+    })
+    await screen.findByRole<HTMLInputElement>('spinbutton', { name: '模拟耗时（毫秒）' })
+    await user.click(screen.getByRole('button', { name: '测试连接' }))
+    await waitFor(() => expect(bodies).toEqual([{}]))
+    expect(screen.getByRole('status').textContent).toContain('连接检查通过')
+  })
+
   it('检查请求传输失败与服务端检查结果分开显示', async () => {
     const { user } = renderRow({
       test: () =>

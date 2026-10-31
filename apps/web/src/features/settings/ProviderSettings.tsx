@@ -36,6 +36,9 @@ function providerState(
     : { label: '已连接', tone: 'ui-tag-success' }
 }
 
+/** 还没保存过任何密钥组时，本地校验结果固定存这个键；请求里不会带它 */
+const NO_CREDENTIAL = 'no-credential'
+
 /** 一组密钥的校验状态：开始校验时置 testing，结束后按结果换成 ok / error */
 interface CredentialCheck {
   status: 'testing' | 'ok' | 'error'
@@ -402,24 +405,21 @@ export function ProviderRow({
 
   /**
    * 跑一次校验：开始就把这一组置为 testing 并顶掉旧结果；请求本身出错也记成这一组的 error。
-   * credential 必须是实际组 id，结果只记在它名下。
+   * storeKey 是本地结果的归属（没有实际组时用固定占位），请求带不带 credential 由调用方决定。
    */
-  const checkCredential = async (
-    credential: string,
-    request: () => Promise<ProviderTestResult>,
-  ) => {
+  const checkCredential = async (storeKey: string, request: () => Promise<ProviderTestResult>) => {
     clearStatus()
-    setShownCheck(credential)
+    setShownCheck(storeKey)
     setChecks((current) => ({
       ...current,
-      [credential]: { status: 'testing', message: '正在校验…', at: Date.now() },
+      [storeKey]: { status: 'testing', message: '正在校验…', at: Date.now() },
     }))
     setBusy(true)
     try {
       const result = await request()
       setChecks((current) => ({
         ...current,
-        [credential]: {
+        [storeKey]: {
           status: result.ok ? 'ok' : 'error',
           message: result.ok
             ? (result.message ?? '检查完成；尚未验证具体模型、资源权限或余额')
@@ -431,7 +431,7 @@ export function ProviderRow({
       // 传输失败没有服务端检查结果，不能伪造 scope 或完成时间，但错误属于这一组
       setChecks((current) => ({
         ...current,
-        [credential]: {
+        [storeKey]: {
           status: 'error',
           message: `检查请求失败：${(err as Error).message}`,
           at: Date.now(),
@@ -442,23 +442,31 @@ export function ProviderRow({
     }
   }
 
-  /** 卡片上的重新校验：显式指定这一组的 id */
+  /** 卡片上的重新校验：显式指定这一组的 id，请求也带它 */
   const testCard = (key: string) => checkCredential(key, () => api.testProvider(provider.id, key))
 
-  /** 行级测试连接：查的是当前生效组，由调用处显式传入组 id */
-  const runTest = (credential: string) =>
-    checkCredential(credential, () => api.testProvider(provider.id, credential))
+  /**
+   * 行级测试连接：有实际组就查那一组；没有组（全新平台、密钥可选的平台）时
+   * 请求不带 credential，只检查平台配置，本地结果存到固定键。
+   */
+  const runTest = () => {
+    const credential = config?.activeCredential ?? null
+    return checkCredential(credential ?? NO_CREDENTIAL, () =>
+      api.testProvider(provider.id, credential ?? undefined),
+    )
+  }
 
   /** 未配置平台的主操作：保存后用返回的最新配置里实际生效的组去校验 */
   const saveAndTest = async () => {
     const latest = await save()
-    const credential = latest?.activeCredential
-    if (latest && credential) await runTest(credential)
+    if (!latest) return
+    const credential = latest.activeCredential ?? null
+    await checkCredential(credential ?? NO_CREDENTIAL, () =>
+      api.testProvider(provider.id, credential ?? undefined),
+    )
   }
 
-  // 徽章只看当前生效组的校验结果；备用组的通过或失败都不改它。
-  // 还没保存过任何组时没有真实组 id，用固定占位，结果不会挂到别的组上。
-  const activeCredential = config?.activeCredential ?? 'no-credential'
+  // 徽章只看当前生效组的校验结果；备用组的通过或失败都不改它
   const activeKey = config?.activeCredential ?? null
   const activeCheck = activeKey ? checks[activeKey] : undefined
   const state = providerState(provider, {
@@ -612,7 +620,7 @@ export function ProviderRow({
                   type="button"
                   disabled={locked || dirty}
                   aria-describedby={dirty ? `${bodyId}-unsaved` : undefined}
-                  onClick={() => void runTest(activeCredential)}
+                  onClick={() => void runTest()}
                   className="ui-btn ui-btn-secondary"
                 >
                   {provider.testScope === 'configuration' ? '检查配置' : '测试连接'}
