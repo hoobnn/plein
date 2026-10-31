@@ -145,10 +145,14 @@ export function createCompatiblePlugin(raw: Record<string, unknown> = {}) {
     },
     // OpenAI 兼容渠道的模型列表；渠道上的模型都是对话模型，能力提示归为 llm
     async listRemoteModels(ctx) {
-      validate(ctx.settings)
+      // 拉取候选只需要 Base URL 与 API Key：模型 ID 可以从候选里选，不在提交路径之前强制
+      const settings = ctx.settings
+      if (!settings.baseURL)
+        throw new ProviderError('invalid_input', '请先填写渠道 Base URL，再拉取模型候选')
+      compatibleBaseURL(settings.baseURL)
       const key = ctx.secret('COMPATIBLE_API_KEY')?.trim()
       if (!key) throw new ProviderError('auth', '请填写 API Key')
-      const base = compatibleBaseURL(ctx.settings.baseURL).href.replace(/\/$/, '')
+      const base = compatibleBaseURL(settings.baseURL).href.replace(/\/$/, '')
       const messages = { cancelled: '兼容渠道请求已取消', network: '兼容渠道网络请求失败' }
       const res = await send(
         ctx,

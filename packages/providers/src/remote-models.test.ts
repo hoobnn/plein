@@ -205,4 +205,18 @@ describe('listRemoteModels', () => {
     const { ctx } = fakeContext(providers[0]!)
     await expect(providers[0]!.listRemoteModels!(ctx)).rejects.toThrow(/Base URL/)
   })
+
+  it('compatible：只填 Base URL（未选模型）也能拉取候选，模型 ID 只在提交时必填', async () => {
+    const { providers } = createCompatiblePlugin()
+    const def = providers[0]!
+    const { ctx, fetch } = fakeContext(def, [json(list([{ id: 'gpt-x' }]))])
+    ctx.settings = compatibleSettings.parse({ baseURL: 'https://llm.example.com/v1' })
+    const models = await def.listRemoteModels!(ctx)
+    expect(models.map((m) => m.id)).toEqual(['gpt-x'])
+    expect(String(fetch.mock.calls[0]?.[0])).toBe('https://llm.example.com/v1/models')
+    // 生成提交路径仍要求模型 ID
+    await expect(
+      def.submit({ capability: 'text.chat', model: 'gpt-x', input: { messages: [] } }, ctx),
+    ).rejects.toThrow(/Base URL 与实际模型 ID/)
+  })
 })
