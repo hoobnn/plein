@@ -641,12 +641,15 @@ export class MaintenanceService {
           await this.restoreTrashFiles(trash)
           continue
         }
+        // 异步的逐层路径检查全部先行；随后的让出窗口之后，同步复核 revision，
+        // 紧接着改名并永久删除，中间不再让出事件循环。检查窗口里新增的引用
+        // 会被同步复核拦下，批次保留到下次维护重新扫描并恢复。
+        await assertInsideDataDir(this.deps.dataDir, `maintenance/trash/${trash.id}`)
+        await assertInsideDataDir(this.deps.dataDir, `maintenance/trash/.purging-${trash.id}`)
+        await setImmediate()
         this.assertRevision(snapshot.revision)
         const source = join(this.root, 'trash', trash.id),
           target = join(this.root, 'trash', `.purging-${trash.id}`)
-        // 删除同样不越过链接：回收站路径可能整目录被换成指向外部的链接。
-        await assertInsideDataDir(this.deps.dataDir, `maintenance/trash/${trash.id}`)
-        await assertInsideDataDir(this.deps.dataDir, `maintenance/trash/.purging-${trash.id}`)
         renameSync(source, target)
         await rm(target, { recursive: true, force: true })
       }

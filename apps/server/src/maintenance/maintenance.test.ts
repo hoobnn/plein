@@ -1011,6 +1011,35 @@ describe('本机数据维护', () => {
     expect(existsSync(join(copy.path, 'job-outputs'))).toBe(false)
   })
 
+  it('到期删除的路径检查期间新增引用时中止，批次保留待下次恢复', async () => {
+    const f = await fixture(),
+      asset = await f.asset()
+    await f.service.settings(MaintenanceSettings.parse({ autoBackup: false, trashDays: 1 }))
+    const result = await f.service.cleanup((await f.service.preview()).token)
+    const doc = f.canvas('canvas')
+    const { assertInsideDataDir: realAssert } =
+      await vi.importActual<typeof import('./files')>('./files')
+    // 模拟竞态：到期删除的异步路径检查窗口里，恰好新增指向批次内素材的画布引用
+    vi.mocked(assertInsideDataDir).mockImplementationOnce(async (dataDir, rel) => {
+      if (rel.startsWith('maintenance/trash/'))
+        createElement(doc, { kind: 'image', assetId: asset.id, x: 0, y: 0, w: 10, h: 10 })
+      return realAssert(dataDir, rel)
+    })
+    f.advance(DAY + 1)
+    await f.service.tick()
+    // 同步复核拦下删除：批次保留，素材既没被永久删除也没被恢复
+    expect(existsSync(join(f.root, 'maintenance', 'trash', result.id!))).toBe(true)
+    expect(f.assets.get('local', asset.id)).toBeNull()
+    expect((await f.service.status()).lastError).toContain('数据已变化')
+    // 下次稳定维护重新扫描：引用中的素材恢复
+    f.rooms.get('canvas').flush()
+    await f.service.tick()
+    expect(f.assets.get('local', asset.id)).toBeTruthy()
+    expect(existsSync(f.assets.originalPath(asset.id))).toBe(true)
+    expect(existsSync(join(f.root, 'maintenance', 'trash', result.id!))).toBe(false)
+    doc.destroy()
+  })
+
   it('未完成的回收清单在重启时自动恢复，保留文件和登记信息', async () => {
     const f = await fixture(),
       asset = await f.asset()
