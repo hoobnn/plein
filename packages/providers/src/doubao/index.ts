@@ -404,6 +404,7 @@ export const doubaoProvider = defineProvider({
     {
       id: 'seed-icl-1.0',
       title: '豆包声音复刻 1.0（已有音色）',
+      description: '历史 V3 接口兼容项；新接入请使用声音复刻 2.0',
       capabilities: ['audio.speech'],
       limits: { speed: { min: 0.5, max: 2 } },
     },
