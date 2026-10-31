@@ -1,12 +1,35 @@
-import type { DesktopUpdateState } from '@plein/protocol'
+import type {
+  DesktopUpdateIntervalHours,
+  DesktopUpdatePreferences,
+  DesktopUpdateState,
+} from '@plein/protocol'
 import { useEffect, useMemo, useState } from 'react'
 import { desktop } from '../desktop'
-import { bytes, duration, fullTime } from '../ui/format'
+import { bytes, duration, relativeTime, shortTime } from '../ui/format'
 import { Icon, type IconName } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
 import { Presence, useExit } from '../ui/Presence'
+import { Select, type SelectOption } from '../ui/Select'
+import { Switch } from '../ui/Switch'
 import { renderReleaseNotes } from './releaseNotes'
 import { useUpdate, type UpdateAction as Action } from './desktopUpdateState'
+
+/** 应用打开期间的检查频率；0 表示不定期检查 */
+const INTERVAL_LABELS: Record<DesktopUpdateIntervalHours, string> = {
+  0: '不定期',
+  1: '每小时',
+  3: '每 3 小时',
+  6: '每 6 小时',
+  12: '每 12 小时',
+  24: '每天',
+}
+const INTERVAL_OPTIONS: SelectOption[] = Object.entries(INTERVAL_LABELS).map(([value, label]) => ({
+  value,
+  label,
+}))
+
+const intervalText = (hours: DesktopUpdateIntervalHours) =>
+  hours === 0 ? '不定期检查' : `${INTERVAL_LABELS[hours]}检查一次`
 
 async function act(action: Action | 'read') {
   if (!desktop || useUpdate.getState().pending) return
@@ -24,6 +47,26 @@ async function act(action: Action | 'read') {
       useUpdate.setState({ bridgeError: err instanceof Error ? err.message : String(err) })
   } finally {
     useUpdate.setState({ pending: null })
+  }
+}
+
+/** 读取主进程保存的检查偏好 */
+async function readPreferences() {
+  if (!desktop) return
+  try {
+    useUpdate.setState({ preferences: await desktop.getUpdatePreferences() })
+  } catch (err) {
+    useUpdate.setState({ bridgeError: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+/** 保存偏好；主进程会校验取值，失败时保留原设置 */
+async function writePreferences(preferences: DesktopUpdatePreferences) {
+  if (!desktop) return
+  try {
+    useUpdate.setState({ preferences: await desktop.setUpdatePreferences(preferences) })
+  } catch (err) {
+    useUpdate.setState({ bridgeError: err instanceof Error ? err.message : String(err) })
   }
 }
 
@@ -134,7 +177,7 @@ const statusOf = (state: DesktopUpdateState): { title: string; hint: string; ico
 
 /** 设置和菜单共用同一内容，关闭面板不丢失说明或下载状态。 */
 export function UpdateContent({ scroll = false }: { scroll?: boolean } = {}) {
-  const { state, pending, bridgeError } = useUpdate()
+  const { state, pending, bridgeError, preferences } = useUpdate()
   if (!state)
     return (
       <div className="flex flex-col gap-3 text-sm text-ink-muted">
@@ -208,6 +251,8 @@ export function UpdateContent({ scroll = false }: { scroll?: boolean } = {}) {
           )}
         </section>
 
+        <UpdateSchedule state={state} />
+
         {release && (
           <section className="flex min-w-0 flex-col gap-3" aria-label="更新内容">
             <h3 className="text-sm font-semibold">{release.name || '此版本的新内容'}</h3>
@@ -238,11 +283,11 @@ export function UpdateContent({ scroll = false }: { scroll?: boolean } = {}) {
       </div>
       <div className="flex flex-none flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
         <p className="text-xs text-ink-subtle">
-          {state.checkedAt
-            ? `上次检查：${fullTime(state.checkedAt)}`
-            : phase === 'unavailable'
-              ? '此环境不会自动检查更新'
-              : '每 6 小时自动检查更新'}
+          {phase === 'unavailable'
+            ? '此环境不会自动检查更新'
+            : preferences
+              ? `${preferences.checkOnLaunch ? '启动时检查' : '启动时不检查'} · ${intervalText(preferences.intervalHours)}`
+              : '自动检查更新'}
         </p>
         {action && (
           <button
@@ -270,6 +315,64 @@ export function UpdateContent({ scroll = false }: { scroll?: boolean } = {}) {
         {phase === 'checking' && <span className="text-sm text-ink-muted">检查中…</span>}
       </div>
     </div>
+  )
+}
+
+/** 自动检查计划：启动时是否检查、应用打开期间多久检查一次 */
+function UpdateSchedule({ state }: { state: DesktopUpdateState }) {
+  const preferences = useUpdate((s) => s.preferences)
+  useEffect(() => {
+    if (!preferences) void readPreferences()
+  }, [preferences])
+  if (!preferences) return null
+  return (
+    <section
+      className="flex flex-col gap-4 rounded-xl border border-line bg-surface-2 p-4"
+      aria-label="更新检查计划"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">启动时自动检查更新</p>
+          <p className="mt-0.5 text-xs text-ink-subtle">打开 Plein 后自动检查新版本</p>
+        </div>
+        <Switch
+          label="启动时自动检查更新"
+          checked={preferences.checkOnLaunch}
+          onChange={(next) => void writePreferences({ ...preferences, checkOnLaunch: next })}
+        />
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">应用打开期间检查频率</p>
+          <p className="mt-0.5 text-xs text-ink-subtle">应用开着的时候多久查一次新版本</p>
+        </div>
+        <Select
+          aria-label="应用打开期间检查频率"
+          value={String(preferences.intervalHours)}
+          options={INTERVAL_OPTIONS}
+          onChange={(value) =>
+            void writePreferences({
+              ...preferences,
+              intervalHours: Number(value) as DesktopUpdateIntervalHours,
+            })
+          }
+        />
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-subtle">
+        <span>
+          {state.checkedAt
+            ? `上次检查：${relativeTime(state.checkedAt)}`
+            : '上次检查：还没有检查过'}
+        </span>
+        <span>
+          {state.nextCheckAt
+            ? `下次检查：${shortTime(state.nextCheckAt)}`
+            : preferences.intervalHours === 0
+              ? '下次检查：不定期'
+              : '下次检查：暂无安排'}
+        </span>
+      </div>
+    </section>
   )
 }
 
