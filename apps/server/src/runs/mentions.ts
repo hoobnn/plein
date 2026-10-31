@@ -400,23 +400,42 @@ export async function applyMentions(
         }
       : inputs
   const provider = parseModelRef(String(params.model ?? ''))?.provider
+  const promptKey = video ? (prompt ?? 'prompt') : prompt
   if (
-    video &&
+    promptKey &&
     send &&
-    (provider === 'minimax/api' || provider === 'volc/ark' || provider === 'volc/ark-plan')
+    (!video ||
+      provider === 'minimax/api' ||
+      provider === 'volc/ark' ||
+      provider === 'volc/ark-plan')
   ) {
-    const images = merged[port] ?? []
-    const bindings = details.flatMap((d) => {
-      const tokens = d.sent.flatMap((id) => {
-        const index = images.findIndex((v) => v.type === 'image' && v.assetId === id)
-        return index < 0 ? [] : [`@image${index + 1}`]
-      })
-      return tokens.length ? [`${d.name}：${tokens.join('、')}`] : []
-    })
-    if (bindings.length)
-      params.prompt = `${params.prompt ?? ''}\n\n参考对应：\n${bindings.join('\n')}`
+    appendReferenceBindings(
+      params,
+      promptKey,
+      details,
+      merged[port] ?? [],
+      video ? (index) => `@image${index + 1}` : (index) => `图${index + 1}`,
+    )
   }
   return { params, inputs: merged, refs: refList, notices, details, blocked }
+}
+
+function appendReferenceBindings(
+  params: Record<string, unknown>,
+  prompt: string,
+  details: InputRef[],
+  images: PortValue[],
+  token: (index: number) => string,
+) {
+  const bindings = details.flatMap((d) => {
+    const tokens = d.sent.flatMap((id) => {
+      const index = images.findIndex((v) => v.type === 'image' && v.assetId === id)
+      return index < 0 ? [] : [token(index)]
+    })
+    return tokens.length ? [`${d.name}：${tokens.join('、')}`] : []
+  })
+  if (bindings.length)
+    params[prompt] = `${params[prompt] ?? ''}\n\n参考对应：\n${bindings.join('\n')}`
 }
 
 /** 连进卡片参考图端口的上游节点里，有最近一次运行失败的 */

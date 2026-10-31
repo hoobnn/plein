@@ -68,7 +68,9 @@ describe('运行前解析 @ 引用', () => {
     const { doc, photo } = setup()
     const n = node(doc, 'plein/image', { prompt: '@林夏站在天台，参考@定妆照' })
     const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))
-    expect(r.params.prompt).toBe('林夏站在天台，参考定妆照\n\n设定：\n林夏：二十岁，短发')
+    expect(r.params.prompt).toBe(
+      '林夏站在天台，参考定妆照\n\n设定：\n林夏：二十岁，短发\n\n参考对应：\n林夏：图1\n定妆照：图1',
+    )
     expect(r.inputs.references).toEqual([
       {
         type: 'image',
@@ -77,6 +79,39 @@ describe('运行前解析 @ 引用', () => {
         source: doc.get(photo)!.id,
       },
     ])
+  })
+
+  it('图片节点：参考对应按最终去重顺序编号，未送入的引用不列出', async () => {
+    const { doc, photo, hero } = setup()
+    const second = createElement(doc, {
+      kind: 'image',
+      assetId: 'b'.repeat(64),
+      x: 100,
+      y: 0,
+      w: 10,
+      h: 10,
+    })
+    connect(doc, [second, 'image'], [hero, 'references'])
+    createElement(doc, {
+      kind: 'node',
+      nodeType: 'plein/prop',
+      name: '铁盒',
+      params: { description: '磨砂黑' },
+      x: 400,
+      y: 0,
+      w: 10,
+      h: 10,
+    })
+    const n = node(doc, 'plein/image', { prompt: '@林夏带着@铁盒，参考@定妆照' })
+    const own: PortValue = { type: 'image', assetId: 'c'.repeat(64), kind: 'image' }
+    const r = await applyMentions(doc, doc.get(n)!, imageNode, { references: [own] }, collect(doc))
+    expect(r.inputs.references?.map((v) => ('assetId' in v ? v.assetId : ''))).toEqual([
+      'c'.repeat(64),
+      doc.get(photo)!.assetId,
+      'b'.repeat(64),
+    ])
+    expect(r.params.prompt).toContain('参考对应：\n林夏：图2、图3\n定妆照：图2')
+    expect(r.params.prompt).not.toContain('铁盒：图')
   })
 
   it('实际引用：元素名与真正送进去的 assetId 一并给出', async () => {
@@ -109,7 +144,7 @@ describe('运行前解析 @ 引用', () => {
     const n = node(doc, 'plein/image', { prompt: '@打火机 在@林夏手里' })
     const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))
     expect(r.params.prompt).toBe(
-      '打火机 在林夏手里\n\n设定：\n打火机：磨砂黑，铜盖有划痕\n林夏：二十岁，短发',
+      '打火机 在林夏手里\n\n设定：\n打火机：磨砂黑，铜盖有划痕\n林夏：二十岁，短发\n\n参考对应：\n林夏：图1',
     )
     expect(r.refs).toEqual([
       { name: '打火机', elementId: doc.get(prop)!.id, assetIds: [] },
@@ -355,7 +390,7 @@ describe('角色档案：@林夏/少年/校服', () => {
     const n = node(doc, 'plein/image', { prompt: '@林夏/少年/校服站在天台' })
     const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))
     expect(r.params.prompt).toBe(
-      '林夏（少年·校服）站在天台\n\n设定：\n林夏（少年·校服）：二十岁，短发\n少年时期：十五岁\n服饰「校服」：蓝白校服',
+      '林夏（少年·校服）站在天台\n\n设定：\n林夏（少年·校服）：二十岁，短发\n少年时期：十五岁\n服饰「校服」：蓝白校服\n\n参考对应：\n林夏（少年·校服）：图1、图2、图3',
     )
     expect(r.inputs.references?.map((v) => ('assetId' in v ? v.assetId : ''))).toEqual([
       '1'.repeat(64),
