@@ -21,6 +21,7 @@ import { assetUrls } from '../../api/client'
 import { Icon } from '../../ui/icons'
 import { composingKey } from './composingKey'
 import { MentionTextarea } from '../../ui/MentionTextarea'
+import { Popover } from '../../ui/Popover'
 import { mentionParts } from '../../canvas/mentionText'
 import { findNode, mentionTargets, targetImages } from '../../canvas/nodes'
 import { useCatalog } from '../../stores/catalog'
@@ -430,57 +431,65 @@ export function PromptBox({
           </div>
         </div>
       )}
-      {presetOptions.length > 0 && (
-        <div
-          role="listbox"
-          aria-label="提示词预设"
-          className="ui-menu absolute top-full left-3 z-10 mt-1 w-72"
+      {presetOptions.length > 0 && ref.current && (
+        <Popover
+          anchor={ref.current}
+          label="提示词预设"
+          width={288}
+          initialFocus={false}
+          onClose={() => setQuery(null)}
         >
-          {presetOptions.map((p, i) =>
-            option(
-              p.id,
-              i,
-              () => applyPreset(p),
-              <span className="ui-menu-text">
-                <span>{p.title}</span>
-                {p.description && <span className="ui-menu-desc truncate">{p.description}</span>}
-              </span>,
-            ),
-          )}
-        </div>
+          <div role="listbox" aria-label="提示词预设">
+            {presetOptions.map((p, i) =>
+              option(
+                p.id,
+                i,
+                () => applyPreset(p),
+                <span className="ui-menu-text">
+                  <span>{p.title}</span>
+                  {p.description && <span className="ui-menu-desc truncate">{p.description}</span>}
+                </span>,
+              ),
+            )}
+          </div>
+        </Popover>
       )}
-      {profileOpts.length > 0 && (
-        <div
-          role="listbox"
-          aria-label="引用角色档案或场景视角"
-          className="ui-menu absolute top-full left-3 z-10 mt-1 w-72"
+      {profileOpts.length > 0 && ref.current && (
+        <Popover
+          anchor={ref.current}
+          label="引用角色档案或场景视角"
+          width={288}
+          initialFocus={false}
+          onClose={() => setQuery(null)}
         >
-          {profileOpts.map((o, i) =>
-            option(
-              o.key,
-              i,
-              () => insert(o.insert),
-              <>
-                {o.images[0] ? (
-                  <img
-                    src={assetUrls.variant(o.images[0], 'thumb-256')}
-                    alt=""
-                    className="size-6 flex-none rounded-sm object-cover"
-                  />
-                ) : (
-                  <span className="flex size-6 flex-none items-center justify-center rounded-sm bg-surface-3 text-ink-subtle">
-                    <Icon name={SLOT_ICONS[o.slot]} size={12} />
+          <div role="listbox" aria-label="引用角色档案或场景视角">
+            {profileOpts.map((o, i) =>
+              option(
+                o.key,
+                i,
+                () => insert(o.insert),
+                <>
+                  {o.images[0] ? (
+                    <img
+                      src={assetUrls.variant(o.images[0], 'thumb-256')}
+                      alt=""
+                      className="size-6 flex-none rounded-sm object-cover"
+                    />
+                  ) : (
+                    <span className="flex size-6 flex-none items-center justify-center rounded-sm bg-surface-3 text-ink-subtle">
+                      <Icon name={SLOT_ICONS[o.slot]} size={12} />
+                    </span>
+                  )}
+                  <span className="min-w-0 flex-1 truncate">{o.name}</span>
+                  <span className="text-xs text-ink-subtle">
+                    {o.period ? `${o.period} · ` : ''}
+                    {o.slot === 'scene' ? '场景视角' : SLOT_LABELS[o.slot]}
                   </span>
-                )}
-                <span className="min-w-0 flex-1 truncate">{o.name}</span>
-                <span className="text-xs text-ink-subtle">
-                  {o.period ? `${o.period} · ` : ''}
-                  {o.slot === 'scene' ? '场景视角' : SLOT_LABELS[o.slot]}
-                </span>
-              </>,
-            ),
-          )}
-        </div>
+                </>,
+              ),
+            )}
+          </div>
+        </Popover>
       )}
       {query?.kind === '@' && !query.query.includes('/') && ref.current && (
         <MentionPicker

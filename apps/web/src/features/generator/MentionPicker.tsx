@@ -93,14 +93,7 @@ export function MentionPicker({
     root.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
   }, [active])
   return (
-    <Popover
-      anchor={anchor}
-      label="引用素材"
-      onClose={onClose}
-      width={300}
-      initialFocus={false}
-      container={anchor.closest<HTMLElement>('[role="dialog"]')}
-    >
+    <Popover anchor={anchor} label="引用素材" onClose={onClose} width={300} initialFocus={false}>
       <div
         ref={root}
         role="group"
