@@ -163,6 +163,7 @@
   border-radius: var(--radius-xs);
   outline-offset: 4px;
   font-size: var(--text-xl);
+  line-height: var(--text-xl--line-height);
   font-weight: 600;
   color: var(--ink);
   background: transparent;
@@ -515,7 +516,7 @@
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 6px 8px;
   border-radius: var(--radius-md);
   color: var(--ink-muted);
@@ -568,7 +569,8 @@
   align-items: center;
   gap: 4px;
   color: var(--ink-subtle);
-  font-size: 10px;
+  font-size: var(--text-2xs);
+  line-height: var(--text-2xs--line-height);
 }
 .lib-timeline-thumb .lib-cover-error > span {
   display: none;
@@ -618,7 +620,7 @@
 .lib-lane-add .lib-timeline-node {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 6px 8px;
   border-radius: var(--radius-md);
   color: var(--ink-subtle);

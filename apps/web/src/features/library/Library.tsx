@@ -678,7 +678,7 @@ function Card({
               </span>
             )}
           </div>
-          <div className="px-3 pt-2.5 pb-3">
+          <div className="px-3 py-3">
             <div className="truncate text-sm font-medium">{item.name}</div>
             <div className="truncate text-xs text-ink-subtle" title={source}>
               {source && <>{source} · </>}
@@ -776,7 +776,7 @@ function OfficialCard({
           <span className="ui-chip self-start">{Object.values(item.tags)[0]}</span>
           <span className="line-clamp-3 text-xs text-ink-muted">{item.description}</span>
         </div>
-        <div className="px-3 pt-2.5 pb-3">
+        <div className="px-3 py-3">
           <div className="truncate text-sm font-medium">{item.name}</div>
           <div className="truncate text-xs text-ink-subtle">官方 · 提示词</div>
         </div>
