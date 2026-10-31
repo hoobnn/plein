@@ -1078,6 +1078,10 @@ function ShotSummary({
           const voice = pickVoice(pick, voiceOf(asset.params))
           const data = input.data && input.data.status !== 'unprepared' ? input.data : undefined
           const refs = data?.refs.filter((ref) => ref.elementId === asset.id)
+          const firstFrameCount =
+            data?.nodeType === 'plein/video' && data.params.mode === 'image'
+              ? (data.inputs.images ?? []).length
+              : undefined
           const sentImages = data
             ? submittedMedia(data).filter((item) => item.type === 'image')
             : []
@@ -1154,15 +1158,22 @@ function ShotSummary({
                 </span>
               )}
               {!hasSent && notSent && (
-                <span
-                  className="block text-ink-subtle"
-                  title={refs!
-                    .filter((ref) => !ref.sent.length)
-                    .map(reasonText)
-                    .join('；')}
-                >
-                  参考图将不送入
-                </span>
+                <>
+                  <span
+                    className="block text-ink-subtle"
+                    title={refs!
+                      .filter((ref) => !ref.sent.length)
+                      .map(reasonText)
+                      .join('；')}
+                  >
+                    参考图将不送入
+                  </span>
+                  {firstFrameCount !== undefined && (
+                    <span className="block text-ink-subtle">
+                      首帧：已送入 {firstFrameCount} 张上游分镜图（来自 inputs.images）
+                    </span>
+                  )}
+                </>
               )}
               {!hasSent && !notSent && onlyText && (
                 <span className="block text-ink-subtle">仅文字设定</span>

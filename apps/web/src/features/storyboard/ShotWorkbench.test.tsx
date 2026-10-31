@@ -780,6 +780,19 @@ it('有参考图但本次未送入时不标成仅文字设定，原因收进 tit
   expect(screen.queryByText('参考图将送入模型')).toBeNull()
 })
 
+it('图生视频未送 @ 参考图时同时标明首帧已送入', async () => {
+  const { doc, board, shots } = fixture(true)
+  addActor(doc)
+  bindCharacter(doc, board, shots, '@角色')
+  const input = summaryInput('video-one', '', [], ['ref'], 'unsupported')
+  input.params.mode = 'image'
+  input.inputs = { images: [{ type: 'image', assetId: 'first-frame' }] }
+  mockSummary(input)
+  renderApp(<ShotWorkbench />)
+  expect(await screen.findByText('参考图将不送入')).toBeTruthy()
+  expect(screen.getByText('首帧：已送入 1 张上游分镜图（来自 inputs.images）')).toBeTruthy()
+})
+
 it('摘要按已有字段区分仅文字设定与已人工认可', async () => {
   const { doc, board, shots } = fixture(true)
   createElement(doc, {

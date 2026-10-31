@@ -114,8 +114,8 @@ export function BatchPlanDetails({
                       {row.input.nodeType === 'plein/video' &&
                         row.input.params.mode === 'image' && (
                           <p>
-                            图生视频首帧：送入 {(row.input.inputs.images ?? []).length} 张
-                            （来自视频节点的图片输入）
+                            首帧：已送入 {(row.input.inputs.images ?? []).length} 张上游分镜图（来自
+                            inputs.images）
                           </p>
                         )}
                       {row.input.nodeType === 'plein/video' &&

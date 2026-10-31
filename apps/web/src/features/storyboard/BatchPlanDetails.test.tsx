@@ -45,7 +45,7 @@ it('区分图生视频首帧和未送入的 @ 参考图', () => {
       }}
     />,
   )
-  expect(screen.getByText(/图生视频首帧：送入 1 张/)).toBeTruthy()
+  expect(screen.getByText(/首帧：已送入 1 张上游分镜图（来自 inputs.images）/)).toBeTruthy()
   expect(screen.getByText(/角色：作为 @ 引用直接送入 0 张参考图/)).toBeTruthy()
 })
 
