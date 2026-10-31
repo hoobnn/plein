@@ -90,6 +90,7 @@
     padding: 0 8px;
     border-radius: var(--radius-md);
     font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
     color: var(--ink-muted);
     white-space: nowrap;
     transition:
@@ -102,6 +103,7 @@
     min-width: var(--h-md);
     padding: 0 10px;
     font-size: var(--text-xs);
+    line-height: var(--text-xs--line-height);
   }
   /* 只有图标的工具条按钮加 ui-icon-btn 变方形。不用 :has(> svg:only-child)：
      它不看文字节点，图标加文字的按钮也会被去掉内边距 */
@@ -138,6 +140,7 @@
     height: var(--h-md);
     padding: 0 10px;
     font-size: var(--text-xs);
+    line-height: var(--text-xs--line-height);
     color: var(--ink-muted);
     white-space: nowrap;
     cursor: pointer;
@@ -149,6 +152,7 @@
   .ui-bar-text {
     padding: 0 8px;
     font-size: var(--text-xs);
+    line-height: var(--text-xs--line-height);
     color: var(--ink-subtle);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
@@ -163,6 +167,7 @@
     padding: 0 12px;
     border-radius: var(--radius-md);
     font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
     color: var(--ink);
     white-space: nowrap;
     transition:
@@ -228,11 +233,13 @@
     padding: 0 8px;
     border-radius: var(--radius-sm);
     font-size: var(--text-xs);
+    line-height: var(--text-xs--line-height);
   }
   .ui-btn-sm {
     height: var(--h-sm);
     padding: 0 10px;
     font-size: var(--text-xs);
+    line-height: var(--text-xs--line-height);
   }
   .ui-btn-lg {
     height: var(--h-lg);
@@ -266,6 +273,7 @@
     border-radius: var(--radius-md);
     padding: 0 10px;
     font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
     color: var(--ink);
     background: var(--surface-2);
     box-shadow: inset 0 0 0 1px var(--line);
@@ -305,10 +313,23 @@
   .ui-select.ui-input-lg {
     height: var(--h-lg);
   }
+  /* 表格、列表行内编辑用 24 高的紧凑输入；默认 32，表单对话框 36 */
+  .ui-input-xs,
+  .ui-select.ui-input-xs {
+    height: var(--h-xs);
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-xs);
+    line-height: var(--text-xs--line-height);
+  }
+  .ui-select.ui-input-xs {
+    padding-right: 24px;
+    background-position: right 8px center;
+  }
   textarea.ui-input {
     height: auto;
     padding: 8px 10px;
-    line-height: 20px;
+    line-height: var(--leading-note);
   }
   .ui-select {
     appearance: none;
@@ -319,26 +340,34 @@
     cursor: pointer;
   }
 
-  /* 表单字段：标签在上，说明在下，间距 6 */
+  /* 表单字段：标签在上，说明在下，间距 6（--field-gap） */
   .ui-field {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--field-gap);
   }
   .ui-label {
     font-size: var(--text-xs);
+    line-height: var(--text-xs--line-height);
     font-weight: 500;
     color: var(--ink-muted);
   }
   .ui-help {
     font-size: var(--text-xs);
+    line-height: var(--text-xs--line-height);
     color: var(--ink-subtle);
   }
   /* 区块小标题：对话框和面板里分组用 */
   .ui-section-title {
     font-size: var(--text-xs);
+    line-height: var(--text-xs--line-height);
     font-weight: 600;
     color: var(--ink-subtle);
+  }
+  /* 多行说明：13/20。短说明仍用 .ui-help（12/16） */
+  .ui-note {
+    font-size: var(--text-sm);
+    line-height: var(--leading-note);
   }
 
   /* 分段控件：凹槽 8 圆角、2 内边距，里面的项 6 圆角；选中项浮起 */
@@ -362,6 +391,7 @@
     padding: 0 10px;
     border-radius: var(--radius-sm);
     font-size: var(--text-xs);
+    line-height: var(--text-xs--line-height);
     color: var(--ink-muted);
     white-space: nowrap;
     transition:
@@ -379,6 +409,7 @@
     height: var(--h-md);
     padding: 0 12px;
     font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
   }
   .ui-seg-item:hover {
     color: var(--ink);
@@ -427,6 +458,7 @@
     height: var(--h-md);
     padding: 0 4px;
     font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
   }
   /* 加 :root 压过上面深色主题的选中底色，底色交给滑块 */
   :root .ui-seg-block > .ui-seg-item[aria-pressed="true"] {
@@ -484,6 +516,7 @@
   .ui-menu-label {
     padding: 8px 8px 4px;
     font-size: var(--text-2xs);
+    line-height: var(--text-2xs--line-height);
     font-weight: 600;
     color: var(--ink-subtle);
   }
@@ -499,6 +532,7 @@
     border-radius: var(--radius-md);
     text-align: left;
     font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
     color: var(--ink);
   }
   .ui-menu-item:hover,
@@ -542,6 +576,7 @@
   }
   .ui-menu-desc {
     font-size: var(--text-xs);
+    line-height: var(--text-xs--line-height);
     color: var(--ink-subtle);
   }
   .ui-sep {
@@ -550,7 +585,17 @@
     background: var(--line);
   }
 
-  /* 提示条：顶栏下方居中 */
+  /* 提示条：顶栏下方居中。位置跟随外壳布局：顶栏下方 64、离左右 12 */
+  .ui-toast-wrap {
+    position: absolute;
+    inset-inline: 0;
+    top: var(--chrome-top);
+    z-index: 30;
+    display: flex;
+    justify-content: center;
+    padding-inline: var(--chrome-inset);
+  }
+  /* 普通消息单行 36；带操作按钮的是 40，上下 4、按钮 28、间距 12 */
   .ui-toast {
     display: flex;
     max-width: 100%;
@@ -560,6 +605,7 @@
     padding: 8px 16px;
     border-radius: var(--radius-lg);
     font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
     background: var(--menu);
     box-shadow: var(--shadow-3);
     backdrop-filter: blur(var(--blur-menu));
@@ -568,12 +614,17 @@
     --pop-to: translateY(-4px);
     animation: ui-pop-in var(--dur-base) var(--ease-spring);
   }
+  .ui-toast-action {
+    min-height: var(--h-xl);
+    gap: 12px;
+    padding: 4px 8px 4px 16px;
+  }
 
   .ui-tooltip {
     padding: 4px 8px;
     border-radius: var(--radius-sm);
     font-size: var(--text-xs);
-    line-height: 16px;
+    line-height: var(--text-xs--line-height);
     color: var(--on-primary);
     background: var(--primary);
     box-shadow: var(--shadow-2);
@@ -585,6 +636,21 @@
     transition: translate var(--dur-base) var(--ease-spring);
   }
 
+  /*
+   * 对话框内边距：确认 / 表单对话框桌面 24、窄屏 20；工作面板（Modal）统一 20。
+   * 工作面板的标题行用 .ui-dialog-head，正文由各页面按 20 排版（表格和全屏编辑器自己决定）。
+   */
+  .ui-dialog-pad {
+    padding: var(--panel-pad-lg);
+  }
+  @media (min-width: 640px) {
+    .ui-dialog-pad {
+      padding: 24px;
+    }
+  }
+  .ui-dialog-head {
+    padding: 10px 56px 10px var(--panel-pad-lg);
+  }
   /* 对话框（ui/Dialog.tsx、ui/Modal.tsx）：遮罩淡入，面板略微上浮着弹出，两者同时进行 */
   .ui-dialog-scrim {
     animation: ui-fade-in var(--dur-base) var(--ease-standard);
@@ -676,15 +742,17 @@
     max-width: 100%;
     overflow-wrap: anywhere;
     font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
     color: var(--ink-muted);
   }
   .ui-empty-compact .ui-empty-title {
     font-size: var(--text-xs);
+    line-height: var(--text-xs--line-height);
   }
   .ui-empty-hint {
     max-width: 28rem;
     font-size: var(--text-xs);
-    line-height: 18px;
+    line-height: var(--text-xs--line-height);
     color: var(--ink-subtle);
   }
 
@@ -699,6 +767,7 @@
     border-radius: var(--radius-xs);
     font-family: var(--font-sans);
     font-size: var(--text-2xs);
+    line-height: var(--text-2xs--line-height);
     color: var(--ink-muted);
     background: var(--surface-2);
     box-shadow:
@@ -712,6 +781,7 @@
   .ui-kbd {
     font-family: var(--font-sans);
     font-size: var(--text-2xs);
+    line-height: var(--text-2xs--line-height);
     color: var(--ink-subtle);
     font-variant-numeric: tabular-nums;
   }
@@ -724,6 +794,7 @@
     padding: 0 8px;
     border-radius: var(--radius-sm);
     font-size: var(--text-xs);
+    line-height: var(--text-xs--line-height);
     color: var(--ink-muted);
     background: var(--surface-2);
     box-shadow: inset 0 0 0 1px var(--line);
@@ -784,6 +855,7 @@
     border-radius: var(--radius-lg);
     border: 1px dashed var(--line);
     font-size: var(--text-xs);
+    line-height: var(--text-xs--line-height);
     color: var(--ink-subtle);
     transition: color var(--dur-fast) var(--ease-standard);
   }

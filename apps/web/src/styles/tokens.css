@@ -162,6 +162,10 @@
   --text-2xl--line-height: 32px;
   --text-2xl--letter-spacing: -0.02em;
 
+  /* 行高：阅读正文 14/22（text-base 配 leading-reading）；多行说明 13/20（text-sm 配 leading-note） */
+  --leading-reading: 22px;
+  --leading-note: 20px;
+
   /* 动效：颜色变化用 fast，弹出和位移用 base，对话框用 slow */
   --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
@@ -193,6 +197,12 @@
   --h-md: 32px;
   --h-lg: 36px;
   --h-xl: 40px;
+  /* 表单字段内部：标签、控件、说明之间的间距。字段之间用 12（紧凑表单）/ 16（普通表单） */
+  --field-gap: 6px;
+  /* 面板内边距：紧凑侧栏 12 · 普通面板 16 · 大型工作对话框 20。确认框桌面 24 在组件里单独写 */
+  --panel-pad-sm: 12px;
+  --panel-pad: 16px;
+  --panel-pad-lg: 20px;
   /* 布局：浮动外框离视口边 12，顶栏 44，之下的浮层从 64 开始 */
   --chrome-inset: 12px;
   --chrome-h: 44px;
