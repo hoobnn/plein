@@ -38,6 +38,8 @@ export interface MaintenanceStatus {
   trash: Array<{ id: string; createdAt: number; assets: number; bytes: number; expiresAt: number }>
   /** 数据目录里被跳过的符号链接路径（相对数据目录）。 */
   skippedSymlinks: string[]
+  /** 因权限不足而跳过、未纳入统计的目录（相对数据目录）。 */
+  unreadableDirs: string[]
 }
 
 export interface DataSpace {

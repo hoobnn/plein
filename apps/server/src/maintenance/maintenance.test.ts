@@ -1,6 +1,16 @@
 import { createHash } from 'node:crypto'
 import { existsSync, statSync } from 'node:fs'
-import { mkdtemp, mkdir, readFile, rename, rm, symlink, utimes, writeFile } from 'node:fs/promises'
+import {
+  mkdtemp,
+  mkdir,
+  chmod,
+  readFile,
+  rename,
+  rm,
+  symlink,
+  utimes,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
@@ -711,6 +721,52 @@ describe('本机数据维护', () => {
     expect(backup.skippedSymlinks).toContain(`job-outputs/${ref.id}`)
     const copy = await f.service.restoreCopy(backup.id)
     expect(copy.missingAssets).toEqual([])
+  })
+
+  // chmod 000 对 root 无效，跳过；参考 plugins/process.test.ts 的权限环境判断。
+  const CAN_DENY =
+    process.allowedNodeEnvironmentFlags.has('--permission') ||
+    process.allowedNodeEnvironmentFlags.has('--experimental-permission') ||
+    (typeof process.getuid === 'function' && process.getuid() !== 0)
+
+  it.skipIf(!CAN_DENY)('不可读目录跳过并记入诊断，状态与空间统计不受影响', async () => {
+    const f = await fixture(),
+      asset = await f.asset()
+    const locked = join(f.root, 'locked')
+    await mkdir(locked)
+    await writeFile(join(locked, 'x'), 'x')
+    await chmod(locked, 0o000)
+    try {
+      const status = await f.service.status()
+      expect(status.unreadableDirs).toEqual(['locked'])
+      expect(status.skippedSymlinks).toEqual([])
+      expect((await f.service.space()).originals).toBe(
+        statSync(f.assets.originalPath(asset.id)).size,
+      )
+    } finally {
+      await chmod(locked, 0o700)
+    }
+  })
+
+  it('符号链接上报缓存 60 秒，维护操作后立即刷新', async () => {
+    const f = await fixture()
+    await f.asset()
+    expect((await f.service.status()).skippedSymlinks).toEqual([])
+    await symlink('/private/tmp', join(f.root, 'assets', 'late'))
+    // 缓存期内状态不变
+    expect((await f.service.status()).skippedSymlinks).toEqual([])
+    // 备份等维护操作让缓存失效，立刻看到新链接；结果排序稳定
+    await f.service.backup()
+    expect((await f.service.status()).skippedSymlinks).toEqual(['assets/late'])
+    await symlink('/private/tmp', join(f.root, 'assets', 'earlier'))
+    await symlink('/private/tmp', join(f.root, 'assets', 'also'))
+    expect((await f.service.status()).skippedSymlinks).toEqual(['assets/late'])
+    f.advance(60_001)
+    expect((await f.service.status()).skippedSymlinks).toEqual([
+      'assets/also',
+      'assets/earlier',
+      'assets/late',
+    ])
   })
 
   it('未完成的回收清单在重启时自动恢复，保留文件和登记信息', async () => {

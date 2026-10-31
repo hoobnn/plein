@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { createReadStream } from 'node:fs'
+import { createReadStream, type Dirent } from 'node:fs'
 import {
   chmod,
   copyFile,
@@ -31,50 +31,69 @@ interface WalkOptions {
   skip: Set<string>
 }
 
+export interface WalkResult {
+  /** 相对 root 的普通文件路径；符号链接不在其中。 */
+  files: Array<{ path: string; bytes: number; mtime: number }>
+  /** 符号链接路径（相对 root）；只记录，不跟随、不读取、不删除。 */
+  symlinks: string[]
+  /** 因权限不足而跳过的目录（相对 root）。 */
+  unreadableDirs: string[]
+}
+
 /**
  * 递归遍历扫描根 join(root, prefix)。符号链接一律不跟随、不读取、不删除：
  * 文件统计里跳过，路径单独收集给调用方上报，维护因此不会越出数据目录。
- * prefix 非空时先用 lstat 检查扫描根本身（如整个 assets 目录被换成链接）
- * ，所以扫描子目录请传前缀而不是拼接好的绝对路径；prefix 为空时 root
- * 就是用户选定的数据目录锄点，可能本身是系统级链接（如 macOS /var），照常跟随。
+ * prefix 非空时先用 lstat 检查扫描根本身（如整个 assets 目录被换成链接），
+ * 所以扫描子目录请传前缀而不是拼接好的绝对路径；prefix 为空时 root 就是
+ * 用户选定的数据目录锚点，可能本身是系统级链接（如 macOS /var），照常跟随。
  */
 async function walk(
   root: string,
   prefix: string,
   options: WalkOptions,
-): Promise<{ files: Array<{ path: string; bytes: number; mtime: number }>; symlinks: string[] }> {
+  /** 递归进入的子目录已由父级 readdir 确认类型，不再重复 lstat 前缀。 */
+  typed = false,
+): Promise<WalkResult> {
+  const empty = (): WalkResult => ({ files: [], symlinks: [], unreadableDirs: [] })
   // 扫描根本身若是符号链接（如整个 assets 目录被替换），同样不进入。
-  if (prefix) {
-    if (options.skip.has(prefix)) return { files: [], symlinks: [] }
+  if (prefix && !typed) {
+    if (options.skip.has(prefix)) return empty()
     const stat = await lstat(join(root, prefix)).catch((error: NodeJS.ErrnoException) => {
       if (error.code === 'ENOENT') return null
       throw error
     })
-    if (!stat) return { files: [], symlinks: [] }
-    if (stat.isSymbolicLink()) return { files: [], symlinks: [prefix] }
+    if (!stat) return empty()
+    if (stat.isSymbolicLink()) return { files: [], symlinks: [prefix], unreadableDirs: [] }
   }
   const files: Array<{ path: string; bytes: number; mtime: number }> = []
   const symlinks: string[] = []
-  const entries = await readdir(join(root, prefix), { withFileTypes: true }).catch(
-    (error: NodeJS.ErrnoException) => {
-      if (error.code === 'ENOENT') return []
-      throw error
-    },
-  )
+  const unreadableDirs: string[] = []
+  let entries: Dirent[]
+  try {
+    entries = await readdir(join(root, prefix), { withFileTypes: true })
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    // 目录消失或不可读都不让整体失败：前者当空目录，后者跳过并上报。
+    if (code === 'ENOENT') return empty()
+    if ((code === 'EACCES' || code === 'EPERM') && prefix)
+      return { files: [], symlinks: [], unreadableDirs: [prefix] }
+    throw error
+  }
   for (const entry of entries) {
     const path = prefix ? `${prefix}/${entry.name}` : entry.name
     if (options.skip.has(path)) continue
     if (entry.isSymbolicLink()) symlinks.push(path)
     else if (entry.isDirectory()) {
-      const nested = await walk(root, path, options)
+      const nested = await walk(root, path, options, true)
       files.push(...nested.files)
       symlinks.push(...nested.symlinks)
+      unreadableDirs.push(...nested.unreadableDirs)
     } else if (entry.isFile() && options.stats) {
       const stat = await lstat(join(root, path))
       files.push({ path, bytes: stat.size, mtime: stat.mtimeMs })
     }
   }
-  return { files, symlinks }
+  return { files, symlinks, unreadableDirs }
 }
 
 /** 列出 root/prefix 下的普通文件；符号链接不跟随也不统计，避免越出数据目录。 */
@@ -92,6 +111,15 @@ export async function symlinksIn(
   skip: string[] = [],
 ): Promise<string[]> {
   return (await walk(root, prefix, { stats: false, skip: new Set(skip) })).symlinks
+}
+
+/** 全量收集符号链接与不可读目录（相对 root），供维护状态上报；不统计文件大小。 */
+export async function scanTree(
+  root: string,
+  prefix = '',
+  skip: string[] = [],
+): Promise<WalkResult> {
+  return walk(root, prefix, { stats: false, skip: new Set(skip) })
 }
 
 export async function hashFile(path: string) {

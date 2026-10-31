@@ -19,7 +19,7 @@ import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
 import { canvasState, documentReferences, readDocument } from '../media-index/references'
 import { backupInfo, backupManifest, restoreBackup, writeBackup } from './backup'
-import { atomicJson, filesIn, jsonFile, symlinksIn } from './files'
+import { atomicJson, filesIn, jsonFile, scanTree } from './files'
 
 const DAY = 86_400_000
 const TTL = 10 * 60_000
@@ -101,6 +101,8 @@ export class MaintenanceService {
   private closed = false
   private current: Promise<unknown> | null = null
   private now: () => number
+  /** 符号链接与不可读目录的扫描结果；全量遍历有开销，短缓存并随维护操作失效。 */
+  private symlinkReport: { at: number; symlinks: string[]; unreadableDirs: string[] } | null = null
 
   constructor(private deps: MaintenanceDeps) {
     this.root = join(deps.dataDir, 'maintenance')
@@ -167,6 +169,7 @@ export class MaintenanceService {
     } finally {
       this.operation = null
       this.current = null
+      this.symlinkReport = null
     }
   }
 
@@ -209,10 +212,12 @@ export class MaintenanceService {
   }
 
   async status(): Promise<MaintenanceStatus> {
+    const report = await this.skippedSymlinks()
     return {
       ...this.state,
       running: this.operation,
-      skippedSymlinks: await this.skippedSymlinks(),
+      skippedSymlinks: report.symlinks,
+      unreadableDirs: report.unreadableDirs,
       backups: await this.backupList(),
       trash: (await this.trashManifests()).map((t) => ({
         id: t.id,
@@ -225,11 +230,19 @@ export class MaintenanceService {
   }
 
   /**
-   * 数据目录里的符号链接：维护一律跳过，这里只把路径报给用户。
+   * 数据目录里的符号链接与不可读目录：维护一律跳过，这里只把路径报给用户。
    * maintenance 下是应用自己的备份、回收站和恢复副本，不属于用户放置的条目。
+   * 全量遍历有开销，结果缓存 60 秒；备份、清理、恢复等操作结束时由 perform 失效。
    */
-  private async skippedSymlinks(): Promise<string[]> {
-    return symlinksIn(this.deps.dataDir, '', ['maintenance'])
+  private async skippedSymlinks() {
+    if (this.symlinkReport && this.now() - this.symlinkReport.at < 60_000) return this.symlinkReport
+    const { symlinks, unreadableDirs } = await scanTree(this.deps.dataDir, '', ['maintenance'])
+    this.symlinkReport = {
+      at: this.now(),
+      symlinks: [...symlinks].sort(),
+      unreadableDirs: [...unreadableDirs].sort(),
+    }
+    return this.symlinkReport
   }
 
   async settings(input: MaintenanceSettings) {
