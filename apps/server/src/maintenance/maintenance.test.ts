@@ -862,6 +862,20 @@ describe('本机数据维护', () => {
     await f.service.backup()
   })
 
+  it('assets 分片目录是链接时备份登记缺失，不访问链接目标', async () => {
+    const f = await fixture(),
+      asset = await f.asset()
+    // 分片目录整个换成悬空链接：跟随访问必然 ENOENT，只能靠已收集的链接路径判断。
+    const shard = join(f.root, 'assets', asset.id.slice(0, 2))
+    await rm(shard, { recursive: true })
+    await symlink(join(f.root, 'gone-shard'), shard)
+    const backup = await f.service.backup()
+    expect(backup.skippedSymlinks).toEqual([`assets/${asset.id.slice(0, 2)}`])
+    expect(backup.missingAssets).toEqual([asset.id])
+    const copy = await f.service.restoreCopy(backup.id)
+    expect(copy.missingAssets).toEqual([asset.id])
+  })
+
   it('未完成的回收清单在重启时自动恢复，保留文件和登记信息', async () => {
     const f = await fixture(),
       asset = await f.asset()

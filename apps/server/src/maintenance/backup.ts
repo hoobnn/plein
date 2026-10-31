@@ -133,19 +133,17 @@ export async function writeBackup(deps: {
     // assets 整体被换成链接时这里的值就是 ['assets']。
     const skippedSymlinks = await symlinksIn(deps.dataDir, 'assets')
     const missingAssets = new Set<string>()
-    const rootLinked = skippedSymlinks.includes('assets')
     for (const id of assetIds) {
       const path = `assets/${id.slice(0, 2)}/${id}`
       if (physicalPaths.has(path)) continue
-      // 原文件被换成链接（或整个 assets 目录是链接）时跳过并登记缺失，
-      // 备份照常生成；除链接之外的原因缺失仍然拒绝，不产生不完整备份。
-      if (rootLinked) {
+      // 原文件自身或任一父级（assets 根、分片目录）是链接：子树已被跳过，
+      // 不再访问（lstat 会穿过父链接），直接登记缺失，备份照常生成；
+      // 除链接之外的原因缺失仍然拒绝，不产生不完整备份。
+      if (skippedSymlinks.some((link) => link === path || path.startsWith(`${link}/`))) {
         missingAssets.add(id)
         continue
       }
-      const stat = await lstat(join(deps.dataDir, path)).catch(() => null)
-      if (!stat?.isSymbolicLink()) throw new Error(`素材文件缺失，未生成不完整备份：${id}`)
-      missingAssets.add(id)
+      throw new Error(`素材文件缺失，未生成不完整备份：${id}`)
     }
     for (const file of physical.files) {
       const id = file.path.split('/')[2]?.split('.')[0]
