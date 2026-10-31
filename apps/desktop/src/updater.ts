@@ -231,6 +231,8 @@ export function setupUpdater(
   const scheduleNext = () => {
     clearTimer()
     nextCheckAt = undefined
+    // 已经查过一次，启动时的首次检查不再单独安排
+    launchPending = false
     const interval = preferences.intervalHours * HOUR_MS
     if (interval <= 0) {
       publishSnapshot()

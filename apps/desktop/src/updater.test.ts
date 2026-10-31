@@ -646,6 +646,16 @@ describe('更新检查计划', () => {
     expect(updater.checkForUpdates).toHaveBeenCalledOnce()
   })
 
+  it('启动检查前手动查过就不再单独安排启动检查', async () => {
+    const controller = setup()
+    const started = Date.now()
+    await controller.checkForUpdates()
+    expect(updater.checkForUpdates).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(updater.checkForUpdates).toHaveBeenCalledOnce()
+    expect(controller.getState().nextCheckAt).toBe(started + 6 * HOUR)
+  })
+
   it('保存偏好后落盘，非法取值不写入', () => {
     const controller = setup()
     expect(controller.getPreferences()).toEqual({ checkOnLaunch: true, intervalHours: 6 })
