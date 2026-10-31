@@ -388,6 +388,39 @@ describe('平台配置接口', () => {
     })
     expect(res.status).toBe(403)
     expect(((await res.json()) as { message: string }).message).toBe('只有所有者可以修改平台设置')
+
+    // 读取视图带密钥掩码，同样只给所有者
+    const read = await app.request('/api/providers/plein/mock/config')
+    expect(read.status).toBe(403)
+    expect(((await read.json()) as { message: string }).message).toBe(
+      '只有所有者可以查看平台密钥配置',
+    )
+  })
+
+  it('长密钥掩码只露前三位和末四位，短密钥只露末两位', async () => {
+    const { call } = await boot()
+    // 只断言结构，不把真实密钥片段写进测试与输出
+    const long = (
+      await call<ProviderConfigView>('/api/providers/plein/mock/config', 'PUT', {
+        secrets: { MOCK_API_KEY: 'sk-9f3c1b7d5a2e4c6018' },
+      })
+    ).body
+    expect(long.credentials[0]!.secretHints!.MOCK_API_KEY).toMatch(/^sk-••••••[a-z0-9]{4}$/)
+
+    // 8~15 位仍属短密钥：只留末两位
+    const medium = (
+      await call<ProviderConfigView>('/api/providers/plein/mock/config', 'PUT', {
+        secrets: { MOCK_API_KEY: 'abcdefghijkl' },
+      })
+    ).body
+    expect(medium.credentials[0]!.secretHints!.MOCK_API_KEY).toMatch(/^••••[a-z0-9]{2}$/)
+
+    const short = (
+      await call<ProviderConfigView>('/api/providers/plein/mock/config', 'PUT', {
+        secrets: { MOCK_API_KEY: 'shortkey' },
+      })
+    ).body
+    expect(short.credentials[0]!.secretHints!.MOCK_API_KEY).toMatch(/^••••[a-z0-9]{2}$/)
   })
 })
 

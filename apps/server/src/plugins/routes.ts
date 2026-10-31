@@ -83,11 +83,15 @@ export function catalogOf(host: PluginHost): Catalog {
   return catalog
 }
 
-/** 已保存密钥的展示掩码：够长时留前三位和末四位，短密钥只留末两位 */
+/**
+ * 已保存密钥的展示掩码：只有足够长的密钥才留前三位和末四位，
+ * 短密钥只留末两位，避免掩码本身泄露大半个密钥。
+ */
 function secretHint(value: string | undefined): string | null {
   if (!value) return null
-  if (value.length <= 8) return `••••${value.slice(-2)}`
-  return `${value.slice(0, 3)}••••••${value.slice(-4)}`
+  return value.length >= 16
+    ? `${value.slice(0, 3)}••••••${value.slice(-4)}`
+    : `••••${value.slice(-2)}`
 }
 
 /** 插件目录与平台设置接口 */
@@ -136,6 +140,9 @@ export function pluginRoutes(
       return c.json(catalogOf(host))
     })
     .get('/api/providers/:vendor/:name/config', (c) => {
+      // 视图里有密钥掩码：现在只有 owner 一种角色，将来加角色时这里也要拦住
+      if (c.var.principal.role !== 'owner')
+        return c.json({ error: 'forbidden', message: '只有所有者可以查看平台密钥配置' }, 403)
       const id = `${c.req.param('vendor')}/${c.req.param('name')}`
       if (!registry.providers.has(id)) return c.json(notFound, 404)
       return c.json(view(id))
