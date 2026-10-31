@@ -700,54 +700,52 @@ export function ProviderRow({
 
   return (
     <li
-      className="flex flex-col rounded-xl bg-surface p-3.5 ring-1 ring-line"
+      className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] gap-x-3 rounded-xl bg-surface p-4 ring-1 ring-line"
       data-provider={provider.id}
     >
-      <div className="flex items-start gap-3">
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-controls={bodyId}
-          onClick={onToggleOpen}
-          className="flex min-w-0 flex-1 items-start gap-3 text-left"
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={bodyId}
+        onClick={onToggleOpen}
+        className="col-span-3 grid min-w-0 grid-cols-subgrid items-start gap-x-3 text-left"
+      >
+        <ProviderIcon provider={provider.id} size={28} />
+        <span className="min-w-0 flex-1">
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-sm font-medium break-words">{provider.title}</span>
+            <span className={`ui-tag ${state.tone}`} title="本地配置状态不代表具体模型权限或余额">
+              {state.label}
+            </span>
+          </span>
+          <span className="mt-0.5 block text-xs text-ink-subtle" title={provider.description}>
+            {provider.description ?? `${provider.models.length} 个模型`}
+          </span>
+        </span>
+        {/* 右侧主操作跟着标题一起可点：未配置先给配置入口，配置好后改成管理 */}
+        <span
+          aria-hidden="true"
+          className={`ui-btn ui-btn-xs flex-none ${open ? 'ui-btn-quiet' : 'ui-btn-secondary'}`}
         >
-          <ProviderIcon provider={provider.id} size={28} />
-          <span className="min-w-0 flex-1">
-            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="text-sm font-medium break-words">{provider.title}</span>
-              <span className={`ui-tag ${state.tone}`} title="本地配置状态不代表具体模型权限或余额">
-                {state.label}
-              </span>
-            </span>
-            <span className="mt-0.5 block text-xs text-ink-subtle" title={provider.description}>
-              {provider.description ?? `${provider.models.length} 个模型`}
-            </span>
-          </span>
-          {/* 右侧主操作跟着标题一起可点：未配置先给配置入口，配置好后改成管理 */}
-          <span
-            aria-hidden="true"
-            className={`ui-btn ui-btn-xs flex-none ${open ? 'ui-btn-quiet' : 'ui-btn-secondary'}`}
-          >
-            {open ? '收起' : provider.configured ? '管理' : '配置密钥'}
-          </span>
-        </button>
-        <Switch
-          checked={provider.enabled}
-          disabled={locked}
-          label={`启用 ${provider.title}`}
-          onChange={setEnabled}
-        />
-      </div>
+          {open ? '收起' : provider.configured ? '管理' : '配置密钥'}
+        </span>
+      </button>
+      <Switch
+        checked={provider.enabled}
+        disabled={locked}
+        label={`启用 ${provider.title}`}
+        onChange={setEnabled}
+      />
       {!open && (busy || status?.error) && (
         <p
           ref={closedFeedback}
-          className={`mt-2 text-xs ${busy ? 'text-ink-muted' : 'text-danger'}`}
+          className={`col-span-3 col-start-2 mt-2 text-xs ${busy ? 'text-ink-muted' : 'text-danger'}`}
           role={busy ? 'status' : 'alert'}
         >
           {busy ? '处理中…' : status?.message}
         </p>
       )}
-      <div hidden={!open}>
+      <div hidden={!open} className="col-span-3 col-start-2">
         <div id={bodyId} className="flex min-w-0 flex-col gap-4 pt-4">
           {!config ? (
             <div className="flex flex-col gap-2">
@@ -780,7 +778,7 @@ export function ProviderRow({
               <fieldset
                 ref={formFields}
                 disabled={locked}
-                className="m-0 flex min-w-0 flex-col gap-4 border-0 p-0"
+                className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0"
               >
                 {credentialsForm('all')}
                 {schemaFormWithCandidates}
@@ -806,7 +804,7 @@ export function ProviderRow({
               <fieldset
                 ref={formFields}
                 disabled={locked}
-                className="m-0 flex min-w-0 flex-col gap-4 border-0 p-0"
+                className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0"
               >
                 {credentialsForm('required')}
                 {/* 折叠入口在必填密钥下方、主操作上方：展开后填完再统一保存 */}
@@ -821,7 +819,7 @@ export function ProviderRow({
                       更多设置
                     </button>
                     {/* 收起用 hidden 隐藏而不卸载：数字输入的校验状态要保留到保存时 */}
-                    <div ref={morePanel} hidden={!moreOpen} className="flex flex-col gap-4">
+                    <div ref={morePanel} hidden={!moreOpen} className="flex flex-col gap-3">
                       {credentialsForm('optional')}
                       {schemaFormWithCandidates}
                     </div>
@@ -870,7 +868,7 @@ export function ProviderSettings({
   }
   const connected = (catalog?.providers ?? []).filter((p) => p.enabled && p.configured).length
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-6">
       {catalogError && (
         <div ref={catalogFeedback} className="flex flex-col gap-2">
           <p role="alert" className="text-sm text-danger">
@@ -982,7 +980,7 @@ function DefaultModels({
         {rows.map((r) => (
           <li
             key={r.cap}
-            className="flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-b-0"
+            className="flex items-center gap-3 border-b border-line px-4 py-3 last:border-b-0"
           >
             <span className="w-20 flex-none text-sm">{capabilityLabel(r.cap)}</span>
             <Select

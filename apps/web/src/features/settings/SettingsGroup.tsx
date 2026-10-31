@@ -11,9 +11,9 @@ export function Group({
 }) {
   return (
     <section className="flex flex-col gap-3">
-      <div>
-        <h3 className="text-sm font-medium">{title}</h3>
-        {hint && <p className="mt-0.5 text-xs text-ink-subtle">{hint}</p>}
+      <div className="flex flex-col gap-1.5">
+        <h3 className="text-sm font-semibold text-ink">{title}</h3>
+        {hint && <p className="ui-note text-ink-muted">{hint}</p>}
       </div>
       {children}
     </section>

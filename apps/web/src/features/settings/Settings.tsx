@@ -104,12 +104,12 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
       </nav>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <ModalHeader title={current.label} onClose={onClose} divider={false} />
-        <div className="settings-content ui-scrollbar flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto pt-3 pr-6 pb-6 pl-5">
+        <div className="settings-content ui-scrollbar flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto p-5">
           {/* 分区导航是竖排的：内容按上下方向滑入 */}
           <SlideSwap
             index={sections.indexOf(current)}
             axis="y"
-            className="flex w-full max-w-3xl flex-col gap-8"
+            className="flex w-full max-w-3xl flex-col gap-6"
             preserveState
           >
             {current.id === 'appearance' && (

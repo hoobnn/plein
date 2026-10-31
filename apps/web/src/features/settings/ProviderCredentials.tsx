@@ -199,8 +199,8 @@ function CredentialCard({
     <li
       className={
         compact
-          ? 'flex flex-col gap-2.5'
-          : 'flex flex-col gap-2.5 rounded-lg bg-surface-2/60 p-3 ring-1 ring-line'
+          ? 'flex flex-col gap-3'
+          : 'flex flex-col gap-3 rounded-lg bg-surface-2/60 p-3 ring-1 ring-line'
       }
       data-credential={card.key}
     >
@@ -261,7 +261,7 @@ function CredentialCard({
           {alternatives.map((group, index) => (
             <Fragment key={group.join(':')}>
               {index > 0 && <span className="text-xs text-ink-subtle">或</span>}
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-3">
                 {group.flatMap((key) => {
                   const spec = specByName.get(key)
                   return spec ? [secretField(spec)] : []
@@ -344,7 +344,7 @@ export function ProviderCredentials({
     return null
   const multi = savedGroups.length + drafts.length >= 2
   return (
-    <section className="flex flex-col gap-2">
+    <section className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between gap-2">
         <span className="ui-label">{optional ? '可选密钥' : '密钥'}</span>
         {/* 平台文档里能找到申请密钥的入口的，直接给外链 */}
@@ -361,11 +361,11 @@ export function ProviderCredentials({
         )}
       </div>
       {!optional && savedGroups.length === 0 && drafts.length > 0 && (
-        <p className="text-xs text-ink-subtle">
+        <p className="ui-note text-ink-muted">
           填好密钥并启用后，「{provider.title}」的模型就能在节点里选到。
         </p>
       )}
-      <ul aria-label="密钥组" className="flex flex-col gap-2">
+      <ul aria-label="密钥组" className="flex flex-col gap-3">
         {savedGroups.map((saved) => (
           <CredentialCard
             key={saved.id}
