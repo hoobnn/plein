@@ -316,7 +316,7 @@ function NumberControl({
       </>
     )
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-(--field-gap)">
       <div className="flex items-center gap-3">
         <input
           type="range"
