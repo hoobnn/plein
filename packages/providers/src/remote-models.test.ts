@@ -23,7 +23,8 @@ async function pull(
   if (settings) ctx.settings = provider.settings.parse(settings) as typeof ctx.settings
   const models = await provider.listRemoteModels!(ctx)
   const url = String(fetch.mock.calls[0]?.[0])
-  const headers = (fetch.mock.calls[0]?.[1] as RequestInit).headers as Record<string, string>
+  const init = fetch.mock.calls[0]?.[1] as RequestInit | undefined
+  const headers = (init?.headers ?? {}) as Record<string, string>
   return { models, url, auth: headers.Authorization }
 }
 
@@ -32,7 +33,10 @@ describe('listRemoteModels', () => {
     const result = await pull(minimaxProvider, [
       {
         base_resp: { status_code: 0 },
-        data: [{ model: 'MiniMax-M3', owned_by: 'minimax', created: 1700000000 }, { id: 'music-3.0' }],
+        data: [
+          { model: 'MiniMax-M3', owned_by: 'minimax', created: 1700000000 },
+          { id: 'music-3.0' },
+        ],
       },
     ])
     expect(result.url).toBe('https://api.minimax.cn/v1/models')
@@ -44,10 +48,9 @@ describe('listRemoteModels', () => {
   })
 
   it('minimax：全球地区换域名，鉴权失败时抛错', async () => {
-    const { ctx, fetch } = fakeContext(
-      minimaxProvider,
-      [json({ base_resp: { status_code: 1004 } }, 401)],
-    )
+    const { ctx, fetch } = fakeContext(minimaxProvider, [
+      json({ base_resp: { status_code: 1004 } }, 401),
+    ])
     ctx.settings = minimaxProvider.settings.parse({ region: 'global' })
     await expect(minimaxProvider.listRemoteModels!(ctx)).rejects.toThrow(/列表失败/)
     expect(String(fetch.mock.calls[0]?.[0])).toBe('https://api.minimax.io/v1/models')
@@ -72,9 +75,7 @@ describe('listRemoteModels', () => {
   })
 
   it('bailian：业务空间模式不支持拉取', async () => {
-    await expect(
-      pull(bailianProvider, [], { workspaceId: 'ws-1' }),
-    ).rejects.toThrow(/业务空间/)
+    await expect(pull(bailianProvider, [], { workspaceId: 'ws-1' })).rejects.toThrow(/业务空间/)
   })
 
   it('compatible：取渠道 baseURL/models 并归为对话模型', async () => {

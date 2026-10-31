@@ -1,5 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { type CredentialLost, type RemoteModelsStatus, SequenceExportRequest, type SubmissionAudit } from '@plein/protocol'
+import {
+  type CredentialLost,
+  type RemoteModelsStatus,
+  SequenceExportRequest,
+  type SubmissionAudit,
+} from '@plein/protocol'
 import type { CatalogModel } from '@plein/protocol'
 import { type ModelInfo } from '@plein/plugin-sdk'
 import { createReadStream } from 'node:fs'
@@ -416,12 +421,9 @@ export class PluginHost {
     if (!def || typeof def.listRemoteModels !== 'function') return undefined
     const fingerprint = this.remoteFingerprint(id)
     try {
-      const ctx = this.providerContext(
-        id,
-        ownerId,
-        signal ?? new AbortController().signal,
-        { requireEnabled: false },
-      )
+      const ctx = this.providerContext(id, ownerId, signal ?? new AbortController().signal, {
+        requireEnabled: false,
+      })
       const models = await def.listRemoteModels(ctx)
       this.remoteCache.record(id, fingerprint, models)
     } catch (err) {

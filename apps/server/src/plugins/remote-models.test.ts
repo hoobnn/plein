@@ -6,7 +6,12 @@ import { join } from 'node:path'
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import type { Catalog } from '@plein/protocol'
-import { definePlugin, defineProvider, PLUGIN_API_VERSION, type RemoteModel } from '@plein/plugin-sdk'
+import {
+  definePlugin,
+  defineProvider,
+  PLUGIN_API_VERSION,
+  type RemoteModel,
+} from '@plein/plugin-sdk'
 import type { ServerPluginDefinition } from '@plein/plugin-sdk'
 import { describe, expect, it } from 'vite-plus/test'
 import { z } from 'zod'
@@ -144,11 +149,9 @@ describe('宿主集成', () => {
 
   it('刷新成功：状态 fresh，目录合并出 available 与 remote-only', async () => {
     const { server, catalog } = await booted(async () => [{ id: 'known' }, { id: 'brand-new' }])
-    const res = await request(
-      server,
-      '/api/providers/acme/remote/remote-models/refresh',
-      { method: 'POST' },
-    )
+    const res = await request(server, '/api/providers/acme/remote/remote-models/refresh', {
+      method: 'POST',
+    })
     expect(res.status).toBe(200)
     const status = (await res.json()) as { status: string; fetchedAt: number }
     expect(status.status).toBe('fresh')
@@ -162,11 +165,9 @@ describe('宿主集成', () => {
     const { server, catalog } = await booted(async () => {
       throw new Error('平台 502')
     })
-    const res = await request(
-      server,
-      '/api/providers/acme/remote/remote-models/refresh',
-      { method: 'POST' },
-    )
+    const res = await request(server, '/api/providers/acme/remote/remote-models/refresh', {
+      method: 'POST',
+    })
     const status = (await res.json()) as { status: string; error?: string }
     expect(status.error).toContain('平台 502')
     const info = (await catalog()).providers.find((p) => p.id === 'acme/remote')
@@ -176,13 +177,13 @@ describe('宿主集成', () => {
 
   it('未实现拉取的平台：刷新返回 not_supported，目录没有远端状态', async () => {
     const { server, catalog } = await booted(async () => [])
-    const res = await request(
-      server,
-      '/api/providers/plein/mock/remote-models/refresh',
-      { method: 'POST' },
-    )
+    const res = await request(server, '/api/providers/plein/mock/remote-models/refresh', {
+      method: 'POST',
+    })
     expect(res.status).toBe(400)
     expect(((await res.json()) as { error: string }).error).toBe('not_supported')
-    expect((await catalog()).providers.find((p) => p.id === 'plein/mock')?.remoteModels).toBeUndefined()
+    expect(
+      (await catalog()).providers.find((p) => p.id === 'plein/mock')?.remoteModels,
+    ).toBeUndefined()
   })
 })

@@ -95,8 +95,7 @@ export class RemoteModelCache {
   /** 指定平台当前密钥下的缓存状态；平台没实现拉取时不会写入，无需在这里区分 */
   status(id: string, fingerprint: string): RemoteModelsStatus {
     const entry = this.data[id]
-    if (!entry || entry.fingerprint !== fingerprint)
-      return { fetchedAt: null, status: 'idle' }
+    if (!entry || entry.fingerprint !== fingerprint) return { fetchedAt: null, status: 'idle' }
     const fresh = this.now() - entry.fetchedAt < this.ttlMs
     return {
       fetchedAt: entry.fetchedAt,

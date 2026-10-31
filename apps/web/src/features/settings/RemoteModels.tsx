@@ -44,18 +44,14 @@ export function RemoteModels({
       >
         {busy ? '正在刷新…' : '刷新模型列表'}
       </button>
-      <span
-        title={status?.fetchedAt ? fullTime(status.fetchedAt) : undefined}
-      >
+      <span title={status?.fetchedAt ? fullTime(status.fetchedAt) : undefined}>
         {!status || status.fetchedAt === null
           ? '还没有从平台拉取过模型列表'
           : `上次刷新：${relativeTime(status.fetchedAt)}`}
       </span>
       {status?.status === 'stale' && <span>列表已超过 24 小时，建议刷新</span>}
       {remoteOnly > 0 && (
-        <span>
-          平台新发现 {remoteOnly} 个模型，参数为通用默认，收录前以平台列表为准
-        </span>
+        <span>平台新发现 {remoteOnly} 个模型，参数为通用默认，收录前以平台列表为准</span>
       )}
       {(error ?? status?.error) && (
         <span className="text-danger" role="alert">

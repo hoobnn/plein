@@ -32,7 +32,10 @@ describe('远端模型列表区域', () => {
   it('平台不支持拉取时不渲染任何内容', () => {
     serve()
     const { container } = renderApp(
-      <RemoteModels provider={provider({ supportsRemoteModels: undefined })} onRefreshed={() => {}} />,
+      <RemoteModels
+        provider={provider({ supportsRemoteModels: undefined })}
+        onRefreshed={() => {}}
+      />,
     )
     expect(container.textContent).toBe('')
   })
@@ -62,12 +65,7 @@ describe('远端模型列表区域', () => {
         ? Response.json({ error: 'invalid', message: '平台 502' }, { status: 502 })
         : Response.json({ fetchedAt: Date.now(), status: 'fresh' }),
     )
-    const { user } = renderApp(
-      <RemoteModels
-        provider={provider()}
-        onRefreshed={() => {}}
-      />,
-    )
+    const { user } = renderApp(<RemoteModels provider={provider()} onRefreshed={() => {}} />)
     await user.click(screen.getByRole('button', { name: '刷新模型列表' }))
     await waitFor(() => expect(screen.getByText(/刷新失败/)).toBeTruthy())
     fail = false
