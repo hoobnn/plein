@@ -1,5 +1,5 @@
 import { expect, it } from 'vite-plus/test'
-import { deprecatedLast } from './ModelPicker'
+import { deprecatedLast } from './deprecatedLast'
 
 it('弃用模型稳定置后，保留旧画布可选条目且不修改目录原数组', () => {
   const models = [

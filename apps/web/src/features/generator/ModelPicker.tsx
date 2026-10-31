@@ -8,11 +8,7 @@ import { ProviderIcon } from '../../ui/ProviderIcon'
 import { SlidePill, SlideSwap } from '../../ui/Slide'
 import { useSession } from '../../stores/session'
 import { pushRecentModel, readRecentModels, recentModelsKey } from './recentModels'
-
-/** 弃用模型保留给旧画布引用，选择列表稳定置后且不改动目录原数组 */
-export function deprecatedLast<T extends { deprecated?: true }>(models: readonly T[]): T[] {
-  return [...models].sort((a, b) => Number(Boolean(a.deprecated)) - Number(Boolean(b.deprecated)))
-}
+import { deprecatedLast } from './deprecatedLast'
 
 /** 模型选择：左栏选平台、右栏列该平台的模型。不替用户挑，没选时按钮提示去选 */
 export function ModelPicker({
