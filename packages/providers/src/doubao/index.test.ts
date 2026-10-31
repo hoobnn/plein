@@ -9,6 +9,14 @@ function context(
   return fakeContext(doubaoProvider, response ? [response] : [], { secret, mime: 'audio/wav' }).ctx
 }
 
+it('设置页的密钥标题是可读名称，而不是环境变量名', () => {
+  expect(doubaoProvider.secrets).toEqual([
+    expect.objectContaining({ name: 'VOLC_SPEECH_API_KEY', title: 'API Key' }),
+    expect.objectContaining({ name: 'VOLC_SPEECH_APP_ID', title: 'APP ID（旧版鉴权）' }),
+    expect.objectContaining({ name: 'VOLC_SPEECH_ACCESS_KEY', title: 'Access Key（旧版鉴权）' }),
+  ])
+})
+
 describe('Doubao Speech HTTP contracts', () => {
   it.each([500, 502, 503, 504])(
     'HTTP %s 保留请求 ID、平台 logid 与提交未知，不自动重试',

@@ -115,7 +115,10 @@ function CredentialCard({
   const authHint = alternatives.length
     ? `任选一组填写：${alternatives
         .map(
-          (group) => `填 ${group.map((name) => specByName.get(name)?.title ?? name).join(' 和 ')}`,
+          (group) =>
+            `${group.length > 1 ? '同时填' : '填'} ${group
+              .map((name) => specByName.get(name)?.title ?? name)
+              .join(' 和 ')}`,
         )
         .join('，或 ')}`
     : ''

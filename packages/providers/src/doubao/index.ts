@@ -24,6 +24,13 @@ const settings = z.object({
 })
 type Context = ProviderContext<z.output<typeof settings>>
 const secrets = ['VOLC_SPEECH_API_KEY', 'VOLC_SPEECH_APP_ID', 'VOLC_SPEECH_ACCESS_KEY']
+
+/** 设置页显示的人读标题；变量名只用来存取密钥 */
+const SECRET_TITLES: Record<string, string> = {
+  VOLC_SPEECH_API_KEY: 'API Key',
+  VOLC_SPEECH_APP_ID: 'APP ID（旧版鉴权）',
+  VOLC_SPEECH_ACCESS_KEY: 'Access Key（旧版鉴权）',
+}
 const host = 'https://openspeech.bytedance.com'
 
 function object(value: unknown): Json {
@@ -388,7 +395,11 @@ export const doubaoProvider = defineProvider({
   docsUrl:
     'https://docs.volcengine.com/docs/DoubaoVoice/unidirectional-streaming-text-to-speech-http?lang=zh',
   settings,
-  secrets: secrets.map((name) => ({ name, title: name, required: false })),
+  secrets: secrets.map((name) => ({
+    name,
+    title: SECRET_TITLES[name] ?? name,
+    required: false,
+  })),
   credentialAlternatives: [
     ['VOLC_SPEECH_API_KEY'],
     ['VOLC_SPEECH_APP_ID', 'VOLC_SPEECH_ACCESS_KEY'],
