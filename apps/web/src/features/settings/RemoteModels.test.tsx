@@ -106,6 +106,7 @@ describe('远端模型列表区域', () => {
     let refreshed = 0
     const view = renderApp(
       <RemoteModels
+        where="field"
         provider={candidateProvider()}
         candidates={[{ id: 'gpt-x', name: 'GPT X' }]}
         onRefreshed={() => {
@@ -131,9 +132,35 @@ describe('远端模型列表区域', () => {
   it('候选模式：还没有候选时提示先刷新', () => {
     serve()
     const view = renderApp(
-      <RemoteModels provider={candidateProvider()} candidates={[]} onRefreshed={() => {}} />,
+      <RemoteModels
+        where="field"
+        provider={candidateProvider()}
+        candidates={[]}
+        onRefreshed={() => {}}
+      />,
     )
     expect(view.container.querySelectorAll('datalist option')).toHaveLength(0)
     expect(screen.getByText(/还没拉取过/)).toBeTruthy()
+  })
+
+  it('挂载位互斥：候选平台不进标签区，合并平台不进字段旁', () => {
+    serve()
+    const candidatesAtTags = renderApp(
+      <RemoteModels
+        where="tags"
+        provider={candidateProvider()}
+        candidates={[{ id: 'gpt-x' }]}
+        onRefreshed={() => {}}
+      />,
+    )
+    expect(candidatesAtTags.container.textContent).toBe('')
+    const mergeAtField = renderApp(
+      <RemoteModels
+        where="field"
+        provider={provider({ remoteModels: { fetchedAt: Date.now(), status: 'fresh' } })}
+        onRefreshed={() => {}}
+      />,
+    )
+    expect(mergeAtField.container.textContent).toBe('')
   })
 })

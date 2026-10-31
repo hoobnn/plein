@@ -42,8 +42,7 @@ export function ModelPicker({
       ...p,
       models: deprecatedLast(
         p.models.filter(
-          (m) =>
-            submittable(m) && (!node.capability || m.capabilities.includes(node.capability)),
+          (m) => submittable(m) && (!node.capability || m.capabilities.includes(node.capability)),
         ),
       ),
     }))

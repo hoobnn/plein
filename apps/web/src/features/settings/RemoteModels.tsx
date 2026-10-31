@@ -14,12 +14,18 @@ export function RemoteModels({
   candidates,
   onRefreshed,
   disabled = false,
+  where = 'tags',
 }: {
   provider: ProviderInfo
   /** 列表只作候选时的缓存条目（随配置视图返回） */
   candidates?: ProviderConfigView['remoteModelCandidates']
   onRefreshed(): void | Promise<void>
   disabled?: boolean
+  /**
+   * 挂载位：tags 在模型标签区附近，只服务合并平台（覆盖范围非空）；
+   * field 跟在「模型 ID」等设置字段旁，只服务候选平台（覆盖范围为空）。同一时刻只挂一处
+   */
+  where?: 'tags' | 'field'
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -27,6 +33,9 @@ export function RemoteModels({
   const [latest, setLatest] = useState<ProviderConfigView['remoteModelCandidates']>()
   if (!provider.supportsRemoteModels) return null
   const status = provider.remoteModels
+  // 合并平台不在字段旁重复渲染，候选平台不在标签区重复渲染
+  const emptyScope = (provider.remoteModelsScope?.length ?? 0) === 0
+  if ((where === 'tags') === emptyScope) return null
   const shownCandidates = latest ?? candidates
   const refresh = async () => {
     setBusy(true)
@@ -43,7 +52,7 @@ export function RemoteModels({
   }
   // 覆盖范围为空：不参与合并，只在设置页给输入框提供候选；
   // datalist 的元素 id 由插件 schema 的 list 字段声明，与 SchemaForm 的 input 对上
-  if ((provider.remoteModelsScope?.length ?? 0) === 0)
+  if (emptyScope)
     return (
       <div className="flex flex-col gap-2">
         {declaredListIds(provider).map((id) => (

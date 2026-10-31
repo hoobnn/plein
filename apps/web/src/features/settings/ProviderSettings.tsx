@@ -553,6 +553,20 @@ export function ProviderRow({
       }}
     />
   )
+  // 候选列表跟在字段旁：兼容渠道的「模型 ID」在「更多设置」里时也跟着进去；
+  // 合并平台在这里不渲染（它们的刷新区在模型标签附近）
+  const schemaFormWithCandidates = (
+    <>
+      {schemaForm}
+      <RemoteModels
+        where="field"
+        provider={provider}
+        candidates={config?.remoteModelCandidates}
+        onRefreshed={onSaved}
+        disabled={locked}
+      />
+    </>
+  )
   const credentialsForm = (secretFilter: 'all' | 'required' | 'optional') => (
     <ProviderCredentials
       provider={provider}
@@ -715,14 +729,19 @@ export function ProviderRow({
           ) : provider.configured ? (
             <>
               {provider.models.length > 0 && modelTags}
-              <RemoteModels provider={provider} onRefreshed={onSaved} disabled={disabled} />
+              <RemoteModels
+                where="tags"
+                provider={provider}
+                onRefreshed={onSaved}
+                disabled={disabled}
+              />
               <fieldset
                 ref={formFields}
                 disabled={locked}
                 className="m-0 flex min-w-0 flex-col gap-4 border-0 p-0"
               >
                 {credentialsForm('all')}
-                {schemaForm}
+                {schemaFormWithCandidates}
               </fieldset>
               {actions}
               {dirtyNote}
@@ -762,7 +781,7 @@ export function ProviderRow({
                     {/* 收起用 hidden 隐藏而不卸载：数字输入的校验状态要保留到保存时 */}
                     <div ref={morePanel} hidden={!moreOpen} className="flex flex-col gap-4">
                       {credentialsForm('optional')}
-                      {schemaForm}
+                      {schemaFormWithCandidates}
                     </div>
                   </div>
                 )}
