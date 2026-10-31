@@ -329,6 +329,8 @@ export class PluginHost {
   private remoteCache: RemoteModelCache
   /** 每个平台的拉取代次：只有最新一次请求能写缓存，旧响应到达后直接丢弃 */
   private remoteGenerations = new Map<string, number>()
+  /** 正在后台拉取远端列表的平台；前端据此显示「拉取中」并等待完成 */
+  private remotePulling = new Set<string>()
 
   /** 本地导出记录使用实际入库元数据，不访问平台。 */
   assetInfo(ownerId: string, assetId: string) {
@@ -437,6 +439,11 @@ export class PluginHost {
     this.remoteCache.invalidate(id)
   }
 
+  /** 该平台是否有进行中的后台拉取；config 视图据此带 remoteModelsPending */
+  remoteModelsPending(id: string): boolean {
+    return this.remotePulling.has(id)
+  }
+
   /**
    * 拉取平台的远端模型列表并写缓存；失败只记录错误，不影响内置目录。
    * 平台未实现时返回 undefined。并发刷新按代次保护：只有最新一次请求能写缓存，
@@ -453,6 +460,7 @@ export class PluginHost {
     const before = this.remoteContext(id)
     const generation = (this.remoteGenerations.get(id) ?? 0) + 1
     this.remoteGenerations.set(id, generation)
+    this.remotePulling.add(id)
     try {
       const ctx = this.providerContext(id, ownerId, signal ?? new AbortController().signal, {
         requireEnabled: false,
@@ -470,6 +478,8 @@ export class PluginHost {
       if (after.fingerprint !== before.fingerprint || after.settings !== before.settings)
         return this.remoteModelsStatus(id)
       this.remoteCache.record(id, after.fingerprint, after.settings, [], toError(err).message)
+    } finally {
+      this.remotePulling.delete(id)
     }
     return this.remoteModelsStatus(id)
   }

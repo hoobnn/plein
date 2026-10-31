@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
-import type { ProviderInfo } from '@plein/protocol'
+import type { ProviderConfigView, ProviderInfo } from '@plein/protocol'
 import { describe, expect, it } from 'vite-plus/test'
 import { mockFetch } from '../../testing/fetch'
 import { renderApp, screen, waitFor } from '../../testing/render'
-import { RemoteModels } from './RemoteModels'
+import { awaitRemoteModelsSettled, RemoteModels } from './RemoteModels'
 
 const provider = (over: Partial<ProviderInfo> = {}): ProviderInfo => ({
   id: 'acme/x',
@@ -141,6 +141,52 @@ describe('远端模型列表区域', () => {
     )
     expect(view.container.querySelectorAll('datalist option')).toHaveLength(0)
     expect(screen.getByText(/还没拉取过/)).toBeTruthy()
+  })
+
+  it('后台拉取进行中显示「拉取中」，完成视图不再显示', () => {
+    serve()
+    const pulling = renderApp(<RemoteModels provider={provider()} pending onRefreshed={() => {}} />)
+    expect(pulling.container.textContent).toContain('正在后台拉取模型列表')
+    const done = renderApp(
+      <RemoteModels
+        provider={provider({ remoteModels: { fetchedAt: Date.now(), status: 'fresh' } })}
+        onRefreshed={() => {}}
+      />,
+    )
+    expect(done.container.textContent).not.toContain('正在后台拉取模型列表')
+  })
+
+  it('候选平台拉取中：提示拉取中并禁用手动刷新', () => {
+    serve()
+    const view = renderApp(
+      <RemoteModels where="field" provider={candidateProvider()} pending onRefreshed={() => {}} />,
+    )
+    expect(view.container.textContent).toContain('正在后台拉取模型候选')
+    expect(screen.getByRole('button', { name: '刷新模型候选' })).toHaveProperty('disabled', true)
+  })
+
+  it('awaitRemoteModelsSettled：轮询到 pending 消失为止，超过上限放弃', async () => {
+    serve()
+    const views: Array<Partial<ProviderConfigView> | undefined> = [
+      { remoteModelsPending: true },
+      { remoteModelsPending: true },
+      {},
+    ]
+    let calls = 0
+    const settled = await awaitRemoteModelsSettled('acme/x', {
+      attempts: 5,
+      delayMs: 0,
+      getConfig: async () => views[Math.min(calls++, views.length - 1)],
+    })
+    expect(calls).toBe(3)
+    expect(settled).toEqual({})
+    calls = 0
+    const timeout = await awaitRemoteModelsSettled('acme/x', {
+      attempts: 2,
+      delayMs: 0,
+      getConfig: async () => ({ remoteModelsPending: true }),
+    })
+    expect(timeout).toBeNull()
   })
 
   it('挂载位互斥：候选平台不进标签区，合并平台不进字段旁', () => {

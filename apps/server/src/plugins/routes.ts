@@ -126,6 +126,7 @@ export function pluginRoutes(
       ...(typeof def.listRemoteModels === 'function' && !(def.remoteModelsScope ?? []).length
         ? { remoteModelCandidates: host.remoteModelCandidates(id) }
         : {}),
+      ...(host.remoteModelsPending(id) ? { remoteModelsPending: true } : {}),
       credentials: c.credentials.map((credential) => ({
         id: credential.id,
         label: credential.label,

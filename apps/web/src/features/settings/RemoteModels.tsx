@@ -12,6 +12,7 @@ import { fullTime, relativeTime } from '../../ui/format'
 export function RemoteModels({
   provider,
   candidates,
+  pending = false,
   onRefreshed,
   disabled = false,
   where = 'tags',
@@ -19,6 +20,8 @@ export function RemoteModels({
   provider: ProviderInfo
   /** 列表只作候选时的缓存条目（随配置视图返回） */
   candidates?: ProviderConfigView['remoteModelCandidates']
+  /** 保存触发的后台拉取仍在进行（config 视图的 remoteModelsPending） */
+  pending?: boolean
   onRefreshed(): void | Promise<void>
   disabled?: boolean
   /**
@@ -68,15 +71,17 @@ export function RemoteModels({
           <button
             type="button"
             className="ui-btn ui-btn-secondary"
-            disabled={busy || disabled}
+            disabled={busy || disabled || pending}
             onClick={() => void refresh()}
           >
             {busy ? '正在刷新…' : '刷新模型候选'}
           </button>
           <span>
-            {(shownCandidates?.length ?? 0) > 0
-              ? `渠道返回 ${shownCandidates!.length} 个模型，可在上方「模型 ID」输入框里选用`
-              : '渠道的模型列表还没拉取过，刷新后可在「模型 ID」输入框里选用'}
+            {pending
+              ? '正在后台拉取模型候选，完成后自动更新'
+              : (shownCandidates?.length ?? 0) > 0
+                ? `渠道返回 ${shownCandidates!.length} 个模型，可在上方「模型 ID」输入框里选用`
+                : '渠道的模型列表还没拉取过，刷新后可在「模型 ID」输入框里选用'}
           </span>
           {(error ?? status?.error) && (
             <span className="text-danger" role="alert">
@@ -102,6 +107,7 @@ export function RemoteModels({
           ? '还没有从平台拉取过模型列表'
           : `上次刷新：${relativeTime(status.fetchedAt)}`}
       </span>
+      {pending && <span>正在后台拉取模型列表，完成后自动更新</span>}
       {status?.status === 'stale' && <span>列表已超过 24 小时，建议刷新</span>}
       {remoteOnly > 0 && (
         <span>平台新发现 {remoteOnly} 个模型，参数为通用默认，收录前以平台列表为准</span>
@@ -113,6 +119,32 @@ export function RemoteModels({
       )}
     </div>
   )
+}
+
+/** 轮询间隔与次数上限：后台拉取最长 30 秒（服务端信号超时），这里取 10 × 1.5 秒 */
+export async function awaitRemoteModelsSettled<
+  V extends { remoteModelsPending?: boolean } = ProviderConfigView,
+>(
+  id: string,
+  opts: {
+    attempts?: number
+    delayMs?: number
+    getConfig?: (id: string) => Promise<V | undefined>
+  } = {},
+): Promise<V | null> {
+  const attempts = opts.attempts ?? 10
+  const delay = opts.delayMs ?? 1500
+  // 默认读真实 config 视图；测试注入更窄的视图形状
+  const getConfig: (id: string) => Promise<V | undefined> =
+    opts.getConfig ?? ((pid) => api.providerConfig(pid) as unknown as Promise<V>)
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    await new Promise((ok) => setTimeout(ok, delay))
+    const view = await getConfig(id)
+    // 字段缺省即表示拉取已结束；结束后由调用方重载目录与候选
+    if (view && !view.remoteModelsPending) return view
+  }
+  // 超时放弃：后台仍在拉，完成后用户手动刷新或下次进入设置时可见
+  return null
 }
 
 /** 插件在设置 schema 里声明的 datalist 元素 id（如兼容渠道的「模型 ID」候选） */

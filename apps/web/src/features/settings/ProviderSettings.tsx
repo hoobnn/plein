@@ -10,7 +10,7 @@ import { Switch } from '../../ui/Switch'
 import { confirmDialog, choiceDialog } from '../../ui/Dialog'
 import { Group } from './SettingsGroup'
 import { ProviderCredentials, authSecretNames } from './ProviderCredentials'
-import { RemoteModels } from './RemoteModels'
+import { awaitRemoteModelsSettled, RemoteModels } from './RemoteModels'
 import { removalImpact } from './credentialUsage'
 import {
   credentialCardDirty,
@@ -244,6 +244,19 @@ export function ProviderRow({
   }
 
   /** 保存成功返回最新配置：未配置平台的主操作要用新配置里实际生效的组去校验 */
+  /**
+   * 保存触发了后台拉取时等它结束（轮询 config 视图，有上限），
+   * 结束后更新本地视图并重载目录：生成器与候选都能看到拉取结果。
+   * 超时就到此为止，后台仍在拉，之后手动刷新或重新进入设置可见
+   */
+  const settleRemotePull = async (view: ProviderConfigView | null) => {
+    if (!view?.remoteModelsPending) return
+    const latest = await awaitRemoteModelsSettled(provider.id)
+    if (!latest) return
+    setConfig(latest)
+    await onSaved()
+  }
+
   const save = async (): Promise<ProviderConfigView | null> => {
     // 必填标签或数字没填好时先聚焦问题输入，不发出请求
     const invalid = formFields.current?.querySelector<HTMLElement>('[aria-invalid="true"]')
@@ -341,6 +354,8 @@ export function ProviderRow({
       })
       setStatus({ message: '已保存' })
       await onSaved()
+      // 刚改的密钥或设置触发了后台拉取：等它完成再把目录刷新一次
+      await settleRemotePull(next)
       return next
     } catch (err) {
       setStatus({ message: `保存失败：${(err as Error).message}`, error: true })
@@ -369,8 +384,11 @@ export function ProviderRow({
     setBusy(true)
     clearStatus()
     try {
-      setConfig(await api.updateProviderConfig(provider.id, { activeCredential: key }))
+      const next = await api.updateProviderConfig(provider.id, { activeCredential: key })
+      setConfig(next)
       await onSaved()
+      // 切换密钥组也会触发后台拉取，完成后同样刷新
+      await settleRemotePull(next)
     } catch (err) {
       setStatus({ message: `保存失败：${(err as Error).message}`, error: true })
     } finally {
@@ -562,6 +580,7 @@ export function ProviderRow({
         where="field"
         provider={provider}
         candidates={config?.remoteModelCandidates}
+        pending={config?.remoteModelsPending}
         onRefreshed={onSaved}
         disabled={locked}
       />
@@ -732,6 +751,7 @@ export function ProviderRow({
               <RemoteModels
                 where="tags"
                 provider={provider}
+                pending={config?.remoteModelsPending}
                 onRefreshed={onSaved}
                 disabled={disabled}
               />

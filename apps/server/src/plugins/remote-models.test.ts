@@ -270,11 +270,9 @@ describe('宿主集成', () => {
     const { server, host, catalog } = await booted(async () => list, { scope: [] })
     // 支持拉取 ≠ 参与合并：候选平台也有状态（含上次刷新时间与失败原因）
     expect(host.remoteModelsStatus('acme/remote')).toEqual({ fetchedAt: null, status: 'idle' })
-    const res = await request(
-      server,
-      '/api/providers/acme/remote/remote-models/refresh',
-      { method: 'POST' },
-    )
+    const res = await request(server, '/api/providers/acme/remote/remote-models/refresh', {
+      method: 'POST',
+    })
     expect(res.status).toBe(200)
     expect(((await res.json()) as { status: string }).status).toBe('fresh')
     const info = (await catalog()).providers.find((p) => p.id === 'acme/remote')
@@ -288,16 +286,50 @@ describe('宿主集成', () => {
   })
 
   it('候选平台刷新失败同样返回 200 并带原因，不当成不支持', async () => {
-    const { server } = await booted(async () => {
-      throw new Error('渠道 502')
-    }, { scope: [] })
-    const res = await request(
-      server,
-      '/api/providers/acme/remote/remote-models/refresh',
-      { method: 'POST' },
+    const { server } = await booted(
+      async () => {
+        throw new Error('渠道 502')
+      },
+      { scope: [] },
     )
+    const res = await request(server, '/api/providers/acme/remote/remote-models/refresh', {
+      method: 'POST',
+    })
     expect(res.status).toBe(200)
     expect(((await res.json()) as { error?: string }).error).toContain('渠道 502')
+  })
+
+  it('后台拉取期间 config 视图带 pending，完成后消失并可在前端读到新候选', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((ok) => (release = ok))
+    const { server, host } = await booted(
+      async () => {
+        await gate
+        return [{ id: 'gpt-x', name: 'GPT X' }]
+      },
+      { scope: [] },
+    )
+    server.plugins.configs.update('acme/remote', { settings: { region: 'global' } })
+    // 保存接口触发的后台拉取：返回时仍在进行
+    const pulling = host.refreshRemoteModels('acme/remote', 'local')
+    const configView = async () =>
+      (await (await request(server, '/api/providers/acme/remote/config')).json()) as {
+        remoteModelsPending?: boolean
+        remoteModelCandidates?: Array<{ id: string }>
+      }
+    for (let i = 0; i < 50; i++) {
+      if ((await configView()).remoteModelsPending === true) break
+      await new Promise((ok) => setTimeout(ok, 20))
+    }
+    expect((await configView()).remoteModelsPending).toBe(true)
+    release()
+    await pulling
+    const settled = await configView()
+    // 字段缺省即表示拉取已结束（成功或失败都不再 pending）
+    expect(settled.remoteModelsPending).not.toBe(true)
+    expect(settled.remoteModelCandidates).toEqual([{ id: 'gpt-x', name: 'GPT X' }])
+    // 宿主侧查询与视图一致
+    expect(host.remoteModelsPending('acme/remote')).toBe(false)
   })
 
   describe('remote-only 提交', () => {

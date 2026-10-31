@@ -114,6 +114,8 @@ export interface ProviderConfigView {
   activeCredential: string | null
   /** 列表只作候选的平台（如兼容渠道）当前缓存里的远端模型；其它平台不给 */
   remoteModelCandidates?: Array<{ id: string; name?: string }>
+  /** 保存触发的后台拉取仍在进行；前端据此显示「拉取中」并轮询到消失为止 */
+  remoteModelsPending?: boolean
 }
 
 /** 设置某能力的默认模型 */
