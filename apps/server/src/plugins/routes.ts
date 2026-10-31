@@ -56,8 +56,14 @@ export function catalogOf(host: PluginHost): Catalog {
     providers: [...registry.providers].map(([id, p]) => {
       const cfg = configs.get(id)
       const current = cfg.credentials.find((c) => c.id === cfg.activeCredential)
+      const descriptor = describeProvider(p.def, p.plugin)
+      // 远端列表合并进目录：内置元数据为准，目录没收录的新模型以通用能力追加
+      const remoteStatus = host.remoteModelsStatus(id)
       return {
-        ...describeProvider(p.def, p.plugin),
+        ...descriptor,
+        ...(remoteStatus
+          ? { models: host.mergedModels(id, descriptor.models), remoteModels: remoteStatus }
+          : {}),
         enabled: cfg.enabled,
         configured: providerConfigured(p.def, cfg.secrets),
         credentialCount: cfg.credentials.length,
@@ -182,6 +188,17 @@ export function pluginRoutes(
         throw err
       }
       host.refreshConfiguredProviders()
+      // 刚改动密钥且平台支持列表拉取：后台拉一次，失败只记录不阻断保存
+      if (
+        (body.data.credentials || body.data.secrets) &&
+        typeof entry.def.listRemoteModels === 'function'
+      ) {
+        if (providerConfigured(entry.def, configs.get(id).secrets))
+          void host
+            .refreshRemoteModels(id, c.var.principal.id, AbortSignal.timeout(30_000))
+            .catch(() => {})
+        else host.invalidateRemoteModels(id)
+      }
       return c.json(view(id))
     })
     .put('/api/model-defaults', async (c) => {
@@ -194,6 +211,19 @@ export function pluginRoutes(
         return c.json({ error: 'invalid', message: '模型没启用或不支持这种能力' }, 400)
       host.configs.setDefaultModel(cap.data, body.data.model)
       return c.json({ defaultModels: host.defaultModels() })
+    })
+    .post('/api/providers/:vendor/:name/remote-models/refresh', async (c) => {
+      if (c.var.principal.role !== 'owner') return c.json(forbidden, 403)
+      const id = `${c.req.param('vendor')}/${c.req.param('name')}`
+      if (!registry.providers.has(id)) return c.json(notFound, 404)
+      const status = await host.refreshRemoteModels(
+        id,
+        c.var.principal.id,
+        AbortSignal.timeout(30_000),
+      )
+      if (!status)
+        return c.json({ error: 'not_supported', message: '该平台不支持拉取远端模型列表' }, 400)
+      return c.json(status)
     })
     .post('/api/providers/:vendor/:name/test', async (c) => {
       if (c.var.principal.role !== 'owner') return c.json(forbidden, 403)

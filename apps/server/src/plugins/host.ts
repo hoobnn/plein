@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { type CredentialLost, SequenceExportRequest, type SubmissionAudit } from '@plein/protocol'
+import { type CredentialLost, type RemoteModelsStatus, SequenceExportRequest, type SubmissionAudit } from '@plein/protocol'
+import type { CatalogModel } from '@plein/protocol'
+import { type ModelInfo } from '@plein/plugin-sdk'
 import { createReadStream } from 'node:fs'
 import { readFile, rm } from 'node:fs/promises'
 import { Readable } from 'node:stream'
@@ -40,6 +42,7 @@ import {
   referenceStorageHost,
 } from '@plein/providers'
 import { Agent, Dispatcher1Wrapper } from 'undici'
+import { applyRemoteModels, RemoteModelCache, remoteModelsFingerprint } from './remote-models'
 import { composeVideo, compositionDuration, validateComposeOverlays } from '../assets/compose'
 import { analyzeVideo } from '../assets/shot-analysis'
 import { checkVideo } from '../assets/delivery-check'
@@ -312,6 +315,7 @@ function fetchFailed(err: unknown, remoteId: string | undefined, requery: boolea
  */
 export class PluginHost {
   private limiters = new Map<string, Limiter>()
+  private remoteCache: RemoteModelCache
 
   /** 本地导出记录使用实际入库元数据，不访问平台。 */
   assetInfo(ownerId: string, assetId: string) {
@@ -345,8 +349,12 @@ export class PluginHost {
             voiceName: string
           }
         | undefined
+      /** 数据目录；远端模型列表缓存落盘到 remote-models.json */
+      dataDir?: string
     } = {},
-  ) {}
+  ) {
+    this.remoteCache = new RemoteModelCache(opts.dataDir ?? '')
+  }
 
   load(plugins: ServerPluginDefinition[], builtin: boolean) {
     for (const p of plugins) {
@@ -371,6 +379,57 @@ export class PluginHost {
   }
 
   // ── Provider ──────────────────────────────────────
+
+  /** 当前生效密钥的指纹；换密钥后远端列表缓存自动失效 */
+  private remoteFingerprint(id: string) {
+    return remoteModelsFingerprint(this.configs.get(id).secrets)
+  }
+
+  /** 远端模型列表状态；平台未实现拉取时为 undefined，设置页据此决定是否显示刷新入口 */
+  remoteModelsStatus(id: string): RemoteModelsStatus | undefined {
+    const def = this.registry.providers.get(id)?.def
+    if (typeof def?.listRemoteModels !== 'function') return undefined
+    return this.remoteCache.status(id, this.remoteFingerprint(id))
+  }
+
+  /** 内置目录合并远端列表后的条目；没拉取过或密钥已换时原样返回内置条目 */
+  mergedModels(id: string, base: ModelInfo[]): CatalogModel[] {
+    return applyRemoteModels(base, this.remoteCache.models(id, this.remoteFingerprint(id)))
+  }
+
+  /** 密钥被清空后丢弃缓存，避免旧密钥拉到的列表继续显示 */
+  invalidateRemoteModels(id: string) {
+    this.remoteCache.invalidate(id)
+  }
+
+  /**
+   * 拉取平台的远端模型列表并写缓存；失败只记录错误，不影响内置目录。
+   * 平台未实现时返回 undefined
+   */
+  async refreshRemoteModels(
+    id: string,
+    ownerId: string,
+    signal?: AbortSignal,
+  ): Promise<RemoteModelsStatus | undefined> {
+    this.refreshConfiguredProviders()
+    const def = this.registry.providers.get(id)?.def
+    if (!def || typeof def.listRemoteModels !== 'function') return undefined
+    const fingerprint = this.remoteFingerprint(id)
+    try {
+      const ctx = this.providerContext(
+        id,
+        ownerId,
+        signal ?? new AbortController().signal,
+        { requireEnabled: false },
+      )
+      const models = await def.listRemoteModels(ctx)
+      this.remoteCache.record(id, fingerprint, models)
+    } catch (err) {
+      // 密钥缺失、网络失败等都不拖垮内置目录：记录原因，下次刷新再试
+      this.remoteCache.record(id, fingerprint, [], toError(err).message)
+    }
+    return this.remoteModelsStatus(id)
+  }
 
   /** 已启用平台中支持某能力的模型 */
   models(capability: Capability): Array<ModelSpec & { ref: string; provider: string }> {

@@ -88,6 +88,7 @@ export async function createServer(config: Config): Promise<Server> {
     new ProviderConfigStore(config.dataDir, new Set(config.mockProvider ? ['plein/mock'] : [])),
     assets,
     {
+      dataDir: config.dataDir,
       voiceCredential: (ownerId, provider, voiceId) => {
         const voice = voices.find(ownerId, provider, voiceId)
         if (!voice?.credentialId) return undefined

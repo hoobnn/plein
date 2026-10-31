@@ -3,6 +3,7 @@
  * 传输层用 shared/testing 的假上下文，与其它适配器测试同一套方式。
  */
 import { describe, expect, it } from 'vite-plus/test'
+import type { ProviderDefinition } from '@plein/plugin-sdk'
 import { arkProvider } from './ark'
 import { bailianProvider } from './bailian'
 import { createCompatiblePlugin, compatibleSettings } from './compatible'
@@ -14,12 +15,12 @@ const json = (value: unknown, status = 200) => new Response(JSON.stringify(value
 const list = (items: unknown[]) => ({ object: 'list', data: items })
 
 async function pull(
-  provider: typeof minimaxProvider,
+  provider: ProviderDefinition,
   replies: Reply[],
   settings?: Record<string, unknown>,
 ) {
   const { ctx, fetch } = fakeContext(provider, replies)
-  if (settings) ctx.settings = provider.settings.parse(settings)
+  if (settings) ctx.settings = provider.settings.parse(settings) as typeof ctx.settings
   const models = await provider.listRemoteModels!(ctx)
   const url = String(fetch.mock.calls[0]?.[0])
   const headers = (fetch.mock.calls[0]?.[1] as RequestInit).headers as Record<string, string>
