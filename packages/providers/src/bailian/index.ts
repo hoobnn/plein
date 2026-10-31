@@ -367,7 +367,7 @@ export const bailianProvider = defineProvider({
         'invalid_input',
         'qwen3-tts-instruct-flash 已下线；请选择 qwen3-tts-flash，语气指令请使用豆包语音',
       )
-    if (!supported[req.capability]?.includes(req.model))
+    if (!supported[req.capability]?.includes(req.model) && !(req.remoteOnly && req.capability === 'text.chat'))
       throw new ProviderError('invalid_input', `百炼模型 ${req.model} 不支持 ${req.capability}`)
     switch (req.capability) {
       case 'text.chat':
@@ -710,6 +710,10 @@ export const bailianProvider = defineProvider({
     )
       throw remoteError(400, output, ctx)
   },
+  // 兼容模式列表以对话模型为主；是否含图片 / 视频模型未在官方文档确证，先只覆盖对话
+  remoteModelsScope: ['text.chat'],
+  // 地域与业务空间影响列表域名与返回内容，都参与缓存键
+  remoteModelsSettings: ['region', 'workspaceId'],
   // OpenAI 兼容模式的模型列表；业务空间域名的列表接口未确证，暂不支持
   listRemoteModels: async (ctx) => {
     if (ctx.settings.workspaceId)

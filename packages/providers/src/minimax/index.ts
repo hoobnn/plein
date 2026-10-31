@@ -14,6 +14,7 @@ import {
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
 import {
+  asJson,
   chatMessages,
   imageDataUrl,
   type Method,
@@ -297,6 +298,10 @@ export const minimaxProvider = defineProvider({
     },
   ],
   limits: { concurrency: 2 },
+  // 官方 /v1/models 是 OpenAI 兼容的对话模型列表，不覆盖图片 / 视频 / 语音 / 音乐
+  remoteModelsScope: ['text.chat'],
+  // 切换地区后列表不同，地域参与缓存键
+  remoteModelsSettings: ['region'],
   async test(ctx) {
     await request(ctx, '/v1/models')
   },
@@ -319,14 +324,33 @@ export const minimaxProvider = defineProvider({
         'GET',
         res.status,
       )
-    return minimaxModelList(body)
+    // HTTP 200 里也可能带业务错误（如 base_resp.status_code）；照生成请求的规则判断与脱敏
+    const data = asJson(body)
+    const baseResp = asJson(data.base_resp)
+    const statusCode =
+      typeof baseResp.status_code === 'number'
+        ? baseResp.status_code
+        : Number(baseResp.status_code ?? 0)
+    const businessError = asJson(data.error)
+    if (businessError.type || statusCode !== 0) {
+      const code: string | number =
+        typeof businessError.type === 'string' && businessError.type
+          ? businessError.type
+          : statusCode || res.status
+      const message = redact(
+        String(businessError.message ?? baseResp.status_msg ?? `HTTP ${res.status}`),
+        [key],
+      )
+      throw new ProviderError(errorCode(code), `MiniMax：${message}`)
+    }
+    return minimaxModelList(data)
   },
   async submit(req, ctx) {
-    if (
-      !minimaxProvider.models.some(
-        (m) => m.id === req.model && m.capabilities.includes(req.capability),
-      )
+    // remoteOnly 是宿主核对过覆盖范围后放开的远端新模型：只限对话，不用未确认的能力
+    const known = minimaxProvider.models.some(
+      (m) => m.id === req.model && m.capabilities.includes(req.capability),
     )
+    if (!known && !(req.remoteOnly && req.capability === 'text.chat'))
       throw new ProviderError('invalid_input', 'MiniMax 模型与能力不匹配')
     switch (req.capability) {
       case 'text.chat': {

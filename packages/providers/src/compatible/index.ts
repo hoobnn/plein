@@ -26,6 +26,8 @@ export const compatibleSettings = z
     model: z.string().trim().max(200).default('').meta({
       title: '模型 ID',
       description: '填写渠道上的实际模型 ID；修改渠道后需要重新选择模型',
+      // 渲染时接 datalist，候选来自渠道的 /models（见设置页的模型候选区域）
+      list: 'compatible-model-ids',
     }),
     vision: z.boolean().default(false).meta({ title: '支持图片输入' }),
     tools: z.boolean().default(false).meta({ title: '支持工具调用' }),
@@ -131,6 +133,10 @@ export function createCompatiblePlugin(raw: Record<string, unknown> = {}) {
         ]
       : [],
     testScope: 'configuration',
+    // 渠道列表只作设置里「模型 ID」的候选：内置项是配置本身，不参与可用性标记与 remote-only 提交
+    remoteModelsScope: [],
+    // Base URL 决定列表内容，参与缓存键
+    remoteModelsSettings: ['baseURL'],
     async test(ctx) {
       validate(ctx.settings)
       if (!ctx.secret('COMPATIBLE_API_KEY')?.trim())

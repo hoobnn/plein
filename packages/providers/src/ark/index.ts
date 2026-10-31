@@ -837,11 +837,16 @@ const TOS_SECRETS = [
 async function submitTo(
   plane: Plane,
   specs: ModelSpec[],
-  req: { capability: string; model: string; input: unknown },
+  req: { capability: string; model: string; input: unknown; remoteOnly?: boolean },
   ctx: Context & { settings: { customChatModel?: string } },
 ) {
   const spec = specs.find((model) => model.id === req.model)
-  if (!spec || !(spec.capabilities as readonly string[]).includes(req.capability))
+  // remoteOnly 是宿主核对过覆盖范围的远端新模型：只限对话，且套餐数据面不参与
+  if (
+    spec
+      ? !(spec.capabilities as readonly string[]).includes(req.capability)
+      : !(req.remoteOnly && req.capability === 'text.chat')
+  )
     invalid('所选火山方舟模型不支持此能力')
   const custom =
     req.model === 'custom-chat'
@@ -935,6 +940,9 @@ export const arkProvider = defineProvider({
   settings,
   secrets: [{ name: 'ARK_API_KEY', title: '火山方舟 API Key', required: true }, ...TOS_SECRETS],
   models: models.map((model) => ({ ...model, capabilities: [...model.capabilities] })),
+  // 列表是否含图片 / 视频模型未能在官方文档确证，先只覆盖对话；对话复用现有 chat() 路径
+  remoteModelsScope: ['text.chat'],
+  // 按量数据面地址固定北京，列表与设置无关
   // OpenAI 兼容的模型列表；Agent Plan 套餐数据面的列表接口未确证，暂不给 planProvider 实现
   listRemoteModels: async (ctx) => openAiModelList(await request('api', ctx, '/models')),
   ...tasks('api'),

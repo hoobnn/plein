@@ -374,6 +374,12 @@ export interface ProviderRequest<C extends Capability = Capability> {
   capability: C
   model: string
   input: CapabilityInput<C>
+  /**
+   * 模型来自远端列表（remote-only）而非内置目录：宿主已核对当前密钥与设置上下文、
+   * 平台的覆盖范围声明，以及模型类型与能力的匹配；只有声明范围内（目前是对话）的
+   * remote-only 会带这个标记提交，平台侧可据此放开静态目录校验
+   */
+  remoteOnly?: boolean
 }
 
 /**
@@ -436,6 +442,17 @@ export interface ProviderDefinition<S extends z.ZodObject = z.ZodObject> {
    * 平台不实现；实现失败只影响远端列表，不影响内置目录
    */
   listRemoteModels?(ctx: ProviderContext<z.output<S>>): Promise<RemoteModel[]>
+  /**
+   * 列表结果覆盖哪些能力：只对这些能力的内置条目标 available / unlisted，
+   * 也只有范围内的 remote-only（目前是对话）能以通用参数提交。
+   * 留空表示列表只作设置页候选（如兼容渠道的「模型 ID」），不参与合并与提交
+   */
+  remoteModelsScope?: Capability[]
+  /**
+   * 影响远端列表请求的设置键（地域、Base URL、业务空间等）：这些值参与缓存键，
+   * 改动后旧列表失效并自动重拉。不声明视为列表与设置无关
+   */
+  remoteModelsSettings?: readonly string[]
   /** 宿主按它限流（同一 Provider 的并发与每分钟请求数） */
   limits?: { concurrency?: number; requestsPerMinute?: number }
   /** 无免费鉴权探针的平台仅做本地配置检查，设置页需如实提示 */
@@ -510,6 +527,8 @@ export interface ProviderDescriptor {
   testScope?: 'connection' | 'configuration'
   /** 是否实现了官方模型列表拉取；设置页据此显示「刷新模型列表」 */
   supportsRemoteModels?: boolean
+  /** 列表覆盖的能力；为空表示列表只作设置页候选，不参与合并 */
+  remoteModelsScope?: Capability[]
   settingsSchema: Record<string, unknown>
   secrets: SecretSpec[]
   /** 任选一组的鉴权约束：组内密钥需同时填写，组与组之间任选其一 */
@@ -541,7 +560,9 @@ export function describeProvider(def: ProviderDefinition, plugin: string): Provi
     description: def.description,
     docsUrl: def.docsUrl,
     testScope: providerTestScope(def),
-    ...(def.listRemoteModels ? { supportsRemoteModels: true } : {}),
+    ...(def.listRemoteModels
+      ? { supportsRemoteModels: true, remoteModelsScope: def.remoteModelsScope ?? [] }
+      : {}),
     settingsSchema: z.toJSONSchema(def.settings, { io: 'input', unrepresentable: 'any' }) as Record<
       string,
       unknown

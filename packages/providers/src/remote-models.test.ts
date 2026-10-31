@@ -8,7 +8,7 @@ import { arkProvider } from './ark'
 import { bailianProvider } from './bailian'
 import { createCompatiblePlugin, compatibleSettings } from './compatible'
 import { minimaxProvider } from './minimax'
-import { fakeContext, type Reply } from './testing'
+import { fakeContext, sse, type Reply } from './testing'
 
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status })
 
@@ -87,6 +87,75 @@ describe('listRemoteModels', () => {
     const models = await def.listRemoteModels!(ctx)
     expect(String(fetch.mock.calls[0]?.[0])).toBe('https://llm.example.com/v1/models')
     expect(models).toEqual([{ id: 'gpt-x', kind: 'llm' }])
+  })
+
+  it('minimax：HTTP 200 里的业务错误不能当成空列表', async () => {
+    await expect(
+      pull(minimaxProvider, [json({ base_resp: { status_code: 1004, status_msg: 'invalid key' } })]),
+    ).rejects.toThrow(/invalid key/)
+  })
+
+  it('remoteOnly：三家对话路径接受远端新模型，其余能力仍拒绝', async () => {
+    // MiniMax：复用 /v1/chat/completions
+    const { ctx, fetch } = fakeContext(minimaxProvider, [
+      { choices: [{ message: { content: '好' } }], input_sensitive: false, output_sensitive: false },
+    ])
+    await expect(
+      minimaxProvider.submit(
+        { capability: 'text.chat', model: 'brand-new', remoteOnly: true, input: { messages: [{ role: 'user', content: '嗨' }] } },
+        ctx,
+      ),
+    ).resolves.toMatchObject({ state: 'succeeded' })
+    expect(String(fetch.mock.calls[0]?.[0])).toContain('/v1/chat/completions')
+    expect((fetch.mock.calls[0]?.[1] as RequestInit).body).toContain('brand-new')
+    // 未带 remoteOnly 时静态目录仍然拦截
+    await expect(
+      minimaxProvider.submit(
+        { capability: 'text.chat', model: 'brand-new', input: { messages: [{ role: 'user', content: '嗨' }] } },
+        ctx,
+      ),
+    ).rejects.toThrow(/不匹配/)
+    // remoteOnly 也不得放开未经确认的能力
+    await expect(
+      minimaxProvider.submit(
+        { capability: 'image.generate', model: 'image-brand-new', remoteOnly: true, input: { prompt: 'x' } },
+        ctx,
+      ),
+    ).rejects.toThrow(/不匹配/)
+  })
+
+  it('remoteOnly：方舟对话透传远端模型 ID', async () => {
+    const { ctx, fetch } = fakeContext(arkProvider, [
+      sse('data: {"choices":[{"delta":{"content":"好"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'),
+    ])
+    await expect(
+      arkProvider.submit(
+        { capability: 'text.chat', model: 'doubao-seed-brand-new', remoteOnly: true, input: { messages: [{ role: 'user', content: '嗨' }] } },
+        ctx,
+      ),
+    ).resolves.toMatchObject({ state: 'succeeded' })
+    expect(String(fetch.mock.calls[0]?.[0])).toContain('/api/v3/chat/completions')
+    expect((fetch.mock.calls[0]?.[1] as RequestInit).body).toContain('doubao-seed-brand-new')
+  })
+
+  it('remoteOnly：百炼对话透传远端模型 ID', async () => {
+    const { ctx, fetch } = fakeContext(bailianProvider, [
+      sse('data: {"choices":[{"delta":{"content":"好"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'),
+    ])
+    await expect(
+      bailianProvider.submit(
+        { capability: 'text.chat', model: 'qwen-brand-new', remoteOnly: true, input: { messages: [{ role: 'user', content: '嗨' }] } },
+        ctx,
+      ),
+    ).resolves.toMatchObject({ state: 'succeeded' })
+    expect(String(fetch.mock.calls[0]?.[0])).toContain('/compatible-mode/v1/chat/completions')
+    expect((fetch.mock.calls[0]?.[1] as RequestInit).body).toContain('qwen-brand-new')
+    await expect(
+      bailianProvider.submit(
+        { capability: 'image.generate', model: 'image-brand-new', remoteOnly: true, input: { prompt: 'x' } },
+        ctx,
+      ),
+    ).rejects.toThrow(/不支持/)
   })
 
   it('compatible：未配置渠道时报参数错误', async () => {
