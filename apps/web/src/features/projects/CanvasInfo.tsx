@@ -72,7 +72,7 @@ export function CanvasInfo({ query }: { query: UseQueryResult<Canvas> }) {
             width={280}
             placement="below"
           >
-            <div ref={panel} className="flex flex-col gap-3 p-3">
+            <div ref={panel} className="flex flex-col gap-3 p-(--panel-pad)">
               {error ? (
                 <p role="alert" className="break-words text-sm text-danger">
                   {error.message}
@@ -82,7 +82,7 @@ export function CanvasInfo({ query }: { query: UseQueryResult<Canvas> }) {
                   正在读取画布信息…
                 </p>
               )}
-              <p className="text-xs leading-5 text-ink-muted">
+              <p className="ui-note text-ink-muted">
                 {query.data
                   ? '继续使用已加载的信息，项目相关操作仍可使用。可重试读取最新信息。'
                   : '画布内容仍可编辑；项目筛选、默认素材归属和检查点在信息读取成功后恢复。'}

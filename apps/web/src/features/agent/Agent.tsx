@@ -312,7 +312,7 @@ function AgentPanel({
       }}
       {...exit}
       style={{ bottom }}
-      className="plein-agent-panel ui-float pointer-events-auto fixed top-16 right-3 z-40 flex w-100 flex-col overflow-hidden rounded-xl max-sm:inset-x-3 max-sm:w-auto"
+      className="plein-agent-panel ui-float pointer-events-auto fixed top-(--chrome-top) right-(--chrome-inset) z-40 flex w-100 flex-col overflow-hidden rounded-xl max-sm:inset-x-(--chrome-inset) max-sm:w-auto"
     >
       <header className="flex h-12 flex-none items-center gap-1 border-b border-line pr-2 pl-4">
         <h2 className="mr-1 text-sm font-semibold">小满</h2>

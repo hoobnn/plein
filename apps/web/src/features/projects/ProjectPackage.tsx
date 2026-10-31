@@ -50,10 +50,11 @@ function PackageDialog({
           <Dialog.Popup
             {...exit}
             aria-label={title}
-            className="ui-dialog relative flex max-h-full w-full max-w-120 flex-col gap-5 rounded-2xl bg-surface p-6 shadow-4 outline-none"
+            className="ui-dialog ui-dialog-pad relative flex max-h-full w-full max-w-120 flex-col gap-5 rounded-2xl bg-surface shadow-4 outline-none"
           >
             <h2 className="text-lg font-semibold">{title}</h2>
-            <div className="ui-scrollbar -mx-6 flex min-h-0 flex-col gap-4 overflow-y-auto px-6 text-sm">
+            {/* 正文区与内边距同宽负边距，长内容在对话框内滚动；窄屏 20、桌面 24 跟随 .ui-dialog-pad */}
+            <div className="ui-scrollbar -mx-5 flex min-h-0 flex-col gap-4 overflow-y-auto px-5 text-sm sm:-mx-6 sm:px-6">
               {children}
             </div>
             <div className="flex justify-end gap-2">{actions}</div>
@@ -115,16 +116,16 @@ export function ExportPackageDialog({ project, onClose }: { project: Project; on
         </>
       }
     >
-      <p className="leading-5 text-ink-muted">
+      <p className="ui-note text-ink-muted">
         把「{project.title}」打包成一个 .plein 文件，在另一台电脑或另一个数据目录里导入后继续编辑。
       </p>
       <div className="flex flex-col gap-1.5">
         <div className="ui-section-title">包含</div>
-        <p className="leading-5">
+        <p className="ui-note">
           全部画布、画布用到的素材、资产库条目、每个节点当前采用的结果和运行记录，以及全部命名检查点和检查点保留的素材。运行记录只作历史，导入后不会续查或重新提交。
         </p>
         <div className="ui-section-title mt-2">不包含</div>
-        <p className="leading-5">
+        <p className="ui-note">
           平台密钥、登录信息和智能体会话。模型、音色和插件只记标识，导入后在设置里重新配置。
         </p>
       </div>
@@ -349,7 +350,7 @@ export function ImportPackageDialog({
           </p>
         ) : (
           <>
-            <p className="leading-5 text-danger">{state.message}</p>
+            <p className="ui-note text-danger">{state.message}</p>
             {state.unconfirmed && (
               <p className="ui-help">请先在首页检查是否已经导入，再决定是否重新选择项目包。</p>
             )}
@@ -391,13 +392,13 @@ export function ImportPackageDialog({
         {counts(p.counts)} · {bytes(p.counts.bytes)}
       </p>
       {p.copy && (
-        <p className="leading-5">
+        <p className="ui-note">
           本机已经有这个项目，会作为副本导入：项目、画布、项目自己的资产库条目和运行记录都换新
           id，画布里的引用一起改，原项目不受影响。
         </p>
       )}
       {p.reusedLibrary > 0 && (
-        <p className="leading-5 text-ink-muted">
+        <p className="ui-note text-ink-muted">
           {p.reusedLibrary} 个资产库条目本机已有，直接沿用，不再重复添加。
         </p>
       )}
@@ -431,7 +432,7 @@ export function ImportPackageDialog({
       {p.missing.length > 0 && (
         <div className="flex flex-col gap-1.5">
           <div className="ui-section-title">缺失的素材</div>
-          <p className="leading-5 text-ink-muted">
+          <p className="ui-note text-ink-muted">
             导出时就找不到 {p.missing.length} 处引用（{missingText(p.missing)}），导入后仍然缺失。
           </p>
         </div>

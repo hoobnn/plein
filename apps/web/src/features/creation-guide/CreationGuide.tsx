@@ -243,7 +243,7 @@ function Guide({
       className={
         presentation === 'modal'
           ? 'flex min-h-0 w-full flex-1 flex-col overflow-hidden'
-          : 'ui-float pointer-events-auto absolute top-16 right-3 z-25 flex max-h-[calc(100%_-_150px)] w-84 max-w-[calc(100%_-_24px)] flex-col overflow-hidden rounded-xl'
+          : 'ui-float pointer-events-auto absolute top-(--chrome-top) right-(--chrome-inset) z-25 flex max-h-[calc(100%_-_150px)] w-84 max-w-[calc(100%_-_2*var(--chrome-inset))] flex-col overflow-hidden rounded-xl'
       }
       data-testid="creation-guide"
     >

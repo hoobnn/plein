@@ -84,7 +84,7 @@ export function ProjectTitle({
             width={280}
             placement="below"
           >
-            <div ref={panel} className="flex flex-col gap-3 p-3">
+            <div ref={panel} className="flex flex-col gap-3 p-(--panel-pad)">
               {error ? (
                 <p role="alert" className="break-words text-sm text-danger">
                   {error.message}
@@ -94,7 +94,7 @@ export function ProjectTitle({
                   正在读取项目信息…
                 </p>
               )}
-              <p className="break-words text-xs leading-5 text-ink-muted">
+              <p className="ui-note break-words text-ink-muted">
                 {query.data
                   ? `当前使用已加载的项目名称「${query.data.title}」。可重试读取最新信息，也可继续改名。`
                   : '画布内容仍可编辑，项目信息恢复后可继续重命名项目。'}
