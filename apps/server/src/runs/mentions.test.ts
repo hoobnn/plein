@@ -173,8 +173,25 @@ describe('运行前解析 @ 引用', () => {
     expect(framed.params.prompt).toContain('林夏：二十岁，短发')
     expect(framed.refs[0]!.assetIds).toEqual([])
     expect(msg(framed.notices)).toContain(
-      '@ 引用的参考图只在「多模态参考」模式下送入模型，当前模式只附文字设定',
+      '@ 引用的参考图（林夏）只在「多模态参考」模式下送入模型；当前模式未送入，提示词中对这些参考图的说明仍会作为文字发送',
     )
+  })
+
+  it('首帧视频：保留参考用途原文，不追加参考对应并在提示中列出未送入的引用', async () => {
+    const { doc } = setup()
+    const n = node(doc, 'plein/video', {
+      prompt: '参考用途：@林夏 只确定面型',
+      mode: 'image',
+      model: 'minimax/api:MiniMax-H3',
+    })
+    const first: PortValue = { type: 'image', assetId: 'b'.repeat(64), kind: 'image' }
+    const r = await applyMentions(doc, doc.get(n)!, videoNode, { images: [first] }, collect(doc))
+    expect(r.params.prompt).toContain('参考用途：林夏 只确定面型')
+    expect(r.params.prompt).not.toContain('参考对应：')
+    expect(r.inputs.images).toEqual([first])
+    const notice = r.notices.find((n) => n.code === 'unsupported_refs')
+    expect(notice?.message).toContain('林夏')
+    expect(notice?.message).toContain('提示词中对这些参考图的说明仍会作为文字发送')
   })
 
   it('超过模型的参考图上限：先保角色、再场景，放不下的道具只附设定', async () => {
