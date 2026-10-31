@@ -41,7 +41,8 @@ test(
       .fill('https://gateway.example.com/v1')
     await row.getByRole('textbox', { name: '模型 ID', exact: true }).fill('example-chat')
     await row.getByRole('checkbox', { name: '支持图片输入', exact: true }).check()
-    await row.getByRole('button', { name: '保存', exact: true }).click()
+    // 未配置时主操作是「保存并校验」，这里只要保存
+    await row.getByRole('button', { name: '仅保存', exact: true }).click()
     await expect(row.getByRole('status')).toContainText('已保存')
     await row.getByRole('switch', { name: '启用 兼容对话渠道', exact: true }).click()
     await expect(row.getByRole('switch', { name: '启用 兼容对话渠道', exact: true })).toBeChecked()

@@ -12,7 +12,8 @@ const provider: ProviderInfo = {
   title: 'Mock（开发测试用）',
   description: '不联网的假平台',
   enabled: true,
-  configured: false,
+  // 这个用例只关心数字编辑与校验按钮的启用状态：用已配置平台才有底部校验按钮
+  configured: true,
   credentialCount: 0,
   testScope: 'connection',
   settingsSchema: {

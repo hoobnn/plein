@@ -57,12 +57,9 @@ function CredentialCard({
   // 就地更换的密钥字段、以及显示/隐藏明文的状态
   const [editing, setEditing] = useState<Record<string, boolean>>({})
   const [shown, setShown] = useState<Record<string, boolean>>({})
+  // required 缺省即「非必填」：只有显式 required: true 的才进必填区
   const secretSpecs = provider.secrets.filter((s) =>
-    secretFilter === 'all'
-      ? true
-      : secretFilter === 'required'
-        ? s.required !== false
-        : s.required === false,
+    secretFilter === 'all' ? true : secretFilter === 'required' ? !!s.required : !s.required,
   )
   const typed = Object.values(card.secrets).some((v) => v !== '')
   // 只有保存成功（行组件递增 resetToken）或用户点取消才收起就地输入；
@@ -76,8 +73,9 @@ function CredentialCard({
     setEditing({})
     setShown({})
   }, [resetToken])
-  // 可选密钥只出现在「更多设置」里，那一块不重复标签和操作行
-  const compact = secretFilter === 'optional'
+  // 平台有必填密钥时，可选密钥只是「更多设置」里的补充，不重复标签和操作行；
+  // 全部密钥都可选的平台（如 mock）仍保留完整卡片，否则没有地方填标签或加组
+  const compact = secretFilter === 'optional' && provider.secrets.some((s) => s.required)
   if (secretSpecs.length === 0) return null
   // 新卡用草稿标签作名字，没填时退回序号；已保存组用已保存的标签
   const name =
@@ -292,14 +290,17 @@ export function ProviderCredentials({
   const savedGroups = config.credentials ?? []
   const optional = secretFilter === 'optional'
   // 可选密钥为空的平台不用在「更多设置」里单开一块
-  if (optional && !provider.secrets.some((s) => s.required === false)) return null
+  if (optional && !provider.secrets.some((s) => !s.required)) return null
+  // 没有必填密钥的平台不显示空的必填区
+  if (secretFilter === 'required' && !provider.secrets.some((s) => s.required)) return null
   const multi = savedGroups.length + drafts.length >= 2
   return (
     <section className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between gap-2">
         <span className="ui-label">{optional ? '可选密钥' : '密钥'}</span>
         {/* 平台文档里能找到申请密钥的入口的，直接给外链 */}
-        {provider.docsUrl && (
+        {/* 全部密钥都可选的平台，可选区就是主密钥区，外链放这里 */}
+        {provider.docsUrl && (!optional || !provider.secrets.some((s) => s.required)) && (
           <a
             href={provider.docsUrl}
             target="_blank"
@@ -362,11 +363,13 @@ export function ProviderCredentials({
           />
         ))}
       </ul>
-      {!optional && (secretFilter === 'all' || savedGroups.length > 0) && (
-        <button type="button" className="ui-btn ui-btn-secondary self-start" onClick={onAdd}>
-          添加一组密钥
-        </button>
-      )}
+      {/* 全部密钥都可选的平台没有必填区，加组入口留在可选区 */}
+      {(!optional || !provider.secrets.some((s) => s.required)) &&
+        (secretFilter === 'all' || savedGroups.length > 0) && (
+          <button type="button" className="ui-btn ui-btn-secondary self-start" onClick={onAdd}>
+            添加一组密钥
+          </button>
+        )}
     </section>
   )
 }

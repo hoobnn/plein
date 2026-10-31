@@ -495,7 +495,7 @@ export function ProviderRow({
   )
   // 「更多设置」只在确实有可选密钥或平台设置时出现
   const hasMore =
-    provider.secrets.some((s) => s.required === false) ||
+    provider.secrets.some((s) => !s.required) ||
     Object.keys(
       (provider.settingsSchema as { properties?: Record<string, unknown> }).properties ?? {},
     ).length > 0
@@ -539,14 +539,27 @@ export function ProviderRow({
       secretFilter={secretFilter}
     />
   )
+  const feedbackLine = (
+    <span
+      className={`mr-auto text-xs ${feedback?.error ? 'text-danger' : 'text-ink-muted'}`}
+      role={feedback?.error ? 'alert' : 'status'}
+    >
+      {busy ? '处理中…' : feedback?.message}
+    </span>
+  )
+  /** 数字输入不合法时按钮点击先收尾，和字段失焦一致 */
+  const blurBadNumber = (event: { button: number; preventDefault(): void }) => {
+    if (event.button !== 0) return
+    const input = formFields.current?.querySelector<HTMLInputElement>('input[type="number"]:focus')
+    if (input?.validity.badInput) {
+      event.preventDefault()
+      input.blur()
+      input.focus()
+    }
+  }
   const actions = (
     <div className="flex flex-wrap items-center gap-2">
-      <span
-        className={`mr-auto text-xs ${feedback?.error ? 'text-danger' : 'text-ink-muted'}`}
-        role={feedback?.error ? 'alert' : 'status'}
-      >
-        {busy ? '处理中…' : feedback?.message}
-      </span>
+      {feedbackLine}
       <button
         type="button"
         disabled={locked || dirty}
@@ -556,34 +569,37 @@ export function ProviderRow({
       >
         校验连接
       </button>
-      {!provider.configured && (
-        <button
-          type="button"
-          disabled={locked}
-          onClick={() => save()}
-          className="ui-btn ui-btn-secondary"
-        >
-          保存
-        </button>
-      )}
       <button
         type="button"
         disabled={locked}
-        onPointerDown={(event) => {
-          if (event.button !== 0) return
-          const input = formFields.current?.querySelector<HTMLInputElement>(
-            'input[type="number"]:focus',
-          )
-          if (input?.validity.badInput) {
-            event.preventDefault()
-            input.blur()
-            input.focus()
-          }
-        }}
-        onClick={() => void (provider.configured ? save() : saveAndTest())}
+        onPointerDown={blurBadNumber}
+        onClick={() => save()}
         className="ui-btn ui-btn-primary"
       >
-        {provider.configured ? '保存' : '保存并校验'}
+        保存
+      </button>
+    </div>
+  )
+  // 未配置时还没有可校验的已保存配置：只留「保存并校验」和弱化的「仅保存」
+  const unconfiguredActions = (
+    <div className="flex flex-wrap items-center gap-2">
+      {feedbackLine}
+      <button
+        type="button"
+        disabled={locked}
+        onClick={() => save()}
+        className="ui-btn ui-btn-quiet"
+      >
+        仅保存
+      </button>
+      <button
+        type="button"
+        disabled={locked}
+        onPointerDown={blurBadNumber}
+        onClick={() => saveAndTest()}
+        className="ui-btn ui-btn-primary"
+      >
+        保存并校验
       </button>
     </div>
   )
@@ -697,8 +713,7 @@ export function ProviderRow({
                 className="m-0 flex min-w-0 flex-col gap-4 border-0 p-0"
               >
                 {credentialsForm('required')}
-                {/* 主操作紧跟必填密钥输入：保存并校验放在「更多设置」之前 */}
-                {actions}
+                {/* 折叠入口在必填密钥下方、主操作上方：展开后填完再统一保存 */}
                 {hasMore && (
                   <div className="flex flex-col gap-3">
                     <button
@@ -717,6 +732,7 @@ export function ProviderRow({
                     )}
                   </div>
                 )}
+                {unconfiguredActions}
               </fieldset>
               {dirtyNote}
             </>
