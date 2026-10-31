@@ -1170,7 +1170,7 @@ function ShotSummary({
                   </span>
                   {firstFrameCount !== undefined && firstFrameCount > 0 && (
                     <span className="block text-ink-subtle">
-                      首帧：已送入 {firstFrameCount} 张上游分镜图（来自 inputs.images）
+                      首帧：已送入 {firstFrameCount} 张上游分镜图
                     </span>
                   )}
                 </>

@@ -790,7 +790,7 @@ it('图生视频未送 @ 参考图时同时标明首帧已送入', async () => {
   mockSummary(input)
   renderApp(<ShotWorkbench />)
   expect(await screen.findByText('参考图将不送入')).toBeTruthy()
-  expect(screen.getByText('首帧：已送入 1 张上游分镜图（来自 inputs.images）')).toBeTruthy()
+  expect(screen.getByText('首帧：已送入 1 张上游分镜图')).toBeTruthy()
 })
 
 it('首帧模式没有图片输入时不显示首帧送入数量', async () => {
