@@ -1,5 +1,5 @@
 import { mentionTargetsIn, referenceAssets, shotsOf } from '@plein/capabilities'
-import { compareZ, continuityOf, currentShotPlan, type PleinDoc } from '@plein/doc'
+import { continuityOf, currentShotPlan, type PleinDoc } from '@plein/doc'
 import {
   findMentions,
   matchSceneView,
@@ -80,11 +80,10 @@ export function scenePrep(doc: PleinDoc, sceneElementId: string): ScenePrepResul
   const unspecified: ScenePrepShot[] = []
   const ambiguous: ScenePrepAmbiguousShot[] = []
   const missing: ScenePrepMissingShot[] = []
-  // 分镜表按画布绘制顺序（z 分数索引，即用户看到的顺序）排；中文数字表名的码点/拼音
-  // 序都不等于集数顺序（三 < 二 < 十），表名不参与排序。
-  const boards = [...doc.elements()]
-    .filter((el) => el.nodeType === 'plein/storyboard')
-    .sort(compareZ)
+  // 分镜表按 doc.elements() 的枚举顺序排，与创建引导、序列实例选择器、交付检查等其他
+  // 分镜列表一致；z 只在同级内有意义，跨 Frame 全局比较不代表绘制顺序，置顶也会改 z，
+  // 表名更不参与排序（中文数字的码点/拼音序都不等于集数顺序）。
+  const boards = [...doc.elements()].filter((el) => el.nodeType === 'plein/storyboard')
   const boardRank = new Map(boards.map((board, index) => [board.id, index]))
   const compareShots = (a: ScenePrepShot, b: ScenePrepShot) =>
     (boardRank.get(a.boardId) ?? 0) - (boardRank.get(b.boardId) ?? 0) ||

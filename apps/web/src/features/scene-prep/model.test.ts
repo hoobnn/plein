@@ -1,8 +1,10 @@
 import {
   appendShotPlan,
+  bringToFront,
   connect,
   createElement,
   registerContinuitySubject,
+  type NewElement,
   type PleinDoc,
 } from '@plein/doc'
 import { node, openDoc } from '@plein/doc/testing'
@@ -36,13 +38,14 @@ function fixture() {
       },
     }),
   )
-  const board = (id: string, name: string, shots: Shot[]) =>
+  const board = (id: string, name: string, shots: Shot[], extra: Partial<NewElement> = {}) =>
     createElement(
       doc,
       node({
         id,
         nodeType: 'plein/storyboard',
         name,
+        ...extra,
         params: { shots },
       }),
     )
@@ -61,7 +64,7 @@ function fixture() {
 }
 
 describe('场景准备模型', () => {
-  it('跨分镜表按画布顺序和镜头号分组，复用视角别名并保留错误引用原文', () => {
+  it('跨分镜表按文档枚举顺序和镜头号分组，复用视角别名并保留错误引用原文', () => {
     const { doc, sceneId, board, shot } = fixture()
     board('board-a', '第一集', [
       shot('a10', 10, '', '镜头转向@天台/门口'),
@@ -100,15 +103,37 @@ describe('场景准备模型', () => {
     ])
   })
 
-  it('三张分镜表按画布顺序排，中文数字表名不参与排序', () => {
+  it('三张分镜表按文档枚举顺序排，中文数字表名不参与排序', () => {
     const { doc, sceneId, board, shot } = fixture()
     board('board-2', '第二集', [shot('c2', 2, '@天台/门口')])
     board('board-3', '第三集', [shot('c3', 3, '@天台/门口')])
     board('board-10', '第十集', [shot('c10', 10, '@天台/门口')])
 
     const result = scenePrep(doc, sceneId)!
-    // 码点序（三 < 二 < 十）和拼音序都会打散这个顺序；只有画布创建顺序是对的。
+    // 码点序（三 < 二 < 十）和拼音序都会打散这个顺序；枚举顺序即创建顺序。
     expect(result.views[0]?.shots.map((shot) => shot.shotId)).toEqual(['c2', 'c3', 'c10'])
+  })
+
+  it('分镜表在 Frame 里或被置顶后，仍按 doc.elements() 的枚举顺序排', () => {
+    const { doc, sceneId, board, shot } = fixture()
+    board('board-2', '第二集', [shot('b2', 2, '@天台/门口')])
+    const frame = createElement(doc, { kind: 'frame', id: 'frame', x: 0, y: 0, w: 800, h: 600 })
+    board('board-3', '第三集', [shot('b3', 3, '@天台/门口')], { parentId: frame })
+    board('board-10', '第十集', [shot('b10', 10, '@天台/门口')])
+    // 置顶只改 z 不改枚举顺序：根级 z 序变成 board-3 之外 board-2 最大，与枚举序相反。
+    bringToFront(doc, ['board-2'])
+
+    const result = scenePrep(doc, sceneId)!
+    expect(result.views[0]?.shots.map((shot) => shot.shotId)).toEqual(['b2', 'b3', 'b10'])
+  })
+
+  it('同一镜头号下镜头 id 按 numeric collator 排序', () => {
+    const { doc, sceneId, board, shot } = fixture()
+    board('board', '分镜表', [shot('x10', 1, '@天台/门口'), shot('x2', 1, '@天台/门口')])
+
+    const result = scenePrep(doc, sceneId)!
+    // 字典序会把 x10 排在 x2 前；numeric 序才符合镜头号的数值直觉。
+    expect(result.views[0]?.shots.map((shot) => shot.shotId)).toEqual(['x2', 'x10'])
   })
 
   it('裸场景引用与错误视角并存时只归入视角不存在', () => {
