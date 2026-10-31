@@ -157,7 +157,10 @@ it('所属 Key 失效时单组也提示，并把失效音色排到末尾', async
   const { user } = renderApp(<VoicePicker value={noVoice} onChange={() => {}} />)
   await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
   await user.click(screen.getByRole('combobox'))
-  const labels = screen.getAllByRole('option').map((option) => option.textContent)
+  // 选项前的平台彩色图标带一个字母，比较文案时去掉这个前缀
+  const labels = screen
+    .getAllByRole('option')
+    .map((option) => option.textContent?.replace(/^[^\u4e00-\u9fff]+/, ''))
   expect(labels.slice(-3)).toEqual([
     '我的 · 已删音色 · 所属 Key 已删除',
     '我的 · 已换音色 · 所属 Key 已更换',

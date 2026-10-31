@@ -83,6 +83,13 @@ export function catalogOf(host: PluginHost): Catalog {
   return catalog
 }
 
+/** 已保存密钥的展示掩码：够长时留前三位和末四位，短密钥只留末两位 */
+function secretHint(value: string | undefined): string | null {
+  if (!value) return null
+  if (value.length <= 8) return `••••${value.slice(-2)}`
+  return `${value.slice(0, 3)}••••••${value.slice(-4)}`
+}
+
 /** 插件目录与平台设置接口 */
 export function pluginRoutes(
   host: PluginHost,
@@ -107,6 +114,12 @@ export function pluginRoutes(
         label: credential.label,
         secrets: Object.fromEntries(
           def.secrets.map((s) => [s.name, Boolean(credential.secrets[s.name])]),
+        ),
+        secretHints: Object.fromEntries(
+          def.secrets.flatMap((s) => {
+            const hint = secretHint(credential.secrets[s.name])
+            return hint ? [[s.name, hint]] : []
+          }),
         ),
         configured: providerConfigured(def, credential.secrets),
         usage: {

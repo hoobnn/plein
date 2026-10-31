@@ -21,17 +21,22 @@ import {
 } from './providerDirty'
 import { credentialUsed, replaceWarning } from './credentialUsage'
 
-/** 平台行仅表示本地配置，不把填写密钥标成远端可用；多组密钥时顺带显示当前用哪一组 */
-function providerState(p: ProviderInfo): { label: string; tone: string } {
+/** 平台卡片的状态只表示本地配置与最近一次校验，不把填写密钥标成远端可用。多组时顺带显示当前组。 */
+function providerState(
+  p: ProviderInfo,
+  check: { testing: boolean; failed: boolean },
+): { label: string; tone: string } {
   if (!p.enabled) return { label: '已停用', tone: '' }
-  if (!p.configured) return { label: '缺少密钥', tone: 'ui-tag-warning' }
+  if (!p.configured) return { label: '未配置', tone: 'ui-tag-warning' }
+  if (check.failed) return { label: '校验失败', tone: 'ui-tag-danger' }
+  if (check.testing) return { label: '校验中', tone: '' }
   // 目录在多组时带当前组标签；保存、删除、设为使用后 onSaved 会刷新目录
   return p.activeCredentialLabel
-    ? { label: `已配置 · ${p.activeCredentialLabel}`, tone: '' }
-    : { label: '已配置', tone: '' }
+    ? { label: `已连接 · ${p.activeCredentialLabel}`, tone: 'ui-tag-success' }
+    : { label: '已连接', tone: 'ui-tag-success' }
 }
 
-/** 单个平台：一行摘要（状态、启用开关），展开后是设置表单（由插件声明的 schema 生成）、密钥、测试连接 */
+/** 单个平台：一张卡片（彩色图标、状态、启用开关、主操作），展开后是设置表单（由插件声明的 schema 生成）、密钥、校验 */
 export function ProviderRow({
   provider,
   open,
@@ -63,6 +68,8 @@ export function ProviderRow({
   const [status, setStatus] = useState<{ message: string; error?: boolean } | null>(null)
   const [test, setTest] = useState<ProviderTestResult | null>(null)
   const [busy, setBusy] = useState(false)
+  // 正在跑校验：卡片状态显示「校验中」，结束后按结果变成「校验失败」或「已连接」
+  const [testing, setTesting] = useState(false)
   const locked = busy || disabled
   const [configError, setConfigError] = useState<string | null>(null)
   const [loadAttempt, setLoadAttempt] = useState(0)
@@ -201,12 +208,13 @@ export function ProviderRow({
     setDrafts([...drafts, ...moved])
   }
 
-  const save = async () => {
+  /** 保存成功返回 true：未配置平台的主操作要在保存后接着校验 */
+  const save = async (): Promise<boolean> => {
     // 必填标签或数字没填好时先聚焦问题输入，不发出请求
     const invalid = formFields.current?.querySelector<HTMLElement>('[aria-invalid="true"]')
     if (invalid) {
       invalid.focus()
-      return
+      return false
     }
     // 只提交改过的标签与非空密钥，与脏检查共用同一判断；新卡作为 credentials.add 创建（改动过的预填卡也算）
     const update = savedCards.flatMap((card) => {
@@ -246,12 +254,12 @@ export function ProviderRow({
         alternateLabel: '改为添加新组',
         initialFocus: 'alternate',
       })
-      if (!choice) return
+      if (!choice) return false
       // 改为添加新组：刚输入的密钥移到新草稿卡，原组保持不变，本次不保存
       if (choice === 'alternate') {
         clearFeedback()
         moveToDraft(replacing)
-        return
+        return false
       }
     }
     setBusy(true)
@@ -278,8 +286,10 @@ export function ProviderRow({
       setNumberEditing(false)
       setStatus({ message: '已保存' })
       await onSaved()
+      return true
     } catch (err) {
       setStatus({ message: `保存失败：${(err as Error).message}`, error: true })
+      return false
     } finally {
       setBusy(false)
     }
@@ -358,12 +368,14 @@ export function ProviderRow({
   const testCard = async (key: string) => {
     clearFeedback()
     setBusy(true)
+    setTesting(true)
     try {
       setTest(await api.testProvider(provider.id, key))
     } catch (err) {
       // 传输失败没有服务端检查结果，不能伪造 scope 或完成时间。
       setStatus({ error: true, message: `检查请求失败：${(err as Error).message}` })
     } finally {
+      setTesting(false)
       setBusy(false)
     }
   }
@@ -371,17 +383,24 @@ export function ProviderRow({
   const runTest = async () => {
     clearFeedback()
     setBusy(true)
+    setTesting(true)
     try {
       setTest(await api.testProvider(provider.id))
     } catch (err) {
       // 传输失败没有服务端检查结果，不能伪造 scope 或完成时间。
       setStatus({ error: true, message: `检查请求失败：${(err as Error).message}` })
     } finally {
+      setTesting(false)
       setBusy(false)
     }
   }
 
-  const state = providerState(provider)
+  /** 未配置平台的主操作：保存后立刻校验，结果就地显示 */
+  const saveAndTest = async () => {
+    if (await save()) await runTest()
+  }
+
+  const state = providerState(provider, { testing, failed: test ? !test.ok : false })
   const bodyId = `provider-${provider.id}`
   const dirty = providerDirty(settings, config?.settings, [...savedCards, ...drafts], numberEditing)
   const feedback = test
@@ -394,29 +413,41 @@ export function ProviderRow({
     : status
 
   return (
-    <li className="border-b border-line last:border-b-0" data-provider={provider.id}>
-      <div className="flex items-center gap-3 px-4 py-3">
+    <li
+      className="flex flex-col rounded-xl bg-surface p-3.5 ring-1 ring-line"
+      data-provider={provider.id}
+    >
+      <div className="flex items-start gap-3">
         <button
           type="button"
           aria-expanded={open}
           aria-controls={bodyId}
           onClick={onToggleOpen}
-          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+          className="flex min-w-0 flex-1 items-start gap-3 text-left"
         >
-          <span
-            className={`flex-none text-ink-subtle transition-transform ${open ? 'rotate-90' : ''}`}
-          >
-            <Icon name="chevronRight" size={14} />
-          </span>
-          <ProviderIcon provider={provider.id} size={24} />
+          <ProviderIcon provider={provider.id} size={28} />
           <span className="min-w-0 flex-1">
-            <span className="block text-sm font-medium break-words">{provider.title}</span>
-            <span className="block truncate text-xs text-ink-subtle" title={provider.description}>
+            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="text-sm font-medium break-words">{provider.title}</span>
+              <span className={`ui-tag ${state.tone}`} title="本地配置状态不代表具体模型权限或余额">
+                {state.label}
+              </span>
+            </span>
+            <span className="mt-0.5 block text-xs text-ink-subtle" title={provider.description}>
               {provider.description ?? `${provider.models.length} 个模型`}
             </span>
           </span>
-          <span className={`ui-tag ${state.tone}`} title="本地配置状态不代表具体模型权限或余额">
-            {state.label}
+          {/* 右侧主操作跟着标题一起可点：未配置先给配置入口，配置好后改成管理 */}
+          <span
+            aria-hidden="true"
+            className={`ui-btn ui-btn-xs flex-none ${open ? 'ui-btn-quiet' : 'ui-btn-secondary'}`}
+          >
+            {open ? '收起' : provider.configured ? '管理' : '配置密钥'}
+          </span>
+          <span
+            className={`mt-0.5 flex-none text-ink-subtle transition-transform ${open ? 'rotate-90' : ''}`}
+          >
+            <Icon name="chevronRight" size={14} />
           </span>
         </button>
         <Switch
@@ -429,15 +460,14 @@ export function ProviderRow({
       {!open && (busy || status?.error) && (
         <p
           ref={closedFeedback}
-          className={`px-4 pb-3 text-xs ${busy ? 'text-ink-muted' : 'text-danger'}`}
+          className={`mt-2 text-xs ${busy ? 'text-ink-muted' : 'text-danger'}`}
           role={busy ? 'status' : 'alert'}
         >
           {busy ? '处理中…' : status?.message}
         </p>
       )}
-      {/* 宽窗口与标题文字对齐；窄窗口缩减缩进，给配置字段留出空间。 */}
       <div hidden={!open}>
-        <div id={bodyId} className="flex min-w-0 flex-col gap-4 px-4 pb-4 sm:pl-19.5">
+        <div id={bodyId} className="flex min-w-0 flex-col gap-4 pt-4">
           {provider.models.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {provider.models.map((m) => (
@@ -486,6 +516,7 @@ export function ProviderRow({
                   onDiscard={discardDraft}
                   onTest={(key) => void testCard(key)}
                   onAdd={addDraft}
+                  onSubmit={() => void save()}
                 />
                 <SchemaForm
                   schema={provider.settingsSchema as ObjectSchema}
@@ -522,6 +553,16 @@ export function ProviderRow({
                 >
                   {provider.testScope === 'configuration' ? '检查配置' : '测试连接'}
                 </button>
+                {!provider.configured && (
+                  <button
+                    type="button"
+                    disabled={locked}
+                    onClick={() => save()}
+                    className="ui-btn ui-btn-secondary"
+                  >
+                    保存
+                  </button>
+                )}
                 <button
                   type="button"
                   disabled={locked}
@@ -536,10 +577,10 @@ export function ProviderRow({
                       input.focus()
                     }
                   }}
-                  onClick={() => save()}
+                  onClick={() => void (provider.configured ? save() : saveAndTest())}
                   className="ui-btn ui-btn-primary"
                 >
-                  保存
+                  {provider.configured ? '保存' : '保存并校验'}
                 </button>
               </div>
               {dirty && (
@@ -586,6 +627,7 @@ export function ProviderSettings({
       setUpdatingCatalog(false)
     }
   }
+  const connected = (catalog?.providers ?? []).filter((p) => p.enabled && p.configured).length
   return (
     <div className="flex flex-col gap-8">
       {catalogError && (
@@ -621,19 +663,26 @@ export function ProviderSettings({
           {catalog.providers.length === 0 ? (
             <p className="text-sm text-ink-subtle">还没有安装模型平台插件。</p>
           ) : (
-            <ul className="rounded-lg ring-1 ring-line">
-              {catalog.providers.map((p) => (
-                <ProviderRow
-                  key={p.id}
-                  provider={p}
-                  open={openProvider === p.id}
-                  onToggleOpen={() => onToggleOpen(p.id)}
-                  onSaved={load}
-                  disabled={providersBlocked}
-                  active={active}
-                />
-              ))}
-            </ul>
+            <>
+              <p className="text-xs text-ink-subtle">
+                已连接 {connected} / 共 {catalog.providers.length} 个平台
+              </p>
+              <ul aria-label="平台" className="flex flex-col gap-2">
+                {[...catalog.providers]
+                  .sort((a, b) => Number(b.configured) - Number(a.configured))
+                  .map((p) => (
+                    <ProviderRow
+                      key={p.id}
+                      provider={p}
+                      open={openProvider === p.id}
+                      onToggleOpen={() => onToggleOpen(p.id)}
+                      onSaved={load}
+                      disabled={providersBlocked}
+                      active={active}
+                    />
+                  ))}
+              </ul>
+            </>
           )}
         </Group>
       )}

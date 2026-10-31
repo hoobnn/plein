@@ -84,10 +84,15 @@ const mockView = (
 })
 
 /** 已保存的密钥组：服务端只回报标签与密钥是否已填写 */
-const credential = (id: string, label: string, filled = false) => ({
+const credential = (
+  id: string,
+  label: string,
+  filled = false,
+): ProviderConfigView['credentials'][number] => ({
   id,
   label,
   secrets: { MOCK_API_KEY: filled },
+  secretHints: filled ? { MOCK_API_KEY: 'sk-••••••a1b2' } : {},
   configured: filled,
   usage: { tasks: 0, voices: 0 },
 })
@@ -464,10 +469,8 @@ describe('密钥组', () => {
     expect(screen.queryByText('使用中')).toBeNull()
     expect(screen.queryByRole('button', { name: '设为使用' })).toBeNull()
     expect(screen.getByRole('button', { name: '添加一组密钥' })).toBeTruthy()
-    // 已填写的密钥显示占位提示
-    expect(card('cred-1').getByLabelText('「默认」的API Key').getAttribute('placeholder')).toBe(
-      '已填写，留空表示不修改',
-    )
+    // 已填写的密钥只显示掩码，末四位可辨
+    expect(card('cred-1').getByText('sk-••••••a1b2')).toBeTruthy()
 
     await user.type(card('cred-1').getByLabelText('「默认」的标签'), '个人')
     await user.click(screen.getByRole('button', { name: '保存' }))
@@ -494,6 +497,7 @@ describe('密钥组', () => {
   it('已保存组只填密钥即可保存，不需要标签', async () => {
     const { user, fetch } = renderRow({}, { row: configuredProvider, view: twoGroups() })
     await screen.findByLabelText('「个人」的标签')
+    await user.click(card('cred-2').getByRole('button', { name: '更换「团队」的API Key' }))
     await user.type(card('cred-2').getByLabelText('「团队」的API Key'), 'new-key')
     await user.click(screen.getByRole('button', { name: '保存' }))
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain('已保存'))
@@ -550,7 +554,7 @@ describe('密钥组', () => {
     )
   })
 
-  it('两组时标记当前组，行摘要显示当前组标签，设为使用单独保存', async () => {
+  it('两组时标记当前组，卡片显示当前组标签，设为使用单独保存', async () => {
     const two = (activeId: string) =>
       credView([credential('cred-1', '个人', true), credential('cred-2', '团队', true)], activeId)
     let active = 'cred-1'
@@ -564,7 +568,7 @@ describe('密钥组', () => {
       },
       { row: configuredProvider, view: two('cred-1') },
     )
-    expect(await screen.findByText('已配置 · 个人')).toBeTruthy()
+    expect(await screen.findByText('已连接 · 个人')).toBeTruthy()
     expect(card('cred-1').getByText('使用中')).toBeTruthy()
     expect(card('cred-2').queryByText('使用中')).toBeNull()
 
@@ -801,6 +805,7 @@ describe('密钥组', () => {
     await waitFor(() => expect(bodies).toEqual([{ credential: 'cred-2' }]))
 
     // 这张卡填了没保存的密钥：先保存才能检查
+    await user.click(card('cred-2').getByRole('button', { name: '更换「团队」的API Key' }))
     await user.type(card('cred-2').getByLabelText('「团队」的API Key'), 'new-key')
     expect(
       card('cred-2').getByRole<HTMLButtonElement>('button', { name: '检查「团队」的连接' })
@@ -818,6 +823,7 @@ describe('密钥组', () => {
     )
     const { user, fetch } = renderRow({ put: () => Response.json(two) }, { view: two })
     await screen.findByLabelText('「个人」的标签')
+    await user.click(card('cred-1').getByRole('button', { name: '更换「个人」的API Key' }))
     await user.type(card('cred-1').getByLabelText('「个人」的API Key'), 'brand-new-key')
     await user.click(screen.getByRole('button', { name: '保存' }))
 
@@ -880,6 +886,7 @@ describe('密钥组', () => {
     await screen.findByLabelText('「个人」的标签')
     // 同时改标签和 Key
     await user.type(card('cred-1').getByLabelText('「个人」的标签'), '家里')
+    await user.click(card('cred-1').getByRole('button', { name: '更换「个人」的API Key' }))
     await user.type(card('cred-1').getByLabelText('「个人」的API Key'), 'moved-key')
     await user.click(screen.getByRole('button', { name: '保存' }))
 
@@ -888,7 +895,7 @@ describe('密钥组', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     // 原组保持不变：标签草稿退回（输入为空 = 不修改），密钥输入清空
     expect((card('cred-1').getByLabelText('「个人」的标签') as HTMLInputElement).value).toBe('')
-    expect((card('cred-1').getByLabelText('「个人」的API Key') as HTMLInputElement).value).toBe('')
+    expect(card('cred-1').queryByLabelText('「个人」的API Key')).toBeNull()
     expect(card('draft').getByLabelText('「新密钥组 1」的API Key').getAttribute('value')).toBe(
       'moved-key',
     )
@@ -937,6 +944,7 @@ describe('密钥组', () => {
       { view: two },
     )
     await screen.findByLabelText('「个人」的标签')
+    await user.click(card('cred-1').getByRole('button', { name: '更换「个人」的API Key' }))
     await user.type(card('cred-1').getByLabelText('「个人」的API Key'), 'moved-key')
     await user.click(screen.getByRole('button', { name: '保存' }))
 
@@ -948,7 +956,7 @@ describe('密钥组', () => {
     const label = card('draft').getByLabelText('「新密钥组 1」的标签') as HTMLInputElement
     expect(label.value).toBe('')
     expect(document.activeElement).toBe(label)
-    expect((card('cred-1').getByLabelText('「个人」的API Key') as HTMLInputElement).value).toBe('')
+    expect(card('cred-1').queryByLabelText('「个人」的API Key')).toBeNull()
     expect(card('draft').getByLabelText('「新密钥组 1」的API Key').getAttribute('value')).toBe(
       'moved-key',
     )
@@ -974,7 +982,9 @@ describe('密钥组', () => {
     )
     const { user, fetch } = renderRow({ put: () => Response.json(two) }, { view: two })
     await screen.findByLabelText('「个人」的标签')
+    await user.click(card('cred-1').getByRole('button', { name: '更换「个人」的API Key' }))
     await user.type(card('cred-1').getByLabelText('「个人」的API Key'), 'key-a')
+    await user.click(card('cred-2').getByRole('button', { name: '更换「团队」的API Key' }))
     await user.type(card('cred-2').getByLabelText('「团队」的API Key'), 'key-b')
     await user.click(screen.getByRole('button', { name: '保存' }))
 
@@ -999,7 +1009,9 @@ describe('密钥组', () => {
     )
     const { user, fetch } = renderRow({ put: () => Response.json(two) }, { view: two })
     await screen.findByLabelText('「个人」的标签')
+    await user.click(card('cred-1').getByRole('button', { name: '更换「个人」的API Key' }))
     await user.type(card('cred-1').getByLabelText('「个人」的API Key'), 'key-a')
+    await user.click(card('cred-2').getByRole('button', { name: '更换「团队」的API Key' }))
     await user.type(card('cred-2').getByLabelText('「团队」的API Key'), 'key-b')
     await user.click(screen.getByRole('button', { name: '保存' }))
 
@@ -1080,6 +1092,7 @@ describe('密钥组', () => {
       { view: cached },
     )
     await screen.findByLabelText('「个人」的标签')
+    await user.click(card('cred-1').getByRole('button', { name: '更换「个人」的API Key' }))
     await user.type(card('cred-1').getByLabelText('「个人」的API Key'), 'brand-new-key')
     await user.click(screen.getByRole('button', { name: '保存' }))
 
@@ -1118,10 +1131,88 @@ describe('密钥组', () => {
     await user.click(within(dialog).getByRole('button', { name: '取消' }))
 
     // 替换：同样不弹确认，直接保存
+    await user.click(card('cred-2').getByRole('button', { name: '更换「团队」的API Key' }))
     await user.type(card('cred-2').getByLabelText('「团队」的API Key'), 'fresh-key')
     await user.click(screen.getByRole('button', { name: '保存' }))
     await waitFor(() => expect(writes(fetch)).toHaveLength(1))
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('平台带文档链接时在密钥区给出「获取密钥」外链', async () => {
+    renderRow({}, { row: { ...provider, docsUrl: 'https://example.com/keys' } })
+    const link = await screen.findByRole('link', { name: '获取密钥' })
+    expect(link.getAttribute('href')).toBe('https://example.com/keys')
+    expect(link.getAttribute('rel')).toBe('noreferrer')
+  })
+
+  it('密钥粘贴自动去掉首尾空白，回车直接提交', async () => {
+    const { fetch } = renderRow()
+    const input = await screen.findByLabelText('「默认」的API Key')
+    fireEvent.change(input, { target: { value: '  first-key  ' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('已保存'))
+    expect(JSON.parse(writes(fetch)[0]![1]!.body as string).credentials.add).toEqual([
+      { label: '默认', secrets: { MOCK_API_KEY: 'first-key' } },
+    ])
+  })
+
+  it('密钥输入可以在明文与掩码之间切换', async () => {
+    renderRow()
+    const input = await screen.findByLabelText('「默认」的API Key')
+    expect(input.getAttribute('type')).toBe('password')
+    fireEvent.click(screen.getByRole('button', { name: '显示「默认」的密钥' }))
+    expect(input.getAttribute('type')).toBe('text')
+    fireEvent.click(screen.getByRole('button', { name: '隐藏「默认」的密钥' }))
+    expect(input.getAttribute('type')).toBe('password')
+  })
+
+  it('已保存的密钥显示掩码，更换就地展开，取消恢复掩码', async () => {
+    const one = credView([credential('cred-1', '个人', true)], 'cred-1')
+    const { user } = renderRow({}, { view: one })
+    await screen.findByLabelText('「个人」的标签')
+    expect(card('cred-1').getByText('sk-••••••a1b2')).toBeTruthy()
+    expect(card('cred-1').queryByLabelText('「个人」的API Key')).toBeNull()
+
+    await user.click(card('cred-1').getByRole('button', { name: '更换「个人」的API Key' }))
+    await user.type(card('cred-1').getByLabelText('「个人」的API Key'), 'new-key')
+    await user.click(card('cred-1').getByRole('button', { name: '取消更换「个人」的密钥' }))
+    // 取消后回到掩码，刚输入的密钥不再显示
+    expect(card('cred-1').queryByLabelText('「个人」的API Key')).toBeNull()
+    expect(card('cred-1').getByText('sk-••••••a1b2')).toBeTruthy()
+  })
+
+  it('未配置平台的「保存并校验」保存后立即校验，结果就地显示', async () => {
+    const { user, fetch } = renderRow()
+    await user.type(await screen.findByLabelText('「默认」的API Key'), 'first-key')
+    await user.click(screen.getByRole('button', { name: '保存并校验' }))
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('连接检查通过'))
+    expect(writes(fetch)).toHaveLength(1)
+    expect(fetch.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
+  })
+
+  it('校验失败后状态徽章变成「校验失败」，卡片上的重新校验只用这一组', async () => {
+    const two = credView(
+      [credential('cred-1', '个人', true), credential('cred-2', '团队', true)],
+      'cred-1',
+    )
+    const { user } = renderRow(
+      {
+        test: () =>
+          Response.json({
+            ok: false,
+            scope: 'connection',
+            modelAccess: 'unverified',
+            checkedAt: 1,
+            code: 'auth',
+            message: '密钥无效',
+          }),
+      },
+      { row: configuredProvider, view: two },
+    )
+    await screen.findByLabelText('「个人」的标签')
+    await user.click(card('cred-2').getByRole('button', { name: '检查「团队」的连接' }))
+    await waitFor(() => expect(screen.getByText('校验失败')).toBeTruthy())
+    expect(screen.getByRole('alert').textContent).toBe('检查失败：密钥无效')
   })
 
   it('替换没有使用的密钥组不打扰，直接保存', async () => {
@@ -1131,6 +1222,7 @@ describe('密钥组', () => {
     )
     const { user, fetch } = renderRow({ put: () => Response.json(two) }, { view: two })
     await screen.findByLabelText('「个人」的标签')
+    await user.click(card('cred-2').getByRole('button', { name: '更换「团队」的API Key' }))
     await user.type(card('cred-2').getByLabelText('「团队」的API Key'), 'fresh-key')
     await user.click(screen.getByRole('button', { name: '保存' }))
     await waitFor(() => expect(writes(fetch)).toHaveLength(1))

@@ -41,8 +41,7 @@ const FALLBACK_COLORS = [
 ]
 
 export function providerBrand(provider: string): Brand {
-  const known =
-    BRANDS[provider] ?? BRANDS[VENDORS[provider.split('/')[0] ?? ''] ?? ''] ?? undefined
+  const known = BRANDS[provider] ?? BRANDS[VENDORS[provider.split('/')[0] ?? ''] ?? ''] ?? undefined
   if (known) return known
   let hash = 0
   for (let i = 0; i < provider.length; i++) hash = (hash * 31 + provider.charCodeAt(i)) >>> 0

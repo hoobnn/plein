@@ -80,6 +80,8 @@ export interface ProviderConfigView {
     id: string
     label: string
     secrets: Record<string, boolean>
+    /** 已填写密钥的展示掩码（如 sk-••••••a1b2）；老服务端没有这个字段时界面退回纯圆点 */
+    secretHints?: Record<string, string>
     configured: boolean
     /** 仍在等平台结果的调用数，以及关联到这组密钥的音色数 */
     usage: { tasks: number; voices: number }

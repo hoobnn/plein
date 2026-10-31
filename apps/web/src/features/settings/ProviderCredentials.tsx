@@ -1,9 +1,11 @@
 /**
- * 平台的「密钥」区：一组密钥一张紧凑卡片（标签、各密钥输入、使用中标记、检查连接、删除），
- * 没保存过的新卡接在后面。草稿由行组件持有，保存时随设置一起提交；这里只渲染并转发操作。
+ * 平台的「密钥」区：一组密钥一张紧凑卡片。已保存的密钥只显示掩码，
+ * 「更换」就地展开输入，取消恢复掩码；没保存过的新卡直接给输入框。
+ * 草稿由行组件持有，保存时随设置一起提交；这里只渲染并转发操作。
  */
 
 import type { ProviderConfigView, ProviderInfo } from '@plein/protocol'
+import { useEffect, useState, type KeyboardEvent } from 'react'
 import { usageSummary } from './credentialUsage'
 import { credentialCardDirty, type CredentialCardDraft } from './providerDirty'
 
@@ -26,6 +28,8 @@ interface CardProps {
   onRemove(key: string): void
   onDiscard(key: string): void
   onTest(key: string): void
+  /** 密钥输入里回车：交给行组件保存 */
+  onSubmit(): void
 }
 
 function CredentialCard({
@@ -42,7 +46,17 @@ function CredentialCard({
   onRemove,
   onDiscard,
   onTest,
+  onSubmit,
 }: CardProps) {
+  // 就地更换的密钥字段、以及显示/隐藏明文的状态
+  const [editing, setEditing] = useState<Record<string, boolean>>({})
+  const [shown, setShown] = useState<Record<string, boolean>>({})
+  const typed = Object.values(card.secrets).some((v) => v !== '')
+  // 保存或取消后草稿清空：收起就地输入，回到掩码。按内容比较，父组件每次渲染的新空对象不会误触发。
+  const secretDraft = JSON.stringify(card.secrets)
+  useEffect(() => {
+    if (secretDraft === '{}') setEditing({})
+  }, [secretDraft])
   // 新卡用草稿标签作名字，没填时退回序号；已保存组用已保存的标签
   const name =
     saved?.label ??
@@ -55,9 +69,15 @@ function CredentialCard({
     saved === undefined &&
     (card.baseline === undefined || credentialCardDirty(card)) &&
     !card.label.trim()
+  const enter = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter' || e.nativeEvent.isComposing) return
+    e.preventDefault()
+    onSubmit()
+  }
+
   return (
     <li
-      className="flex flex-col gap-2.5 rounded-lg p-3 ring-1 ring-line"
+      className="flex flex-col gap-2.5 rounded-lg bg-surface-2/60 p-3 ring-1 ring-line"
       data-credential={card.key}
     >
       <div className="flex items-center gap-2">
@@ -69,6 +89,7 @@ function CredentialCard({
           value={card.label}
           aria-invalid={labelRequired || undefined}
           onChange={(e) => onLabel(card.key, e.target.value)}
+          onKeyDown={enter}
         />
         {multi && active && <span className="ui-tag">使用中</span>}
         {multi && saved && !active && (
@@ -106,34 +127,87 @@ function CredentialCard({
       </div>
       {/* 单组无从切换，只在删除/替换确认里说影响；≥2 组时才在卡片上常驻摘要 */}
       {multi && saved && summary && <p className="text-xs text-ink-subtle">{summary}</p>}
-      {provider.secrets.map((s) => (
-        <label key={s.name} className="ui-field">
-          <span className="ui-label">
-            {s.title}
-            {s.required ? '' : '（可选）'}
-          </span>
-          <input
-            type="password"
-            autoComplete="off"
-            className="ui-input w-full"
-            aria-label={`「${name}」的${s.title}`}
-            placeholder={saved?.secrets[s.name] ? '已填写，留空表示不修改' : '未填写'}
-            value={card.secrets[s.name] ?? ''}
-            onChange={(e) => onSecret(card.key, s.name, e.target.value)}
-          />
-          {s.help && <span className="ui-help">{s.help}</span>}
-        </label>
-      ))}
+      {provider.secrets.map((s) => {
+        const filled = saved?.secrets[s.name]
+        const hint = saved?.secretHints?.[s.name]
+        // 已保存且填过的密钥默认只显示掩码，点「更换」才就地展开输入
+        if (saved && filled && !editing[s.name]) {
+          return (
+            <div
+              key={s.name}
+              className="flex min-w-0 items-center gap-2 rounded-md bg-surface px-2.5 py-1.5 ring-1 ring-line"
+            >
+              <span className="ui-label flex-none">{s.title}</span>
+              <code className="min-w-0 flex-1 truncate font-mono text-xs text-ink-muted">
+                {hint ?? '••••••••'}
+              </code>
+              <button
+                type="button"
+                className="ui-btn ui-btn-quiet ui-btn-xs flex-none"
+                aria-label={`更换「${name}」的${s.title}`}
+                onClick={() => setEditing((current) => ({ ...current, [s.name]: true }))}
+              >
+                更换
+              </button>
+            </div>
+          )
+        }
+        return (
+          <div key={s.name} className="flex flex-col gap-1.5">
+            <span className="ui-label">
+              {s.title}
+              {s.required ? '' : '（可选）'}
+            </span>
+            <div className="flex items-center gap-1.5">
+              <input
+                type={shown[s.name] ? 'text' : 'password'}
+                autoComplete="off"
+                className="ui-input min-w-0 flex-1"
+                aria-label={`「${name}」的${s.title}`}
+                placeholder={filled ? '已填写，留空表示不修改' : '未填写'}
+                value={card.secrets[s.name] ?? ''}
+                // 粘贴进去的密钥常带首尾空白：直接 trim 掉
+                onChange={(e) => onSecret(card.key, s.name, e.target.value.trim())}
+                onKeyDown={enter}
+              />
+              <button
+                type="button"
+                className="ui-btn ui-btn-quiet ui-btn-xs flex-none"
+                aria-label={`${shown[s.name] ? '隐藏' : '显示'}「${name}」的密钥`}
+                aria-pressed={!!shown[s.name]}
+                onClick={() => setShown((current) => ({ ...current, [s.name]: !current[s.name] }))}
+              >
+                {shown[s.name] ? '隐藏' : '显示'}
+              </button>
+              {saved && filled && (
+                <button
+                  type="button"
+                  className="ui-btn ui-btn-quiet ui-btn-xs flex-none"
+                  aria-label={`取消更换「${name}」的密钥`}
+                  onClick={() => {
+                    // 取消恢复原密钥：清掉这次的输入，回到掩码
+                    onSecret(card.key, s.name, '')
+                    setEditing((current) => ({ ...current, [s.name]: false }))
+                  }}
+                >
+                  取消
+                </button>
+              )}
+            </div>
+            {s.help && <span className="ui-help">{s.help}</span>}
+          </div>
+        )
+      })}
       {saved && (
         // 有没保存的密钥输入或平台设置时禁用：检查的是已保存的整体配置，不先保存会查到旧值
         <button
           type="button"
           className="ui-btn ui-btn-secondary self-start"
-          disabled={settingsDirty || Object.values(card.secrets).some((v) => v !== '')}
+          disabled={settingsDirty || typed}
           aria-label={`检查「${name}」的连接`}
           onClick={() => onTest(card.key)}
         >
-          检查连接
+          重新校验
         </button>
       )}
     </li>
@@ -155,6 +229,7 @@ export function ProviderCredentials({
   onDiscard,
   onTest,
   onAdd,
+  onSubmit,
 }: {
   provider: ProviderInfo
   config: ProviderConfigView
@@ -173,6 +248,7 @@ export function ProviderCredentials({
   onDiscard(key: string): void
   onTest(key: string): void
   onAdd(): void
+  onSubmit(): void
 }) {
   // 平台没有声明密钥就没有组的概念；老版服务端的视图没有 credentials 字段也照常显示
   if (provider.secrets.length === 0) return null
@@ -180,7 +256,25 @@ export function ProviderCredentials({
   const multi = savedGroups.length + drafts.length >= 2
   return (
     <section className="flex flex-col gap-2">
-      <span className="ui-label">密钥</span>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="ui-label">密钥</span>
+        {/* 平台文档里能找到申请密钥的入口的，直接给外链 */}
+        {provider.docsUrl && (
+          <a
+            href={provider.docsUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs text-ink-muted underline-offset-2 hover:text-ink hover:underline"
+          >
+            获取密钥
+          </a>
+        )}
+      </div>
+      {savedGroups.length === 0 && drafts.length > 0 && (
+        <p className="text-xs text-ink-subtle">
+          填好密钥并启用后，「{provider.title}」的模型就能在节点里选到。
+        </p>
+      )}
       <ul aria-label="密钥组" className="flex flex-col gap-2">
         {savedGroups.map((saved) => (
           <CredentialCard
@@ -202,6 +296,7 @@ export function ProviderCredentials({
             onRemove={onRemove}
             onDiscard={onDiscard}
             onTest={onTest}
+            onSubmit={onSubmit}
           />
         ))}
         {drafts.map((card, draftIndex) => (
@@ -219,6 +314,7 @@ export function ProviderCredentials({
             onRemove={onRemove}
             onDiscard={onDiscard}
             onTest={onTest}
+            onSubmit={onSubmit}
           />
         ))}
       </ul>

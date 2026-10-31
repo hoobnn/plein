@@ -276,6 +276,8 @@ describe('平台配置接口', () => {
         id: personalId,
         label: '个人',
         secrets: { MOCK_API_KEY: false },
+        // 这一组的密钥被清空：没有可显示的掩码
+        secretHints: {},
         configured: true,
         usage: { tasks: 0, voices: 0 },
       },
@@ -283,6 +285,7 @@ describe('平台配置接口', () => {
         id: expect.any(String),
         label: '团队',
         secrets: { MOCK_API_KEY: true },
+        secretHints: { MOCK_API_KEY: '••••am' },
         configured: true,
         usage: { tasks: 0, voices: 0 },
       },
