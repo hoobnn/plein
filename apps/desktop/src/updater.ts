@@ -273,6 +273,8 @@ export function setupUpdater(
     nativeDownloadReady = false
     const flight = { generation: ++generation, failed: false }
     checking = flight
+    // 检查已经开始，原定的下次检查时间不再成立；检查结束后再由 scheduleNext 给出。
+    nextCheckAt = undefined
     publish({ ...state, phase: 'checking', progress: undefined, error: undefined })
     const task = Promise.resolve()
       .then(() => autoUpdater.checkForUpdates())

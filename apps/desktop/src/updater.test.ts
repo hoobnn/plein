@@ -646,6 +646,19 @@ describe('更新检查计划', () => {
     expect(updater.checkForUpdates).toHaveBeenCalledOnce()
   })
 
+  it('检查进行中不再显示已经过去的下次检查时间', async () => {
+    const pending = deferred<null>()
+    updater.checkForUpdates.mockReturnValueOnce(pending.promise)
+    const controller = setup()
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(controller.getState().phase).toBe('checking')
+    expect(controller.getState().nextCheckAt).toBeUndefined()
+    pending.resolve(null)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(controller.getState().phase).toBe('idle')
+    expect(controller.getState().nextCheckAt).toBe(Date.now() + 6 * HOUR)
+  })
+
   it('启动检查前手动查过就不再单独安排启动检查', async () => {
     const controller = setup()
     const started = Date.now()
