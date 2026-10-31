@@ -24,12 +24,34 @@ export async function jsonFile(path: string): Promise<unknown> {
   return JSON.parse(await readFile(path, 'utf8'))
 }
 
-/** 不跟随符号链接，避免备份或清理越出 dataDir。 */
-export async function filesIn(
+interface WalkOptions {
+  /** false 时只收集路径，不逐个 lstat 统计文件大小。 */
+  stats: boolean
+  /** 相对 root 的目录名；整个子树不扫描，也不算跳过项。 */
+  skip: Set<string>
+}
+
+/**
+ * 递归遍历 root/prefix。符号链接一律不跟随、不读取、不删除：
+ * 文件统计里跳过，路径单独收集给调用方上报，维护因此不会越出数据目录。
+ */
+async function walk(
   root: string,
-  prefix = '',
-): Promise<Array<{ path: string; bytes: number; mtime: number }>> {
-  const out: Array<{ path: string; bytes: number; mtime: number }> = []
+  prefix: string,
+  options: WalkOptions,
+): Promise<{ files: Array<{ path: string; bytes: number; mtime: number }>; symlinks: string[] }> {
+  // prefix 本身若是符号链接（如整个 assets 目录被替换），同样不进入。
+  if (prefix) {
+    if (options.skip.has(prefix)) return { files: [], symlinks: [] }
+    const stat = await lstat(join(root, prefix)).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return null
+      throw error
+    })
+    if (!stat) return { files: [], symlinks: [] }
+    if (stat.isSymbolicLink()) return { files: [], symlinks: [prefix] }
+  }
+  const files: Array<{ path: string; bytes: number; mtime: number }> = []
+  const symlinks: string[] = []
   const entries = await readdir(join(root, prefix), { withFileTypes: true }).catch(
     (error: NodeJS.ErrnoException) => {
       if (error.code === 'ENOENT') return []
@@ -38,14 +60,31 @@ export async function filesIn(
   )
   for (const entry of entries) {
     const path = prefix ? `${prefix}/${entry.name}` : entry.name
-    if (entry.isSymbolicLink()) throw new Error(`数据目录含符号链接，维护已停止：${path}`)
-    if (entry.isDirectory()) out.push(...(await filesIn(root, path)))
-    else if (entry.isFile()) {
+    if (options.skip.has(path)) continue
+    if (entry.isSymbolicLink()) symlinks.push(path)
+    else if (entry.isDirectory()) {
+      const nested = await walk(root, path, options)
+      files.push(...nested.files)
+      symlinks.push(...nested.symlinks)
+    } else if (entry.isFile() && options.stats) {
       const stat = await lstat(join(root, path))
-      out.push({ path, bytes: stat.size, mtime: stat.mtimeMs })
+      files.push({ path, bytes: stat.size, mtime: stat.mtimeMs })
     }
   }
-  return out
+  return { files, symlinks }
+}
+
+/** 列出 root/prefix 下的普通文件；符号链接不跟随也不统计，避免越出数据目录。 */
+export async function filesIn(
+  root: string,
+  prefix = '',
+): Promise<Array<{ path: string; bytes: number; mtime: number }>> {
+  return (await walk(root, prefix, { stats: true, skip: new Set() })).files
+}
+
+/** 收集 root/prefix 下的符号链接路径（相对 root）；只记录，不跟随、不读取、不删除。 */
+export async function symlinksIn(root: string, prefix = '', skip: string[] = []): Promise<string[]> {
+  return (await walk(root, prefix, { stats: false, skip: new Set(skip) })).symlinks
 }
 
 export async function hashFile(path: string) {

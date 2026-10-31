@@ -600,14 +600,20 @@ describe('本机数据维护', () => {
     doc.destroy()
   })
 
-  it('过期token和符号链接均停止维护，不跟随目录外文件', async () => {
-    const f = await fixture()
-    await f.asset()
+  it('过期token仍拒绝执行；符号链接不再停止维护，跳过后上报且不跟随目录外文件', async () => {
+    const f = await fixture(),
+      asset = await f.asset('local', 1)
     const preview = await f.service.preview()
     f.advance(11 * 60_000)
     await expect(f.service.cleanup(preview.token)).rejects.toMatchObject({ code: 'expired' })
-    await symlink('/private/tmp', join(f.root, 'assets', 'external'))
-    await expect(f.service.preview()).rejects.toThrow('符号链接')
+    // 悬空链接：一旦被跟随就会因 ENOENT 而失败。
+    await symlink(join(f.root, 'gone'), join(f.root, 'assets', 'external'))
+    const status = await f.service.status()
+    expect(status.skippedSymlinks).toEqual(['assets/external'])
+    // 统计和预检照常完成：只算真实文件，链接与目标都不参与。
+    const space = await f.service.space()
+    expect(space.originals).toBe(statSync(f.assets.originalPath(asset.id)).size)
+    expect((await f.service.preview()).assets).toBe(0)
   })
 
   it('未完成的回收清单在重启时自动恢复，保留文件和登记信息', async () => {

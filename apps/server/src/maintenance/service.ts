@@ -19,7 +19,7 @@ import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
 import { canvasState, documentReferences, readDocument } from '../media-index/references'
 import { backupInfo, backupManifest, restoreBackup, writeBackup } from './backup'
-import { atomicJson, filesIn, jsonFile } from './files'
+import { atomicJson, filesIn, jsonFile, symlinksIn } from './files'
 
 const DAY = 86_400_000
 const TTL = 10 * 60_000
@@ -212,6 +212,7 @@ export class MaintenanceService {
     return {
       ...this.state,
       running: this.operation,
+      skippedSymlinks: await this.skippedSymlinks(),
       backups: await this.backupList(),
       trash: (await this.trashManifests()).map((t) => ({
         id: t.id,
@@ -221,6 +222,14 @@ export class MaintenanceService {
         expiresAt: t.expiresAt,
       })),
     }
+  }
+
+  /**
+   * 数据目录里的符号链接：维护一律跳过，这里只把路径报给用户。
+   * maintenance 下是应用自己的备份、回收站和恢复副本，不属于用户放置的条目。
+   */
+  private async skippedSymlinks(): Promise<string[]> {
+    return symlinksIn(this.deps.dataDir, '', ['maintenance'])
   }
 
   async settings(input: MaintenanceSettings) {

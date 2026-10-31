@@ -32,6 +32,8 @@ export interface MaintenanceStatus {
   lastError: string | null
   backups: LocalBackup[]
   trash: Array<{ id: string; createdAt: number; assets: number; bytes: number; expiresAt: number }>
+  /** 数据目录里被跳过的符号链接路径（相对数据目录）。 */
+  skippedSymlinks: string[]
 }
 
 export interface DataSpace {
