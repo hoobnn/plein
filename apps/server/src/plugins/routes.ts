@@ -89,6 +89,8 @@ export function catalogOf(host: PluginHost): Catalog {
  */
 function secretHint(value: string | undefined): string | null {
   if (!value) return null
+  // 太短的密钥露末两位也可能等于整个密钥：一个字符都不给
+  if (value.length < 8) return '••••••••'
   return value.length >= 16
     ? `${value.slice(0, 3)}••••••${value.slice(-4)}`
     : `••••${value.slice(-2)}`

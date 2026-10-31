@@ -285,7 +285,8 @@ describe('平台配置接口', () => {
         id: expect.any(String),
         label: '团队',
         secrets: { MOCK_API_KEY: true },
-        secretHints: { MOCK_API_KEY: '••••am' },
+        // 4 位密钥太短：只给固定圆点
+        secretHints: { MOCK_API_KEY: '••••••••' },
         configured: true,
         usage: { tasks: 0, voices: 0 },
       },
@@ -421,6 +422,16 @@ describe('平台配置接口', () => {
       })
     ).body
     expect(short.credentials[0]!.secretHints!.MOCK_API_KEY).toMatch(/^••••[a-z0-9]{2}$/)
+
+    // 不足 8 位的密钥一个字符都不能露：只给固定圆点
+    for (const key of ['a', 'ab', 'ntkatae']) {
+      const tiny = (
+        await call<ProviderConfigView>('/api/providers/plein/mock/config', 'PUT', {
+          secrets: { MOCK_API_KEY: key },
+        })
+      ).body
+      expect(tiny.credentials[0]!.secretHints!.MOCK_API_KEY).toBe('••••••••')
+    }
   })
 })
 
