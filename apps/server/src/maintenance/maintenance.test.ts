@@ -18,15 +18,26 @@ import { createDoc, createElement } from '@plein/doc'
 import { MaintenanceSettings } from '@plein/protocol'
 import Database from 'better-sqlite3'
 import * as Y from 'yjs'
-import { afterEach, describe, expect, it } from 'vite-plus/test'
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import { AssetStore } from '../assets/store'
 import { storedOutputSpoolRefs } from '../assets/output-spool'
 import { openDb } from '../storage/db'
 import { Rooms, sqliteDocStore } from '../sync/rooms'
 import { DataActivity } from './activity'
 import { restoreBackup, backupManifest } from './backup'
-import { atomicJson } from './files'
+import { assertInsideDataDir, atomicJson } from './files'
 import { createMaintenanceService, type MaintenanceService } from './service'
+
+// 包装路径检查以便在异步窗口里精确插入编辑，默认透传不影响其他用例。
+vi.mock('./files', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./files')>()
+  return {
+    ...actual,
+    assertInsideDataDir: vi.fn((dataDir: string, rel: string) =>
+      actual.assertInsideDataDir(dataDir, rel),
+    ),
+  }
+})
 
 const DAY = 86_400_000
 const cleanup: Array<() => Promise<void>> = []
@@ -892,6 +903,27 @@ describe('本机数据维护', () => {
     await symlink('/private/tmp', join(f.root, 'plugins'))
     const second = await f.service.backup()
     expect(second.skippedSymlinks.filter((path) => path.startsWith('plugins'))).toEqual(['plugins'])
+  })
+
+  it('清理的路径检查期间新增引用时拒绝执行，素材原文件保留', async () => {
+    const f = await fixture(),
+      asset = await f.asset(),
+      doc = f.canvas()
+    const preview = await f.service.preview()
+    const { assertInsideDataDir: realAssert } =
+      await vi.importActual<typeof import('./files')>('./files')
+    // 模拟竞态：revision 复核之后的异步路径检查让出事件循环期间，
+    // 恰好新增了指向待清理素材的画布引用。
+    vi.mocked(assertInsideDataDir).mockImplementationOnce(async (dataDir, rel) => {
+      createElement(doc, { kind: 'image', assetId: asset.id, x: 0, y: 0, w: 10, h: 10 })
+      return realAssert(dataDir, rel)
+    })
+    await expect(f.service.cleanup(preview.token)).rejects.toMatchObject({ code: 'changed' })
+    // 素材原文件与登记都保留，检查期间的变化不被吸收进 plan.revision
+    expect(existsSync(f.assets.originalPath(asset.id))).toBe(true)
+    expect(f.assets.get('local', asset.id)).toBeTruthy()
+    await expect(f.service.cleanup(preview.token)).rejects.toMatchObject({ code: 'expired' })
+    doc.destroy()
   })
 
   it('未完成的回收清单在重启时自动恢复，保留文件和登记信息', async () => {

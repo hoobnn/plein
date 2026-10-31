@@ -530,12 +530,16 @@ export class MaintenanceService {
           for (const file of item.files)
             await mkdir(dirname(join(dir, file.path)), { recursive: true, mode: 0o700 })
         for (const item of trash.items) {
+          // 异步的逐层路径检查全部先行；随后的让出窗口之后，同步复核 revision
+          // 与文件状态，紧跟着移动和事务，中间不再让出事件循环。检查窗口里
+          // 的编辑会被同步复核拦下，不会被吸收进 plan.revision。
+          for (const file of item.files) {
+            await assertInsideDataDir(this.deps.dataDir, file.path)
+            await assertInsideDataDir(dir, file.path)
+          }
           await setImmediate()
           this.assertRevision(plan.revision)
           for (const file of item.files) {
-            // 预检只是快照；真正移动前逐层确认源和回收站目标没有穿过链接。
-            await assertInsideDataDir(this.deps.dataDir, file.path)
-            await assertInsideDataDir(dir, file.path)
             const stat = lstatSync(join(this.deps.dataDir, file.path))
             if (!stat.isFile() || stat.size !== file.bytes || stat.mtimeMs !== file.mtime)
               throw new MaintenanceError('changed', '素材文件已变化，请重新预检')
@@ -546,7 +550,7 @@ export class MaintenanceService {
             this.deps.db.$client.prepare('DELETE FROM assets WHERE id=?').run(item.id)
             this.deps.db.$client.prepare('DELETE FROM media_sources WHERE asset_id=?').run(item.id)
           })()
-          // 只接受本操作自己的元数据变更；外部编辑在下一个yield后仍会使校验失效。
+          // 走到这里说明复核通过，之后的变更只包含本事务自己的元数据删除。
           plan.revision = this.revision()
         }
         trash.state = 'ready'
