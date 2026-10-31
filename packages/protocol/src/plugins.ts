@@ -112,6 +112,8 @@ export interface ProviderConfigView {
     usage: { tasks: number; voices: number }
   }>
   activeCredential: string | null
+  /** 列表只作候选的平台（如兼容渠道）当前缓存里的远端模型；其它平台不给 */
+  remoteModelCandidates?: Array<{ id: string; name?: string }>
 }
 
 /** 设置某能力的默认模型 */

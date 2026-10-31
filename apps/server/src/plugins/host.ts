@@ -47,7 +47,13 @@ import {
   referenceStorageHost,
 } from '@plein/providers'
 import { Agent, Dispatcher1Wrapper } from 'undici'
-import { applyRemoteModels, RemoteModelCache, remoteModelsFingerprint } from './remote-models'
+import {
+  applyRemoteModels,
+  inferCapability,
+  RemoteModelCache,
+  remoteModelsContextKey,
+  remoteModelsFingerprint,
+} from './remote-models'
 import { composeVideo, compositionDuration, validateComposeOverlays } from '../assets/compose'
 import { analyzeVideo } from '../assets/shot-analysis'
 import { checkVideo } from '../assets/delivery-check'
@@ -321,6 +327,8 @@ function fetchFailed(err: unknown, remoteId: string | undefined, requery: boolea
 export class PluginHost {
   private limiters = new Map<string, Limiter>()
   private remoteCache: RemoteModelCache
+  /** 每个平台的拉取代次：只有最新一次请求能写缓存，旧响应到达后直接丢弃 */
+  private remoteGenerations = new Map<string, number>()
 
   /** 本地导出记录使用实际入库元数据，不访问平台。 */
   assetInfo(ownerId: string, assetId: string) {
@@ -385,31 +393,56 @@ export class PluginHost {
 
   // ── Provider ──────────────────────────────────────
 
-  /** 当前生效密钥的指纹；换密钥后远端列表缓存自动失效 */
-  private remoteFingerprint(id: string) {
-    return remoteModelsFingerprint(this.configs.get(id).secrets)
+  /** 远端列表的缓存上下文：密钥指纹 + 平台声明的相关设置值 */
+  private remoteContext(id: string) {
+    const def = this.registry.providers.get(id)?.def
+    const settings = this.configs.get(id).settings
+    return {
+      fingerprint: remoteModelsFingerprint(this.configs.get(id).secrets),
+      settings: remoteModelsContextKey(def?.remoteModelsSettings, settings),
+      scope: def?.remoteModelsScope ?? [],
+    }
   }
 
-  /** 远端模型列表状态；平台未实现拉取时为 undefined，设置页据此决定是否显示刷新入口 */
+  /**
+   * 远端模型列表状态；平台未实现拉取或覆盖范围为空（列表只作设置候选）时为 undefined，
+   * 设置页据此决定显示刷新入口还是候选列表
+   */
   remoteModelsStatus(id: string): RemoteModelsStatus | undefined {
     const def = this.registry.providers.get(id)?.def
     if (typeof def?.listRemoteModels !== 'function') return undefined
-    return this.remoteCache.status(id, this.remoteFingerprint(id))
+    const { scope } = this.remoteContext(id)
+    if (scope.length === 0) return undefined
+    const { fingerprint, settings } = this.remoteContext(id)
+    return this.remoteCache.status(id, fingerprint, settings)
   }
 
-  /** 内置目录合并远端列表后的条目；没拉取过或密钥已换时原样返回内置条目 */
+  /** 内置目录合并远端列表后的条目；没拉取过或上下文已变时原样返回内置条目 */
   mergedModels(id: string, base: ModelInfo[]): CatalogModel[] {
-    return applyRemoteModels(base, this.remoteCache.models(id, this.remoteFingerprint(id)))
+    const { fingerprint, settings, scope } = this.remoteContext(id)
+    return applyRemoteModels(base, this.remoteCache.models(id, fingerprint, settings), scope)
   }
 
-  /** 密钥被清空后丢弃缓存，避免旧密钥拉到的列表继续显示 */
+  /** 列表只作候选的平台（覆盖范围为空）当前缓存里的候选；候选只有 id 和显示名 */
+  remoteModelCandidates(id: string): Array<{ id: string; name?: string }> {
+    const def = this.registry.providers.get(id)?.def
+    if (typeof def?.listRemoteModels !== 'function') return []
+    const { fingerprint, settings } = this.remoteContext(id)
+    return (this.remoteCache.models(id, fingerprint, settings) ?? []).map((m) => ({
+      id: m.id,
+      ...(m.name ? { name: m.name } : {}),
+    }))
+  }
+
+  /** 密钥或设置被清空后丢弃缓存，避免旧上下文的列表继续显示 */
   invalidateRemoteModels(id: string) {
     this.remoteCache.invalidate(id)
   }
 
   /**
    * 拉取平台的远端模型列表并写缓存；失败只记录错误，不影响内置目录。
-   * 平台未实现时返回 undefined
+   * 平台未实现时返回 undefined。并发刷新按代次保护：只有最新一次请求能写缓存，
+   * 写入前再核对一次密钥与设置上下文，慢的旧响应不会覆盖新结果
    */
   async refreshRemoteModels(
     id: string,
@@ -419,16 +452,26 @@ export class PluginHost {
     this.refreshConfiguredProviders()
     const def = this.registry.providers.get(id)?.def
     if (!def || typeof def.listRemoteModels !== 'function') return undefined
-    const fingerprint = this.remoteFingerprint(id)
+    const before = this.remoteContext(id)
+    const generation = (this.remoteGenerations.get(id) ?? 0) + 1
+    this.remoteGenerations.set(id, generation)
     try {
       const ctx = this.providerContext(id, ownerId, signal ?? new AbortController().signal, {
         requireEnabled: false,
       })
       const models = await def.listRemoteModels(ctx)
-      this.remoteCache.record(id, fingerprint, models)
+      if (this.remoteGenerations.get(id) !== generation) return this.remoteModelsStatus(id)
+      const after = this.remoteContext(id)
+      if (after.fingerprint !== before.fingerprint || after.settings !== before.settings)
+        return this.remoteModelsStatus(id)
+      this.remoteCache.record(id, after.fingerprint, after.settings, models)
     } catch (err) {
       // 密钥缺失、网络失败等都不拖垮内置目录：记录原因，下次刷新再试
-      this.remoteCache.record(id, fingerprint, [], toError(err).message)
+      if (this.remoteGenerations.get(id) !== generation) return this.remoteModelsStatus(id)
+      const after = this.remoteContext(id)
+      if (after.fingerprint !== before.fingerprint || after.settings !== before.settings)
+        return this.remoteModelsStatus(id)
+      this.remoteCache.record(id, after.fingerprint, after.settings, [], toError(err).message)
     }
     return this.remoteModelsStatus(id)
   }
@@ -661,17 +704,39 @@ export class PluginHost {
     provider ??= parsed.provider
     const entry = this.registry.providers.get(parsed.provider)
     if (!entry) throw new ProviderError('unavailable', `平台 ${parsed.provider} 未安装`)
+    // 运行时模型解析：先查内置目录，再按当前密钥与设置上下文查 remote-only。
+    // 只有平台声明覆盖范围内的能力（目前是对话）能以通用参数提交，其余仅在设置里展示
     const model = entry.def.models.find((m) => m.id === parsed.model)
-    if (!model)
+    let remoteOnly = false
+    if (!model) {
+      const { fingerprint, settings, scope } = this.remoteContext(parsed.provider)
+      const remote = this.remoteCache
+        .models(parsed.provider, fingerprint, settings)
+        ?.find((m) => m.id === parsed.model)
+      if (remote) {
+        if (!scope.includes(capability) || inferCapability(remote) !== capability)
+          throw new ProviderError(
+            'invalid_input',
+            `模型 ${parsed.model} 只在设置的模型列表里展示，暂不支持${
+              scope.includes(capability) ? '这种参数组合' : capability
+            }`,
+          )
+        remoteOnly = true
+      }
+    }
+    if (!model && !remoteOnly)
       throw new ProviderError('invalid_input', `平台 ${entry.def.title} 没有模型 ${parsed.model}`)
-    if (!model.capabilities.includes(capability)) {
+    if (model && !model.capabilities.includes(capability)) {
       throw new ProviderError('invalid_input', `模型 ${model.title} 不支持 ${capability}`)
     }
 
-    // 模型声明不支持的参数不传：节点上残留的取值（表单已隐藏）不该让整次生成失败
-    const unsupported = (['seed', 'duration', 'speed', 'instruction', 'audio'] as const).filter(
-      (k) => model.limits?.[k] === false,
-    )
+    // 模型声明不支持的参数不传：节点上残留的取值（表单已隐藏）不该让整次生成失败；
+    // remote-only 没有声明 limits，宿主不代拆参数
+    const unsupported = model
+      ? (['seed', 'duration', 'speed', 'instruction', 'audio'] as const).filter(
+          (k) => model.limits?.[k] === false,
+        )
+      : []
     if (unsupported.some((k) => k in input)) {
       const rest = { ...input } as Record<string, unknown>
       for (const k of unsupported) delete rest[k]
@@ -741,10 +806,12 @@ export class PluginHost {
     }
     const { def } = entry
     const limiter = this.limiter(parsed.provider, def.limits)
+    // remote-only 没有内置元数据，via 用模型 ID
+    const modelTitle = model?.title ?? parsed.model
     const via =
       providerConfig.credentials.length >= 2 && credential
-        ? `${def.title}（${credential.label}）· ${model.title}`
-        : `${def.title} · ${model.title}`
+        ? `${def.title}（${credential.label}）· ${modelTitle}`
+        : `${def.title} · ${modelTitle}`
     const stage = (phase: CallStage['phase']) => opts.onStage?.({ phase, via })
     // 远端已受理、且没有明确失败：此后的错误（轮询或下载结果时网络抖动、超时、用户取消）
     // 保留调用记录，重试、重启或重新获取时接着轮询，不能重新提交付费任务
@@ -930,7 +997,10 @@ export class PluginHost {
               },
             }
             try {
-              submitted = await def.submit({ capability, model: parsed.model, input }, context)
+              submitted = await def.submit(
+                { capability, model: parsed.model, input, ...(remoteOnly ? { remoteOnly } : {}) },
+                context,
+              )
               break
             } catch (err) {
               // 服务退出：留着 submitting，重启后按状态未知核查

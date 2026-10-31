@@ -121,6 +121,10 @@ export function pluginRoutes(
       enabled: c.enabled,
       settings: c.settings,
       secrets: Object.fromEntries(def.secrets.map((s) => [s.name, Boolean(c.secrets[s.name])])),
+      // 列表只作候选的平台（如兼容渠道）：把缓存里的远端模型给设置页当「模型 ID」候选
+      ...(typeof def.listRemoteModels === 'function' && !(def.remoteModelsScope ?? []).length
+        ? { remoteModelCandidates: host.remoteModelCandidates(id) }
+        : {}),
       credentials: c.credentials.map((credential) => ({
         id: credential.id,
         label: credential.label,
@@ -188,9 +192,12 @@ export function pluginRoutes(
         throw err
       }
       host.refreshConfiguredProviders()
-      // 刚改动密钥且平台支持列表拉取：后台拉一次，失败只记录不阻断保存
+      // 刚改动密钥、设置或当前密钥组，且平台支持列表拉取：后台拉一次，失败只记录不阻断保存
       if (
-        (body.data.credentials || body.data.secrets) &&
+        (body.data.credentials ||
+          body.data.secrets ||
+          body.data.settings ||
+          body.data.activeCredential) &&
         typeof entry.def.listRemoteModels === 'function'
       ) {
         if (providerConfigured(entry.def, configs.get(id).secrets))
