@@ -332,6 +332,35 @@ describe('宿主集成', () => {
     expect(host.remoteModelsPending('acme/remote')).toBe(false)
   })
 
+  it('pending 按代次管理：旧请求结束不清除仍在进行的新请求', async () => {
+    let releaseFirst!: () => void
+    const firstGate = new Promise<void>((ok) => (releaseFirst = ok))
+    let releaseSecond!: () => void
+    const secondGate = new Promise<void>((ok) => (releaseSecond = ok))
+    let calls = 0
+    const { host } = await booted(async () => {
+      calls += 1
+      await (calls === 1 ? firstGate : secondGate)
+      return [{ id: `m-${calls}` }]
+    })
+    const first = host.refreshRemoteModels('acme/remote', 'local')
+    await until(() => host.remoteModelsPending('acme/remote'))
+    const second = host.refreshRemoteModels('acme/remote', 'local')
+    await until(() => calls === 2)
+    // 新请求仍在进行：旧请求未结束，pending 不能被任何一方提前清掉
+    expect(host.remoteModelsPending('acme/remote')).toBe(true)
+    releaseSecond()
+    await second
+    // 新请求已结束，但旧请求还在：pending 保持到真正的最后一个结束
+    expect(host.remoteModelsPending('acme/remote')).toBe(true)
+    releaseFirst()
+    await first
+    expect(host.remoteModelsPending('acme/remote')).toBe(false)
+    // 缓存里是新请求的结果
+    expect(host.mergedModels('acme/remote', builtin).some((m) => m.id === 'm-2')).toBe(true)
+    expect(host.mergedModels('acme/remote', builtin).some((m) => m.id === 'm-1')).toBe(false)
+  })
+
   describe('remote-only 提交', () => {
     it('覆盖范围内的对话模型可提交，宿主带上 remoteOnly', async () => {
       const { host } = await booted(async () => [{ id: 'brand-new' }])

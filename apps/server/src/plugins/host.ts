@@ -329,8 +329,8 @@ export class PluginHost {
   private remoteCache: RemoteModelCache
   /** 每个平台的拉取代次：只有最新一次请求能写缓存，旧响应到达后直接丢弃 */
   private remoteGenerations = new Map<string, number>()
-  /** 正在后台拉取远端列表的平台；前端据此显示「拉取中」并等待完成 */
-  private remotePulling = new Set<string>()
+  /** 正在后台拉取远端列表的平台及其在途代次；前端据此显示「拉取中」并等待完成 */
+  private remotePulling = new Map<string, Set<number>>()
 
   /** 本地导出记录使用实际入库元数据，不访问平台。 */
   assetInfo(ownerId: string, assetId: string) {
@@ -439,9 +439,9 @@ export class PluginHost {
     this.remoteCache.invalidate(id)
   }
 
-  /** 该平台是否有进行中的后台拉取；config 视图据此带 remoteModelsPending */
+  /** 该平台是否有进行中的后台拉取（任一代次）；config 视图据此带 remoteModelsPending */
   remoteModelsPending(id: string): boolean {
-    return this.remotePulling.has(id)
+    return (this.remotePulling.get(id)?.size ?? 0) > 0
   }
 
   /**
@@ -460,7 +460,9 @@ export class PluginHost {
     const before = this.remoteContext(id)
     const generation = (this.remoteGenerations.get(id) ?? 0) + 1
     this.remoteGenerations.set(id, generation)
-    this.remotePulling.add(id)
+    const inFlight = this.remotePulling.get(id) ?? new Set<number>()
+    inFlight.add(generation)
+    this.remotePulling.set(id, inFlight)
     try {
       const ctx = this.providerContext(id, ownerId, signal ?? new AbortController().signal, {
         requireEnabled: false,
@@ -479,7 +481,10 @@ export class PluginHost {
         return this.remoteModelsStatus(id)
       this.remoteCache.record(id, after.fingerprint, after.settings, [], toError(err).message)
     } finally {
-      this.remotePulling.delete(id)
+      // pending 按代次管理：每个请求只移除自己的代次，全部结束才算不在拉取
+      const inFlight = this.remotePulling.get(id)
+      inFlight?.delete(generation)
+      if (inFlight && inFlight.size === 0) this.remotePulling.delete(id)
     }
     return this.remoteModelsStatus(id)
   }
