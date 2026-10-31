@@ -3,7 +3,7 @@ import type {
   DesktopUpdatePreferences,
   DesktopUpdateState,
 } from '@plein/protocol'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { desktop } from '../desktop'
 import { bytes, duration, relativeTime, shortTime } from '../ui/format'
 import { Icon, type IconName } from '../ui/icons'
@@ -50,24 +50,28 @@ async function act(action: Action | 'read') {
   }
 }
 
-/** 读取主进程保存的检查偏好 */
-async function readPreferences() {
+/** 读取主进程保存的检查偏好；失败时抛出，由调用方给出重试入口 */
+async function readPreferences(): Promise<void> {
   if (!desktop) return
-  try {
-    useUpdate.setState({ preferences: await desktop.getUpdatePreferences() })
-  } catch (err) {
-    useUpdate.setState({ bridgeError: err instanceof Error ? err.message : String(err) })
-  }
+  const preferences = await desktop.getUpdatePreferences()
+  useUpdate.setState({ preferences, bridgeError: null })
 }
 
-/** 保存偏好；主进程会校验取值，失败时保留原设置 */
-async function writePreferences(preferences: DesktopUpdatePreferences) {
+/** 保存偏好；主进程会校验取值，失败时抛出并保留原设置 */
+async function writePreferences(preferences: DesktopUpdatePreferences): Promise<void> {
   if (!desktop) return
-  try {
-    useUpdate.setState({ preferences: await desktop.setUpdatePreferences(preferences) })
-  } catch (err) {
-    useUpdate.setState({ bridgeError: err instanceof Error ? err.message : String(err) })
-  }
+  const saved = await desktop.setUpdatePreferences(preferences)
+  useUpdate.setState({ preferences: saved, bridgeError: null })
+}
+
+/** 相对时间要跟着走：每半分钟重新算一次，跨过午夜也跟着变 */
+function useNow(intervalMs = 30_000) {
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), intervalMs)
+    return () => clearInterval(timer)
+  }, [intervalMs])
+  return now
 }
 
 /** 全局监听与完整快照配合，主进程先完成下载、页面后挂载也能恢复。 */
@@ -321,15 +325,54 @@ export function UpdateContent({ scroll = false }: { scroll?: boolean } = {}) {
 /** 自动检查计划：启动时是否检查、应用打开期间多久检查一次 */
 function UpdateSchedule({ state }: { state: DesktopUpdateState }) {
   const preferences = useUpdate((s) => s.preferences)
+  const [error, setError] = useState<string | null>(null)
+  const now = useNow()
+  const load = useCallback(async () => {
+    try {
+      await readPreferences()
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }, [])
   useEffect(() => {
-    if (!preferences) void readPreferences()
-  }, [preferences])
-  if (!preferences) return null
+    if (!preferences) void load()
+  }, [preferences, load])
+  const save = async (next: DesktopUpdatePreferences) => {
+    try {
+      await writePreferences(next)
+    } catch (err) {
+      useUpdate.setState({ bridgeError: err instanceof Error ? err.message : String(err) })
+    }
+  }
+  if (!preferences)
+    return error ? (
+      <section
+        className="flex flex-col gap-3 rounded-xl border border-line bg-surface-2 p-4"
+        aria-label="更新检查计划"
+      >
+        <p role="alert" className="text-sm break-words text-danger">
+          读取检查偏好失败：{error}
+        </p>
+        <button
+          type="button"
+          className="ui-btn ui-btn-secondary self-start"
+          onClick={() => void load()}
+        >
+          重试读取
+        </button>
+      </section>
+    ) : null
+  // 当前环境不提供自动更新，偏好只对正式版生效，这里不让改。
+  const unavailable = state.phase === 'unavailable'
   return (
     <section
       className="flex flex-col gap-4 rounded-xl border border-line bg-surface-2 p-4"
       aria-label="更新检查计划"
     >
+      {unavailable && (
+        <p className="text-xs text-ink-subtle">当前环境不提供自动更新，这里的设置在正式版生效。</p>
+      )}
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-medium">启动时自动检查更新</p>
@@ -337,8 +380,9 @@ function UpdateSchedule({ state }: { state: DesktopUpdateState }) {
         </div>
         <Switch
           label="启动时自动检查更新"
+          disabled={unavailable}
           checked={preferences.checkOnLaunch}
-          onChange={(next) => void writePreferences({ ...preferences, checkOnLaunch: next })}
+          onChange={(next) => void save({ ...preferences, checkOnLaunch: next })}
         />
       </div>
       <div className="flex items-center justify-between gap-3">
@@ -348,10 +392,11 @@ function UpdateSchedule({ state }: { state: DesktopUpdateState }) {
         </div>
         <Select
           aria-label="应用打开期间检查频率"
+          disabled={unavailable}
           value={String(preferences.intervalHours)}
           options={INTERVAL_OPTIONS}
           onChange={(value) =>
-            void writePreferences({
+            void save({
               ...preferences,
               intervalHours: Number(value) as DesktopUpdateIntervalHours,
             })
@@ -361,7 +406,7 @@ function UpdateSchedule({ state }: { state: DesktopUpdateState }) {
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-subtle">
         <span>
           {state.checkedAt
-            ? `上次检查：${relativeTime(state.checkedAt)}`
+            ? `上次检查：${relativeTime(state.checkedAt, now)}`
             : '上次检查：还没有检查过'}
         </span>
         <span>
