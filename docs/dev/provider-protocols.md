@@ -27,6 +27,8 @@
 
 音色设计使用独立的 `voiceDesign` 能力：豆包 `POST /api/v3/tts/voice_design` 的提示词为 `prompt.text_prompt` / `prompt.image_prompt.image_bytes`，试听为顶层 `text`，槽位为 `speaker_id`；MiniMax `POST /v1/voice_design` 使用顶层 `prompt` / `preview_text` / `voice_id`，响应 `trial_audio` 是 hex。豆包设计与复刻共用状态查询，MiniMax 设计同步返回音色 ID。详细限制及官方来源见[音色设计与声音复刻](../guide/providers.md#音色设计与声音复刻)。
 
+模型列表拉取（`listRemoteModels`，供设置页与内置目录比对）：MiniMax `GET /v1/models`（条目键为 `model`）；方舟 `GET /api/v3/models`（OpenAI 兼容，仅按量数据面，Agent Plan 套餐数据面未提供）；百炼 `GET /compatible-mode/v1/models`（OpenAI 兼容模式，业务空间域名未提供）；兼容渠道 `GET {baseURL}/models`。豆包（语音）没有公开的模型列表接口，不实现。
+
 MiniMax 复刻的主音频上传用途为 `voice_clone`（10–300 秒）；增强参考用途为 `prompt_audio`（小于 8 秒），对应 `clone_prompt.prompt_audio` 与 `clone_prompt.prompt_text`。可选试听同时发送 `text` 和 `model`。两家的降噪与归一化不再写死，默认关闭；豆包 `disable_volume_normalization` 与界面开关反向映射。短样本建议与平台硬性限制分别处理。
 
 本地契约测试：

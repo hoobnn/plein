@@ -11,6 +11,7 @@ import {
 import { z } from 'zod'
 import { asJson, imageDataUrl, readJson, redact, send, withRetry } from '../shared/http'
 import { chatCompletion, requireSseDone } from '../shared/llm'
+import { openAiModelList } from '../shared/model-list'
 
 export const COMPATIBLE_ID = 'plein/compatible'
 
@@ -135,6 +136,23 @@ export function createCompatiblePlugin(raw: Record<string, unknown> = {}) {
       if (!ctx.secret('COMPATIBLE_API_KEY')?.trim())
         throw new ProviderError('auth', '请填写 API Key')
       ctx.log('仅检查本地配置；未验证网络、鉴权、模型能力或余额，未调用计费接口')
+    },
+    // OpenAI 兼容渠道的模型列表；渠道上的模型都是对话模型，能力提示归为 llm
+    async listRemoteModels(ctx) {
+      validate(ctx.settings)
+      const key = ctx.secret('COMPATIBLE_API_KEY')?.trim()
+      if (!key) throw new ProviderError('auth', '请填写 API Key')
+      const base = compatibleBaseURL(ctx.settings.baseURL).href.replace(/\/$/, '')
+      const messages = { cancelled: '兼容渠道请求已取消', network: '兼容渠道网络请求失败' }
+      const res = await send(
+        ctx,
+        `${base}/models`,
+        { method: 'GET', headers: { Authorization: `Bearer ${key}` } },
+        messages,
+      )
+      const body = await readJson(ctx, res, 'GET', messages)
+      if (!res.ok) throw remoteError(res.status, body, ctx)
+      return openAiModelList(body, { kind: 'llm' })
     },
     async submit(req, ctx) {
       validate(ctx.settings)

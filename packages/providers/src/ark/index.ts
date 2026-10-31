@@ -28,6 +28,7 @@ import {
   withRetry,
 } from '../shared/http'
 import { chatCompletion, requireSseDone } from '../shared/llm'
+import { openAiModelList } from '../shared/model-list'
 import { sizeByArea, tierEdge } from '../size'
 
 const BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
@@ -934,6 +935,8 @@ export const arkProvider = defineProvider({
   settings,
   secrets: [{ name: 'ARK_API_KEY', title: '火山方舟 API Key', required: true }, ...TOS_SECRETS],
   models: models.map((model) => ({ ...model, capabilities: [...model.capabilities] })),
+  // OpenAI 兼容的模型列表；Agent Plan 套餐数据面的列表接口未确证，暂不给 planProvider 实现
+  listRemoteModels: async (ctx) => openAiModelList(await request('api', ctx, '/models')),
   ...tasks('api'),
   submit: (req, ctx) => submitTo('api', models, req, ctx),
 })

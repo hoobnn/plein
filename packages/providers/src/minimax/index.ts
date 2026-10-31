@@ -22,6 +22,7 @@ import {
   withRetry,
   send,
 } from '../shared/http'
+import { minimaxModelList } from '../shared/model-list'
 import { sizeByLongEdge, tierEdge } from '../size'
 
 const settings = z.object({
@@ -298,6 +299,27 @@ export const minimaxProvider = defineProvider({
   limits: { concurrency: 2 },
   async test(ctx) {
     await request(ctx, '/v1/models')
+  },
+  async listRemoteModels(ctx) {
+    // 列表接口与 test 同源，但响应体不走生成类 schema（data 数组会被归一化掉），单独解析
+    const key = ctx.secret('MINIMAX_API_KEY')?.trim()
+    if (!key) throw new ProviderError('auth', '请填写 MiniMax API Key')
+    const base = ctx.settings.region === 'cn' ? 'https://api.minimax.cn' : 'https://api.minimax.io'
+    const messages = { cancelled: 'MiniMax 请求已取消', network: 'MiniMax 网络请求失败' }
+    const res = await send(
+      ctx,
+      `${base}/v1/models`,
+      { method: 'GET', headers: { Authorization: `Bearer ${key}` } },
+      messages,
+    )
+    const body = await readJson(ctx, res, 'GET', messages)
+    if (!res.ok)
+      throw withRetry(
+        new ProviderError(errorCode(res.status), `MiniMax 拉取模型列表失败（HTTP ${res.status}）`),
+        'GET',
+        res.status,
+      )
+    return minimaxModelList(body)
   },
   async submit(req, ctx) {
     if (

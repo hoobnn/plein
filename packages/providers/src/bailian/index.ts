@@ -22,6 +22,7 @@ import {
   withRetry,
 } from '../shared/http'
 import { chatCompletion, requireSseDone } from '../shared/llm'
+import { openAiModelList } from '../shared/model-list'
 
 const settings = z.object({
   region: z
@@ -708,6 +709,15 @@ export const bailianProvider = defineProvider({
       (output.task_status && !['CANCELED', 'CANCELLED'].includes(String(output.task_status)))
     )
       throw remoteError(400, output, ctx)
+  },
+  // OpenAI 兼容模式的模型列表；业务空间域名的列表接口未确证，暂不支持
+  listRemoteModels: async (ctx) => {
+    if (ctx.settings.workspaceId)
+      throw new ProviderError(
+        'invalid_input',
+        '业务空间模式暂不支持拉取远端模型列表；可清空业务空间 ID 后使用 DashScope 兼容端点拉取',
+      )
+    return openAiModelList(await request(ctx, '/compatible-mode/v1/models'))
   },
 })
 async function requestWithOss(ctx: Context, path: string, body: Json) {
