@@ -8,6 +8,9 @@ const frame: AssetRef = { assetId: 'frame', kind: 'image', mime: 'image/png' }
 
 describe('MiniMax 官方 HTTP 契约', () => {
   it('allows the actual image-result OSS domain and recognizes withdrawn music access', async () => {
+    expect(minimaxProvider.models.find((model) => model.id === 'music-3.0')).toMatchObject({
+      deprecated: true,
+    })
     expect(
       domainAllowed(
         minimaxPlugin.plugin.manifest.permissions.network,
@@ -56,7 +59,7 @@ describe('MiniMax 官方 HTTP 契约', () => {
     const result = await minimaxProvider.submit(
       {
         capability: 'text.chat',
-        model: 'MiniMax-M3',
+        model: 'MiniMax-M3.1-Flash',
         input: { messages: [{ role: 'user', content: '你好' }], maxTokens: 100 },
       },
       ctx,
@@ -72,7 +75,10 @@ describe('MiniMax 官方 HTTP 契约', () => {
       usage: { inputTokens: 4, outputTokens: 6 },
     })
   })
-  it('M2.7 拒绝图片，在计费请求前失败', async () => {
+  it('M2.7 保留迁移标记并拒绝图片，在计费请求前失败', async () => {
+    expect(minimaxProvider.models.find((model) => model.id === 'MiniMax-M2.7')).toMatchObject({
+      deprecated: true,
+    })
     const { ctx, fetch } = setup()
     await expect(
       minimaxProvider.submit(

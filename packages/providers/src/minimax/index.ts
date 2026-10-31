@@ -213,7 +213,14 @@ export const minimaxProvider = defineProvider({
   ],
   models: [
     { id: 'MiniMax-M3', title: 'MiniMax M3', capabilities: ['text.chat'] },
-    { id: 'MiniMax-M2.7', title: 'MiniMax M2.7（纯文本）', capabilities: ['text.chat'] },
+    { id: 'MiniMax-M3.1-Flash', title: 'MiniMax M3.1 Flash', capabilities: ['text.chat'] },
+    {
+      id: 'MiniMax-M2.7',
+      title: 'MiniMax M2.7（纯文本）',
+      description: '已停止向新用户开放；按量付费存量用户可调用至 2026-11-18，请提前迁移至 M3.1 Flash',
+      deprecated: true,
+      capabilities: ['text.chat'],
+    },
     {
       id: 'image-01',
       title: 'image-01',
@@ -280,6 +287,8 @@ export const minimaxProvider = defineProvider({
     {
       id: 'music-3.0',
       title: 'Music 3.0',
+      description: '官方已停止向新用户开放；历史付费用户可继续使用现有 API',
+      deprecated: true,
       capabilities: ['audio.music'],
       limits: { duration: false },
     },
