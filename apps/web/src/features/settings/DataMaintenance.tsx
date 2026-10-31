@@ -153,8 +153,7 @@ export function DataMaintenance() {
       {status.data.skippedSymlinks.length > 0 && (
         <div role="alert" className="rounded-lg bg-surface-2 p-3 text-xs">
           <p>
-            以下 {status.data.skippedSymlinks.length}{' '}
-            个条目是指向数据目录外的符号链接，已跳过统计、清理和备份：
+            以下 {status.data.skippedSymlinks.length} 个条目是符号链接，已跳过统计、清理和备份：
             {status.data.skippedSymlinks.slice(0, 5).map((path, index) => (
               <span key={path}>
                 {index > 0 && '、'}

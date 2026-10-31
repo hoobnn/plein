@@ -53,6 +53,9 @@ describe('数据维护的符号链接警告', () => {
     serve(['assets/69/69a8', 'providers.json'])
     renderApp(<DataMaintenance />)
     await waitFor(() => expect(warning()).toContain('以下 2 个条目'))
+    expect(warning()).toContain('是符号链接')
+    // 链接也可能指向数据目录内部，文案不断言方向
+    expect(warning()).not.toContain('指向数据目录外')
     expect(warning()).toContain('已跳过统计、清理和备份')
     expect(warning()).toContain('assets/69/69a8')
     expect(warning()).toContain('providers.json')
