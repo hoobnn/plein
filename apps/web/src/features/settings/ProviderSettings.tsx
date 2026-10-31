@@ -659,7 +659,7 @@ function DefaultModels({
     cap,
     options: ready.flatMap((p) =>
       p.models
-        .filter((m) => m.capabilities.includes(cap))
+        .filter((m) => !m.deprecated && m.capabilities.includes(cap))
         .map((m) => ({
           value: `${p.id}:${m.id}`,
           label: `${p.title} · ${m.title ?? m.id}`,

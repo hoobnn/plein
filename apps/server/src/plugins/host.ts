@@ -391,7 +391,8 @@ export class PluginHost {
    * 改为已启用平台里第一个支持该能力的模型并记下来，之后启用别的平台不会再变。没有可用模型时返回空串
    */
   defaultModel(capability: Capability): string {
-    const models = this.models(capability)
+    // 旧画布仍可通过 models() 解析弃用条目，但新节点默认模型不能落到它们上面
+    const models = this.models(capability).filter((m) => !m.deprecated)
     const saved = this.configs.defaultModel(capability)
     if (saved && models.some((m) => m.ref === saved)) return saved
     const first = models[0]?.ref

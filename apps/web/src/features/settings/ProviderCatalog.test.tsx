@@ -37,6 +37,7 @@ const provider: ProviderInfo = {
   models: [
     { id: 'agent', title: 'Mock 智能体', capabilities: ['text.chat'] },
     { id: 'chat', title: 'Mock 对话', capabilities: ['text.chat'] },
+    { id: 'legacy', title: '弃用对话', capabilities: ['text.chat'], deprecated: true },
     { id: 'image', title: 'Mock 图片', capabilities: ['image.generate'] },
   ],
 }
@@ -209,6 +210,16 @@ describe('平台目录恢复', () => {
 })
 
 describe('默认模型', () => {
+  it('弃用模型不出现在默认模型候选中', async () => {
+    setup()
+    const { user } = renderApp(<SettingsHarness />)
+    const trigger = await screen.findByRole('combobox', { name: '默认文本模型' })
+    await user.click(trigger)
+
+    expect(screen.getByRole('option', { name: 'Mock（开发测试用） · Mock 对话' })).toBeTruthy()
+    expect(screen.queryByRole('option', { name: 'Mock（开发测试用） · 弃用对话' })).toBeNull()
+  })
+
   it('保存失败保留原选择，重新选择可真实保存', async () => {
     let failing = true
     mockFetch(async (request) => {

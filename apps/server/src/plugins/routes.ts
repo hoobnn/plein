@@ -168,7 +168,7 @@ export function pluginRoutes(
       const cap = Capability.safeParse(body.data?.capability)
       if (!body.success || !cap.success)
         return c.json({ error: 'invalid', message: '能力或模型不正确' }, 400)
-      if (!host.models(cap.data).some((m) => m.ref === body.data.model))
+      if (!host.models(cap.data).some((m) => !m.deprecated && m.ref === body.data.model))
         return c.json({ error: 'invalid', message: '模型没启用或不支持这种能力' }, 400)
       host.configs.setDefaultModel(cap.data, body.data.model)
       return c.json({ defaultModels: host.defaultModels() })

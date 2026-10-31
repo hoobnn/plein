@@ -283,6 +283,34 @@ describe('插件宿主', () => {
     expect(host.defaultModel('video.generate')).toBe('plein/mock:video')
   })
 
+  it('默认模型忽略已保存的弃用项，回退也不选弃用模型但目录继续保留', async () => {
+    const { host } = s
+    const deprecated = 'minimax/api:music-3.0'
+    host.configs.update('minimax/api', { enabled: true })
+    try {
+      host.configs.setDefaultModel('audio.music', deprecated)
+      expect(host.models('audio.music')).toContainEqual(
+        expect.objectContaining({ ref: deprecated, deprecated: true }),
+      )
+      expect(host.defaultModel('audio.music')).toBe('plein/mock:audio')
+
+      const rejected = await fetch(`${s.base}/api/model-defaults`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ capability: 'audio.music', model: deprecated }),
+      })
+      expect(rejected.status).toBe(400)
+
+      host.configs.update('plein/mock', { enabled: false })
+      host.configs.setDefaultModel('audio.music', deprecated)
+      expect(host.defaultModel('audio.music')).toBe('')
+    } finally {
+      host.configs.update('plein/mock', { enabled: true })
+      host.configs.update('minimax/api', { enabled: false })
+      host.configs.setDefaultModel('audio.music', 'plein/mock:audio')
+    }
+  })
+
   it('豆包替代鉴权需要完整密钥组；配置检查不声称连接成功', async () => {
     s.host.configs.update('doubao/speech', { secrets: { VOLC_SPEECH_APP_ID: 'app' } })
     const partial = (await (await fetch(`${s.base}/api/catalog`)).json()) as Catalog
