@@ -144,7 +144,7 @@ function ReviewDraft({
     <details
       open={expanded}
       onToggle={(event) => onExpanded(event.currentTarget.open)}
-      className="rounded border border-line px-2 py-1.5 text-xs"
+      className="rounded-md border border-line px-2 py-1.5 text-xs"
       data-review-node={node.id}
     >
       <summary

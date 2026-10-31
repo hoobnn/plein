@@ -3,7 +3,7 @@ import { useCanvas } from '../../stores/canvas'
 import { mentionTargets } from '../../canvas/nodes'
 import { MentionTextarea } from '../../ui/MentionTextarea'
 const cell =
-  'resize-none rounded-md bg-transparent px-2 py-1.5 text-sm text-ink outline-none ring-1 ring-transparent transition-shadow hover:ring-line focus:bg-surface-2 focus:ring-accent'
+  'resize-none rounded-md bg-transparent px-2 py-1.5 text-ink outline-none ring-1 ring-transparent transition-shadow hover:ring-line focus:bg-surface-2 focus:ring-accent'
 
 /** 保留清空、负号等输入草稿，文档里的时长始终符合镜头约束。 */
 export function DurationCell({
@@ -25,7 +25,7 @@ export function DurationCell({
         max={30}
         step="any"
         aria-label="时长"
-        className={`${cell} w-16 bg-surface-2`}
+        className={`${cell} w-16 bg-surface-2 text-sm`}
         value={draft ?? value}
         onChange={(event) => {
           setDraft(event.target.value)
@@ -110,7 +110,7 @@ export function TextCell({
         aria-label={label}
         aria-describedby={conflict ? conflictId : undefined}
         rows={1}
-        className={`${cell} block w-full field-sizing-content min-h-8 ${compact ? 'max-h-28 bg-transparent' : 'max-h-80 bg-surface-2'} overflow-y-auto leading-relaxed`}
+        className={`${cell} block w-full field-sizing-content min-h-8 ${compact ? 'max-h-28 bg-transparent' : 'max-h-80 bg-surface-2'} overflow-y-auto text-base`}
         value={draft}
         onFocus={() => {
           if (!dirty) reset()

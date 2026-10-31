@@ -119,7 +119,7 @@ function PairReview({
   return (
     <Modal label="连续性审看" onClose={onClose} className="max-w-250">
       <ModalHeader title={`连续性 · 镜头 ${before.shot.no} → ${after.shot.no}`} onClose={onClose} />
-      <div className="ui-scrollbar min-h-0 overflow-auto p-4">
+      <div className="ui-scrollbar min-h-0 overflow-auto p-5">
         <p className="mb-3 text-xs text-ink-muted">
           比较角色、景别、光向和动作方向。意见记录在当前镜头的具体视频候选上。
         </p>
@@ -149,7 +149,7 @@ function PairReview({
               <img
                 src={assetUrls.original(frames.data.tail)}
                 alt={`镜头 ${before.shot.no} 真实尾帧`}
-                className="h-56 w-full rounded bg-black object-contain"
+                className="h-56 w-full rounded-lg bg-black object-contain"
               />
               <figcaption className="mt-1 text-xs text-ink-muted">上一镜 · 实际尾帧</figcaption>
             </figure>
@@ -157,7 +157,7 @@ function PairReview({
               <img
                 src={assetUrls.original(frames.data.head)}
                 alt={`镜头 ${after.shot.no} 真实首帧`}
-                className="h-56 w-full rounded bg-black object-contain"
+                className="h-56 w-full rounded-lg bg-black object-contain"
               />
               <figcaption className="mt-1 text-xs text-ink-muted">当前镜 · 0 秒首帧</figcaption>
             </figure>
@@ -319,7 +319,7 @@ function CutLoop({
     }
   }, [playing, phase, before, after])
   return (
-    <div className="rounded-lg border border-line p-3">
+    <div className="rounded-lg border border-line p-4">
       <div className="mb-2 flex flex-wrap items-center gap-3 text-xs">
         <button
           type="button"
@@ -352,7 +352,7 @@ function CutLoop({
           muted={muted}
           playsInline
           aria-label={side === 'before' ? '上一镜切点前一秒' : '当前镜切点后一秒'}
-          className={`h-64 w-full rounded bg-black object-contain ${side === phase ? '' : 'hidden'}`}
+          className={`h-64 w-full rounded-lg bg-black object-contain ${side === phase ? '' : 'hidden'}`}
           onError={() => {
             setError('视频无法播放，请先确认素材可用')
             setPlaying(false)

@@ -542,7 +542,7 @@ function Workbench({
                           {labels[field]}
                           <textarea
                             aria-label={`工作台${labels[field]}`}
-                            className="ui-input w-full"
+                            className="ui-input w-full text-base"
                             rows={3}
                             disabled={!canWrite}
                             value={draft.values[field]}
