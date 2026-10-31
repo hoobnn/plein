@@ -11,13 +11,18 @@ import * as Y from 'yjs'
  * 这里的判定都拆成纯函数，方便在快速测试层覆盖权限守卫、滚轮路由和快捷键边界。
  */
 
-/** 编辑窗口主题：颜色全部取 CSS 令牌，明暗主题共用一套。 */
+/** 编辑窗口主题：颜色全部取 CSS 令牌，明暗主题共用一套；字号行高与预览态同为 14/22。 */
 const editorTheme = EditorView.theme({
-  '&': { height: '100%', fontSize: '14px', color: 'var(--ink)', backgroundColor: 'transparent' },
+  '&': {
+    height: '100%',
+    fontSize: 'var(--text-base)',
+    color: 'var(--ink)',
+    backgroundColor: 'transparent',
+  },
   '&.cm-focused': { outline: 'none' },
   '.cm-scroller': {
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-    lineHeight: '1.6',
+    lineHeight: 'var(--text-base--line-height)',
   },
   '.cm-content': { padding: '16px 0', caretColor: 'var(--accent)' },
   '.cm-line': { padding: '0 16px' },
