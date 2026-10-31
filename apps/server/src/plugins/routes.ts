@@ -57,13 +57,14 @@ export function catalogOf(host: PluginHost): Catalog {
       const cfg = configs.get(id)
       const current = cfg.credentials.find((c) => c.id === cfg.activeCredential)
       const descriptor = describeProvider(p.def, p.plugin)
-      // 远端列表合并进目录：内置元数据为准，目录没收录的新模型以通用能力追加
+      // 「支持拉取」与「参与合并」分开：候选平台（覆盖范围为空）也带状态供前端显示，
+      // 但只有覆盖范围非空的平台才标目录条目可用性并追加 remote-only
       const remoteStatus = host.remoteModelsStatus(id)
+      const merging = remoteStatus !== undefined && (p.def.remoteModelsScope ?? []).length > 0
       return {
         ...descriptor,
-        ...(remoteStatus
-          ? { models: host.mergedModels(id, descriptor.models), remoteModels: remoteStatus }
-          : {}),
+        ...(remoteStatus ? { remoteModels: remoteStatus } : {}),
+        ...(merging ? { models: host.mergedModels(id, descriptor.models) } : {}),
         enabled: cfg.enabled,
         configured: providerConfigured(p.def, cfg.secrets),
         credentialCount: cfg.credentials.length,

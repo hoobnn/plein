@@ -405,14 +405,12 @@ export class PluginHost {
   }
 
   /**
-   * 远端模型列表状态；平台未实现拉取或覆盖范围为空（列表只作设置候选）时为 undefined，
-   * 设置页据此决定显示刷新入口还是候选列表
+   * 远端模型列表状态（含只作候选的平台，如兼容渠道）；平台未实现拉取时为 undefined。
+   * 「支持拉取」与「参与目录合并」是两回事：后者还要求覆盖范围非空，由调用方另行判断
    */
   remoteModelsStatus(id: string): RemoteModelsStatus | undefined {
     const def = this.registry.providers.get(id)?.def
     if (typeof def?.listRemoteModels !== 'function') return undefined
-    const { scope } = this.remoteContext(id)
-    if (scope.length === 0) return undefined
     const { fingerprint, settings } = this.remoteContext(id)
     return this.remoteCache.status(id, fingerprint, settings)
   }

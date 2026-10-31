@@ -265,18 +265,39 @@ describe('宿主集成', () => {
     expect(host.mergedModels('acme/remote', builtin).some((m) => m.id === 'm-1')).toBe(false)
   })
 
-  it('覆盖范围为空的平台不参与合并，列表只作候选', async () => {
+  it('覆盖范围为空的平台：支持拉取、返回状态，但不参与合并，列表只作候选', async () => {
     let list: RemoteModel[] = [{ id: 'gpt-x', name: 'GPT X' }]
-    const { host, catalog } = await booted(async () => list, { scope: [] })
-    expect(host.remoteModelsStatus('acme/remote')).toBeUndefined()
-    await host.refreshRemoteModels('acme/remote', 'local')
+    const { server, host, catalog } = await booted(async () => list, { scope: [] })
+    // 支持拉取 ≠ 参与合并：候选平台也有状态（含上次刷新时间与失败原因）
+    expect(host.remoteModelsStatus('acme/remote')).toEqual({ fetchedAt: null, status: 'idle' })
+    const res = await request(
+      server,
+      '/api/providers/acme/remote/remote-models/refresh',
+      { method: 'POST' },
+    )
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as { status: string }).status).toBe('fresh')
     const info = (await catalog()).providers.find((p) => p.id === 'acme/remote')
-    expect(info?.remoteModels).toBeUndefined()
+    // 状态随目录返回（前端候选区显示上次刷新时间 / 失败原因），但不合并不标记
+    expect(info?.remoteModels?.status).toBe('fresh')
     expect(info?.models.every((m) => m.remoteOnly !== true && m.remote === undefined)).toBe(true)
     expect(host.remoteModelCandidates('acme/remote')).toEqual([{ id: 'gpt-x', name: 'GPT X' }])
     list = [{ id: 'gpt-y' }]
     await host.refreshRemoteModels('acme/remote', 'local')
     expect(host.remoteModelCandidates('acme/remote')).toEqual([{ id: 'gpt-y' }])
+  })
+
+  it('候选平台刷新失败同样返回 200 并带原因，不当成不支持', async () => {
+    const { server } = await booted(async () => {
+      throw new Error('渠道 502')
+    }, { scope: [] })
+    const res = await request(
+      server,
+      '/api/providers/acme/remote/remote-models/refresh',
+      { method: 'POST' },
+    )
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as { error?: string }).error).toContain('渠道 502')
   })
 
   describe('remote-only 提交', () => {
