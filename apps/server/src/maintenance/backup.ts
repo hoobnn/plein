@@ -190,9 +190,8 @@ export async function writeBackup(deps: {
     for (const directory of ['plugins', 'subtitle-recognition']) {
       const scanned = await filesIn(deps.dataDir, directory)
       ensureReadable(scanned.unreadableDirs)
-      skippedSymlinks.push(
-        ...(await symlinksIn(deps.dataDir, directory)).map((path) => `${directory}/${path}`),
-      )
+      // symlinksIn 返回的路径已带目录前缀，根链接时就是目录名本身。
+      skippedSymlinks.push(...(await symlinksIn(deps.dataDir, directory)))
       for (const file of scanned.files) {
         if (!allowedPath(file.path)) continue
         files.push({

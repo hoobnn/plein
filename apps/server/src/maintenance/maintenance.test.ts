@@ -876,6 +876,24 @@ describe('本机数据维护', () => {
     expect(copy.missingAssets).toEqual([asset.id])
   })
 
+  it('plugins 的子项与根级链接跳过路径都不重复前缀', async () => {
+    const f = await fixture()
+    await f.asset()
+    await mkdir(join(f.root, 'plugins'))
+    await symlink('/private/tmp', join(f.root, 'plugins', 'external'))
+    const first = await f.service.backup()
+    // symlinksIn 返回的路径已带目录前缀，不得二次拼接
+    expect(first.skippedSymlinks).toContain('plugins/external')
+    expect(first.skippedSymlinks.filter((path) => path.startsWith('plugins'))).toEqual([
+      'plugins/external',
+    ])
+    // 整个 plugins 目录换成链接时记录根路径本身
+    await rm(join(f.root, 'plugins'), { recursive: true })
+    await symlink('/private/tmp', join(f.root, 'plugins'))
+    const second = await f.service.backup()
+    expect(second.skippedSymlinks.filter((path) => path.startsWith('plugins'))).toEqual(['plugins'])
+  })
+
   it('未完成的回收清单在重启时自动恢复，保留文件和登记信息', async () => {
     const f = await fixture(),
       asset = await f.asset()
