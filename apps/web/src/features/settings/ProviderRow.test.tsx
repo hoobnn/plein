@@ -346,6 +346,30 @@ describe('平台保存与检查', () => {
     expect(screen.getByRole('status').textContent).toContain('连接检查通过')
   })
 
+  it('没有密钥组时校验失败也会更新平台状态徽章', async () => {
+    // 密钥可选、还没保存过任何组的平台：已启用且配置合法，但没有组 id
+    const noGroups = { ...provider, configured: true, credentialCount: 0 }
+    const { user } = renderRow(
+      {
+        test: () =>
+          Response.json({
+            ok: false,
+            scope: 'connection',
+            modelAccess: 'unverified',
+            checkedAt: 1,
+            code: 'auth',
+            message: '密钥无效',
+          }),
+      },
+      { row: noGroups, view: credView([], null) },
+    )
+    await screen.findByRole<HTMLInputElement>('spinbutton', { name: '模拟耗时（毫秒）' })
+    expect(screen.getByText('已连接')).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: '测试连接' }))
+    await waitFor(() => expect(screen.getByText('校验失败')).toBeTruthy())
+    expect(screen.queryByText('已连接')).toBeNull()
+  })
+
   it('检查请求传输失败与服务端检查结果分开显示', async () => {
     const { user } = renderRow({
       test: () =>

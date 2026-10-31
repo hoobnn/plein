@@ -466,9 +466,9 @@ export function ProviderRow({
     )
   }
 
-  // 徽章只看当前生效组的校验结果；备用组的通过或失败都不改它
-  const activeKey = config?.activeCredential ?? null
-  const activeCheck = activeKey ? checks[activeKey] : undefined
+  // 徽章只看当前生效组的校验结果，和行级校验用同一个本地键：
+  // 没有实际密钥组时也取固定占位，不能让无组的失败结果被忽略
+  const activeCheck = checks[config?.activeCredential ?? NO_CREDENTIAL]
   const state = providerState(provider, {
     testing: activeCheck?.status === 'testing',
     failed: activeCheck?.status === 'error',
