@@ -39,7 +39,8 @@ test(
     await row
       .getByRole('textbox', { name: 'Base URL', exact: true })
       .fill('https://gateway.example.com/v1')
-    await row.getByRole('textbox', { name: '模型 ID', exact: true }).fill('example-chat')
+    // 模型 ID 输入框接了 datalist 候选，ARIA 角色是 combobox
+    await row.getByRole('combobox', { name: '模型 ID', exact: true }).fill('example-chat')
     await row.getByRole('checkbox', { name: '支持图片输入', exact: true }).check()
     // 未配置时主操作是「保存并校验」，这里只要保存
     await row.getByRole('button', { name: '仅保存', exact: true }).click()
@@ -56,7 +57,7 @@ test(
     // 没有远端探针的平台只做配置检查，不把填写地址当作连接成功
     await row.getByRole('button', { name: '校验连接', exact: true }).click()
     await expect(row.getByRole('status')).toContainText('尚未验证远端密钥、模型权限或网络')
-    await row.getByRole('textbox', { name: '模型 ID', exact: true }).fill('another-chat')
+    await row.getByRole('combobox', { name: '模型 ID', exact: true }).fill('another-chat')
     await expect(row.getByRole('button', { name: '校验连接', exact: true })).toBeDisabled()
     await row.getByRole('button', { name: '保存', exact: true }).click()
     await expect(row.getByRole('status')).toContainText('已保存')
