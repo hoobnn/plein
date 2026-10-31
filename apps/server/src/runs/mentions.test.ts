@@ -114,6 +114,25 @@ describe('运行前解析 @ 引用', () => {
     expect(r.params.prompt).not.toContain('铁盒：图')
   })
 
+  it('同一引用重复送入同一资产时只列一个参考图序号', async () => {
+    const { doc, photo, hero } = setup()
+    const duplicate = createElement(doc, {
+      kind: 'image',
+      assetId: doc.get(photo)!.assetId,
+      x: 100,
+      y: 0,
+      w: 10,
+      h: 10,
+    })
+    connect(doc, [duplicate, 'image'], [hero, 'references'])
+    const n = node(doc, 'plein/image', { prompt: '@林夏站在天台' })
+    const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))
+    expect(r.details[0]?.sent).toEqual([doc.get(photo)!.assetId, doc.get(photo)!.assetId])
+    expect(r.inputs.references).toHaveLength(1)
+    expect(r.params.prompt).toContain('参考对应：\n林夏：图1')
+    expect(r.params.prompt).not.toContain('林夏：图1、图1')
+  })
+
   it('实际引用：元素名与真正送进去的 assetId 一并给出', async () => {
     const { doc, photo, hero } = setup()
     const n = node(doc, 'plein/image', { prompt: '@林夏，参考@定妆照' })
@@ -225,6 +244,7 @@ describe('运行前解析 @ 引用', () => {
       'a'.repeat(64),
     ])
     expect(r.params.prompt).toContain('铁盒：铁盒的设定')
+    expect(r.params.prompt).not.toContain('铁盒：图')
     expect(r.refs.find((x) => x.name === '铁盒')!.assetIds).toEqual([])
     expect(msg(r.notices)).toContain(
       '这个模型最多带 2 张参考图，铁盒 的参考图没有送入，只附了文字设定',

@@ -429,7 +429,7 @@ function appendReferenceBindings(
   token: (index: number) => string,
 ) {
   const bindings = details.flatMap((d) => {
-    const tokens = d.sent.flatMap((id) => {
+    const tokens = [...new Set(d.sent)].flatMap((id) => {
       const index = images.findIndex((v) => v.type === 'image' && v.assetId === id)
       return index < 0 ? [] : [token(index)]
     })

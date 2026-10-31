@@ -112,7 +112,8 @@ export function BatchPlanDetails({
                         {row.input.prompt ?? ''}
                       </p>
                       {row.input.nodeType === 'plein/video' &&
-                        row.input.params.mode === 'image' && (
+                        row.input.params.mode === 'image' &&
+                        (row.input.inputs.images ?? []).length > 0 && (
                           <p>
                             首帧：已送入 {(row.input.inputs.images ?? []).length} 张上游分镜图（来自
                             inputs.images）
