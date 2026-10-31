@@ -102,12 +102,12 @@ export function DialogView({
                 }}
               />
             }
-            className="ui-dialog ui-scrollbar relative flex max-h-full w-full max-w-100 flex-col gap-5 overflow-y-auto rounded-2xl bg-surface p-5 shadow-4 outline-none sm:p-6 [&>*]:shrink-0"
+            className="ui-dialog ui-dialog-pad ui-scrollbar relative flex max-h-full w-full max-w-100 flex-col gap-5 overflow-y-auto rounded-2xl bg-surface shadow-4 outline-none [&>*]:shrink-0"
           >
             <div className="flex flex-col gap-1.5">
               <h2 className="text-lg font-semibold break-words">{options.title}</h2>
               {options.message && (
-                <p className="text-sm leading-5 break-words whitespace-pre-line text-ink-muted">
+                <p className="ui-note break-words whitespace-pre-line text-ink-muted">
                   {options.message}
                 </p>
               )}

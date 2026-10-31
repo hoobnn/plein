@@ -270,7 +270,7 @@ function NumberControl({
     </span>
   )
   const resolution = conflict && (
-    <div id={`${id}-conflict`} className="flex flex-col gap-2 rounded-lg bg-fill p-2">
+    <div id={`${id}-conflict`} className="flex flex-col gap-2 rounded-lg bg-surface-2 p-2">
       <p role="status" className="ui-help">
         参数已更新为 {String(current ?? f.default ?? '默认')}，当前草稿尚未保存。
       </p>
@@ -316,7 +316,7 @@ function NumberControl({
       </>
     )
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1.5">
       <div className="flex items-center gap-3">
         <input
           type="range"

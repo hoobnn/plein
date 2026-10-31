@@ -154,7 +154,7 @@ export function ModalHeader({
 }) {
   return (
     <header
-      className={`relative flex min-h-14 flex-none flex-wrap items-center gap-x-3 gap-y-2 py-2.5 pr-14 pl-5 ${
+      className={`ui-dialog-head relative flex min-h-14 flex-none flex-wrap items-center gap-x-3 gap-y-2 ${
         divider ? 'border-b border-line' : ''
       }`}
     >
