@@ -1,3 +1,12 @@
+/** 参与鉴权的密钥：显式必填，或出现在任一组「任选一组」约束里 */
+export function authSecretNames(provider: ProviderInfo): Set<string> {
+  const names = new Set<string>()
+  for (const s of provider.secrets) if (s.required) names.add(s.name)
+  for (const group of provider.credentialAlternatives ?? [])
+    for (const name of group) names.add(name)
+  return names
+}
+
 /**
  * 平台的「密钥」区：一组密钥一张紧凑卡片。已保存的密钥只显示掩码，
  * 「更换」就地展开输入，取消恢复掩码；没保存过的新卡直接给输入框。
@@ -5,7 +14,7 @@
  */
 
 import type { ProviderConfigView, ProviderInfo } from '@plein/protocol'
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { usageSummary } from './credentialUsage'
 import { credentialCardDirty, type CredentialCardDraft } from './providerDirty'
 
@@ -57,9 +66,14 @@ function CredentialCard({
   // 就地更换的密钥字段、以及显示/隐藏明文的状态
   const [editing, setEditing] = useState<Record<string, boolean>>({})
   const [shown, setShown] = useState<Record<string, boolean>>({})
-  // required 缺省即「非必填」：只有显式 required: true 的才进必填区
+  // 参与鉴权的密钥（必填或任一组鉴权约束）留在主区域，其余才是可选
+  const authNames = authSecretNames(provider)
   const secretSpecs = provider.secrets.filter((s) =>
-    secretFilter === 'all' ? true : secretFilter === 'required' ? !!s.required : !s.required,
+    secretFilter === 'all'
+      ? true
+      : secretFilter === 'required'
+        ? authNames.has(s.name)
+        : !authNames.has(s.name),
   )
   const typed = Object.values(card.secrets).some((v) => v !== '')
   // 只有保存成功（行组件递增 resetToken）或用户点取消才收起就地输入；
@@ -75,7 +89,7 @@ function CredentialCard({
   }, [resetToken])
   // 平台有必填密钥时，可选密钥只是「更多设置」里的补充，不重复标签和操作行；
   // 全部密钥都可选的平台（如 mock）仍保留完整卡片，否则没有地方填标签或加组
-  const compact = secretFilter === 'optional' && provider.secrets.some((s) => s.required)
+  const compact = secretFilter === 'optional' && authNames.size > 0
   if (secretSpecs.length === 0) return null
   // 新卡用草稿标签作名字，没填时退回序号；已保存组用已保存的标签
   const name =
@@ -93,6 +107,89 @@ function CredentialCard({
     if (e.key !== 'Enter' || e.nativeEvent.isComposing) return
     e.preventDefault()
     onSubmit()
+  }
+  const specByName = new Map(provider.secrets.map((s) => [s.name, s]))
+  const alternatives = provider.credentialAlternatives ?? []
+  const grouped = new Set(alternatives.flat())
+  const extraAuth = provider.secrets.filter((s) => s.required && !grouped.has(s.name))
+  const authHint = alternatives.length
+    ? `任选一组填写：${alternatives
+        .map(
+          (group) => `填 ${group.map((name) => specByName.get(name)?.title ?? name).join(' 和 ')}`,
+        )
+        .join('，或 ')}`
+    : ''
+  const secretField = (s: ProviderInfo['secrets'][number]) => {
+    const filled = saved?.secrets[s.name]
+    const hint = saved?.secretHints?.[s.name]
+    // 已保存且填过的密钥默认只显示掩码，点「更换」才就地展开输入
+    if (saved && filled && !editing[s.name]) {
+      return (
+        <div
+          key={s.name}
+          className="flex min-w-0 items-center gap-2 rounded-md bg-surface px-2.5 py-1.5 ring-1 ring-line"
+        >
+          <span className="ui-label flex-none">{s.title}</span>
+          <code className="min-w-0 flex-1 truncate font-mono text-xs text-ink-muted">
+            {hint ?? '••••••••'}
+          </code>
+          <button
+            type="button"
+            className="ui-btn ui-btn-quiet ui-btn-xs flex-none"
+            aria-label={`更换「${name}」的${s.title}`}
+            onClick={() => setEditing((current) => ({ ...current, [s.name]: true }))}
+          >
+            更换
+          </button>
+        </div>
+      )
+    }
+    return (
+      <div key={s.name} className="flex flex-col gap-1.5">
+        <span className="ui-label">
+          {s.title}
+          {authNames.has(s.name) ? '' : '（可选）'}
+        </span>
+        <div className="flex items-center gap-1.5">
+          <input
+            type={shown[s.name] ? 'text' : 'password'}
+            autoComplete="off"
+            className="ui-input min-w-0 flex-1"
+            aria-label={`「${name}」的${s.title}`}
+            placeholder={filled ? '已填写，留空表示不修改' : '未填写'}
+            value={card.secrets[s.name] ?? ''}
+            // 粘贴进去的密钥常带首尾空白：直接 trim 掉
+            onChange={(e) => onSecret(card.key, s.name, e.target.value.trim())}
+            onKeyDown={enter}
+          />
+          <button
+            type="button"
+            className="ui-btn ui-btn-quiet ui-btn-xs flex-none"
+            aria-label={`${shown[s.name] ? '隐藏' : '显示'}「${name}」的密钥`}
+            aria-pressed={!!shown[s.name]}
+            onClick={() => setShown((current) => ({ ...current, [s.name]: !current[s.name] }))}
+          >
+            {shown[s.name] ? '隐藏' : '显示'}
+          </button>
+          {saved && filled && (
+            <button
+              type="button"
+              className="ui-btn ui-btn-quiet ui-btn-xs flex-none"
+              aria-label={`取消更换「${name}」的密钥`}
+              onClick={() => {
+                // 取消恢复原密钥：清掉这次的输入，回到掩码，明文状态一并复位
+                onSecret(card.key, s.name, '')
+                setEditing((current) => ({ ...current, [s.name]: false }))
+                setShown((current) => ({ ...current, [s.name]: false }))
+              }}
+            >
+              取消
+            </button>
+          )}
+        </div>
+        {s.help && <span className="ui-help">{s.help}</span>}
+      </div>
+    )
   }
 
   return (
@@ -155,78 +252,25 @@ function CredentialCard({
       {!compact && multi && saved && summary && (
         <p className="text-xs text-ink-subtle">{summary}</p>
       )}
-      {secretSpecs.map((s) => {
-        const filled = saved?.secrets[s.name]
-        const hint = saved?.secretHints?.[s.name]
-        // 已保存且填过的密钥默认只显示掩码，点「更换」才就地展开输入
-        if (saved && filled && !editing[s.name]) {
-          return (
-            <div
-              key={s.name}
-              className="flex min-w-0 items-center gap-2 rounded-md bg-surface px-2.5 py-1.5 ring-1 ring-line"
-            >
-              <span className="ui-label flex-none">{s.title}</span>
-              <code className="min-w-0 flex-1 truncate font-mono text-xs text-ink-muted">
-                {hint ?? '••••••••'}
-              </code>
-              <button
-                type="button"
-                className="ui-btn ui-btn-quiet ui-btn-xs flex-none"
-                aria-label={`更换「${name}」的${s.title}`}
-                onClick={() => setEditing((current) => ({ ...current, [s.name]: true }))}
-              >
-                更换
-              </button>
-            </div>
-          )
-        }
-        return (
-          <div key={s.name} className="flex flex-col gap-1.5">
-            <span className="ui-label">
-              {s.title}
-              {s.required ? '' : '（可选）'}
-            </span>
-            <div className="flex items-center gap-1.5">
-              <input
-                type={shown[s.name] ? 'text' : 'password'}
-                autoComplete="off"
-                className="ui-input min-w-0 flex-1"
-                aria-label={`「${name}」的${s.title}`}
-                placeholder={filled ? '已填写，留空表示不修改' : '未填写'}
-                value={card.secrets[s.name] ?? ''}
-                // 粘贴进去的密钥常带首尾空白：直接 trim 掉
-                onChange={(e) => onSecret(card.key, s.name, e.target.value.trim())}
-                onKeyDown={enter}
-              />
-              <button
-                type="button"
-                className="ui-btn ui-btn-quiet ui-btn-xs flex-none"
-                aria-label={`${shown[s.name] ? '隐藏' : '显示'}「${name}」的密钥`}
-                aria-pressed={!!shown[s.name]}
-                onClick={() => setShown((current) => ({ ...current, [s.name]: !current[s.name] }))}
-              >
-                {shown[s.name] ? '隐藏' : '显示'}
-              </button>
-              {saved && filled && (
-                <button
-                  type="button"
-                  className="ui-btn ui-btn-quiet ui-btn-xs flex-none"
-                  aria-label={`取消更换「${name}」的密钥`}
-                  onClick={() => {
-                    // 取消恢复原密钥：清掉这次的输入，回到掩码，明文状态一并复位
-                    onSecret(card.key, s.name, '')
-                    setEditing((current) => ({ ...current, [s.name]: false }))
-                    setShown((current) => ({ ...current, [s.name]: false }))
-                  }}
-                >
-                  取消
-                </button>
-              )}
-            </div>
-            {s.help && <span className="ui-help">{s.help}</span>}
-          </div>
-        )
-      })}
+      {secretFilter === 'required' && alternatives.length > 0 ? (
+        <>
+          <p className="ui-help">{authHint}</p>
+          {alternatives.map((group, index) => (
+            <Fragment key={group.join(':')}>
+              {index > 0 && <span className="text-xs text-ink-subtle">或</span>}
+              <div className="flex flex-col gap-2">
+                {group.flatMap((key) => {
+                  const spec = specByName.get(key)
+                  return spec ? [secretField(spec)] : []
+                })}
+              </div>
+            </Fragment>
+          ))}
+          {extraAuth.map(secretField)}
+        </>
+      ) : (
+        secretSpecs.map(secretField)
+      )}
       {!compact && saved && multi && (
         // 多组时卡片按钮只校验这一组；有没保存的输入时先禁用
         <button
@@ -289,10 +333,12 @@ export function ProviderCredentials({
   if (provider.secrets.length === 0) return null
   const savedGroups = config.credentials ?? []
   const optional = secretFilter === 'optional'
+  const authNames = authSecretNames(provider)
   // 可选密钥为空的平台不用在「更多设置」里单开一块
-  if (optional && !provider.secrets.some((s) => !s.required)) return null
-  // 没有必填密钥的平台不显示空的必填区
-  if (secretFilter === 'required' && !provider.secrets.some((s) => s.required)) return null
+  if (optional && !provider.secrets.some((s) => !authNames.has(s.name))) return null
+  // 没有鉴权密钥的平台不显示空的必填区
+  if (secretFilter === 'required' && !provider.secrets.some((s) => authNames.has(s.name)))
+    return null
   const multi = savedGroups.length + drafts.length >= 2
   return (
     <section className="flex flex-col gap-2">

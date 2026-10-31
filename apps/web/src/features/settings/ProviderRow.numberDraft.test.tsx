@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import type { ProviderConfigView, ProviderInfo } from '@plein/protocol'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { describe, expect, it } from 'vite-plus/test'
 import { mockFetch } from '../../testing/fetch'
 import { fireEvent, renderApp, screen, waitFor } from '../../testing/render'
@@ -59,15 +59,6 @@ function renderRow() {
   })
   function Harness() {
     const [open, setOpen] = useState(true)
-    useEffect(() => {
-      // 平台设置收在「更多设置」里：出现后自动展开一次
-      const observer = new MutationObserver(() => {
-        const more = screen.queryByRole<HTMLButtonElement>('button', { name: '更多设置' })
-        if (more && more.getAttribute('aria-expanded') === 'false') more.click()
-      })
-      observer.observe(document.body, { childList: true, subtree: true })
-      return () => observer.disconnect()
-    }, [])
     return (
       <ul>
         <ProviderRow

@@ -4,6 +4,7 @@ import {
   defineNode,
   defineProvider,
   describeNode,
+  describeProvider,
   domainAllowed,
   inputAssets,
   inputText,
@@ -191,6 +192,14 @@ describe('Provider', () => {
     ['鉴权组只填了一半', { credentialAlternatives: [['AK', 'SK']] }, { KEY: 'k', AK: 'a' }, false],
   ])('providerConfigured：%s', (_, extra, secrets, ok) => {
     expect(providerConfigured(provider(extra), secrets)).toBe(ok)
+  })
+
+  it('目录描述带上任选一组的鉴权约束，前端据此决定必填区', () => {
+    const descriptor = describeProvider(
+      provider({ credentialAlternatives: [['AK', 'SK']] }),
+      'acme/plugin',
+    )
+    expect(descriptor.credentialAlternatives).toEqual([['AK', 'SK']])
   })
 
   it('ProviderError 默认按错误码判断能否重试', () => {

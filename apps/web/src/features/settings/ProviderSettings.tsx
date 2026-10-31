@@ -9,7 +9,7 @@ import { type ObjectSchema, SchemaForm } from '../../ui/SchemaForm'
 import { Switch } from '../../ui/Switch'
 import { confirmDialog, choiceDialog } from '../../ui/Dialog'
 import { Group } from './SettingsGroup'
-import { ProviderCredentials } from './ProviderCredentials'
+import { ProviderCredentials, authSecretNames } from './ProviderCredentials'
 import { removalImpact } from './credentialUsage'
 import {
   credentialCardDirty,
@@ -91,6 +91,16 @@ export function ProviderRow({
   // 未配置平台默认收起模型标签与「更多设置」，主流程只留密钥和保存并校验
   const [modelsOpen, setModelsOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
+  const morePanel = useRef<HTMLDivElement>(null)
+  // 保存时发现「更多设置」里的字段无效：先记下，展开后再聚焦
+  const pendingInvalid = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    if (!moreOpen || !pendingInvalid.current) return
+    const target = pendingInvalid.current
+    pendingInvalid.current = null
+    target.focus()
+    target.scrollIntoView({ block: 'nearest' })
+  }, [moreOpen])
   const [numberEditing, setNumberEditing] = useState(false)
   const formFields = useRef<HTMLFieldSetElement>(null)
   const closedFeedback = useRef<HTMLParagraphElement>(null)
@@ -237,7 +247,13 @@ export function ProviderRow({
     // 必填标签或数字没填好时先聚焦问题输入，不发出请求
     const invalid = formFields.current?.querySelector<HTMLElement>('[aria-invalid="true"]')
     if (invalid) {
-      invalid.focus()
+      // 「更多设置」收起时内部字段仍挂着校验状态：先展开，再聚焦到出错的字段
+      if (!moreOpen && morePanel.current?.contains(invalid)) {
+        pendingInvalid.current = invalid
+        setMoreOpen(true)
+      } else {
+        invalid.focus()
+      }
       return null
     }
     // 只提交改过的标签与非空密钥，与脏检查共用同一判断；新卡作为 credentials.add 创建（改动过的预填卡也算）
@@ -494,8 +510,9 @@ export function ProviderRow({
     </div>
   )
   // 「更多设置」只在确实有可选密钥或平台设置时出现
+  const authNames = authSecretNames(provider)
   const hasMore =
-    provider.secrets.some((s) => !s.required) ||
+    provider.secrets.some((s) => !authNames.has(s.name)) ||
     Object.keys(
       (provider.settingsSchema as { properties?: Record<string, unknown> }).properties ?? {},
     ).length > 0
@@ -724,12 +741,11 @@ export function ProviderRow({
                     >
                       更多设置
                     </button>
-                    {moreOpen && (
-                      <div className="flex flex-col gap-4">
-                        {credentialsForm('optional')}
-                        {schemaForm}
-                      </div>
-                    )}
+                    {/* 收起用 hidden 隐藏而不卸载：数字输入的校验状态要保留到保存时 */}
+                    <div ref={morePanel} hidden={!moreOpen} className="flex flex-col gap-4">
+                      {credentialsForm('optional')}
+                      {schemaForm}
+                    </div>
                   </div>
                 )}
                 {unconfiguredActions}

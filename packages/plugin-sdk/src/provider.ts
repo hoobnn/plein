@@ -490,6 +490,8 @@ export interface ProviderDescriptor {
   testScope?: 'connection' | 'configuration'
   settingsSchema: Record<string, unknown>
   secrets: SecretSpec[]
+  /** 任选一组的鉴权约束：组内密钥需同时填写，组与组之间任选其一 */
+  credentialAlternatives?: string[][]
   models: ModelInfo[]
   /** 支持声音复刻时的表单说明 */
   voiceClone?: Pick<
@@ -522,6 +524,7 @@ export function describeProvider(def: ProviderDefinition, plugin: string): Provi
       unknown
     >,
     secrets: def.secrets,
+    credentialAlternatives: def.credentialAlternatives,
     models: def.models.map(({ options, ...m }) =>
       options
         ? {

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import type { ProviderConfigView, ProviderInfo, ProviderTestResult } from '@plein/protocol'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { describe, expect, it } from 'vite-plus/test'
 import { mockFetch } from '../../testing/fetch'
 import { act, fireEvent, renderApp, screen, waitFor, within } from '../../testing/render'
@@ -46,7 +46,8 @@ const provider: ProviderInfo = {
       },
     },
   },
-  secrets: [{ name: 'MOCK_API_KEY', title: 'API Key', help: 'mock 不校验密钥' }],
+  /* 测试里把 mock 的密钥当作必填：真实 mock 的密钥是可选的，可选/组合鉴权另有专项用例 */
+  secrets: [{ name: 'MOCK_API_KEY', title: 'API Key', required: true, help: 'mock 不校验密钥' }],
   models: [{ id: 'chat', title: 'Mock 对话', capabilities: ['text.chat'] }],
 }
 
@@ -70,6 +71,21 @@ const compatible: ProviderInfo = {
   },
   secrets: [{ name: 'COMPATIBLE_API_KEY', title: 'API Key' }],
   models: [],
+}
+
+/** 组合鉴权平台：API Key 或 APP ID + Access Key 任选一组，另有完全不参与鉴权的可选密钥 */
+const alternativeAuth: ProviderInfo = {
+  ...provider,
+  id: 'plein/alternative',
+  title: '组合鉴权平台',
+  configured: false,
+  secrets: [
+    { name: 'ALT_API_KEY', title: 'API Key', required: false },
+    { name: 'ALT_APP_ID', title: 'APP ID', required: false },
+    { name: 'ALT_ACCESS_KEY', title: 'Access Key', required: false },
+    { name: 'ALT_BUCKET', title: '存储桶' },
+  ],
+  credentialAlternatives: [['ALT_API_KEY'], ['ALT_APP_ID', 'ALT_ACCESS_KEY']],
 }
 
 /** 平台配置视图：服务端只回报已保存的设置与密钥是否填写 */
@@ -139,15 +155,12 @@ function renderRow(
     settings = { latencyMs: 0, queueMs: 0, latencyPreset: 0, failWith: 'none' },
     onSaved = () => {},
     view,
-    expandMore = true,
   }: {
     row?: ProviderInfo
     settings?: Record<string, unknown>
     onSaved?(): void
     /** 替换默认的配置视图（带密钥组时用） */
     view?: ProviderConfigView
-    /** 未配置平台的设置收在「更多设置」里：默认自动展开，省得每个用例都点一次 */
-    expandMore?: boolean
   } = {},
 ) {
   const configPath = `/api/providers/${row.id}/config`
@@ -164,16 +177,6 @@ function renderRow(
   })
   function Harness() {
     const [open, setOpen] = useState(true)
-    useEffect(() => {
-      if (!expandMore) return
-      // 配置异步读回后「更多设置」才出现：出现后自动展开一次
-      const observer = new MutationObserver(() => {
-        const more = screen.queryByRole<HTMLButtonElement>('button', { name: '更多设置' })
-        if (more && more.getAttribute('aria-expanded') === 'false') more.click()
-      })
-      observer.observe(document.body, { childList: true, subtree: true })
-      return () => observer.disconnect()
-    }, [])
     return (
       <ul>
         <ProviderRow
@@ -199,6 +202,12 @@ const secret = () => screen.getByLabelText(/API Key/)
 /** 卡片头部的展开按钮：按 aria-controls 找，避免和「更多设置」的按钮混淆 */
 const toggle = () =>
   document.querySelector<HTMLButtonElement>('button[aria-controls^="provider-"]')!
+
+/** 未配置平台的设置默认收在「更多设置」里：要用里面的字段就显式展开 */
+async function openMore(user: ReturnType<typeof renderRow>['user']) {
+  const more = await screen.findByRole('button', { name: '更多设置' })
+  if (more.getAttribute('aria-expanded') === 'false') await user.click(more)
+}
 
 /** 密钥区里指定组（组 id，或 'draft' 表示最后一张草稿卡）的查询范围 */
 const card = (id: string) => {
@@ -226,6 +235,7 @@ describe('平台配置读取', () => {
     await waitFor(() => expect(screen.getAllByRole('alert').length).toBe(1))
     failing = false
     await user.click(screen.getByRole('button', { name: '重试读取配置' }))
+    await openMore(user)
     expect(
       (await screen.findByRole<HTMLInputElement>('spinbutton', { name: '模拟耗时（毫秒）' })).value,
     ).toBe('0')
@@ -250,6 +260,7 @@ describe('平台配置读取', () => {
     await user.click(toggle())
     late = true
     await user.click(toggle())
+    await openMore(user)
     expect(
       (await screen.findByRole<HTMLInputElement>('spinbutton', { name: '模拟耗时（毫秒）' })).value,
     ).toBe('987')
@@ -420,6 +431,7 @@ describe('平台保存与检查', () => {
 describe('平台数值校验', () => {
   it('未完成数字阻止保存，折叠不清除错误，修正后可保存', async () => {
     const { user, fetch } = renderRow()
+    await openMore(user)
     await screen.findByRole<HTMLInputElement>('spinbutton', { name: '模拟耗时（毫秒）' })
     fireEvent.change(latency(), { target: { value: '1e' } })
     expect(latency().validity.badInput).toBe(true)
@@ -447,6 +459,7 @@ describe('平台数值校验', () => {
 
   it('回车先提交草稿，空值仍使用默认值，范围收拢后可以保存', async () => {
     const { user, fetch } = renderRow()
+    await openMore(user)
     await screen.findByRole<HTMLInputElement>('spinbutton', { name: '模拟耗时（毫秒）' })
     latency().focus()
     fireEvent.change(latency(), { target: { value: '60000.9' } })
@@ -471,6 +484,7 @@ describe('平台数值校验', () => {
 describe('平台枚举设置', () => {
   it('枚举档位保存后仍是数字而不是字符串', async () => {
     const { user, fetch } = renderRow()
+    await openMore(user)
     await screen.findByRole('spinbutton', { name: '模拟耗时（毫秒）' })
     await user.click(screen.getByRole('combobox', { name: '耗时档位' }))
     await user.click(screen.getByRole('option', { name: '100' }))
@@ -487,6 +501,7 @@ describe('兼容渠道表单', () => {
     const { user, fetch } = renderRow({}, { row: compatible, settings: {} })
     await screen.findByLabelText(/API Key/)
     await user.type(screen.getByLabelText(/API Key/), 'test-only-not-a-real-key')
+    await openMore(user)
     await user.type(screen.getByLabelText('Base URL'), 'https://gateway.example.com/v1')
     await user.type(screen.getByLabelText('模型 ID'), 'example-chat')
     await user.click(screen.getByRole('checkbox', { name: '支持图片输入' }))
@@ -512,6 +527,7 @@ describe('兼容渠道表单', () => {
 describe('平台草稿', () => {
   it('折叠再展开保留草稿且不自动保存', async () => {
     const { user, fetch } = renderRow()
+    await openMore(user)
     await screen.findByRole<HTMLInputElement>('spinbutton', { name: '模拟耗时（毫秒）' })
     fireEvent.change(latency(), { target: { value: '321' } })
     fireEvent.focusOut(latency())
@@ -690,6 +706,7 @@ describe('密钥组', () => {
     expect((label as HTMLInputElement).value).toBe('默认')
 
     // 只改设置：预填卡没动过，不作为新组提交
+    await openMore(user)
     fireEvent.change(latency(), { target: { value: '321' } })
     fireEvent.focusOut(latency())
     await user.click(screen.getByRole('button', { name: /^(保存|仅保存)$/ }))
@@ -1508,14 +1525,14 @@ describe('密钥组', () => {
         { name: 'EXTRA_KEY', title: '存储 Access Key' },
       ],
     }
-    const { user } = renderRow({}, { row: mixed, expandMore: false })
+    const { user } = renderRow({}, { row: mixed })
     const key = await screen.findByLabelText('「默认」的API Key')
     // 模型标签默认只有一行入口
     expect(screen.getByRole('button', { name: '1 个模型 · 展开' })).toBeTruthy()
     expect(screen.queryByText('Mock 对话')).toBeNull()
-    // 可选密钥与平台设置默认收起
-    expect(screen.queryByLabelText('「默认」的存储 Access Key')).toBeNull()
-    expect(screen.queryByRole('spinbutton', { name: '模拟耗时（毫秒）' })).toBeNull()
+    // 可选密钥与平台设置默认收起（内容保留在 hidden 容器里）
+    expect(screen.getByLabelText('「默认」的存储 Access Key').closest('[hidden]')).toBeTruthy()
+    expect(screen.getByLabelText('模拟耗时（毫秒）').closest('[hidden]')).toBeTruthy()
     // 主操作在「更多设置」下方，且只有保存并校验 + 仅保存
     const primary = screen.getByRole('button', { name: '保存并校验' })
     expect(key.compareDocumentPosition(primary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -1535,6 +1552,50 @@ describe('密钥组', () => {
     await screen.findByLabelText('「个人」的标签')
     expect(screen.queryByRole('button', { name: '校验「个人」的连接' })).toBeNull()
     expect(screen.queryByRole('button', { name: '校验连接' })).toBeNull()
+  })
+
+  it('任选一组的鉴权密钥留在主区域，并提示填写方式', async () => {
+    const { user } = renderRow({}, { row: alternativeAuth })
+    await screen.findByLabelText('「默认」的API Key')
+    expect(screen.getByText(/任选一组填写/)).toBeTruthy()
+    expect(screen.getByLabelText('「默认」的APP ID')).toBeTruthy()
+    expect(screen.getByLabelText('「默认」的Access Key')).toBeTruthy()
+    // 完全不参与鉴权的可选密钥收进默认隐藏的「更多设置」
+    const bucket = screen.getByLabelText('「默认」的存储桶')
+    expect(bucket.closest('[hidden]')).toBeTruthy()
+    await openMore(user)
+    expect(bucket.closest('[hidden]')).toBeNull()
+  })
+
+  it('不展开更多设置也能直接保存密钥', async () => {
+    // 组合鉴权的 API Key 就在主区域，不需要展开更多设置
+    const { user, fetch } = renderRow({}, { row: alternativeAuth })
+    await user.type(await screen.findByLabelText('「默认」的API Key'), 'first-key')
+    await user.click(screen.getByRole('button', { name: '仅保存' }))
+    await waitFor(() => expect(writes(fetch)).toHaveLength(1))
+    expect(screen.getByRole('status').textContent).toContain('已保存')
+  })
+
+  it('更多设置收起后保存仍拦截无效数字，自动展开并聚焦到出错的字段', async () => {
+    const { user, fetch } = renderRow({})
+    await screen.findByLabelText('「默认」的API Key')
+    await user.click(screen.getByRole('button', { name: '更多设置' }))
+    fireEvent.change(latency(), { target: { value: '1e' } })
+    fireEvent.focusOut(latency())
+    expect(latency().getAttribute('aria-invalid')).toBe('true')
+
+    await user.click(screen.getByRole('button', { name: '更多设置' }))
+    expect(screen.getByRole('button', { name: '更多设置' }).getAttribute('aria-expanded')).toBe(
+      'false',
+    )
+    await user.click(screen.getByRole('button', { name: '仅保存' }))
+    expect(writes(fetch)).toHaveLength(0)
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '更多设置' }).getAttribute('aria-expanded')).toBe(
+        'true',
+      ),
+    )
+    expect(document.activeElement).toBe(latency())
   })
 
   it('替换没有使用的密钥组不打扰，直接保存', async () => {
