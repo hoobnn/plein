@@ -5,7 +5,7 @@ import { arkPlanProvider, arkProvider } from './index'
 
 const harness = (replies?: unknown[]) => fakeContext(arkProvider, replies)
 
-const CHAT = 'doubao-seed-2-1-pro-260628'
+const CHAT = 'doubao-seed-2-1-pro-260915'
 const IMAGE = 'doubao-seedream-5-0-pro-260628'
 const VIDEO = 'doubao-seedance-2-5-260628'
 const ref = { assetId: 'local-image', kind: 'image' as const }
@@ -98,6 +98,16 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
       state: 'succeeded',
       outputs: [{ type: 'json', value: { answer: 42 } }],
       usage: { inputTokens: 3, outputTokens: 8 },
+    })
+  })
+
+  it('目录并存新旧 Pro 与快速迭代模型，停止新购的 Seedream 保留弃用标记', () => {
+    expect(arkProvider.models.find((m) => m.id === 'doubao-seed-2-1-pro-260628')).toBeDefined()
+    expect(arkProvider.models.find((m) => m.id === 'doubao-seed-evolving')?.features).toContain(
+      'tools',
+    )
+    expect(arkProvider.models.find((m) => m.id === 'doubao-seedream-5-0-260128')).toMatchObject({
+      deprecated: true,
     })
   })
 

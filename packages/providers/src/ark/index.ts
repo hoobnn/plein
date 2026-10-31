@@ -158,7 +158,13 @@ const models: ModelSpec[] = [
   {
     id: 'doubao-seed-2-1-pro-260628',
     features: ['tools'],
-    title: 'Doubao Seed 2.1 Pro',
+    title: 'Doubao Seed 2.1 Pro（260628）',
+    capabilities: ['text.chat'],
+  },
+  {
+    id: 'doubao-seed-2-1-pro-260915',
+    features: ['tools'],
+    title: 'Doubao Seed 2.1 Pro（260915）',
     capabilities: ['text.chat'],
   },
   {
@@ -171,6 +177,12 @@ const models: ModelSpec[] = [
     id: 'doubao-seed-2-1-turbo-260628',
     features: ['tools'],
     title: 'Doubao Seed 2.1 Turbo',
+    capabilities: ['text.chat'],
+  },
+  {
+    id: 'doubao-seed-evolving',
+    features: ['tools'],
+    title: 'Doubao Seed Evolving（快速迭代）',
     capabilities: ['text.chat'],
   },
   {
@@ -204,6 +216,7 @@ const models: ModelSpec[] = [
     title: 'Seedream 5.0 Lite（支持组图）',
     description:
       '已停止新购，计划于 2026-11-24 14:00（UTC+8）下线；现有接入请提前迁移，Pro / Flash 不支持组图',
+    deprecated: true,
     capabilities: ['image.generate'],
     limits: {
       aspectRatios: SEEDREAM_ASPECTS,
