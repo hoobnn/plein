@@ -66,12 +66,18 @@ export function ProviderRow({
   // 替换改成新组后要聚焦的草稿卡：渲染完成后把焦点交给它的标签输入
   const focusDraft = useRef<string | null>(null)
   const [status, setStatus] = useState<{ message: string; error?: boolean } | null>(null)
-  const [test, setTest] = useState<ProviderTestResult | null>(null)
+  // 校验结果按密钥组分别保存：备用组的结果不能改写当前组的状态徽章
+  const [testResults, setTestResults] = useState<Record<string, ProviderTestResult>>({})
+  // 最近一次校验过的组，结果消息跟着它显示
+  const [lastTested, setLastTested] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  // 正在跑校验：卡片状态显示「校验中」，结束后按结果变成「校验失败」或「已连接」
-  const [testing, setTesting] = useState(false)
-  // 保存成功后递增：密钥卡收起就地输入、复位明文状态
-  const [credentialReset, setCredentialReset] = useState(0)
+  // 正在跑校验的组 id（null 表示没在校验）：只有当前组在查时徽章才显示「校验中」
+  const [testing, setTesting] = useState<string | null>(null)
+  // 收起就地输入的信号：global 用于保存成功，cards 只复位被迁移的组
+  const [credentialReset, setCredentialReset] = useState<{
+    global: number
+    cards: Record<string, number>
+  }>({ global: 0, cards: {} })
   const locked = busy || disabled
   const [configError, setConfigError] = useState<string | null>(null)
   const [loadAttempt, setLoadAttempt] = useState(0)
@@ -84,7 +90,8 @@ export function ProviderRow({
   }, [active, open, busy, status])
   const clearFeedback = () => {
     setStatus(null)
-    setTest(null)
+    setTestResults({})
+    setLastTested(null)
   }
 
   // 展开时才读配置
@@ -194,12 +201,14 @@ export function ProviderRow({
   /** 把已保存卡里刚输入的密钥移到新草稿卡（标签留空），原组保持不变：密钥输入清空，刚改的标签也退回 */
   const moveToDraft = (cards: CredentialCardDraft[]) => {
     const moved: CredentialCardDraft[] = []
+    const movedFrom: string[] = []
     let secrets = groupSecrets
     let nextLabels = labels
     for (const card of cards) {
       const typed = typedSecrets(card.secrets)
       if (Object.keys(typed).length === 0) continue
       moved.push({ key: `draft-${nextDraft.current++}`, label: '', secrets: typed })
+      movedFrom.push(card.key)
       secrets = { ...secrets, [card.key]: {} }
       nextLabels = { ...nextLabels, [card.key]: '' }
     }
@@ -208,8 +217,12 @@ export function ProviderRow({
     setGroupSecrets(secrets)
     setLabels(nextLabels)
     setDrafts([...drafts, ...moved])
-    // 原组的密钥输入已清空：卡片收起回掩码，刚输入的密钥只留在新草稿卡里
-    setCredentialReset((token) => token + 1)
+    // 只收起被迁移的组：其他组没保存的输入还留在原处，不能被一起藏起来
+    setCredentialReset((current) => {
+      const cards = { ...current.cards }
+      for (const id of movedFrom) cards[id] = (cards[id] ?? 0) + 1
+      return { ...current, cards }
+    })
   }
 
   /** 保存成功返回 true：未配置平台的主操作要在保存后接着校验 */
@@ -287,7 +300,8 @@ export function ProviderRow({
       setLabels({})
       setGroupSecrets({})
       setDrafts([])
-      setCredentialReset((token) => token + 1)
+      // 保存成功：所有卡片的就地输入一起收起
+      setCredentialReset((current) => ({ global: current.global + 1, cards: {} }))
       setNumberEditing(false)
       setStatus({ message: '已保存' })
       await onSaved()
@@ -361,6 +375,9 @@ export function ProviderRow({
         >
       setLabels((current) => keep(current))
       setGroupSecrets((current) => keep(current))
+      // 删掉的组不再保留校验结果
+      setTestResults((current) => keep(current))
+      setLastTested((current) => (current === key ? null : current))
       await onSaved()
     } catch (err) {
       setStatus({ message: `保存失败：${(err as Error).message}`, error: true })
@@ -369,33 +386,39 @@ export function ProviderRow({
     }
   }
 
-  /** 卡片上的检查连接指定用哪一组密钥 */
+  /** 卡片上的检查连接指定用哪一组密钥：结果只记在这一组名下 */
   const testCard = async (key: string) => {
-    clearFeedback()
+    setStatus(null)
     setBusy(true)
-    setTesting(true)
+    setTesting(key)
     try {
-      setTest(await api.testProvider(provider.id, key))
+      const result = await api.testProvider(provider.id, key)
+      setTestResults((current) => ({ ...current, [key]: result }))
+      setLastTested(key)
     } catch (err) {
       // 传输失败没有服务端检查结果，不能伪造 scope 或完成时间。
       setStatus({ error: true, message: `检查请求失败：${(err as Error).message}` })
     } finally {
-      setTesting(false)
+      setTesting(null)
       setBusy(false)
     }
   }
 
   const runTest = async () => {
-    clearFeedback()
+    // 行级检查查的是当前生效组，结果也记在它名下
+    const key = config?.activeCredential ?? provider.id
+    setStatus(null)
     setBusy(true)
-    setTesting(true)
+    setTesting(key)
     try {
-      setTest(await api.testProvider(provider.id))
+      const result = await api.testProvider(provider.id)
+      setTestResults((current) => ({ ...current, [key]: result }))
+      setLastTested(key)
     } catch (err) {
       // 传输失败没有服务端检查结果，不能伪造 scope 或完成时间。
       setStatus({ error: true, message: `检查请求失败：${(err as Error).message}` })
     } finally {
-      setTesting(false)
+      setTesting(null)
       setBusy(false)
     }
   }
@@ -405,15 +428,22 @@ export function ProviderRow({
     if (await save()) await runTest()
   }
 
-  const state = providerState(provider, { testing, failed: test ? !test.ok : false })
+  // 徽章只看当前生效组的校验结果；备用组的通过或失败都不改它
+  const activeKey = config?.activeCredential ?? null
+  const activeTest = activeKey ? testResults[activeKey] : undefined
+  const state = providerState(provider, {
+    testing: testing !== null && testing === activeKey,
+    failed: activeTest ? !activeTest.ok : false,
+  })
   const bodyId = `provider-${provider.id}`
   const dirty = providerDirty(settings, config?.settings, [...savedCards, ...drafts], numberEditing)
-  const feedback = test
+  const lastTest = lastTested ? testResults[lastTested] : undefined
+  const feedback = lastTest
     ? {
-        message: test.ok
-          ? (test.message ?? '检查完成；尚未验证具体模型、资源权限或余额')
-          : `检查失败：${test.message ?? '未知错误'}`,
-        error: !test.ok,
+        message: lastTest.ok
+          ? (lastTest.message ?? '检查完成；尚未验证具体模型、资源权限或余额')
+          : `检查失败：${lastTest.message ?? '未知错误'}`,
+        error: !lastTest.ok,
       }
     : status
 
@@ -522,7 +552,7 @@ export function ProviderRow({
                   onTest={(key) => void testCard(key)}
                   onAdd={addDraft}
                   onSubmit={() => void (provider.configured ? save() : saveAndTest())}
-                  resetToken={credentialReset}
+                  resetSignal={credentialReset}
                 />
                 <SchemaForm
                   schema={provider.settingsSchema as ObjectSchema}

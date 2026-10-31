@@ -1191,29 +1191,33 @@ describe('密钥组', () => {
     expect(fetch.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
   })
 
-  it('校验失败后状态徽章变成「校验失败」，卡片上的重新校验只用这一组', async () => {
+  it('当前组校验失败后状态徽章变成「校验失败」，重新校验只用这一组', async () => {
     const two = credView(
       [credential('cred-1', '个人', true), credential('cred-2', '团队', true)],
       'cred-1',
     )
+    const bodies: unknown[] = []
     const { user } = renderRow(
       {
-        test: () =>
-          Response.json({
+        test: async (request) => {
+          bodies.push(await request.json())
+          return Response.json({
             ok: false,
             scope: 'connection',
             modelAccess: 'unverified',
             checkedAt: 1,
             code: 'auth',
             message: '密钥无效',
-          }),
+          })
+        },
       },
       { row: configuredProvider, view: two },
     )
     await screen.findByLabelText('「个人」的标签')
-    await user.click(card('cred-2').getByRole('button', { name: '检查「团队」的连接' }))
+    await user.click(card('cred-1').getByRole('button', { name: '检查「个人」的连接' }))
     await waitFor(() => expect(screen.getByText('校验失败')).toBeTruthy())
     expect(screen.getByRole('alert').textContent).toBe('检查失败：密钥无效')
+    expect(bodies).toEqual([{ credential: 'cred-1' }])
   })
 
   it('更换时就地输入删空不收起，保存成功后才回到掩码', async () => {
@@ -1248,6 +1252,95 @@ describe('密钥组', () => {
     await user.click(card('cred-1').getByRole('button', { name: '取消更换「个人」的密钥' }))
     await user.click(card('cred-1').getByRole('button', { name: '更换「个人」的API Key' }))
     expect(card('cred-1').getByLabelText('「个人」的API Key').getAttribute('type')).toBe('password')
+  })
+
+  it('改为添加新组只收起被迁移的组，其他组的未保存密钥保持展开', async () => {
+    const two = credView(
+      [
+        { ...credential('cred-1', '个人', true), usage: { tasks: 2, voices: 0 } },
+        credential('cred-2', '团队', true),
+      ],
+      'cred-1',
+    )
+    const { user } = renderRow({ put: () => Response.json(two) }, { view: two })
+    await screen.findByLabelText('「个人」的标签')
+    await user.click(card('cred-1').getByRole('button', { name: '更换「个人」的API Key' }))
+    await user.type(card('cred-1').getByLabelText('「个人」的API Key'), 'key-a')
+    await user.click(card('cred-2').getByRole('button', { name: '更换「团队」的API Key' }))
+    await user.type(card('cred-2').getByLabelText('「团队」的API Key'), 'key-b')
+    await user.click(screen.getByRole('button', { name: '保存' }))
+
+    const dialog = await screen.findByRole('dialog', { name: '替换仍在使用的密钥？' })
+    await user.click(within(dialog).getByRole('button', { name: '改为添加新组' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    // 只有被迁移的「个人」回到掩码；「团队」的新值还没保存，输入和内容都必须留着
+    expect(card('cred-1').queryByLabelText('「个人」的API Key')).toBeNull()
+    expect((card('cred-2').getByLabelText('「团队」的API Key') as HTMLInputElement).value).toBe(
+      'key-b',
+    )
+  })
+
+  it('校验备用组通过不会把仍失败的当前组标成已连接', async () => {
+    const two = credView(
+      [credential('cred-1', '个人', true), credential('cred-2', '团队', true)],
+      'cred-1',
+    )
+    const { user } = renderRow(
+      {
+        test: async (request) => {
+          const body = (await request.json()) as { credential?: string }
+          return Response.json(
+            body.credential === 'cred-2'
+              ? testOk
+              : {
+                  ok: false,
+                  scope: 'connection',
+                  modelAccess: 'unverified',
+                  checkedAt: 1,
+                  code: 'auth',
+                  message: '密钥无效',
+                },
+          )
+        },
+      },
+      { row: configuredProvider, view: two },
+    )
+    await screen.findByLabelText('「个人」的标签')
+    await user.click(card('cred-1').getByRole('button', { name: '检查「个人」的连接' }))
+    await waitFor(() => expect(screen.getByText('校验失败')).toBeTruthy())
+
+    await user.click(card('cred-2').getByRole('button', { name: '检查「团队」的连接' }))
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('连接检查通过'))
+    // 备用组通过不代表当前组恢复
+    expect(screen.getByText('校验失败')).toBeTruthy()
+    expect(screen.queryByText('已连接 · 个人')).toBeNull()
+  })
+
+  it('校验备用组失败不会把正常的当前组标成失败', async () => {
+    const two = credView(
+      [credential('cred-1', '个人', true), credential('cred-2', '团队', true)],
+      'cred-1',
+    )
+    const { user } = renderRow(
+      {
+        test: () =>
+          Response.json({
+            ok: false,
+            scope: 'connection',
+            modelAccess: 'unverified',
+            checkedAt: 1,
+            code: 'auth',
+            message: '密钥无效',
+          }),
+      },
+      { row: configuredProvider, view: two },
+    )
+    await screen.findByLabelText('「个人」的标签')
+    await user.click(card('cred-2').getByRole('button', { name: '检查「团队」的连接' }))
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('检查失败'))
+    // 当前组没有校验过，徽章保持已连接
+    expect(screen.getByText('已连接 · 个人')).toBeTruthy()
+    expect(screen.queryByText('校验失败')).toBeNull()
   })
 
   it('替换没有使用的密钥组不打扰，直接保存', async () => {

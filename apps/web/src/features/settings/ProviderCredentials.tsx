@@ -30,8 +30,8 @@ interface CardProps {
   onTest(key: string): void
   /** 密钥输入里回车：交给行组件保存（未配置平台会保存并校验） */
   onSubmit(): void
-  /** 保存成功后由行组件递增：收起就地输入、复位明文状态 */
-  resetToken: number
+  /** 收起就地输入的信号：变化时回到掩码并复位明文状态 */
+  resetToken: string
 }
 
 function CredentialCard({
@@ -240,7 +240,7 @@ export function ProviderCredentials({
   onTest,
   onAdd,
   onSubmit,
-  resetToken,
+  resetSignal,
 }: {
   provider: ProviderInfo
   config: ProviderConfigView
@@ -260,8 +260,8 @@ export function ProviderCredentials({
   onTest(key: string): void
   onAdd(): void
   onSubmit(): void
-  /** 保存成功后行组件递增，卡片据此收起就地输入 */
-  resetToken: number
+  /** 收起就地输入的信号：global 处理保存，cards 只复位被迁移的组 */
+  resetSignal: { global: number; cards: Record<string, number> }
 }) {
   // 平台没有声明密钥就没有组的概念；老版服务端的视图没有 credentials 字段也照常显示
   if (provider.secrets.length === 0) return null
@@ -310,7 +310,7 @@ export function ProviderCredentials({
             onDiscard={onDiscard}
             onTest={onTest}
             onSubmit={onSubmit}
-            resetToken={resetToken}
+            resetToken={`${resetSignal.global}:${resetSignal.cards[saved.id] ?? 0}`}
           />
         ))}
         {drafts.map((card, draftIndex) => (
@@ -329,7 +329,7 @@ export function ProviderCredentials({
             onDiscard={onDiscard}
             onTest={onTest}
             onSubmit={onSubmit}
-            resetToken={resetToken}
+            resetToken={`${resetSignal.global}:0`}
           />
         ))}
       </ul>
