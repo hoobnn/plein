@@ -172,9 +172,7 @@ export class RemoteModelCache {
   record(id: string, fingerprint: string, settings: string, models: RemoteModel[], error?: string) {
     const previous = this.data[id]
     const keep =
-      error && previous && this.matches(previous, fingerprint, settings)
-        ? previous.models
-        : models
+      error && previous && this.matches(previous, fingerprint, settings) ? previous.models : models
     this.data[id] = {
       fingerprint,
       settings,

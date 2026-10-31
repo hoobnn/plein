@@ -367,7 +367,10 @@ export const bailianProvider = defineProvider({
         'invalid_input',
         'qwen3-tts-instruct-flash 已下线；请选择 qwen3-tts-flash，语气指令请使用豆包语音',
       )
-    if (!supported[req.capability]?.includes(req.model) && !(req.remoteOnly && req.capability === 'text.chat'))
+    if (
+      !supported[req.capability]?.includes(req.model) &&
+      !(req.remoteOnly && req.capability === 'text.chat')
+    )
       throw new ProviderError('invalid_input', `百炼模型 ${req.model} 不支持 ${req.capability}`)
     switch (req.capability) {
       case 'text.chat':

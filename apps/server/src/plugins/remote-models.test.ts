@@ -44,7 +44,11 @@ describe('合并规则', () => {
   it('目录没收录的新模型以通用能力追加，标 remote-only', () => {
     const merged = applyRemoteModels(
       builtin,
-      [{ id: 'doubao-seedance-9-9', name: 'Seedance 9.9' }, { id: 'plain-model-x' }, { id: 'totally-new', kind: 'image' }],
+      [
+        { id: 'doubao-seedance-9-9', name: 'Seedance 9.9' },
+        { id: 'plain-model-x' },
+        { id: 'totally-new', kind: 'image' },
+      ],
       scope,
     )
     const extra = merged.filter((m) => m.remoteOnly)
@@ -82,7 +86,10 @@ describe('缓存', () => {
     now += 1
     expect(cache.status('p', 'fp-a', '{"region":"cn"}').status).toBe('stale')
     // 换密钥：旧列表不可见
-    expect(cache.status('p', 'fp-b', '{"region":"cn"}')).toEqual({ fetchedAt: null, status: 'idle' })
+    expect(cache.status('p', 'fp-b', '{"region":"cn"}')).toEqual({
+      fetchedAt: null,
+      status: 'idle',
+    })
     expect(cache.models('p', 'fp-b', '{"region":"cn"}')).toBeUndefined()
     // 换设置（如地域）：同样不可见
     expect(cache.models('p', 'fp-a', '{"region":"global"}')).toBeUndefined()
@@ -185,11 +192,9 @@ describe('宿主集成', () => {
 
   it('刷新成功：状态 fresh，目录合并出 available 与 remote-only', async () => {
     const { server, catalog } = await booted(async () => [{ id: 'known' }, { id: 'brand-new' }])
-    const res = await request(
-      server,
-      '/api/providers/acme/remote/remote-models/refresh',
-      { method: 'POST' },
-    )
+    const res = await request(server, '/api/providers/acme/remote/remote-models/refresh', {
+      method: 'POST',
+    })
     expect(res.status).toBe(200)
     const status = (await res.json()) as { status: string; fetchedAt: number }
     expect(status.status).toBe('fresh')
@@ -203,11 +208,9 @@ describe('宿主集成', () => {
     const { server, catalog } = await booted(async () => {
       throw new Error('平台 502')
     })
-    const res = await request(
-      server,
-      '/api/providers/acme/remote/remote-models/refresh',
-      { method: 'POST' },
-    )
+    const res = await request(server, '/api/providers/acme/remote/remote-models/refresh', {
+      method: 'POST',
+    })
     const status = (await res.json()) as { status: string; error?: string }
     expect(status.error).toContain('平台 502')
     const info = (await catalog()).providers.find((p) => p.id === 'acme/remote')
@@ -217,14 +220,14 @@ describe('宿主集成', () => {
 
   it('未实现拉取的平台：刷新返回 not_supported，目录没有远端状态', async () => {
     const { server, catalog } = await booted(async () => [])
-    const res = await request(
-      server,
-      '/api/providers/plein/mock/remote-models/refresh',
-      { method: 'POST' },
-    )
+    const res = await request(server, '/api/providers/plein/mock/remote-models/refresh', {
+      method: 'POST',
+    })
     expect(res.status).toBe(400)
     expect(((await res.json()) as { error: string }).error).toBe('not_supported')
-    expect((await catalog()).providers.find((p) => p.id === 'plein/mock')?.remoteModels).toBeUndefined()
+    expect(
+      (await catalog()).providers.find((p) => p.id === 'plein/mock')?.remoteModels,
+    ).toBeUndefined()
   })
 
   it('设置变化后旧列表失效：状态回到 idle，重新刷新按新上下文写入', async () => {

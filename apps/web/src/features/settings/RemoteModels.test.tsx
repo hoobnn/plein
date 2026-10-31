@@ -17,7 +17,14 @@ const provider = (over: Partial<ProviderInfo> = {}): ProviderInfo => ({
   models: [{ id: 'known', title: '已知模型', capabilities: ['text.chat'] }],
   supportsRemoteModels: true,
   remoteModels: { fetchedAt: null, status: 'idle' },
+  remoteModelsScope: ['text.chat'],
   ...over,
+})
+
+/** 列表只作候选的平台（如兼容渠道）：覆盖范围为空，schema 里声明了 datalist */
+const candidateProvider = (): ProviderInfo => ({
+  ...provider({ remoteModelsScope: [] }),
+  settingsSchema: { properties: { model: { type: 'string', list: 'compatible-model-ids' } } },
 })
 
 function serve(refresh?: () => Response) {
@@ -90,5 +97,36 @@ describe('远端模型列表区域', () => {
     expect(screen.getByText('列表已超过 24 小时，建议刷新')).toBeTruthy()
     expect(screen.getByText('上次刷新失败：网络失败')).toBeTruthy()
     expect(screen.getByText(/上次刷新：/)).toBeTruthy()
+  })
+
+  it('候选模式：datalist 按缓存候选渲染，刷新按钮独立于合并列表', async () => {
+    serve()
+    let refreshed = 0
+    const view = renderApp(
+      <RemoteModels
+        provider={candidateProvider()}
+        candidates={[{ id: 'gpt-x', name: 'GPT X' }]}
+        onRefreshed={() => {
+          refreshed += 1
+        }}
+      />,
+    )
+    // datalist 选项不是可见控件，用容器断言
+    const datalist = view.container.querySelector('#compatible-model-ids')
+    expect(datalist?.querySelectorAll('option')).toHaveLength(1)
+    expect(datalist?.querySelector('option')?.getAttribute('value')).toBe('gpt-x')
+    expect(screen.getByText(/渠道返回 1 个模型/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '刷新模型列表' })).toBeNull()
+    await view.user.click(screen.getByRole('button', { name: '刷新模型候选' }))
+    await waitFor(() => expect(refreshed).toBe(1))
+  })
+
+  it('候选模式：还没有候选时提示先刷新', () => {
+    serve()
+    const view = renderApp(
+      <RemoteModels provider={candidateProvider()} candidates={[]} onRefreshed={() => {}} />,
+    )
+    expect(view.container.querySelectorAll('datalist option')).toHaveLength(0)
+    expect(screen.getByText(/还没拉取过/)).toBeTruthy()
   })
 })

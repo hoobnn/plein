@@ -794,10 +794,12 @@
     opacity: 0.4;
   }
 
-  /* 状态标签：20 高、无描边，颜色表示状态；和图片上的 .ui-badge 同尺寸 */
+  /* 状态标签：20 高、无描边，颜色表示状态；和图片上的 .ui-badge 同尺寸。
+     max-width 防止长模型 ID 在窄窗口横向溢出（配合内容 truncate 与 title 提示） */
   .ui-tag {
     display: inline-flex;
     flex: none;
+    max-width: 100%;
     align-items: center;
     gap: 4px;
     height: 20px;

@@ -16,6 +16,8 @@ interface FieldSchema {
   description?: string
   placeholder?: string
   widget?: string
+  /** datalist 的元素 id：输入框接候选列表（值由插件声明，元素由设置页渲染） */
+  list?: string
   enum?: unknown[]
   minimum?: number
   maximum?: number
@@ -139,6 +141,7 @@ export function SchemaForm({
               className={field}
               aria-label={label}
               placeholder={f.placeholder}
+              list={f.list}
               value={String(current ?? '')}
               onChange={(e) => set(key, e.target.value)}
             />
