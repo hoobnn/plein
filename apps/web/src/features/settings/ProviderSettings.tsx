@@ -263,13 +263,16 @@ export function ProviderRow({
     remotePullAbort.current?.abort()
     const controller = new AbortController()
     remotePullAbort.current = controller
-    void awaitRemoteModelsSettled(provider.id, { signal: controller.signal }).then(
-      async (latest) => {
+    void awaitRemoteModelsSettled(provider.id, { signal: controller.signal })
+      .then(async (latest) => {
         if (controller.signal.aborted || !latest) return
         setConfig(latest)
         await onSaved()
-      },
-    )
+      })
+      .catch(() => {
+        // 轮询读取失败（网络抖动等）或目录重载失败：本次放弃，静默结束，
+        // 不覆盖当前视图也不冒泡成未处理的 rejection；之后可手动刷新
+      })
   }
 
   const save = async (): Promise<ProviderConfigView | null> => {

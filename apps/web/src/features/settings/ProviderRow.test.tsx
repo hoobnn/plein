@@ -900,6 +900,72 @@ describe('密钥组', () => {
     expect(saved).toBe(3)
   })
 
+  it('后台拉取的轮询读取失败时静默放弃，不覆盖视图也不冒泡', async () => {
+    const row: ProviderInfo = {
+      ...provider,
+      id: 'plein/compatible',
+      title: '兼容对话渠道',
+      configured: true,
+      credentialCount: 0,
+      testScope: 'configuration',
+      settingsSchema: {
+        type: 'object',
+        properties: {
+          baseURL: { type: 'string', title: 'Base URL' },
+          model: { type: 'string', title: '模型 ID', list: 'compatible-model-ids' },
+        },
+      },
+      secrets: [{ name: 'COMPATIBLE_API_KEY', title: 'API Key' }],
+      supportsRemoteModels: true,
+      remoteModelsScope: [],
+    }
+    const initial = (): ProviderConfigView => ({
+      enabled: true,
+      settings: {},
+      secrets: {},
+      credentials: [],
+      activeCredential: null,
+      remoteModelCandidates: [{ id: 'gpt-initial' }],
+    })
+    let saved = 0
+    let pollFailed = false
+    const { user } = renderRow(
+      {
+        get: (request) => {
+          // 保存后的轮询读取一律失败： PUT 用同一路径但 method 区分
+          if (request.method === 'GET' && pollFailed)
+            return Response.json(
+              { error: 'test_failure', message: '配置暂不可用' },
+              { status: 503 },
+            )
+          return Response.json(initial())
+        },
+        put: async () => {
+          pollFailed = true
+          return Response.json({
+            ...initial(),
+            remoteModelsPending: true,
+          })
+        },
+      },
+      { row, settings: { baseURL: 'https://a.example.com/v1' }, onSaved: () => (saved += 1) },
+    )
+    const urlInput = await screen.findByRole('textbox', { name: 'Base URL' })
+    fireEvent.change(urlInput, { target: { value: 'https://b.example.com/v1' } })
+    await user.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() =>
+      expect(screen.getByText('正在后台拉取模型候选，完成后自动更新')).toBeTruthy(),
+    )
+
+    // 跨过第一次轮询：读取 503 后本次放弃——候选保持原值、目录不重载、pending 提示保留
+    await new Promise((ok) => setTimeout(ok, 1800))
+    expect(document.querySelector('#compatible-model-ids option')?.getAttribute('value')).toBe(
+      'gpt-initial',
+    )
+    expect(saved).toBe(1)
+    expect(screen.getByText('正在后台拉取模型候选，完成后自动更新')).toBeTruthy()
+  })
+
   it('删除当前组触发后台拉取时轮询等待，完成后刷新候选并解除禁用', async () => {
     // 兼容渠道样式的候选平台：列表只作「模型 ID」候选，按平台+密钥上下文缓存
     const row: ProviderInfo = {

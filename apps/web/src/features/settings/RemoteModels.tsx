@@ -158,16 +158,11 @@ export async function awaitRemoteModelsSettled<
   const getConfig: (id: string) => Promise<V | undefined> =
     opts.getConfig ?? ((pid) => api.providerConfig(pid) as unknown as Promise<V>)
   let last: V | undefined
-  console.log('POLL start', id, performance.now(), 'delay=', delay)
   for (let attempt = 0; attempt < attempts; attempt++) {
     if (opts.signal?.aborted) return null
     await new Promise((ok) => setTimeout(ok, delay))
-    if (opts.signal?.aborted) {
-      console.log('POLL aborted', id, performance.now())
-      return null
-    }
+    if (opts.signal?.aborted) return null
     const view = await getConfig(id)
-    console.log('POLL get', id, performance.now(), 'pending=', view?.remoteModelsPending)
     // 字段缺省即表示拉取已结束；结束后由调用方重载目录与候选
     if (view && !view.remoteModelsPending) return view
     last = view ?? last
