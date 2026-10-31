@@ -83,7 +83,11 @@ export async function filesIn(
 }
 
 /** 收集 root/prefix 下的符号链接路径（相对 root）；只记录，不跟随、不读取、不删除。 */
-export async function symlinksIn(root: string, prefix = '', skip: string[] = []): Promise<string[]> {
+export async function symlinksIn(
+  root: string,
+  prefix = '',
+  skip: string[] = [],
+): Promise<string[]> {
   return (await walk(root, prefix, { stats: false, skip: new Set(skip) })).symlinks
 }
 

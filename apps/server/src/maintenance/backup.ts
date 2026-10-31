@@ -7,7 +7,15 @@ import type { LocalBackup } from '@plein/protocol'
 import { storedOutputSpoolRefs, type OutputSpoolRef } from '../assets/output-spool'
 import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
-import { atomicJson, copyChecked, filesIn, hashFile, jsonFile, safeRelative, symlinksIn } from './files'
+import {
+  atomicJson,
+  copyChecked,
+  filesIn,
+  hashFile,
+  jsonFile,
+  safeRelative,
+  symlinksIn,
+} from './files'
 
 const File = z.object({
   path: z.string(),
