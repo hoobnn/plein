@@ -153,11 +153,17 @@ export async function writeBackup(deps: {
         throw new Error(`素材哈希不匹配：${id}`)
       files.push({ path: file.path, ...copied })
     }
+    let spoolSkipped = false
     if (spoolRefs.length) {
       const root = await lstat(join(deps.dataDir, 'job-outputs'))
-      if (!root.isDirectory() || root.isSymbolicLink()) throw new Error('平台输出暂存目录不安全')
+      if (root.isSymbolicLink()) {
+        // 暂存目录整体是链接：登记跳过整个子树，不访问其中任何文件。
+        skippedSymlinks.push('job-outputs')
+        spoolSkipped = true
+      } else if (!root.isDirectory()) throw new Error('平台输出暂存目录不安全')
     }
     for (const ref of spoolRefs) {
+      if (spoolSkipped) continue
       const path = `job-outputs/${ref.id}`
       // 暂存文件被换成链接同样跳过并记录，恢复时按 skippedSymlinks 放行。
       if ((await lstat(join(deps.dataDir, path)).catch(() => null))?.isSymbolicLink()) {
@@ -267,7 +273,11 @@ export async function restoreBackup(source: string, destination: string): Promis
       for (const ref of await storedOutputSpoolRefs(sqlite, part)) {
         const path = `job-outputs/${ref.id}`
         const file = manifest.files.find((entry) => entry.path === path)
-        if (!file && (ref.state === 'writing' || manifest.skippedSymlinks.includes(path))) continue
+        // 清单登记过的跳过路径（含整棵 job-outputs 子树）视为已知缺失。
+        const skippedSubtree = manifest.skippedSymlinks.some(
+          (link) => link === path || path.startsWith(`${link}/`),
+        )
+        if (!file && (ref.state === 'writing' || skippedSubtree)) continue
         if (!file || file.bytes !== ref.bytes || file.sha256 !== ref.sha256)
           throw new Error(`备份缺少有效的平台输出暂存：${ref.id}`)
       }

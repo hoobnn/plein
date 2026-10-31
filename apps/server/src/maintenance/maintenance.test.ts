@@ -971,6 +971,46 @@ describe('本机数据维护', () => {
     expect(readdirSync(join(external, 'maintenance', 'trash'))).toEqual([])
   })
 
+  it('job-outputs 根目录是链接时登记跳过整个子树，备份与恢复照常', async () => {
+    const f = await fixture()
+    f.canvas('spool-canvas')
+    const binding = { ownerId: 'local', jobId: 'spool-root', callKey: 'generate', outputIndex: 0 }
+    const bytes = new Uint8Array([1, 2, 3])
+    const ref = await f.assets.outputSpool.write(
+      f.assets.outputSpool.describe(bytes, binding),
+      bytes,
+      binding,
+    )
+    f.db.$client
+      .prepare(
+        'INSERT INTO jobs(id,owner_id,canvas_id,node_id,node_type,status,calls,created_at) VALUES(?,?,?,?,?,?,?,?)',
+      )
+      .run(
+        'spool-root',
+        'local',
+        'spool-canvas',
+        'node',
+        'plein/speech',
+        'failed',
+        JSON.stringify({ generate: { state: 'fetched', outputs: [{ type: 'file', spool: ref }] } }),
+        f.now(),
+      )
+    // 整个暂存目录换成指向外部的链接
+    const external = await mkdtemp(join(tmpdir(), 'plein-external-'))
+    cleanup.push(async () => rm(external, { recursive: true, force: true }))
+    const outputsDir = join(f.root, 'job-outputs')
+    await rename(outputsDir, join(external, 'job-outputs'))
+    await symlink(join(external, 'job-outputs'), outputsDir)
+    const backup = await f.service.backup()
+    expect(backup.skippedSymlinks).toContain('job-outputs')
+    const manifest = await backupManifest(backup.path)
+    // 不访问链接目标里的文件：清单里没有任何 job-outputs 条目
+    expect(manifest.files.some((file) => file.path.startsWith('job-outputs'))).toBe(false)
+    const copy = await f.service.restoreCopy(backup.id)
+    expect(copy.missingAssets).toEqual([])
+    expect(existsSync(join(copy.path, 'job-outputs'))).toBe(false)
+  })
+
   it('未完成的回收清单在重启时自动恢复，保留文件和登记信息', async () => {
     const f = await fixture(),
       asset = await f.asset()
