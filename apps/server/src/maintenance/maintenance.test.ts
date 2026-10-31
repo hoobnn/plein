@@ -14,7 +14,7 @@ import { storedOutputSpoolRefs } from '../assets/output-spool'
 import { openDb } from '../storage/db'
 import { Rooms, sqliteDocStore } from '../sync/rooms'
 import { DataActivity } from './activity'
-import { restoreBackup } from './backup'
+import { restoreBackup, backupManifest } from './backup'
 import { atomicJson } from './files'
 import { createMaintenanceService, type MaintenanceService } from './service'
 
@@ -614,6 +614,25 @@ describe('本机数据维护', () => {
     const space = await f.service.space()
     expect(space.originals).toBe(statSync(f.assets.originalPath(asset.id)).size)
     expect((await f.service.preview()).assets).toBe(0)
+  })
+
+  it('备份跳过符号链接：不打包链接与目标，路径记入清单；恢复包内出现链接仍拒绝', async () => {
+    const f = await fixture()
+    await f.asset()
+    await symlink('/private/tmp', join(f.root, 'assets', 'external'))
+    await symlink('/private/tmp', join(f.root, 'secret.json'))
+    const backup = await f.service.backup()
+    expect(backup.skippedSymlinks).toEqual(['assets/external', 'secret.json'])
+    const manifest = await backupManifest(backup.path)
+    expect(manifest.skippedSymlinks).toEqual(['assets/external', 'secret.json'])
+    expect(manifest.files.some((file) => file.path.includes('external'))).toBe(false)
+    expect(existsSync(join(backup.path, 'secret.json'))).toBe(false)
+    // 备份包里出现符号链接时恢复仍然拒绝，安全检查保持不变。
+    await rm(join(backup.path, 'plein.db'))
+    await symlink('/private/tmp', join(backup.path, 'plein.db'))
+    const dest = join(f.root, 'restore-should-fail')
+    await expect(restoreBackup(backup.path, dest)).rejects.toThrow('符号链接')
+    expect(existsSync(dest)).toBe(false)
   })
 
   it('未完成的回收清单在重启时自动恢复，保留文件和登记信息', async () => {

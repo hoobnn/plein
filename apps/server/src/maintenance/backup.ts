@@ -7,7 +7,7 @@ import type { LocalBackup } from '@plein/protocol'
 import { storedOutputSpoolRefs, type OutputSpoolRef } from '../assets/output-spool'
 import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
-import { atomicJson, copyChecked, filesIn, hashFile, jsonFile, safeRelative } from './files'
+import { atomicJson, copyChecked, filesIn, hashFile, jsonFile, safeRelative, symlinksIn } from './files'
 
 const File = z.object({
   path: z.string(),
@@ -22,6 +22,8 @@ const Manifest = z.object({
   /** 包含 SQLite 中的账户和会话，以及本机平台密钥；不可上传共享。 */
   containsCredentials: z.literal(true),
   files: z.array(File),
+  /** 打包时遇到、未纳入备份的符号链接（相对数据目录）；旧清单没有该字段。 */
+  skippedSymlinks: z.array(z.string()).default([]),
 })
 export type BackupManifest = z.infer<typeof Manifest>
 const CONFIGS = new Set([
@@ -51,7 +53,8 @@ export async function backupManifest(dir: string): Promise<BackupManifest> {
   if (
     !parsed.files.some((f) => f.path === 'plein.db') ||
     new Set(parsed.files.map((f) => f.path)).size !== parsed.files.length ||
-    parsed.files.some((f) => !allowedPath(f.path))
+    parsed.files.some((f) => !allowedPath(f.path)) ||
+    parsed.skippedSymlinks.some((path) => !safeRelative(path))
   )
     throw new Error('备份文件清单不合法')
   return parsed
@@ -64,6 +67,7 @@ export function backupInfo(dir: string, m: BackupManifest): LocalBackup {
     bytes: m.files.reduce((n, f) => n + f.bytes, 0),
     files: m.files.length,
     path: dir,
+    skippedSymlinks: m.skippedSymlinks,
   }
 }
 
@@ -105,6 +109,10 @@ export async function writeBackup(deps: {
     ]
     const physical = await filesIn(join(deps.dataDir, 'assets'))
     const physicalPaths = new Set(physical.map((file) => file.path))
+    // 遍历到的符号链接不打包也不让备份失败，只把路径记进清单供用户查看。
+    const skippedSymlinks = (await symlinksIn(join(deps.dataDir, 'assets'))).map(
+      (path) => `assets/${path}`,
+    )
     for (const id of assetIds) {
       if (!physicalPaths.has(`${id.slice(0, 2)}/${id}`))
         throw new Error(`素材文件缺失，未生成不完整备份：${id}`)
@@ -136,18 +144,27 @@ export async function writeBackup(deps: {
       }
     }
     for (const path of CONFIGS) {
+      // 配置文件被换成符号链接时同样跳过，不通过链接读出数据目录外的内容。
+      if ((await lstat(join(deps.dataDir, path)).catch(() => null))?.isSymbolicLink()) {
+        skippedSymlinks.push(path)
+        continue
+      }
       try {
         files.push({ path, ...(await copyChecked(join(deps.dataDir, path), join(part, path))) })
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       }
     }
-    for (const directory of ['plugins', 'subtitle-recognition'])
+    for (const directory of ['plugins', 'subtitle-recognition']) {
+      skippedSymlinks.push(
+        ...(await symlinksIn(join(deps.dataDir, directory))).map((path) => `${directory}/${path}`),
+      )
       for (const file of await filesIn(join(deps.dataDir, directory))) {
         const path = `${directory}/${file.path}`
         if (!allowedPath(path)) continue
         files.push({ path, ...(await copyChecked(join(deps.dataDir, path), join(part, path))) })
       }
+    }
     const manifest: BackupManifest = {
       format: 'plein-local-backup',
       version: 1,
@@ -155,6 +172,7 @@ export async function writeBackup(deps: {
       createdAt: deps.now,
       containsCredentials: true,
       files,
+      skippedSymlinks,
     }
     await atomicJson(join(part, 'manifest.json'), manifest)
     await rename(part, dest)

@@ -21,6 +21,8 @@ export interface LocalBackup {
   bytes: number
   files: number
   path: string
+  /** 未纳入备份的符号链接路径（相对数据目录）。 */
+  skippedSymlinks: string[]
 }
 
 export interface MaintenanceStatus {
