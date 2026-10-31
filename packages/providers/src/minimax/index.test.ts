@@ -9,6 +9,7 @@ const frame: AssetRef = { assetId: 'frame', kind: 'image', mime: 'image/png' }
 describe('MiniMax 官方 HTTP 契约', () => {
   it('allows the actual image-result OSS domain and recognizes withdrawn music access', async () => {
     expect(minimaxProvider.models.find((model) => model.id === 'music-3.0')).toMatchObject({
+      description: '官方已退役；仅保留旧画布引用',
       deprecated: true,
     })
     expect(
@@ -75,6 +76,34 @@ describe('MiniMax 官方 HTTP 契约', () => {
       usage: { inputTokens: 4, outputTokens: 6 },
     })
   })
+  it('M3.1 Flash 按官方多模态能力接受图片输入', async () => {
+    const { ctx, body } = setup([{ choices: [{ message: { content: '一只猫' } }] }])
+    const result = await minimaxProvider.submit(
+      {
+        capability: 'text.chat',
+        model: 'MiniMax-M3.1-Flash',
+        input: {
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: '描述图片' },
+                { type: 'image', image: frame },
+              ],
+            },
+          ],
+        },
+      },
+      ctx,
+    )
+
+    expect(body().messages[0].content).toEqual([
+      { type: 'text', text: '描述图片' },
+      { type: 'image_url', image_url: { url: 'data:image/png;base64,AQID' } },
+    ])
+    expect(result).toMatchObject({ state: 'succeeded', outputs: [{ type: 'text', text: '一只猫' }] })
+  })
+
   it('M2.7 保留迁移标记并拒绝图片，在计费请求前失败', async () => {
     expect(minimaxProvider.models.find((model) => model.id === 'MiniMax-M2.7')).toMatchObject({
       deprecated: true,
@@ -89,7 +118,7 @@ describe('MiniMax 官方 HTTP 契约', () => {
         },
         ctx,
       ),
-    ).rejects.toMatchObject({ code: 'invalid_input' })
+    ).rejects.toMatchObject({ code: 'invalid_input', message: '当前模型不支持图片输入' })
     expect(fetch).not.toHaveBeenCalled()
   })
   it('结构化生成把 Schema 写入指令并校验返回的 JSON', async () => {
@@ -191,6 +220,37 @@ describe('MiniMax 官方 HTTP 契约', () => {
     })
     expect(result).toMatchObject({ state: 'pending', remoteId: 'task-1' })
   })
+  it('H3-Highspeed 接受官方 480P 档位并在提交前拒绝 2K', async () => {
+    expect(
+      minimaxProvider.models.find((model) => model.id === 'MiniMax-H3-Highspeed')?.limits
+        ?.resolutions,
+    ).toEqual(['480P', '768P'])
+    const { ctx, body, fetch } = setup([{ task_id: 'task-480' }])
+    await expect(
+      minimaxProvider.submit(
+        {
+          capability: 'video.generate',
+          model: 'MiniMax-H3-Highspeed',
+          input: { prompt: '跳舞', resolution: '480P' },
+        },
+        ctx,
+      ),
+    ).resolves.toMatchObject({ state: 'pending', remoteId: 'task-480' })
+    expect(body()).toMatchObject({ resolution: '480P' })
+
+    await expect(
+      minimaxProvider.submit(
+        {
+          capability: 'video.generate',
+          model: 'MiniMax-H3-Highspeed',
+          input: { prompt: '跳舞', resolution: '2K' },
+        },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_input' })
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
   it('H3-Max 不支持 2K，在提交前失败', async () => {
     const { ctx, fetch } = setup()
     await expect(

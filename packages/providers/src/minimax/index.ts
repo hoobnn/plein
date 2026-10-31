@@ -29,6 +29,7 @@ const settings = z.object({
   voice: z.string().min(1).default('male-qn-qingse').meta({ title: '默认音色 ID' }),
 })
 type Context = ProviderContext<z.output<typeof settings>>
+const CHAT_IMAGE_MODELS = ['MiniMax-M3', 'MiniMax-M3.1-Flash']
 const responseSchema = z
   .object({
     base_resp: z
@@ -253,7 +254,7 @@ export const minimaxProvider = defineProvider({
           id === 'MiniMax-H3'
             ? ['768P', '2K']
             : id === 'MiniMax-H3-Highspeed'
-              ? ['768P']
+              ? ['480P', '768P']
               : ['480P', '768P'],
         duration: { min: id === 'MiniMax-H3-Max' ? 5 : 4, max: 15 },
         seed: false,
@@ -288,7 +289,7 @@ export const minimaxProvider = defineProvider({
     {
       id: 'music-3.0',
       title: 'Music 3.0',
-      description: '官方已停止向新用户开放；历史付费用户可继续使用现有 API',
+      description: '官方已退役；仅保留旧画布引用',
       deprecated: true,
       capabilities: ['audio.music'],
       limits: { duration: false },
@@ -313,8 +314,8 @@ export const minimaxProvider = defineProvider({
           ? z.fromJSONSchema(input.jsonSchema as Parameters<typeof z.fromJSONSchema>[0])
           : null
         const messages = await chatMessages(input.messages, (ref) => {
-          if (req.model !== 'MiniMax-M3')
-            throw new ProviderError('invalid_input', 'M2.7 只支持纯文本，请使用 M3 处理图片')
+          if (!CHAT_IMAGE_MODELS.includes(req.model))
+            throw new ProviderError('invalid_input', '当前模型不支持图片输入')
           return imageData(ctx, ref)
         })
         if (schema)
@@ -427,7 +428,7 @@ export const minimaxProvider = defineProvider({
             req.model === 'MiniMax-H3'
               ? ['768P', '2K']
               : req.model === 'MiniMax-H3-Highspeed'
-                ? ['768P']
+                ? ['480P', '768P']
                 : ['480P', '768P']
           ).includes(resolution)
         )
