@@ -209,6 +209,14 @@ describe('Provider', () => {
     expect(new ProviderError('auth', 'x').retryable).toBe(false)
     expect(new ProviderError('auth', 'x', { retryable: true }).retryable).toBe(true)
   })
+
+  it('describeProvider 只在实现了列表拉取时声明 supportsRemoteModels', () => {
+    expect(describeProvider(provider(), 'p').supportsRemoteModels).toBeUndefined()
+    const def = provider({
+      listRemoteModels: async () => [{ id: 'm', ownedBy: 'acme' }],
+    })
+    expect(describeProvider(def, 'p').supportsRemoteModels).toBe(true)
+  })
 })
 
 describe('执行器输入', () => {

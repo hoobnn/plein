@@ -285,6 +285,20 @@ export interface VoicePreset {
   age?: 'young' | 'mature'
 }
 
+/** 平台列表接口返回的一个模型；只有 id 必填，其余按接口实际返回填写 */
+export interface RemoteModel {
+  /** 平台上的模型 id */
+  id: string
+  /** 平台显示名；没给时界面直接用 id */
+  name?: string
+  /** 平台记录的创建时间（Unix 秒） */
+  created?: number
+  /** 归属方（如 minimax、volcengine） */
+  ownedBy?: string
+  /** 平台侧的类型提示；没给时宿主按 id 前缀推断 */
+  kind?: 'llm' | 'image' | 'video' | 'speech' | 'music'
+}
+
 /** 复刻进度：训练是平台上的异步过程，宿主按 status 刷新 */
 export type VoiceCloneState =
   | { status: 'training' }
@@ -416,6 +430,12 @@ export interface ProviderDefinition<S extends z.ZodObject = z.ZodObject> {
   /** 多种鉴权方式，任意一组密钥全部填写即满足条件；与 required 并用 */
   credentialAlternatives?: string[][]
   models: ModelSpec[]
+  /**
+   * 拉取平台官方模型列表（如 OpenAI 兼容的 GET /models）：设置页据此标出内置目录里
+   * 可能已下线 / 无权限的模型，并把目录没收录的新模型以通用能力展示。拿不到列表的
+   * 平台不实现；实现失败只影响远端列表，不影响内置目录
+   */
+  listRemoteModels?(ctx: ProviderContext<z.output<S>>): Promise<RemoteModel[]>
   /** 宿主按它限流（同一 Provider 的并发与每分钟请求数） */
   limits?: { concurrency?: number; requestsPerMinute?: number }
   /** 无免费鉴权探针的平台仅做本地配置检查，设置页需如实提示 */
@@ -488,6 +508,8 @@ export interface ProviderDescriptor {
   description?: string
   docsUrl?: string
   testScope?: 'connection' | 'configuration'
+  /** 是否实现了官方模型列表拉取；设置页据此显示「刷新模型列表」 */
+  supportsRemoteModels?: boolean
   settingsSchema: Record<string, unknown>
   secrets: SecretSpec[]
   /** 任选一组的鉴权约束：组内密钥需同时填写，组与组之间任选其一 */
@@ -519,6 +541,7 @@ export function describeProvider(def: ProviderDefinition, plugin: string): Provi
     description: def.description,
     docsUrl: def.docsUrl,
     testScope: providerTestScope(def),
+    ...(def.listRemoteModels ? { supportsRemoteModels: true } : {}),
     settingsSchema: z.toJSONSchema(def.settings, { io: 'input', unrepresentable: 'any' }) as Record<
       string,
       unknown
