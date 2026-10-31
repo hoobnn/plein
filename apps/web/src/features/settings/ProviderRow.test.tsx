@@ -806,6 +806,95 @@ describe('密钥组', () => {
     expect(JSON.parse(writes(fetch)[0]![1]!.body as string).credentials.remove).toEqual(['cred-2'])
   })
 
+  it('删除当前组触发后台拉取时轮询等待，完成后刷新候选并解除禁用', async () => {
+    // 兼容渠道样式的候选平台：列表只作「模型 ID」候选，按平台+密钥上下文缓存
+    const row: ProviderInfo = {
+      ...provider,
+      id: 'plein/compatible',
+      title: '兼容对话渠道',
+      configured: true,
+      credentialCount: 2,
+      activeCredentialLabel: 'A',
+      testScope: 'configuration',
+      settingsSchema: {
+        type: 'object',
+        properties: {
+          model: { type: 'string', title: '模型 ID', list: 'compatible-model-ids' },
+        },
+      },
+      secrets: [{ name: 'COMPATIBLE_API_KEY', title: 'API Key' }],
+      supportsRemoteModels: true,
+      remoteModelsScope: [],
+    }
+    const two = credView([credential('a', 'A', true), credential('b', 'B', true)], 'a')
+    const withCandidates = (over: Partial<ProviderConfigView> = {}): ProviderConfigView => ({
+      ...two,
+      remoteModelCandidates: [{ id: 'gpt-a' }],
+      ...over,
+    })
+    // PUT 删除后服务端启动后台拉取：视图带 pending；轮询读到放行后的最终视图
+    let stage: 'idle' | 'pending' | 'settled' = 'idle'
+    const pendingView = withCandidates({
+      credentials: [credential('b', 'B', true)],
+      activeCredential: 'b',
+      remoteModelsPending: true,
+    })
+    const settledView = withCandidates({
+      credentials: [credential('b', 'B', true)],
+      activeCredential: 'b',
+      remoteModelCandidates: [{ id: 'gpt-b' }],
+    })
+    let saved = 0
+    const { user } = renderRow(
+      {
+        get: () =>
+          Response.json(
+            stage === 'pending'
+              ? pendingView
+              : stage === 'settled'
+                ? settledView
+                : withCandidates(),
+          ),
+        put: async () => {
+          stage = 'pending'
+          return Response.json(pendingView)
+        },
+      },
+      { row, view: withCandidates(), onSaved: () => (saved += 1) },
+    )
+    await screen.findByLabelText('「A」的标签')
+    expect(document.querySelector('#compatible-model-ids option')?.getAttribute('value')).toBe(
+      'gpt-a',
+    )
+
+    await user.click(card('a').getByRole('button', { name: '删除「A」' }))
+    await user.click(
+      within(await screen.findByRole('dialog', { name: '删除密钥组「A」？' })).getByRole('button', {
+        name: '删除',
+      }),
+    )
+    // 删除返回的视图带 pending：页面立即显示拉取中并禁用手动刷新
+    await waitFor(() =>
+      expect(screen.getByText('正在后台拉取模型候选，完成后自动更新')).toBeTruthy(),
+    )
+    expect(screen.getByRole('button', { name: '刷新模型候选' })).toHaveProperty('disabled', true)
+    expect(saved).toBe(1)
+
+    // 后台拉取完成（延迟结束）：轮询读到最终视图，候选换成 B 上下文的结果
+    stage = 'settled'
+    // 轮询间隔 1.5 秒：放宽等待窗口
+    await waitFor(
+      () =>
+        expect(document.querySelector('#compatible-model-ids option')?.getAttribute('value')).toBe(
+          'gpt-b',
+        ),
+      { timeout: 4000 },
+    )
+    expect(screen.queryByText('正在后台拉取模型候选，完成后自动更新')).toBeNull()
+    expect(screen.getByRole('button', { name: '刷新模型候选' })).toHaveProperty('disabled', false)
+    expect(saved).toBe(2)
+  })
+
   it('删除正在使用的组时提示会切到剩下的组', async () => {
     const two = credView(
       [credential('cred-1', '个人', true), credential('cred-2', '团队', true)],

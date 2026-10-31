@@ -430,7 +430,8 @@ export function ProviderRow({
     setBusy(true)
     clearStatus()
     try {
-      setConfig(await api.updateProviderConfig(provider.id, { credentials: { remove: [key] } }))
+      const next = await api.updateProviderConfig(provider.id, { credentials: { remove: [key] } })
+      setConfig(next)
       const keep = <T,>(current: Record<string, T>) =>
         Object.fromEntries(Object.entries(current).filter(([id]) => id !== key)) as Record<
           string,
@@ -442,6 +443,8 @@ export function ProviderRow({
       setChecks((current) => keep(current))
       setShownCheck((current) => (current === key ? null : current))
       await onSaved()
+      // 删除组（服务端含删当前组后自动切换）同样会触发后台拉取，完成后刷新候选与目录
+      await settleRemotePull(next)
     } catch (err) {
       setStatus({ message: `保存失败：${(err as Error).message}`, error: true })
     } finally {
