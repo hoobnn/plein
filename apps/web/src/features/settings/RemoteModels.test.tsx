@@ -105,9 +105,10 @@ describe('远端模型列表区域', () => {
     expect(screen.getByText(/上次刷新：/)).toBeTruthy()
   })
 
-  it('候选模式：datalist 按缓存候选渲染，刷新后取最新配置视图', async () => {
-    serve(undefined, { remoteModelCandidates: [{ id: 'gpt-y' }] })
+  it('候选模式：手动刷新后交回父组件重读配置，候选随父更新不遮蔽', async () => {
+    serve()
     let refreshed = 0
+    let reloaded = 0
     const view = renderApp(
       <RemoteModels
         where="field"
@@ -116,21 +117,56 @@ describe('远端模型列表区域', () => {
         onRefreshed={() => {
           refreshed += 1
         }}
+        onConfigReload={() => {
+          reloaded += 1
+        }}
       />,
     )
-    // datalist 选项不是可见控件，用容器断言
-    const datalist = view.container.querySelector('#compatible-model-ids')
-    expect(datalist?.querySelectorAll('option')).toHaveLength(1)
-    expect(datalist?.querySelector('option')?.getAttribute('value')).toBe('gpt-x')
+    const datalist = () => view.container.querySelector('#compatible-model-ids')
+    expect(datalist()?.querySelector('option')?.getAttribute('value')).toBe('gpt-x')
     expect(screen.getByText(/渠道返回 1 个模型/)).toBeTruthy()
-    expect(screen.queryByRole('button', { name: '刷新模型列表' })).toBeNull()
     await view.user.click(screen.getByRole('button', { name: '刷新模型候选' }))
-    await waitFor(() => expect(refreshed).toBe(1))
-    // 刷新后候选来自刚取回的配置视图，不再显示旧缓存
-    await waitFor(() => expect(screen.getByText(/渠道返回 1 个模型/)).toBeTruthy())
-    expect(
-      view.container.querySelector('#compatible-model-ids option')?.getAttribute('value'),
-    ).toBe('gpt-y')
+    await waitFor(() => expect(reloaded).toBe(1))
+    expect(refreshed).toBe(1)
+    // 父组件重读配置后传入新候选：本地不得缓存旧列表遮蔽
+    view.rerender(
+      <RemoteModels
+        where="field"
+        provider={candidateProvider()}
+        candidates={[{ id: 'gpt-y' }]}
+        onRefreshed={() => {
+          refreshed += 1
+        }}
+        onConfigReload={() => {
+          reloaded += 1
+        }}
+      />,
+    )
+    expect(datalist()?.querySelector('option')?.getAttribute('value')).toBe('gpt-y')
+  })
+
+  it('候选模式：上下文变化（换密钥组 / 改 Base URL）后旧候选立即消失', () => {
+    serve()
+    const view = renderApp(
+      <RemoteModels
+        where="field"
+        provider={candidateProvider()}
+        candidates={[{ id: 'gpt-x' }]}
+        onRefreshed={() => {}}
+      />,
+    )
+    expect(view.container.querySelectorAll('#compatible-model-ids option')).toHaveLength(1)
+    // 换上下文后服务端按新上下文计算候选（没有缓存时为空），旧的 A 列表不能残留
+    view.rerender(
+      <RemoteModels
+        where="field"
+        provider={candidateProvider()}
+        candidates={[]}
+        onRefreshed={() => {}}
+      />,
+    )
+    expect(view.container.querySelectorAll('#compatible-model-ids option')).toHaveLength(0)
+    expect(screen.getByText(/还没拉取过/)).toBeTruthy()
   })
 
   it('候选模式：还没有候选时提示先刷新', () => {

@@ -18,15 +18,21 @@ export function RemoteModels({
   candidates,
   pending = false,
   onRefreshed,
+  onConfigReload,
   disabled = false,
   where = 'tags',
 }: {
   provider: ProviderInfo
-  /** 列表只作候选时的缓存条目（随配置视图返回） */
+  /**
+   * 列表只作候选时的缓存条目（随配置视图返回），由父组件统一维护：
+   * 手动刷新后通过 onConfigReload 让父组件重读，本地不缓存以免遮蔽后续结果
+   */
   candidates?: ProviderConfigView['remoteModelCandidates']
   /** 保存触发的后台拉取仍在进行（config 视图的 remoteModelsPending） */
   pending?: boolean
   onRefreshed(): void | Promise<void>
+  /** 候选平台手动刷新完成后由父组件重读 config 视图，候选随之更新 */
+  onConfigReload?: () => unknown
   disabled?: boolean
   /**
    * 挂载位：tags 在模型标签区附近，只服务合并平台（覆盖范围非空）；
@@ -36,20 +42,20 @@ export function RemoteModels({
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // 刷新后自取最新配置视图：目录重载不更新 ProviderConfigView，候选要自己拿
-  const [latest, setLatest] = useState<ProviderConfigView['remoteModelCandidates']>()
   if (!provider.supportsRemoteModels) return null
   const status = provider.remoteModels
   // 合并平台不在字段旁重复渲染，候选平台不在标签区重复渲染
   const emptyScope = (provider.remoteModelsScope?.length ?? 0) === 0
   if ((where === 'tags') === emptyScope) return null
-  const shownCandidates = latest ?? candidates
+  const shownCandidates = candidates
   const refresh = async () => {
     setBusy(true)
     setError(null)
     try {
       await api.refreshRemoteModels(provider.id)
-      setLatest((await api.providerConfig(provider.id)).remoteModelCandidates)
+      // 候选由父组件统一维护：刷新后让父组件重读 config 视图（换密钥组 / 改地址后
+      // 服务端按新上下文计算候选，本地缓存旧列表会遮蔽结果）
+      await onConfigReload?.()
       await onRefreshed()
     } catch (err) {
       setError(`刷新失败：${(err as Error).message}`)

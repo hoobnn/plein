@@ -591,6 +591,7 @@ export function ProviderRow({
         candidates={config?.remoteModelCandidates}
         pending={config?.remoteModelsPending}
         onRefreshed={onSaved}
+        onConfigReload={() => refreshConfig()}
         disabled={locked}
       />
     </>
