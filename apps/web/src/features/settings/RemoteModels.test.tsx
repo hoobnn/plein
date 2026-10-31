@@ -27,10 +27,12 @@ const candidateProvider = (): ProviderInfo => ({
   settingsSchema: { properties: { model: { type: 'string', list: 'compatible-model-ids' } } },
 })
 
-function serve(refresh?: () => Response) {
+function serve(refresh?: () => Response, config?: unknown) {
   return mockFetch((request) => {
-    if (request.method === 'POST' && request.url.includes('/remote-models/refresh'))
+    const path = new URL(request.url).pathname
+    if (request.method === 'POST' && path.includes('/remote-models/refresh'))
       return refresh?.() ?? Response.json({ fetchedAt: Date.now(), status: 'fresh' })
+    if (path === '/api/providers/acme/x/config') return Response.json(config ?? {})
     return Response.json({}, { status: 404 })
   })
 }
@@ -99,8 +101,8 @@ describe('远端模型列表区域', () => {
     expect(screen.getByText(/上次刷新：/)).toBeTruthy()
   })
 
-  it('候选模式：datalist 按缓存候选渲染，刷新按钮独立于合并列表', async () => {
-    serve()
+  it('候选模式：datalist 按缓存候选渲染，刷新后取最新配置视图', async () => {
+    serve(undefined, { remoteModelCandidates: [{ id: 'gpt-y' }] })
     let refreshed = 0
     const view = renderApp(
       <RemoteModels
@@ -119,6 +121,11 @@ describe('远端模型列表区域', () => {
     expect(screen.queryByRole('button', { name: '刷新模型列表' })).toBeNull()
     await view.user.click(screen.getByRole('button', { name: '刷新模型候选' }))
     await waitFor(() => expect(refreshed).toBe(1))
+    // 刷新后候选来自刚取回的配置视图，不再显示旧缓存
+    await waitFor(() => expect(screen.getByText(/渠道返回 1 个模型/)).toBeTruthy())
+    expect(
+      view.container.querySelector('#compatible-model-ids option')?.getAttribute('value'),
+    ).toBe('gpt-y')
   })
 
   it('候选模式：还没有候选时提示先刷新', () => {

@@ -23,13 +23,17 @@ export function RemoteModels({
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // 刷新后自取最新配置视图：目录重载不更新 ProviderConfigView，候选要自己拿
+  const [latest, setLatest] = useState<ProviderConfigView['remoteModelCandidates']>()
   if (!provider.supportsRemoteModels) return null
   const status = provider.remoteModels
+  const shownCandidates = latest ?? candidates
   const refresh = async () => {
     setBusy(true)
     setError(null)
     try {
       await api.refreshRemoteModels(provider.id)
+      setLatest((await api.providerConfig(provider.id)).remoteModelCandidates)
       await onRefreshed()
     } catch (err) {
       setError(`刷新失败：${(err as Error).message}`)
@@ -44,7 +48,7 @@ export function RemoteModels({
       <div className="flex flex-col gap-2">
         {declaredListIds(provider).map((id) => (
           <datalist key={id} id={id}>
-            {(candidates ?? []).map((c) => (
+            {(shownCandidates ?? []).map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
               </option>
@@ -61,8 +65,8 @@ export function RemoteModels({
             {busy ? '正在刷新…' : '刷新模型候选'}
           </button>
           <span>
-            {(candidates?.length ?? 0) > 0
-              ? `渠道返回 ${candidates!.length} 个模型，可在上方「模型 ID」输入框里选用`
+            {(shownCandidates?.length ?? 0) > 0
+              ? `渠道返回 ${shownCandidates!.length} 个模型，可在上方「模型 ID」输入框里选用`
               : '渠道的模型列表还没拉取过，刷新后可在「模型 ID」输入框里选用'}
           </span>
           {(error ?? status?.error) && (
