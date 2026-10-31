@@ -1237,7 +1237,7 @@ function PresetChips({
           <input
             // oxlint-disable-next-line jsx-a11y/no-autofocus -- 点了「自定义」就是要马上输入
             autoFocus
-            className="ui-input-xs w-28"
+            className="ui-input ui-input-xs w-28"
             aria-label="自定义名字"
             aria-invalid={!!problem}
             aria-describedby={problem ? problemId : undefined}

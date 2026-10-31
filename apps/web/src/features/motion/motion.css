@@ -218,7 +218,7 @@
 }
 .motion-footnote {
   font-size: var(--text-2xs);
-  line-height: var(--leading-note);
+  line-height: var(--text-2xs--line-height);
   color: var(--ink-muted);
   margin: 0;
 }
@@ -251,5 +251,6 @@
   }
   .motion-transport output {
     font-size: var(--text-2xs);
+    line-height: var(--text-2xs--line-height);
   }
 }
