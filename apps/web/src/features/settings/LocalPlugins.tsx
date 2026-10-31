@@ -274,7 +274,7 @@ export function LocalPlugins() {
         </div>
       )}
       {list.length === 0 ? (
-        <p className="text-sm text-ink-subtle">
+        <p className="ui-note text-ink-muted">
           还没有本机插件。把插件文件夹放进数据目录的 plugins/ 里，再点「重新扫描」。
         </p>
       ) : (
@@ -317,7 +317,7 @@ export function LocalPlugins() {
                     />
                   )}
                 </div>
-                {p.description && <p className="text-xs text-ink-muted">{p.description}</p>}
+                {p.description && <p className="ui-note text-ink-muted">{p.description}</p>}
                 {(tags.length > 0 || what) && (
                   <div className="flex flex-wrap items-center gap-1.5 text-xs text-ink-subtle">
                     {what && <span className="mr-1">提供 {what}</span>}
@@ -421,9 +421,9 @@ export function LocalPlugins() {
               {preview.manifest.engines.plein}
             </p>
             {preview.manifest.description && (
-              <p className="text-sm">{preview.manifest.description}</p>
+              <p className="ui-note">{preview.manifest.description}</p>
             )}
-            <p className="ui-help">
+            <p className="ui-note text-ink-muted">
               {preview.files} 个文件，解压后 {(preview.bytes / 1024).toFixed(1)}{' '}
               KiB。预检已检查包结构和清单，未执行插件代码；启用时才校验实际贡献。
             </p>
@@ -447,7 +447,7 @@ export function LocalPlugins() {
                 ))}
             </ul>
             <p className="ui-help break-all">包 SHA-256：{preview.sha256}</p>
-            <p className="ui-help">
+            <p className="ui-note text-ink-muted">
               安装后默认禁用。仅在你启用时运行插件；现有同 ID 插件不会被覆盖。
             </p>
           </div>

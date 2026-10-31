@@ -119,7 +119,7 @@ export function DataMaintenance() {
             </p>
           )}
           {restored && (
-            <div className="rounded-lg bg-surface-2 p-3 text-xs">
+            <div className="ui-note rounded-lg bg-surface-2 p-3">
               <p>
                 已恢复到：<code className="break-all">{restored.path}</code>
               </p>
@@ -129,7 +129,7 @@ export function DataMaintenance() {
                   个素材因符号链接未纳入副本，恢复结果里同样缺失。
                 </p>
               )}
-              <p className="mt-2 text-ink-subtle">
+              <p className="mt-2 text-ink-muted">
                 当前数据仍在使用。先关闭 Plein，再以此目录作为 PLEIN_DATA_DIR
                 启动服务；桌面端可将副本中的文件复制到原数据目录。不要在运行时覆盖数据库。
               </p>
@@ -151,7 +151,7 @@ export function DataMaintenance() {
         </div>
       )}
       {status.data.skippedSymlinks.length > 0 && (
-        <div role="alert" className="rounded-lg bg-surface-2 p-3 text-xs">
+        <div role="alert" className="ui-note rounded-lg bg-surface-2 p-3">
           <p>
             以下 {status.data.skippedSymlinks.length} 个条目是符号链接，已跳过统计、清理和备份：
             {status.data.skippedSymlinks.slice(0, 5).map((path, index) => (
@@ -200,7 +200,7 @@ export function DataMaintenance() {
           }}
         >
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-medium">自动备份</h3>
+            <h3 className="text-sm font-semibold text-ink">自动备份</h3>
             <Switch
               label="启用自动备份"
               checked={autoBackupDraft ?? settings.autoBackup}
@@ -212,7 +212,7 @@ export function DataMaintenance() {
               }}
             />
           </div>
-          <p className="text-xs text-ink-subtle">
+          <p className="ui-note text-ink-muted">
             备份含全部项目、素材、历史、平台密钥和本机插件，仅保存在本机。服务运行期间按间隔执行；关闭后会在下次启动补做已到期的备份。
           </p>
           <div className="grid grid-cols-2 gap-3">
@@ -290,10 +290,10 @@ export function DataMaintenance() {
       </section>
       <section className="flex flex-col gap-3" aria-label="存储空间">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium">存储空间</h3>
+          <h3 className="text-sm font-semibold text-ink">存储空间</h3>
           <button
             type="button"
-            className="ui-btn ui-btn-ghost"
+            className="ui-btn ui-btn-quiet"
             disabled={locked}
             onClick={() => void space.refetch()}
           >
@@ -329,7 +329,7 @@ export function DataMaintenance() {
                 </div>
               ))}
             </dl>
-            <p className="text-xs text-ink-subtle">
+            <p className="ui-note text-ink-muted">
               可回收 {space.data.unusedAssets} 个素材（{bytes(space.data.reclaimableBytes)}
               ）。画布、历史候选、任务、资产库、模板和检查点的引用都会保留。临时文件不参与清理。
             </p>
@@ -354,7 +354,7 @@ export function DataMaintenance() {
             role="region"
             aria-label="清理预览"
             tabIndex={-1}
-            className="flex flex-col gap-2 rounded-lg bg-surface-2 p-3 text-xs"
+            className="ui-note flex flex-col gap-3 rounded-lg bg-surface-2 p-3"
           >
             {preview.assets === 0 ? (
               <p role="status">
@@ -396,7 +396,7 @@ export function DataMaintenance() {
               )}
               <button
                 type="button"
-                className="ui-btn ui-btn-ghost"
+                className="ui-btn ui-btn-quiet"
                 disabled={locked}
                 onClick={() => {
                   setPreview(null)
@@ -409,8 +409,8 @@ export function DataMaintenance() {
           </div>
         )}
       </section>
-      <section className="flex flex-col gap-2" aria-label="本机备份">
-        <h3 className="text-sm font-medium">本机备份</h3>
+      <section className="flex flex-col gap-3" aria-label="本机备份">
+        <h3 className="text-sm font-semibold text-ink">本机备份</h3>
         {status.data.backups.length === 0 && (
           <p className="text-xs text-ink-subtle">尚无备份，可以先点“立即备份”。</p>
         )}
@@ -443,8 +443,8 @@ export function DataMaintenance() {
         ))}
       </section>
       {status.data.trash.length > 0 && (
-        <section className="flex flex-col gap-2" aria-label="回收站">
-          <h3 className="text-sm font-medium">回收站</h3>
+        <section className="flex flex-col gap-3" aria-label="回收站">
+          <h3 className="text-sm font-semibold text-ink">回收站</h3>
           {status.data.trash.map((trash) => (
             <div
               key={trash.id}

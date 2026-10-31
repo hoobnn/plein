@@ -117,16 +117,16 @@ export function ExternalMcp() {
               {copied ? '已复制' : '复制'}
             </button>
           </div>
-          <p className="text-xs text-ink-subtle">
+          <p className="ui-note text-ink-muted">
             令牌只显示这一次，拿着它就能操作你的画布，不要发给别人。Plein 的端口变了要重新配置。
           </p>
         </>
       ) : status.enabled ? (
-        <p className="text-sm text-ink-muted">
+        <p className="ui-note text-ink-muted">
           已开启。令牌只在生成时显示一次；忘了就重新生成，旧的会失效。
         </p>
       ) : (
-        <p className="text-sm text-ink-subtle">
+        <p className="ui-note text-ink-muted">
           开启后，Claude Code、Cursor、Claude Desktop 这类应用可以连到本机的
           Plein，用和小满一样的工具操作画布。
         </p>
