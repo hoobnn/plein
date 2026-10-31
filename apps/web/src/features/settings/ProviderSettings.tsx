@@ -36,6 +36,13 @@ function providerState(
     : { label: '已连接', tone: 'ui-tag-success' }
 }
 
+/** 一组密钥的校验状态：开始校验时置 testing，结束后按结果换成 ok / error */
+interface CredentialCheck {
+  status: 'testing' | 'ok' | 'error'
+  message: string
+  at: number
+}
+
 /** 单个平台：一张卡片（彩色图标、状态、启用开关、主操作），展开后是设置表单（由插件声明的 schema 生成）、密钥、校验 */
 export function ProviderRow({
   provider,
@@ -66,13 +73,11 @@ export function ProviderRow({
   // 替换改成新组后要聚焦的草稿卡：渲染完成后把焦点交给它的标签输入
   const focusDraft = useRef<string | null>(null)
   const [status, setStatus] = useState<{ message: string; error?: boolean } | null>(null)
-  // 校验结果按密钥组分别保存：备用组的结果不能改写当前组的状态徽章
-  const [testResults, setTestResults] = useState<Record<string, ProviderTestResult>>({})
-  // 最近一次校验过的组，结果消息跟着它显示
-  const [lastTested, setLastTested] = useState<string | null>(null)
+  // 校验结果按密钥组 id 存：备用组的结果不能改写当前组的状态徽章
+  const [checks, setChecks] = useState<Record<string, CredentialCheck>>({})
+  // 反馈区最近一次校验的组；别的组的历史结果留在 checks 里
+  const [shownCheck, setShownCheck] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  // 正在跑校验的组 id（null 表示没在校验）：只有当前组在查时徽章才显示「校验中」
-  const [testing, setTesting] = useState<string | null>(null)
   // 收起就地输入的信号：global 用于保存成功，cards 只复位被迁移的组
   const [credentialReset, setCredentialReset] = useState<{
     global: number
@@ -88,11 +93,8 @@ export function ProviderRow({
     if (active && !open && (busy || status?.error))
       closedFeedback.current?.scrollIntoView({ block: 'nearest' })
   }, [active, open, busy, status])
-  const clearFeedback = () => {
-    setStatus(null)
-    setTestResults({})
-    setLastTested(null)
-  }
+  /** 只清全局提示；各组的校验结果另存，只有配置保存改变或删除该组才失效 */
+  const clearStatus = () => setStatus(null)
 
   // 展开时才读配置
   useEffect(() => {
@@ -165,13 +167,13 @@ export function ProviderRow({
   const settingsDirty = numberEditing || !sameSettings(settings, config?.settings)
 
   const setCardLabel = (key: string, value: string) => {
-    clearFeedback()
+    clearStatus()
     if (isSavedGroup(key)) setLabels({ ...labels, [key]: value })
     else setDrafts(drafts.map((d) => (d.key === key ? { ...d, label: value } : d)))
   }
 
   const setCardSecret = (key: string, name: string, value: string) => {
-    clearFeedback()
+    clearStatus()
     if (isSavedGroup(key))
       setGroupSecrets({ ...groupSecrets, [key]: { ...groupSecrets[key], [name]: value } })
     else
@@ -181,12 +183,12 @@ export function ProviderRow({
   }
 
   const addDraft = () => {
-    clearFeedback()
+    clearStatus()
     setDrafts([...drafts, { key: `draft-${nextDraft.current++}`, label: '', secrets: {} }])
   }
 
   const discardDraft = (key: string) => {
-    clearFeedback()
+    clearStatus()
     setDrafts((current) => {
       const rest = current.filter((d) => d.key !== key)
       // 移除后一个组都不剩：重新给出预填卡，保留新平台创建第一组的入口
@@ -225,13 +227,13 @@ export function ProviderRow({
     })
   }
 
-  /** 保存成功返回 true：未配置平台的主操作要在保存后接着校验 */
-  const save = async (): Promise<boolean> => {
+  /** 保存成功返回最新配置：未配置平台的主操作要用新配置里实际生效的组去校验 */
+  const save = async (): Promise<ProviderConfigView | null> => {
     // 必填标签或数字没填好时先聚焦问题输入，不发出请求
     const invalid = formFields.current?.querySelector<HTMLElement>('[aria-invalid="true"]')
     if (invalid) {
       invalid.focus()
-      return false
+      return null
     }
     // 只提交改过的标签与非空密钥，与脏检查共用同一判断；新卡作为 credentials.add 创建（改动过的预填卡也算）
     const update = savedCards.flatMap((card) => {
@@ -271,16 +273,16 @@ export function ProviderRow({
         alternateLabel: '改为添加新组',
         initialFocus: 'alternate',
       })
-      if (!choice) return false
+      if (!choice) return null
       // 改为添加新组：刚输入的密钥移到新草稿卡，原组保持不变，本次不保存
       if (choice === 'alternate') {
-        clearFeedback()
+        clearStatus()
         moveToDraft(replacing)
-        return false
+        return null
       }
     }
     setBusy(true)
-    clearFeedback()
+    clearStatus()
     try {
       // settings 与已保存一致时不带：服务端整体替换，带上旧值会把别的窗口刚保存的设置冲掉
       const settingsChanged = !sameSettings(settings, config?.settings)
@@ -303,12 +305,24 @@ export function ProviderRow({
       // 保存成功：所有卡片的就地输入一起收起
       setCredentialReset((current) => ({ global: current.global + 1, cards: {} }))
       setNumberEditing(false)
+      setShownCheck(null)
+      // 平台设置被保存改变影响所有组；只改某一组的密钥就只清那一组。标签改动不影响校验结果。
+      const changedSecrets = update
+        .filter((item) => item.secrets && Object.keys(item.secrets).length > 0)
+        .map((item) => item.id)
+      setChecks((current) => {
+        if (settingsChanged) return {}
+        if (changedSecrets.length === 0) return current
+        const nextChecks = { ...current }
+        for (const id of changedSecrets) delete nextChecks[id]
+        return nextChecks
+      })
       setStatus({ message: '已保存' })
       await onSaved()
-      return true
+      return next
     } catch (err) {
       setStatus({ message: `保存失败：${(err as Error).message}`, error: true })
-      return false
+      return null
     } finally {
       setBusy(false)
     }
@@ -316,7 +330,7 @@ export function ProviderRow({
 
   const setEnabled = async (enabled: boolean) => {
     setBusy(true)
-    clearFeedback()
+    clearStatus()
     try {
       const next = await api.updateProviderConfig(provider.id, { enabled })
       if (config) setConfig(next)
@@ -331,7 +345,7 @@ export function ProviderRow({
   /** 设为使用是即时操作：单独保存 activeCredential，不牵动其他草稿 */
   const useCredential = async (key: string) => {
     setBusy(true)
-    clearFeedback()
+    clearStatus()
     try {
       setConfig(await api.updateProviderConfig(provider.id, { activeCredential: key }))
       await onSaved()
@@ -365,7 +379,7 @@ export function ProviderRow({
     })
     if (!ok) return
     setBusy(true)
-    clearFeedback()
+    clearStatus()
     try {
       setConfig(await api.updateProviderConfig(provider.id, { credentials: { remove: [key] } }))
       const keep = <T,>(current: Record<string, T>) =>
@@ -376,8 +390,8 @@ export function ProviderRow({
       setLabels((current) => keep(current))
       setGroupSecrets((current) => keep(current))
       // 删掉的组不再保留校验结果
-      setTestResults((current) => keep(current))
-      setLastTested((current) => (current === key ? null : current))
+      setChecks((current) => keep(current))
+      setShownCheck((current) => (current === key ? null : current))
       await onSaved()
     } catch (err) {
       setStatus({ message: `保存失败：${(err as Error).message}`, error: true })
@@ -386,66 +400,80 @@ export function ProviderRow({
     }
   }
 
-  /** 卡片上的检查连接指定用哪一组密钥：结果只记在这一组名下 */
-  const testCard = async (key: string) => {
-    setStatus(null)
+  /**
+   * 跑一次校验：开始就把这一组置为 testing 并顶掉旧结果；请求本身出错也记成这一组的 error。
+   * credential 必须是实际组 id，结果只记在它名下。
+   */
+  const checkCredential = async (
+    credential: string,
+    request: () => Promise<ProviderTestResult>,
+  ) => {
+    clearStatus()
+    setShownCheck(credential)
+    setChecks((current) => ({
+      ...current,
+      [credential]: { status: 'testing', message: '正在校验…', at: Date.now() },
+    }))
     setBusy(true)
-    setTesting(key)
     try {
-      const result = await api.testProvider(provider.id, key)
-      setTestResults((current) => ({ ...current, [key]: result }))
-      setLastTested(key)
+      const result = await request()
+      setChecks((current) => ({
+        ...current,
+        [credential]: {
+          status: result.ok ? 'ok' : 'error',
+          message: result.ok
+            ? (result.message ?? '检查完成；尚未验证具体模型、资源权限或余额')
+            : `检查失败：${result.message ?? '未知错误'}`,
+          at: Date.now(),
+        },
+      }))
     } catch (err) {
-      // 传输失败没有服务端检查结果，不能伪造 scope 或完成时间。
-      setStatus({ error: true, message: `检查请求失败：${(err as Error).message}` })
+      // 传输失败没有服务端检查结果，不能伪造 scope 或完成时间，但错误属于这一组
+      setChecks((current) => ({
+        ...current,
+        [credential]: {
+          status: 'error',
+          message: `检查请求失败：${(err as Error).message}`,
+          at: Date.now(),
+        },
+      }))
     } finally {
-      setTesting(null)
       setBusy(false)
     }
   }
 
-  const runTest = async () => {
-    // 行级检查查的是当前生效组，结果也记在它名下
-    const key = config?.activeCredential ?? provider.id
-    setStatus(null)
-    setBusy(true)
-    setTesting(key)
-    try {
-      const result = await api.testProvider(provider.id)
-      setTestResults((current) => ({ ...current, [key]: result }))
-      setLastTested(key)
-    } catch (err) {
-      // 传输失败没有服务端检查结果，不能伪造 scope 或完成时间。
-      setStatus({ error: true, message: `检查请求失败：${(err as Error).message}` })
-    } finally {
-      setTesting(null)
-      setBusy(false)
-    }
-  }
+  /** 卡片上的重新校验：显式指定这一组的 id */
+  const testCard = (key: string) => checkCredential(key, () => api.testProvider(provider.id, key))
 
-  /** 未配置平台的主操作：保存后立刻校验，结果就地显示 */
+  /** 行级测试连接：查的是当前生效组，由调用处显式传入组 id */
+  const runTest = (credential: string) =>
+    checkCredential(credential, () => api.testProvider(provider.id, credential))
+
+  /** 未配置平台的主操作：保存后用返回的最新配置里实际生效的组去校验 */
   const saveAndTest = async () => {
-    if (await save()) await runTest()
+    const latest = await save()
+    const credential = latest?.activeCredential
+    if (latest && credential) await runTest(credential)
   }
 
-  // 徽章只看当前生效组的校验结果；备用组的通过或失败都不改它
+  // 徽章只看当前生效组的校验结果；备用组的通过或失败都不改它。
+  // 还没保存过任何组时没有真实组 id，用固定占位，结果不会挂到别的组上。
+  const activeCredential = config?.activeCredential ?? 'no-credential'
   const activeKey = config?.activeCredential ?? null
-  const activeTest = activeKey ? testResults[activeKey] : undefined
+  const activeCheck = activeKey ? checks[activeKey] : undefined
   const state = providerState(provider, {
-    testing: testing !== null && testing === activeKey,
-    failed: activeTest ? !activeTest.ok : false,
+    testing: activeCheck?.status === 'testing',
+    failed: activeCheck?.status === 'error',
   })
   const bodyId = `provider-${provider.id}`
   const dirty = providerDirty(settings, config?.settings, [...savedCards, ...drafts], numberEditing)
-  const lastTest = lastTested ? testResults[lastTested] : undefined
-  const feedback = lastTest
-    ? {
-        message: lastTest.ok
-          ? (lastTest.message ?? '检查完成；尚未验证具体模型、资源权限或余额')
-          : `检查失败：${lastTest.message ?? '未知错误'}`,
-        error: !lastTest.ok,
-      }
-    : status
+  const shown = shownCheck ? checks[shownCheck] : undefined
+  // 保存/删除这类全局错误优先显示；否则显示最近一次校验那一组的最新状态
+  const feedback = status?.error
+    ? status
+    : shown
+      ? { message: shown.message, error: shown.status === 'error' }
+      : status
 
   return (
     <li
@@ -558,7 +586,7 @@ export function ProviderRow({
                   schema={provider.settingsSchema as ObjectSchema}
                   value={settings}
                   onNumberEdit={() => {
-                    clearFeedback()
+                    clearStatus()
                     setNumberEditing(true)
                   }}
                   onNumberEditEnd={() => {
@@ -567,7 +595,7 @@ export function ProviderRow({
                     setNumberEditing(false)
                   }}
                   onChange={(next) => {
-                    clearFeedback()
+                    clearStatus()
                     setNumberEditing(false)
                     setSettings(next)
                   }}
@@ -584,7 +612,7 @@ export function ProviderRow({
                   type="button"
                   disabled={locked || dirty}
                   aria-describedby={dirty ? `${bodyId}-unsaved` : undefined}
-                  onClick={runTest}
+                  onClick={() => void runTest(activeCredential)}
                   className="ui-btn ui-btn-secondary"
                 >
                   {provider.testScope === 'configuration' ? '检查配置' : '测试连接'}

@@ -275,7 +275,7 @@ describe('平台保存与检查', () => {
     expect(JSON.parse(writes(fetch)[1]![1]!.body as string).settings.latencyMs).toBe(321)
   })
 
-  it('修改配置或密钥后清除旧检查结果，未保存前不能检查', async () => {
+  it('未保存的修改不消除旧检查结果，但保存前不能再次检查', async () => {
     const { user } = renderRow({
       test: () =>
         Response.json({
@@ -293,8 +293,9 @@ describe('平台保存与检查', () => {
       expect(screen.getByRole('alert').textContent).toBe('检查失败：模拟：密钥无效'),
     )
 
+    // 只改草稿、还没保存：已有结果仍对应当前已保存的配置，先留着
     await user.type(secret(), 'placeholder-key')
-    expect(screen.queryByText('检查失败：模拟：密钥无效')).toBeNull()
+    expect(screen.getByText('检查失败：模拟：密钥无效')).toBeTruthy()
     expect(screen.getByRole<HTMLButtonElement>('button', { name: '测试连接' }).disabled).toBe(true)
     expect(screen.getByText('修改尚未保存，请先保存再测试连接。')).toBeTruthy()
   })
@@ -1146,7 +1147,8 @@ describe('密钥组', () => {
   })
 
   it('密钥粘贴自动去掉首尾空白，回车按主操作保存并校验', async () => {
-    const { fetch } = renderRow()
+    const created = credView([credential('cred-new', '默认', true)], 'cred-new')
+    const { fetch } = renderRow({ put: () => Response.json(created) })
     const input = await screen.findByLabelText('「默认」的API Key')
     fireEvent.change(input, { target: { value: '  first-key  ' } })
     fireEvent.keyDown(input, { key: 'Enter' })
@@ -1183,7 +1185,8 @@ describe('密钥组', () => {
   })
 
   it('未配置平台的「保存并校验」保存后立即校验，结果就地显示', async () => {
-    const { user, fetch } = renderRow()
+    const created = credView([credential('cred-new', '默认', true)], 'cred-new')
+    const { user, fetch } = renderRow({ put: () => Response.json(created) })
     await user.type(await screen.findByLabelText('「默认」的API Key'), 'first-key')
     await user.click(screen.getByRole('button', { name: '保存并校验' }))
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain('连接检查通过'))
@@ -1341,6 +1344,90 @@ describe('密钥组', () => {
     // 当前组没有校验过，徽章保持已连接
     expect(screen.getByText('已连接 · 个人')).toBeTruthy()
     expect(screen.queryByText('校验失败')).toBeNull()
+  })
+
+  it('首次保存并校验用保存后新建的密钥组 id 记录结果', async () => {
+    const created = credView([credential('cred-new', '默认', true)], 'cred-new')
+    const bodies: unknown[] = []
+    const { user } = renderRow({
+      put: () => Response.json(created),
+      test: async (request) => {
+        bodies.push(await request.json())
+        return Response.json({
+          ok: false,
+          scope: 'connection',
+          modelAccess: 'unverified',
+          checkedAt: 1,
+          code: 'auth',
+          message: '密钥无效',
+        })
+      },
+    })
+    await user.type(await screen.findByLabelText('「默认」的API Key'), 'first-key')
+    await user.click(screen.getByRole('button', { name: '保存并校验' }))
+    await waitFor(() => expect(bodies).toEqual([{ credential: 'cred-new' }]))
+    expect(screen.getByRole('alert').textContent).toBe('检查失败：密钥无效')
+  })
+
+  it('重新校验遇到请求错误时显示新错误，不被上次成功结果遮住', async () => {
+    const two = credView(
+      [credential('cred-1', '个人', true), credential('cred-2', '团队', true)],
+      'cred-1',
+    )
+    let failing = false
+    const { user } = renderRow(
+      {
+        test: () =>
+          failing
+            ? Response.json({ error: 'unavailable', message: '检查服务暂不可用' }, { status: 503 })
+            : Response.json(testOk),
+      },
+      { row: configuredProvider, view: two },
+    )
+    await screen.findByLabelText('「个人」的标签')
+    await user.click(card('cred-1').getByRole('button', { name: '检查「个人」的连接' }))
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('连接检查通过'))
+
+    failing = true
+    await user.click(card('cred-1').getByRole('button', { name: '检查「个人」的连接' }))
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toBe('检查请求失败：检查服务暂不可用'),
+    )
+    expect(screen.queryByText(/连接检查通过/)).toBeNull()
+  })
+
+  it('添加空草稿或编辑其他组的草稿不清除当前组的校验失败', async () => {
+    const two = credView(
+      [credential('cred-1', '个人', true), credential('cred-2', '团队', true)],
+      'cred-1',
+    )
+    const { user } = renderRow(
+      {
+        test: () =>
+          Response.json({
+            ok: false,
+            scope: 'connection',
+            modelAccess: 'unverified',
+            checkedAt: 1,
+            code: 'auth',
+            message: '密钥无效',
+          }),
+      },
+      { row: configuredProvider, view: two },
+    )
+    await screen.findByLabelText('「个人」的标签')
+    await user.click(card('cred-1').getByRole('button', { name: '检查「个人」的连接' }))
+    await waitFor(() => expect(screen.getByText('校验失败')).toBeTruthy())
+
+    // 加一张空草稿只是新组的入口，不改变已校验组的配置
+    await user.click(screen.getByRole('button', { name: '添加一组密钥' }))
+    expect(screen.getByText('校验失败')).toBeTruthy()
+
+    // 编辑其他组的标签与密钥草稿同样不影响
+    await user.type(card('cred-2').getByLabelText('「团队」的标签'), '团队二')
+    await user.click(card('cred-2').getByRole('button', { name: '更换「团队」的API Key' }))
+    await user.type(card('cred-2').getByLabelText('「团队」的API Key'), 'new-key')
+    expect(screen.getByText('校验失败')).toBeTruthy()
   })
 
   it('替换没有使用的密钥组不打扰，直接保存', async () => {
