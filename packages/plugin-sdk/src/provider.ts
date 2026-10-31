@@ -252,6 +252,8 @@ export interface ModelSpec {
   title: string
   capabilities: Capability[]
   description?: string
+  /** 已停止新购或弃用；保留给旧画布引用，模型选择列表置后 */
+  deprecated?: true
   /** 可选的模型提示词指南；只作可阅读的创作参考，不参与执行权限或参数转换。 */
   promptGuide?: { version: string; text: string }
   /**
