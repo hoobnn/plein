@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import bailianLogo from './provider-icons/bailian.svg'
 import doubaoLogo from './provider-icons/doubao.svg'
 import minimaxLogo from './provider-icons/minimax.svg'
@@ -101,7 +102,8 @@ function LogoIcon({ provider, brand, size }: { provider: string; brand: Brand; s
 
 /** 没有 logo 的平台：自绘的彩色圆角块，叠一个字或字母 */
 function GlyphIcon({ provider, brand, size }: { provider: string; brand: Brand; size: number }) {
-  const gradientId = `provider-icon-${provider.replace(/[^\w-]/g, '-')}`
+  // 同一页面会渲染多个同平台字母块：用 useId 保证渐变 id 唯一
+  const gradientId = `provider-icon-${useId().replace(/[^\w-]/g, '')}`
   return (
     <svg
       aria-hidden="true"

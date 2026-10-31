@@ -5,7 +5,7 @@
  */
 
 import type { ProviderConfigView, ProviderInfo } from '@plein/protocol'
-import { useEffect, useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { usageSummary } from './credentialUsage'
 import { credentialCardDirty, type CredentialCardDraft } from './providerDirty'
 
@@ -28,8 +28,10 @@ interface CardProps {
   onRemove(key: string): void
   onDiscard(key: string): void
   onTest(key: string): void
-  /** 密钥输入里回车：交给行组件保存 */
+  /** 密钥输入里回车：交给行组件保存（未配置平台会保存并校验） */
   onSubmit(): void
+  /** 保存成功后由行组件递增：收起就地输入、复位明文状态 */
+  resetToken: number
 }
 
 function CredentialCard({
@@ -47,16 +49,23 @@ function CredentialCard({
   onDiscard,
   onTest,
   onSubmit,
+  resetToken,
 }: CardProps) {
   // 就地更换的密钥字段、以及显示/隐藏明文的状态
   const [editing, setEditing] = useState<Record<string, boolean>>({})
   const [shown, setShown] = useState<Record<string, boolean>>({})
   const typed = Object.values(card.secrets).some((v) => v !== '')
-  // 保存或取消后草稿清空：收起就地输入，回到掩码。按内容比较，父组件每次渲染的新空对象不会误触发。
-  const secretDraft = JSON.stringify(card.secrets)
+  // 只有保存成功（行组件递增 resetToken）或用户点取消才收起就地输入；
+  // 输入到一半删空不该把输入框收走、丢掉焦点。
+  const firstReset = useRef(true)
   useEffect(() => {
-    if (secretDraft === '{}') setEditing({})
-  }, [secretDraft])
+    if (firstReset.current) {
+      firstReset.current = false
+      return
+    }
+    setEditing({})
+    setShown({})
+  }, [resetToken])
   // 新卡用草稿标签作名字，没填时退回序号；已保存组用已保存的标签
   const name =
     saved?.label ??
@@ -185,9 +194,10 @@ function CredentialCard({
                   className="ui-btn ui-btn-quiet ui-btn-xs flex-none"
                   aria-label={`取消更换「${name}」的密钥`}
                   onClick={() => {
-                    // 取消恢复原密钥：清掉这次的输入，回到掩码
+                    // 取消恢复原密钥：清掉这次的输入，回到掩码，明文状态一并复位
                     onSecret(card.key, s.name, '')
                     setEditing((current) => ({ ...current, [s.name]: false }))
+                    setShown((current) => ({ ...current, [s.name]: false }))
                   }}
                 >
                   取消
@@ -230,6 +240,7 @@ export function ProviderCredentials({
   onTest,
   onAdd,
   onSubmit,
+  resetToken,
 }: {
   provider: ProviderInfo
   config: ProviderConfigView
@@ -249,6 +260,8 @@ export function ProviderCredentials({
   onTest(key: string): void
   onAdd(): void
   onSubmit(): void
+  /** 保存成功后行组件递增，卡片据此收起就地输入 */
+  resetToken: number
 }) {
   // 平台没有声明密钥就没有组的概念；老版服务端的视图没有 credentials 字段也照常显示
   if (provider.secrets.length === 0) return null
@@ -297,6 +310,7 @@ export function ProviderCredentials({
             onDiscard={onDiscard}
             onTest={onTest}
             onSubmit={onSubmit}
+            resetToken={resetToken}
           />
         ))}
         {drafts.map((card, draftIndex) => (
@@ -315,6 +329,7 @@ export function ProviderCredentials({
             onDiscard={onDiscard}
             onTest={onTest}
             onSubmit={onSubmit}
+            resetToken={resetToken}
           />
         ))}
       </ul>

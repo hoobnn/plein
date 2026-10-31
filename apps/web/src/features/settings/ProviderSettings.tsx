@@ -70,6 +70,8 @@ export function ProviderRow({
   const [busy, setBusy] = useState(false)
   // 正在跑校验：卡片状态显示「校验中」，结束后按结果变成「校验失败」或「已连接」
   const [testing, setTesting] = useState(false)
+  // 保存成功后递增：密钥卡收起就地输入、复位明文状态
+  const [credentialReset, setCredentialReset] = useState(0)
   const locked = busy || disabled
   const [configError, setConfigError] = useState<string | null>(null)
   const [loadAttempt, setLoadAttempt] = useState(0)
@@ -206,6 +208,8 @@ export function ProviderRow({
     setGroupSecrets(secrets)
     setLabels(nextLabels)
     setDrafts([...drafts, ...moved])
+    // 原组的密钥输入已清空：卡片收起回掩码，刚输入的密钥只留在新草稿卡里
+    setCredentialReset((token) => token + 1)
   }
 
   /** 保存成功返回 true：未配置平台的主操作要在保存后接着校验 */
@@ -283,6 +287,7 @@ export function ProviderRow({
       setLabels({})
       setGroupSecrets({})
       setDrafts([])
+      setCredentialReset((token) => token + 1)
       setNumberEditing(false)
       setStatus({ message: '已保存' })
       await onSaved()
@@ -516,7 +521,8 @@ export function ProviderRow({
                   onDiscard={discardDraft}
                   onTest={(key) => void testCard(key)}
                   onAdd={addDraft}
-                  onSubmit={() => void save()}
+                  onSubmit={() => void (provider.configured ? save() : saveAndTest())}
+                  resetToken={credentialReset}
                 />
                 <SchemaForm
                   schema={provider.settingsSchema as ObjectSchema}
