@@ -32,6 +32,8 @@ interface CardProps {
   onSubmit(): void
   /** 收起就地输入的信号：变化时回到掩码并复位明文状态 */
   resetToken: string
+  /** 只渲染必填或可选密钥：未配置平台把可选密钥收进「更多设置」 */
+  secretFilter: 'all' | 'required' | 'optional'
 }
 
 function CredentialCard({
@@ -50,10 +52,18 @@ function CredentialCard({
   onTest,
   onSubmit,
   resetToken,
+  secretFilter,
 }: CardProps) {
   // 就地更换的密钥字段、以及显示/隐藏明文的状态
   const [editing, setEditing] = useState<Record<string, boolean>>({})
   const [shown, setShown] = useState<Record<string, boolean>>({})
+  const secretSpecs = provider.secrets.filter((s) =>
+    secretFilter === 'all'
+      ? true
+      : secretFilter === 'required'
+        ? s.required !== false
+        : s.required === false,
+  )
   const typed = Object.values(card.secrets).some((v) => v !== '')
   // 只有保存成功（行组件递增 resetToken）或用户点取消才收起就地输入；
   // 输入到一半删空不该把输入框收走、丢掉焦点。
@@ -66,6 +76,9 @@ function CredentialCard({
     setEditing({})
     setShown({})
   }, [resetToken])
+  // 可选密钥只出现在「更多设置」里，那一块不重复标签和操作行
+  const compact = secretFilter === 'optional'
+  if (secretSpecs.length === 0) return null
   // 新卡用草稿标签作名字，没填时退回序号；已保存组用已保存的标签
   const name =
     saved?.label ??
@@ -86,57 +99,65 @@ function CredentialCard({
 
   return (
     <li
-      className="flex flex-col gap-2.5 rounded-lg bg-surface-2/60 p-3 ring-1 ring-line"
+      className={
+        compact
+          ? 'flex flex-col gap-2.5'
+          : 'flex flex-col gap-2.5 rounded-lg bg-surface-2/60 p-3 ring-1 ring-line'
+      }
       data-credential={card.key}
     >
-      <div className="flex items-center gap-2">
-        <input
-          type="text"
-          className="ui-input min-w-0 flex-1"
-          aria-label={`「${name}」的标签`}
-          placeholder={saved ? saved.label : '个人 / 团队'}
-          value={card.label}
-          aria-invalid={labelRequired || undefined}
-          onChange={(e) => onLabel(card.key, e.target.value)}
-          onKeyDown={enter}
-        />
-        {multi && active && <span className="ui-tag">使用中</span>}
-        {multi && saved && !active && (
-          <button
-            type="button"
-            className="ui-btn ui-btn-secondary flex-none"
-            aria-label={`设为使用「${name}」`}
-            onClick={() => onUse(card.key)}
-          >
-            设为使用
-          </button>
-        )}
-        {saved ? (
-          <button
-            type="button"
-            className="ui-btn ui-btn-quiet ui-btn-danger flex-none"
-            aria-label={`删除「${name}」`}
-            onClick={() => onRemove(card.key)}
-          >
-            删除
-          </button>
-        ) : (
-          // 预填卡是新平台创建第一组的入口，不提供移除；手动加的草稿可以直接丢弃
-          card.baseline === undefined && (
+      {!compact && (
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            className="ui-input min-w-0 flex-1"
+            aria-label={`「${name}」的标签`}
+            placeholder={saved ? saved.label : '个人 / 团队'}
+            value={card.label}
+            aria-invalid={labelRequired || undefined}
+            onChange={(e) => onLabel(card.key, e.target.value)}
+            onKeyDown={enter}
+          />
+          {multi && active && <span className="ui-tag">使用中</span>}
+          {multi && saved && !active && (
             <button
               type="button"
-              className="ui-btn ui-btn-quiet flex-none"
-              aria-label={`移除「${name}」`}
-              onClick={() => onDiscard(card.key)}
+              className="ui-btn ui-btn-secondary flex-none"
+              aria-label={`设为使用「${name}」`}
+              onClick={() => onUse(card.key)}
             >
-              移除
+              设为使用
             </button>
-          )
-        )}
-      </div>
+          )}
+          {saved ? (
+            <button
+              type="button"
+              className="ui-btn ui-btn-quiet ui-btn-danger flex-none"
+              aria-label={`删除「${name}」`}
+              onClick={() => onRemove(card.key)}
+            >
+              删除
+            </button>
+          ) : (
+            // 预填卡是新平台创建第一组的入口，不提供移除；手动加的草稿可以直接丢弃
+            card.baseline === undefined && (
+              <button
+                type="button"
+                className="ui-btn ui-btn-quiet flex-none"
+                aria-label={`移除「${name}」`}
+                onClick={() => onDiscard(card.key)}
+              >
+                移除
+              </button>
+            )
+          )}
+        </div>
+      )}
       {/* 单组无从切换，只在删除/替换确认里说影响；≥2 组时才在卡片上常驻摘要 */}
-      {multi && saved && summary && <p className="text-xs text-ink-subtle">{summary}</p>}
-      {provider.secrets.map((s) => {
+      {!compact && multi && saved && summary && (
+        <p className="text-xs text-ink-subtle">{summary}</p>
+      )}
+      {secretSpecs.map((s) => {
         const filled = saved?.secrets[s.name]
         const hint = saved?.secretHints?.[s.name]
         // 已保存且填过的密钥默认只显示掩码，点「更换」才就地展开输入
@@ -208,16 +229,16 @@ function CredentialCard({
           </div>
         )
       })}
-      {saved && (
-        // 有没保存的密钥输入或平台设置时禁用：检查的是已保存的整体配置，不先保存会查到旧值
+      {!compact && saved && multi && (
+        // 多组时卡片按钮只校验这一组；有没保存的输入时先禁用
         <button
           type="button"
           className="ui-btn ui-btn-secondary self-start"
           disabled={settingsDirty || typed}
-          aria-label={`检查「${name}」的连接`}
+          aria-label={`校验「${name}」的连接`}
           onClick={() => onTest(card.key)}
         >
-          重新校验
+          校验连接
         </button>
       )}
     </li>
@@ -241,6 +262,7 @@ export function ProviderCredentials({
   onAdd,
   onSubmit,
   resetSignal,
+  secretFilter = 'all',
 }: {
   provider: ProviderInfo
   config: ProviderConfigView
@@ -262,15 +284,20 @@ export function ProviderCredentials({
   onSubmit(): void
   /** 收起就地输入的信号：global 处理保存，cards 只复位被迁移的组 */
   resetSignal: { global: number; cards: Record<string, number> }
+  /** 只渲染必填或可选密钥；默认渲染全部 */
+  secretFilter?: 'all' | 'required' | 'optional'
 }) {
   // 平台没有声明密钥就没有组的概念；老版服务端的视图没有 credentials 字段也照常显示
   if (provider.secrets.length === 0) return null
   const savedGroups = config.credentials ?? []
+  const optional = secretFilter === 'optional'
+  // 可选密钥为空的平台不用在「更多设置」里单开一块
+  if (optional && !provider.secrets.some((s) => s.required === false)) return null
   const multi = savedGroups.length + drafts.length >= 2
   return (
     <section className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between gap-2">
-        <span className="ui-label">密钥</span>
+        <span className="ui-label">{optional ? '可选密钥' : '密钥'}</span>
         {/* 平台文档里能找到申请密钥的入口的，直接给外链 */}
         {provider.docsUrl && (
           <a
@@ -283,7 +310,7 @@ export function ProviderCredentials({
           </a>
         )}
       </div>
-      {savedGroups.length === 0 && drafts.length > 0 && (
+      {!optional && savedGroups.length === 0 && drafts.length > 0 && (
         <p className="text-xs text-ink-subtle">
           填好密钥并启用后，「{provider.title}」的模型就能在节点里选到。
         </p>
@@ -311,6 +338,7 @@ export function ProviderCredentials({
             onTest={onTest}
             onSubmit={onSubmit}
             resetToken={`${resetSignal.global}:${resetSignal.cards[saved.id] ?? 0}`}
+            secretFilter={secretFilter}
           />
         ))}
         {drafts.map((card, draftIndex) => (
@@ -330,12 +358,15 @@ export function ProviderCredentials({
             onTest={onTest}
             onSubmit={onSubmit}
             resetToken={`${resetSignal.global}:0`}
+            secretFilter={secretFilter}
           />
         ))}
       </ul>
-      <button type="button" className="ui-btn ui-btn-secondary self-start" onClick={onAdd}>
-        添加一组密钥
-      </button>
+      {!optional && (secretFilter === 'all' || savedGroups.length > 0) && (
+        <button type="button" className="ui-btn ui-btn-secondary self-start" onClick={onAdd}>
+          添加一组密钥
+        </button>
+      )}
     </section>
   )
 }

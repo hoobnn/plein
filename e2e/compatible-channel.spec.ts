@@ -31,8 +31,11 @@ test(
     const settings = await openCanvasSettings(page)
     await settings.getByRole('button', { name: /^模型平台/ }).click()
     const row = settings.locator('[data-provider="plein/compatible"]')
-    await row.getByRole('button', { expanded: false }).click()
+    // 卡片头部按钮用 aria-controls 定位：页面里还有「更多设置」等其他展开按钮
+    await row.locator('button[aria-controls^="provider-"]').click()
     await row.getByLabel('「默认」的API Key', { exact: true }).fill('test-only-not-a-real-key')
+    // 未配置时平台设置默认收在「更多设置」里
+    await row.getByRole('button', { name: '更多设置', exact: true }).click()
     await row
       .getByRole('textbox', { name: 'Base URL', exact: true })
       .fill('https://gateway.example.com/v1')
@@ -50,10 +53,10 @@ test(
     const initial = provider.models[0]!.id
 
     // 没有远端探针的平台只做配置检查，不把填写地址当作连接成功
-    await row.getByRole('button', { name: '检查配置', exact: true }).click()
+    await row.getByRole('button', { name: '校验连接', exact: true }).click()
     await expect(row.getByRole('status')).toContainText('尚未验证远端密钥、模型权限或网络')
     await row.getByRole('textbox', { name: '模型 ID', exact: true }).fill('another-chat')
-    await expect(row.getByRole('button', { name: '检查配置', exact: true })).toBeDisabled()
+    await expect(row.getByRole('button', { name: '校验连接', exact: true })).toBeDisabled()
     await row.getByRole('button', { name: '保存', exact: true }).click()
     await expect(row.getByRole('status')).toContainText('已保存')
 

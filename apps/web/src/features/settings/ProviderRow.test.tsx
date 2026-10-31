@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import type { ProviderConfigView, ProviderInfo, ProviderTestResult } from '@plein/protocol'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { describe, expect, it } from 'vite-plus/test'
 import { mockFetch } from '../../testing/fetch'
 import { act, fireEvent, renderApp, screen, waitFor, within } from '../../testing/render'
@@ -139,12 +139,15 @@ function renderRow(
     settings = { latencyMs: 0, queueMs: 0, latencyPreset: 0, failWith: 'none' },
     onSaved = () => {},
     view,
+    expandMore = true,
   }: {
     row?: ProviderInfo
     settings?: Record<string, unknown>
     onSaved?(): void
     /** 替换默认的配置视图（带密钥组时用） */
     view?: ProviderConfigView
+    /** 未配置平台的设置收在「更多设置」里：默认自动展开，省得每个用例都点一次 */
+    expandMore?: boolean
   } = {},
 ) {
   const configPath = `/api/providers/${row.id}/config`
@@ -161,6 +164,16 @@ function renderRow(
   })
   function Harness() {
     const [open, setOpen] = useState(true)
+    useEffect(() => {
+      if (!expandMore) return
+      // 配置异步读回后「更多设置」才出现：出现后自动展开一次
+      const observer = new MutationObserver(() => {
+        const more = screen.queryByRole<HTMLButtonElement>('button', { name: '更多设置' })
+        if (more && more.getAttribute('aria-expanded') === 'false') more.click()
+      })
+      observer.observe(document.body, { childList: true, subtree: true })
+      return () => observer.disconnect()
+    }, [])
     return (
       <ul>
         <ProviderRow
@@ -183,7 +196,9 @@ function writes(fetch: ReturnType<typeof mockFetch>) {
 
 const latency = () => screen.getByRole<HTMLInputElement>('spinbutton', { name: '模拟耗时（毫秒）' })
 const secret = () => screen.getByLabelText(/API Key/)
-const toggle = () => screen.getByRole('button', { expanded: true })
+/** 卡片头部的展开按钮：按 aria-controls 找，避免和「更多设置」的按钮混淆 */
+const toggle = () =>
+  document.querySelector<HTMLButtonElement>('button[aria-controls^="provider-"]')!
 
 /** 密钥区里指定组（组 id，或 'draft' 表示最后一张草稿卡）的查询范围 */
 const card = (id: string) => {
@@ -234,7 +249,7 @@ describe('平台配置读取', () => {
     // 第一次读取还在路上：折叠后重开，读到的是新的真实配置
     await user.click(toggle())
     late = true
-    await user.click(screen.getByRole('button', { expanded: false }))
+    await user.click(toggle())
     expect(
       (await screen.findByRole<HTMLInputElement>('spinbutton', { name: '模拟耗时（毫秒）' })).value,
     ).toBe('987')
@@ -257,7 +272,7 @@ describe('平台保存与检查', () => {
           : Response.json(mockView((await request.json()).settings)),
     })
     await screen.findByRole<HTMLInputElement>('spinbutton', { name: '模拟耗时（毫秒）' })
-    await user.click(screen.getByRole('button', { name: '测试连接' }))
+    await user.click(screen.getByRole('button', { name: '校验连接' }))
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain('连接检查通过'))
 
     fireEvent.change(latency(), { target: { value: '321' } })
@@ -288,7 +303,7 @@ describe('平台保存与检查', () => {
         }),
     })
     await screen.findByRole<HTMLInputElement>('spinbutton', { name: '模拟耗时（毫秒）' })
-    await user.click(screen.getByRole('button', { name: '测试连接' }))
+    await user.click(screen.getByRole('button', { name: '校验连接' }))
     await waitFor(() =>
       expect(screen.getByRole('alert').textContent).toBe('检查失败：模拟：密钥无效'),
     )
@@ -296,8 +311,8 @@ describe('平台保存与检查', () => {
     // 只改草稿、还没保存：已有结果仍对应当前已保存的配置，先留着
     await user.type(secret(), 'placeholder-key')
     expect(screen.getByText('检查失败：模拟：密钥无效')).toBeTruthy()
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: '测试连接' }).disabled).toBe(true)
-    expect(screen.getByText('修改尚未保存，请先保存再测试连接。')).toBeTruthy()
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '校验连接' }).disabled).toBe(true)
+    expect(screen.getByText('修改尚未保存，请先保存再校验连接。')).toBeTruthy()
   })
 
   it('保存等待期间冻结输入，保存完成后才检查实际保存的配置', async () => {
@@ -321,13 +336,13 @@ describe('平台保存与检查', () => {
     expect(latency().closest('fieldset')?.disabled).toBe(true)
     expect(secret().closest('fieldset')?.disabled).toBe(true)
     expect(screen.getByRole<HTMLButtonElement>('button', { name: '保存' }).disabled).toBe(true)
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: '测试连接' }).disabled).toBe(true)
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '校验连接' }).disabled).toBe(true)
 
     release()
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain('已保存'))
     expect(secret().getAttribute('value')).toBe('')
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: '测试连接' }).disabled).toBe(false)
-    await user.click(screen.getByRole('button', { name: '测试连接' }))
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '校验连接' }).disabled).toBe(false)
+    await user.click(screen.getByRole('button', { name: '校验连接' }))
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain('连接检查通过'))
     expect(fetch.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
   })
@@ -341,7 +356,7 @@ describe('平台保存与检查', () => {
       },
     })
     await screen.findByRole<HTMLInputElement>('spinbutton', { name: '模拟耗时（毫秒）' })
-    await user.click(screen.getByRole('button', { name: '测试连接' }))
+    await user.click(screen.getByRole('button', { name: '校验连接' }))
     await waitFor(() => expect(bodies).toEqual([{}]))
     expect(screen.getByRole('status').textContent).toContain('连接检查通过')
   })
@@ -365,7 +380,7 @@ describe('平台保存与检查', () => {
     )
     await screen.findByRole<HTMLInputElement>('spinbutton', { name: '模拟耗时（毫秒）' })
     expect(screen.getByText('已连接')).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: '测试连接' }))
+    await user.click(screen.getByRole('button', { name: '校验连接' }))
     await waitFor(() => expect(screen.getByText('校验失败')).toBeTruthy())
     expect(screen.queryByText('已连接')).toBeNull()
   })
@@ -376,12 +391,12 @@ describe('平台保存与检查', () => {
         Response.json({ error: 'unavailable', message: '检查服务暂不可用' }, { status: 503 }),
     })
     await screen.findByRole<HTMLInputElement>('spinbutton', { name: '模拟耗时（毫秒）' })
-    await user.click(screen.getByRole('button', { name: '测试连接' }))
+    await user.click(screen.getByRole('button', { name: '校验连接' }))
     await waitFor(() =>
       expect(screen.getByRole('alert').textContent).toBe('检查请求失败：检查服务暂不可用'),
     )
     expect(screen.queryByText('连接检查通过；尚未验证具体模型、资源权限或余额')).toBeNull()
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: '测试连接' }).disabled).toBe(false)
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '校验连接' }).disabled).toBe(false)
   })
 })
 
@@ -401,7 +416,7 @@ describe('平台数值校验', () => {
 
     // 折叠再展开：无效状态与提示都还在
     await user.click(toggle())
-    await user.click(screen.getByRole('button', { expanded: false }))
+    await user.click(toggle())
     expect(latency().getAttribute('aria-invalid')).toBe('true')
     await user.click(screen.getByRole('button', { name: '保存' }))
     expect(writes(fetch)).toHaveLength(0)
@@ -473,7 +488,7 @@ describe('兼容渠道表单', () => {
       { label: '默认', secrets: { COMPATIBLE_API_KEY: 'test-only-not-a-real-key' } },
     ])
     // 没有远端鉴权探针的平台只做配置检查
-    expect(screen.getByRole('button', { name: '检查配置' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '校验连接' })).toBeTruthy()
   })
 })
 
@@ -486,11 +501,11 @@ describe('平台草稿', () => {
     await user.type(secret(), 'unsaved-placeholder')
 
     await user.click(toggle())
-    await user.click(screen.getByRole('button', { expanded: false }))
+    await user.click(toggle())
     expect(latency().value).toBe('321')
     expect(secret().getAttribute('value')).toBe('unsaved-placeholder')
     expect(writes(fetch)).toHaveLength(0)
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: '测试连接' }).disabled).toBe(true)
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '校验连接' }).disabled).toBe(true)
   })
 })
 
@@ -552,7 +567,7 @@ describe('密钥组', () => {
     await user.type(card('cred-2').getByLabelText('「团队」的标签'), ' 团队 ')
     // 与当前标签同值：不算未保存，行级检查也保持可用
     expect(screen.queryByText(/修改尚未保存/)).toBeNull()
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: '测试连接' }).disabled).toBe(false)
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '校验连接' }).disabled).toBe(false)
     await user.click(screen.getByRole('button', { name: '保存' }))
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain('已保存'))
     expect(JSON.parse(writes(fetch)[0]![1]!.body as string).credentials).toBeUndefined()
@@ -569,17 +584,17 @@ describe('密钥组', () => {
     )
     await screen.findByLabelText('「个人」的标签')
     expect(
-      card('cred-1').getByRole<HTMLButtonElement>('button', { name: '检查「个人」的连接' })
+      card('cred-1').getByRole<HTMLButtonElement>('button', { name: '校验「个人」的连接' })
         .disabled,
     ).toBe(false)
     fireEvent.change(latency(), { target: { value: '321' } })
     fireEvent.focusOut(latency())
     expect(
-      card('cred-1').getByRole<HTMLButtonElement>('button', { name: '检查「个人」的连接' })
+      card('cred-1').getByRole<HTMLButtonElement>('button', { name: '校验「个人」的连接' })
         .disabled,
     ).toBe(true)
     expect(
-      card('cred-2').getByRole<HTMLButtonElement>('button', { name: '检查「团队」的连接' })
+      card('cred-2').getByRole<HTMLButtonElement>('button', { name: '校验「团队」的连接' })
         .disabled,
     ).toBe(true)
 
@@ -587,7 +602,7 @@ describe('密钥组', () => {
     await user.click(screen.getByRole('button', { name: '保存' }))
     await waitFor(() =>
       expect(
-        card('cred-1').getByRole<HTMLButtonElement>('button', { name: '检查「个人」的连接' })
+        card('cred-1').getByRole<HTMLButtonElement>('button', { name: '校验「个人」的连接' })
           .disabled,
       ).toBe(false),
     )
@@ -840,14 +855,14 @@ describe('密钥组', () => {
       { view: two },
     )
     await screen.findByLabelText('「个人」的标签')
-    await user.click(card('cred-2').getByRole('button', { name: '检查「团队」的连接' }))
+    await user.click(card('cred-2').getByRole('button', { name: '校验「团队」的连接' }))
     await waitFor(() => expect(bodies).toEqual([{ credential: 'cred-2' }]))
 
     // 这张卡填了没保存的密钥：先保存才能检查
     await user.click(card('cred-2').getByRole('button', { name: '更换「团队」的API Key' }))
     await user.type(card('cred-2').getByLabelText('「团队」的API Key'), 'new-key')
     expect(
-      card('cred-2').getByRole<HTMLButtonElement>('button', { name: '检查「团队」的连接' })
+      card('cred-2').getByRole<HTMLButtonElement>('button', { name: '校验「团队」的连接' })
         .disabled,
     ).toBe(true)
   })
@@ -1255,7 +1270,7 @@ describe('密钥组', () => {
       { row: configuredProvider, view: two },
     )
     await screen.findByLabelText('「个人」的标签')
-    await user.click(card('cred-1').getByRole('button', { name: '检查「个人」的连接' }))
+    await user.click(card('cred-1').getByRole('button', { name: '校验「个人」的连接' }))
     await waitFor(() => expect(screen.getByText('校验失败')).toBeTruthy())
     expect(screen.getByRole('alert').textContent).toBe('检查失败：密钥无效')
     expect(bodies).toEqual([{ credential: 'cred-1' }])
@@ -1347,10 +1362,10 @@ describe('密钥组', () => {
       { row: configuredProvider, view: two },
     )
     await screen.findByLabelText('「个人」的标签')
-    await user.click(card('cred-1').getByRole('button', { name: '检查「个人」的连接' }))
+    await user.click(card('cred-1').getByRole('button', { name: '校验「个人」的连接' }))
     await waitFor(() => expect(screen.getByText('校验失败')).toBeTruthy())
 
-    await user.click(card('cred-2').getByRole('button', { name: '检查「团队」的连接' }))
+    await user.click(card('cred-2').getByRole('button', { name: '校验「团队」的连接' }))
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain('连接检查通过'))
     // 备用组通过不代表当前组恢复
     expect(screen.getByText('校验失败')).toBeTruthy()
@@ -1377,7 +1392,7 @@ describe('密钥组', () => {
       { row: configuredProvider, view: two },
     )
     await screen.findByLabelText('「个人」的标签')
-    await user.click(card('cred-2').getByRole('button', { name: '检查「团队」的连接' }))
+    await user.click(card('cred-2').getByRole('button', { name: '校验「团队」的连接' }))
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('检查失败'))
     // 当前组没有校验过，徽章保持已连接
     expect(screen.getByText('已连接 · 个人')).toBeTruthy()
@@ -1423,11 +1438,11 @@ describe('密钥组', () => {
       { row: configuredProvider, view: two },
     )
     await screen.findByLabelText('「个人」的标签')
-    await user.click(card('cred-1').getByRole('button', { name: '检查「个人」的连接' }))
+    await user.click(card('cred-1').getByRole('button', { name: '校验「个人」的连接' }))
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain('连接检查通过'))
 
     failing = true
-    await user.click(card('cred-1').getByRole('button', { name: '检查「个人」的连接' }))
+    await user.click(card('cred-1').getByRole('button', { name: '校验「个人」的连接' }))
     await waitFor(() =>
       expect(screen.getByRole('alert').textContent).toBe('检查请求失败：检查服务暂不可用'),
     )
@@ -1454,7 +1469,7 @@ describe('密钥组', () => {
       { row: configuredProvider, view: two },
     )
     await screen.findByLabelText('「个人」的标签')
-    await user.click(card('cred-1').getByRole('button', { name: '检查「个人」的连接' }))
+    await user.click(card('cred-1').getByRole('button', { name: '校验「个人」的连接' }))
     await waitFor(() => expect(screen.getByText('校验失败')).toBeTruthy())
 
     // 加一张空草稿只是新组的入口，不改变已校验组的配置
@@ -1466,6 +1481,32 @@ describe('密钥组', () => {
     await user.click(card('cred-2').getByRole('button', { name: '更换「团队」的API Key' }))
     await user.type(card('cred-2').getByLabelText('「团队」的API Key'), 'new-key')
     expect(screen.getByText('校验失败')).toBeTruthy()
+  })
+
+  it('未配置时模型折叠、密钥与保存并校验在前，平台设置收进更多设置', async () => {
+    const { user } = renderRow({}, { expandMore: false })
+    const key = await screen.findByLabelText('「默认」的API Key')
+    // 模型标签默认只有一行入口
+    expect(screen.getByRole('button', { name: '1 个模型 · 展开' })).toBeTruthy()
+    expect(screen.queryByText('Mock 对话')).toBeNull()
+    // 平台设置默认收起
+    expect(screen.queryByRole('spinbutton', { name: '模拟耗时（毫秒）' })).toBeNull()
+    // 主操作紧跟在必填密钥输入之后
+    const primary = screen.getByRole('button', { name: '保存并校验' })
+    expect(key.compareDocumentPosition(primary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: '1 个模型 · 展开' }))
+    expect(screen.getByText('Mock 对话')).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: '更多设置' }))
+    expect(screen.getByRole('spinbutton', { name: '模拟耗时（毫秒）' })).toBeTruthy()
+  })
+
+  it('只有一组密钥时隐藏组内校验按钮，只留底部的校验连接', async () => {
+    const one = credView([credential('cred-1', '个人', true)], 'cred-1')
+    renderRow({}, { view: one })
+    await screen.findByLabelText('「个人」的标签')
+    expect(screen.queryByRole('button', { name: '校验「个人」的连接' })).toBeNull()
+    expect(screen.getAllByRole('button', { name: '校验连接' })).toHaveLength(1)
   })
 
   it('替换没有使用的密钥组不打扰，直接保存', async () => {

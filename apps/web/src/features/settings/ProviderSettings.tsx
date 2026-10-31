@@ -88,6 +88,9 @@ export function ProviderRow({
   const locked = busy || disabled
   const [configError, setConfigError] = useState<string | null>(null)
   const [loadAttempt, setLoadAttempt] = useState(0)
+  // 未配置平台默认收起模型标签与「更多设置」，主流程只留密钥和保存并校验
+  const [modelsOpen, setModelsOpen] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
   const [numberEditing, setNumberEditing] = useState(false)
   const formFields = useRef<HTMLFieldSetElement>(null)
   const closedFeedback = useRef<HTMLParagraphElement>(null)
@@ -481,6 +484,114 @@ export function ProviderRow({
     : shown
       ? { message: shown.message, error: shown.status === 'error' }
       : status
+  const modelTags = (
+    <div className="flex flex-wrap gap-1">
+      {provider.models.map((m) => (
+        <span key={m.id} className="ui-tag">
+          {m.title}
+        </span>
+      ))}
+    </div>
+  )
+  // 「更多设置」只在确实有可选密钥或平台设置时出现
+  const hasMore =
+    provider.secrets.some((s) => s.required === false) ||
+    Object.keys(
+      (provider.settingsSchema as { properties?: Record<string, unknown> }).properties ?? {},
+    ).length > 0
+  const schemaForm = (
+    <SchemaForm
+      schema={provider.settingsSchema as ObjectSchema}
+      value={settings}
+      onNumberEdit={() => {
+        clearStatus()
+        setNumberEditing(true)
+      }}
+      onNumberEditEnd={() => {
+        // 数字输入不合法、草稿已退回原值：这里没有未保存的改动，
+        // 要把「正在编辑」收尾，否则检查按钮会被永久禁用。
+        setNumberEditing(false)
+      }}
+      onChange={(next) => {
+        clearStatus()
+        setNumberEditing(false)
+        setSettings(next)
+      }}
+    />
+  )
+  const credentialsForm = (secretFilter: 'all' | 'required' | 'optional') => (
+    <ProviderCredentials
+      provider={provider}
+      config={config!}
+      labels={labels}
+      groupSecrets={groupSecrets}
+      drafts={drafts}
+      settingsDirty={settingsDirty}
+      onLabel={setCardLabel}
+      onSecret={setCardSecret}
+      onUse={(key) => void useCredential(key)}
+      onRemove={(key) => void removeCredential(key)}
+      onDiscard={discardDraft}
+      onTest={(key) => void testCard(key)}
+      onAdd={addDraft}
+      onSubmit={() => void (provider.configured ? save() : saveAndTest())}
+      resetSignal={credentialReset}
+      secretFilter={secretFilter}
+    />
+  )
+  const actions = (
+    <div className="flex flex-wrap items-center gap-2">
+      <span
+        className={`mr-auto text-xs ${feedback?.error ? 'text-danger' : 'text-ink-muted'}`}
+        role={feedback?.error ? 'alert' : 'status'}
+      >
+        {busy ? '处理中…' : feedback?.message}
+      </span>
+      <button
+        type="button"
+        disabled={locked || dirty}
+        aria-describedby={dirty ? `${bodyId}-unsaved` : undefined}
+        onClick={() => void runTest()}
+        className="ui-btn ui-btn-secondary"
+      >
+        校验连接
+      </button>
+      {!provider.configured && (
+        <button
+          type="button"
+          disabled={locked}
+          onClick={() => save()}
+          className="ui-btn ui-btn-secondary"
+        >
+          保存
+        </button>
+      )}
+      <button
+        type="button"
+        disabled={locked}
+        onPointerDown={(event) => {
+          if (event.button !== 0) return
+          const input = formFields.current?.querySelector<HTMLInputElement>(
+            'input[type="number"]:focus',
+          )
+          if (input?.validity.badInput) {
+            event.preventDefault()
+            input.blur()
+            input.focus()
+          }
+        }}
+        onClick={() => void (provider.configured ? save() : saveAndTest())}
+        className="ui-btn ui-btn-primary"
+      >
+        {provider.configured ? '保存' : '保存并校验'}
+      </button>
+    </div>
+  )
+  const dirtyNote = dirty && (
+    <p id={`${bodyId}-unsaved`} className="text-xs text-ink-muted">
+      修改尚未保存，请先保存再校验连接。
+    </p>
+  )
 
   return (
     <li
@@ -533,15 +644,6 @@ export function ProviderRow({
       )}
       <div hidden={!open}>
         <div id={bodyId} className="flex min-w-0 flex-col gap-4 pt-4">
-          {provider.models.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {provider.models.map((m) => (
-                <span key={m.id} className="ui-tag">
-                  {m.title}
-                </span>
-              ))}
-            </div>
-          )}
           {!config ? (
             <div className="flex flex-col gap-2">
               <p
@@ -560,101 +662,63 @@ export function ProviderRow({
                 </button>
               )}
             </div>
-          ) : (
+          ) : provider.configured ? (
             <>
+              {provider.models.length > 0 && modelTags}
               <fieldset
                 ref={formFields}
                 disabled={locked}
                 className="m-0 flex min-w-0 flex-col gap-4 border-0 p-0"
               >
-                <ProviderCredentials
-                  provider={provider}
-                  config={config}
-                  labels={labels}
-                  groupSecrets={groupSecrets}
-                  drafts={drafts}
-                  settingsDirty={settingsDirty}
-                  onLabel={setCardLabel}
-                  onSecret={setCardSecret}
-                  onUse={(key) => void useCredential(key)}
-                  onRemove={(key) => void removeCredential(key)}
-                  onDiscard={discardDraft}
-                  onTest={(key) => void testCard(key)}
-                  onAdd={addDraft}
-                  onSubmit={() => void (provider.configured ? save() : saveAndTest())}
-                  resetSignal={credentialReset}
-                />
-                <SchemaForm
-                  schema={provider.settingsSchema as ObjectSchema}
-                  value={settings}
-                  onNumberEdit={() => {
-                    clearStatus()
-                    setNumberEditing(true)
-                  }}
-                  onNumberEditEnd={() => {
-                    // 数字输入不合法、草稿已退回原值：这里没有未保存的改动，
-                    // 要把「正在编辑」收尾，否则检查按钮会被永久禁用。
-                    setNumberEditing(false)
-                  }}
-                  onChange={(next) => {
-                    clearStatus()
-                    setNumberEditing(false)
-                    setSettings(next)
-                  }}
-                />
+                {credentialsForm('all')}
+                {schemaForm}
               </fieldset>
-              <div className="flex flex-wrap items-center gap-2">
-                <span
-                  className={`mr-auto text-xs ${feedback?.error ? 'text-danger' : 'text-ink-muted'}`}
-                  role={feedback?.error ? 'alert' : 'status'}
-                >
-                  {busy ? '处理中…' : feedback?.message}
-                </span>
-                <button
-                  type="button"
-                  disabled={locked || dirty}
-                  aria-describedby={dirty ? `${bodyId}-unsaved` : undefined}
-                  onClick={() => void runTest()}
-                  className="ui-btn ui-btn-secondary"
-                >
-                  {provider.testScope === 'configuration' ? '检查配置' : '测试连接'}
-                </button>
-                {!provider.configured && (
+              {actions}
+              {dirtyNote}
+            </>
+          ) : (
+            <>
+              {provider.models.length > 0 && (
+                <div className="flex flex-col gap-1.5">
                   <button
                     type="button"
-                    disabled={locked}
-                    onClick={() => save()}
-                    className="ui-btn ui-btn-secondary"
+                    aria-expanded={modelsOpen}
+                    onClick={() => setModelsOpen((current) => !current)}
+                    className="ui-btn ui-btn-quiet ui-btn-xs self-start"
                   >
-                    保存
+                    {provider.models.length} 个模型 · {modelsOpen ? '收起' : '展开'}
                   </button>
-                )}
-                <button
-                  type="button"
-                  disabled={locked}
-                  onPointerDown={(event) => {
-                    if (event.button !== 0) return
-                    const input = formFields.current?.querySelector<HTMLInputElement>(
-                      'input[type="number"]:focus',
-                    )
-                    if (input?.validity.badInput) {
-                      event.preventDefault()
-                      input.blur()
-                      input.focus()
-                    }
-                  }}
-                  onClick={() => void (provider.configured ? save() : saveAndTest())}
-                  className="ui-btn ui-btn-primary"
-                >
-                  {provider.configured ? '保存' : '保存并校验'}
-                </button>
-              </div>
-              {dirty && (
-                <p id={`${bodyId}-unsaved`} className="text-xs text-ink-muted">
-                  修改尚未保存，请先保存再
-                  {provider.testScope === 'configuration' ? '检查配置' : '测试连接'}。
-                </p>
+                  {modelsOpen && modelTags}
+                </div>
               )}
+              <fieldset
+                ref={formFields}
+                disabled={locked}
+                className="m-0 flex min-w-0 flex-col gap-4 border-0 p-0"
+              >
+                {credentialsForm('required')}
+                {/* 主操作紧跟必填密钥输入：保存并校验放在「更多设置」之前 */}
+                {actions}
+                {hasMore && (
+                  <div className="flex flex-col gap-3">
+                    <button
+                      type="button"
+                      aria-expanded={moreOpen}
+                      onClick={() => setMoreOpen((current) => !current)}
+                      className="ui-btn ui-btn-quiet ui-btn-xs self-start"
+                    >
+                      更多设置
+                    </button>
+                    {moreOpen && (
+                      <div className="flex flex-col gap-4">
+                        {credentialsForm('optional')}
+                        {schemaForm}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </fieldset>
+              {dirtyNote}
             </>
           )}
         </div>

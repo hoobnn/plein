@@ -76,6 +76,12 @@ const noteInput = () =>
   document.querySelector<HTMLInputElement>('input#:r:d:-field-note') ??
   document.querySelector<HTMLInputElement>('input.ui-input')!
 
+/** 未配置平台的设置默认收在「更多设置」里：展开一次，已展开就不动 */
+async function expandMore() {
+  const more = await waitFor(() => screen.getByRole('button', { name: '更多设置' }))
+  if (more.getAttribute('aria-expanded') === 'false') await userClick(more)
+}
+
 describe('设置对话框的生命周期', () => {
   it('切换分区后回来，未保存的草稿还在', async () => {
     serve({ catalog: () => Response.json(catalog({ providers: [provider] })) })
@@ -93,6 +99,7 @@ describe('设置对话框的生命周期', () => {
     await act(async () => {
       expand.click()
     })
+    await expandMore()
     await waitFor(() => expect(noteInput()).toBeTruthy())
     fireEvent.change(noteInput(), { target: { value: '草稿内容' } })
 
@@ -127,6 +134,7 @@ describe('设置对话框的生命周期', () => {
     await act(async () => {
       expand.click()
     })
+    await expandMore()
     await new Promise((r) => setTimeout(r, 50))
     await new Promise((r) => setTimeout(r, 100))
     await waitFor(() => expect(noteInput()).toBeTruthy())
@@ -148,6 +156,7 @@ describe('设置对话框的生命周期', () => {
     await act(async () => {
       expand2.click()
     })
+    await expandMore()
     await waitFor(() => expect(noteInput()).toBeTruthy())
     expect(noteInput().value).toBe('已保存')
     expect(saved.note).toBe('已保存')
@@ -203,9 +212,13 @@ describe('设置对话框的生命周期', () => {
       if (!b) throw new Error('没有找到平台展开按钮')
       return b
     })
-    await act(async () => {
-      expand2.click()
-    })
+    // 切回来时这一行仍是展开的，只有折叠了才需要再点一次
+    if (expand2.getAttribute('aria-expanded') === 'false') {
+      await act(async () => {
+        expand2.click()
+      })
+    }
+    await expandMore()
     await waitFor(() => expect(noteInput().value).toBe('新读到的值'))
 
     // 第一次读取这时才回来：不能把新读到的值覆盖掉
