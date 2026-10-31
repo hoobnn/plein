@@ -179,7 +179,7 @@ export function SequencePreview({
       {params.subtitles && params.subtitleRender === 'static' && subMode !== 'libass' && (
         <div
           role="status"
-          className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs text-muted"
+          className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs text-ink-muted"
         >
           <span>
             {subMode === 'loading'

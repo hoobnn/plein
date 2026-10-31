@@ -211,7 +211,7 @@ export function SubtitleEditor({
                         onChange={(e) => patch(q.id, { hidden: !e.target.checked })}
                       />
                       显示字幕 {i + 1}
-                      <span className="text-xs text-muted">
+                      <span className="text-xs text-ink-muted">
                         {
                           {
                             manual: '手动校订',

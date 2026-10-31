@@ -1264,7 +1264,7 @@ function Editor({
         </button>
       </ModalHeader>
       {readonly && (
-        <p role="status" className="px-4 py-2 text-sm text-muted">
+        <p role="status" className="px-4 py-2 text-sm text-ink-muted">
           当前画布为只读，仍可预览，暂不能修改或生成新成片。
         </p>
       )}
@@ -1344,7 +1344,7 @@ function Editor({
         </p>
       )}
       {animatic && (
-        <p className="px-4 text-xs text-muted">
+        <p className="px-4 text-xs text-ink-muted">
           仅使用创建或更新时已有的分镜图、配音。调整时长与对白节奏只改变样片；原生成结果保留。
           更新素材保留已有镜头顺序与节奏，新增镜头追加到末尾，已删除镜头移除。
           {pending > 0 && ` ${pending} 镜缺图，将显示占位。`}
@@ -2206,7 +2206,7 @@ export function NumberField(props: {
         </span>
       )}
       {conflict && (
-        <span className="block space-y-2 rounded-lg bg-fill p-2">
+        <span className="block space-y-2 rounded-lg bg-surface-2 p-2">
           <span id={conflictId} role="status" className="block text-xs text-ink-muted">
             设置已更新为 {String(current ?? '默认')}，当前草稿尚未保存。
           </span>
@@ -2327,7 +2327,7 @@ export function SubtitleField(props: {
         }}
       />
       {conflict && (
-        <div className="space-y-2 rounded-lg bg-fill p-2">
+        <div className="space-y-2 rounded-lg bg-surface-2 p-2">
           <p id={conflictId} role="status" className="text-xs text-ink-muted">
             字幕已更新，当前草稿尚未保存。
           </p>
