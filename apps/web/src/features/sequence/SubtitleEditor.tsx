@@ -118,7 +118,7 @@ export function SubtitleEditor({
       {!!track?.unmappedCues?.length && (
         <section
           aria-label="未映射旧字幕"
-          className="flex flex-col gap-2 rounded border border-line p-3"
+          className="flex flex-col gap-2 rounded-md border border-line p-3"
         >
           <h3 className="ui-section-title">保留的未映射旧字幕 · {track.unmappedCues.length} 条</h3>
           <p className="ui-help">
@@ -201,7 +201,7 @@ export function SubtitleEditor({
                 return (
                   <div
                     key={q.id}
-                    className="mb-3 flex flex-col gap-2 rounded border border-line p-2"
+                    className="mb-3 flex flex-col gap-2 rounded-md border border-line p-2"
                   >
                     <label className="flex items-center gap-2 text-sm">
                       <input
@@ -393,7 +393,7 @@ function RecognitionRecovery({
   return (
     <section
       aria-label="字幕识别恢复"
-      className="flex flex-col gap-2 rounded border border-line p-2"
+      className="flex flex-col gap-2 rounded-md border border-line p-2"
     >
       <p className="text-sm">{info.recovery.note}</p>
       {info.recovery.remoteId && <p className="ui-help">平台任务 ID：{info.recovery.remoteId}</p>}

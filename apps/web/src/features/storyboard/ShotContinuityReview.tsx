@@ -184,7 +184,7 @@ function PairReview({
             <img
               src={assetUrls.original(reference)}
               alt="固定角色参考"
-              className="h-32 w-32 rounded border border-line object-contain"
+              className="h-32 w-32 rounded-lg border border-line object-contain"
             />
           )}
         </div>

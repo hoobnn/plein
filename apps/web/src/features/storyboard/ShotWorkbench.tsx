@@ -1270,7 +1270,7 @@ function ShotComparison({
           <img
             src={assetUrls.original(imageId)}
             alt={frame ? frameLabel : '分镜图'}
-            className="h-36 w-full rounded bg-black object-contain"
+            className="h-36 w-full rounded-lg bg-black object-contain"
           />
         ) : (
           <p>画面未知</p>
@@ -1777,7 +1777,7 @@ function CandidateInspection({
         </div>
       </details>
       {recovery && latest && (
-        <div role="status" className="rounded border border-line p-2 text-xs">
+        <div role="status" className="rounded-md border border-line p-2 text-xs">
           <p>{recovery.title}</p>
           {recovery.detail && <p>{recovery.detail}</p>}
           <button

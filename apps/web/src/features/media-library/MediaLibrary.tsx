@@ -634,7 +634,7 @@ function MediaDetail({
                   role="listitem"
                   aria-label={hint ? `${source.label} · ${hint}` : source.label}
                   key={`${source.type}/${source.id}/${source.locator}`}
-                  className="rounded-lg bg-surface-2 p-2.5 text-xs"
+                  className="rounded-lg bg-surface-2 p-3 text-xs"
                 >
                   <span className="block break-words">
                     {source.type === 'checkpoint'
