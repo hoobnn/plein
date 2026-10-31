@@ -169,7 +169,7 @@ function NodeBelow({
       aria-label="节点编辑器"
       data-testid="node-editor"
       data-placement="below"
-      className="plein-node-editor pointer-events-auto fixed z-20 flex min-h-0 flex-col overflow-hidden rounded-2xl border border-line bg-surface"
+      className="plein-node-editor pointer-events-auto fixed z-20 flex min-h-0 flex-col overflow-hidden rounded-xl border border-line bg-surface"
       style={style}
     >
       <button

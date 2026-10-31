@@ -26,7 +26,7 @@
   transform: rotate(45deg);
 }
 
-/* 添加节点菜单：单行图标 + 名称 */
+/* 添加节点菜单：单行图标 + 名称。菜单项与普通菜单同高（32） */
 .plein-add-menu {
   z-index: 30;
   padding: 4px;
@@ -68,7 +68,7 @@
 .plein-add-item {
   display: flex;
   width: 100%;
-  height: var(--h-lg);
+  height: var(--h-md);
   align-items: center;
   gap: 10px;
   padding: 0 10px;
@@ -688,15 +688,16 @@
   }
 }
 
-/* 镜头流程表格：表头固定，正文按行对齐，长提示词在独立窗口编辑。 */
+/* 镜头流程表格：表头固定，正文按行对齐，长提示词在独立窗口编辑。
+   表头与单元格同列横向内边距一致（12），文字左右对齐 */
 .shot-flow-table th {
-  padding: 12px 10px;
+  padding: 12px;
   text-align: left;
   font-weight: 500;
   border-bottom: 1px solid var(--line);
 }
 .shot-flow-table td {
-  padding: 10px 8px;
+  padding: 10px 12px;
   vertical-align: top;
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);

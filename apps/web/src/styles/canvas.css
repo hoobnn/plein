@@ -7,17 +7,17 @@
   transform-origin: 0 0;
 }
 
-/* 分镜组序号：图片左上角的小圆角编号，不挡点击 */
+/* 分镜组序号：图片左上角的小圆角编号，不挡点击（角标尺寸随控件阶梯：24 高、12/16） */
 .plein-shot-badge {
   pointer-events: none;
-  min-width: 26px;
-  height: 26px;
+  min-width: var(--h-xs);
+  height: var(--h-xs);
   padding: 0 8px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
-  font: 600 14px/1 var(--font-sans, system-ui);
+  font: 600 var(--text-xs)/var(--text-xs--line-height) var(--font-sans, system-ui);
   font-variant-numeric: tabular-nums;
   color: #fff;
   background: rgb(0 0 0 / 0.66);
@@ -199,7 +199,7 @@
   color: var(--ink);
   background: var(--surface);
   font-size: var(--text-xs);
-  line-height: 1.4;
+  line-height: var(--text-xs--line-height);
   text-align: left;
 }
 .plein-player-audio .plein-player-feedback span {
@@ -220,10 +220,10 @@
   background: var(--active);
 }
 
-/* Markdown 正文排版 */
+/* Markdown 正文排版：阅读正文 14/22 */
 .plein-md {
   font-size: var(--text-base);
-  line-height: 1.6;
+  line-height: var(--text-base--line-height);
   color: var(--ink);
   overflow-wrap: anywhere;
 }
@@ -433,6 +433,17 @@
   color: var(--ink-muted);
 }
 
+/* 提示词引用胶囊：28 高的专用变体（缩略图 + 名称 / 警告），区别于 24 高的通用 .ui-chip */
+.plein-prompt-ref {
+  display: inline-flex;
+  flex: none;
+  height: var(--h-sm);
+  max-width: calc(var(--spacing) * 64);
+  align-items: center;
+  white-space: nowrap;
+  border-radius: var(--radius-md);
+}
+
 /* ── 节点卡片（DOM 层，GPU 底板之上） ─────────────── */
 .plein-node {
   --kind: var(--ink-subtle);
@@ -598,7 +609,8 @@
 .plein-node-body.is-text {
   padding: 12px 16px;
   white-space: pre-wrap;
-  line-height: 1.6;
+  /* 节点预览用 13/20 的紧凑阅读行高，不靠 1.6 得到小数行高 */
+  line-height: var(--leading-note);
   word-break: break-word;
   mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
 }
@@ -887,7 +899,7 @@
 .plein-node-chip {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   height: 20px;
   padding: 0 6px;
   border-radius: var(--radius-sm);
