@@ -61,19 +61,19 @@ function fixture() {
 }
 
 describe('场景准备模型', () => {
-  it('跨分镜表按表名和镜头号分组，复用视角别名并保留错误引用原文', () => {
+  it('跨分镜表按画布顺序和镜头号分组，复用视角别名并保留错误引用原文', () => {
     const { doc, sceneId, board, shot } = fixture()
-    board('board-b', '第二集', [
-      shot('b1', 1, '@天台/门口'),
-      shot('b2', 2, '看向@天台/楼梯口。', '转向@天台/水塔'),
-      shot('b3', 3, '@天台'),
-    ])
     board('board-a', '第一集', [
       shot('a10', 10, '', '镜头转向@天台/门口'),
       shot('a2', 2, '@天台/门口'),
       shot('a3', 3, '@天台/远处'),
       shot('a4', 4, '在@天台/门口，远景@天台'),
       Shot.parse({ id: 'other', no: 5, description: '别的场景' }),
+    ])
+    board('board-b', '第二集', [
+      shot('b1', 1, '@天台/门口'),
+      shot('b2', 2, '看向@天台/楼梯口。', '转向@天台/水塔'),
+      shot('b3', 3, '@天台'),
     ])
 
     const result = scenePrep(doc, sceneId)!
@@ -98,6 +98,17 @@ describe('场景准备模型', () => {
         ],
       }),
     ])
+  })
+
+  it('三张分镜表按画布顺序排，中文数字表名不参与排序', () => {
+    const { doc, sceneId, board, shot } = fixture()
+    board('board-2', '第二集', [shot('c2', 2, '@天台/门口')])
+    board('board-3', '第三集', [shot('c3', 3, '@天台/门口')])
+    board('board-10', '第十集', [shot('c10', 10, '@天台/门口')])
+
+    const result = scenePrep(doc, sceneId)!
+    // 码点序（三 < 二 < 十）和拼音序都会打散这个顺序；只有画布创建顺序是对的。
+    expect(result.views[0]?.shots.map((shot) => shot.shotId)).toEqual(['c2', 'c3', 'c10'])
   })
 
   it('裸场景引用与错误视角并存时只归入视角不存在', () => {

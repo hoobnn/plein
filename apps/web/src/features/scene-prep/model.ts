@@ -1,5 +1,5 @@
 import { mentionTargetsIn, referenceAssets, shotsOf } from '@plein/capabilities'
-import { continuityOf, currentShotPlan, type PleinDoc } from '@plein/doc'
+import { compareZ, continuityOf, currentShotPlan, type PleinDoc } from '@plein/doc'
 import {
   findMentions,
   matchSceneView,
@@ -66,11 +66,8 @@ export interface ScenePrepResult {
   missing: ScenePrepMissingShot[]
 }
 
-const compareShots = (a: ScenePrepShot, b: ScenePrepShot) =>
-  a.boardName.localeCompare(b.boardName) ||
-  a.boardId.localeCompare(b.boardId) ||
-  a.no - b.no ||
-  a.shotId.localeCompare(b.shotId)
+// 镜头号平级时按 id 兜底：numeric 让 a2 < a10 按数值比较，不随运行环境变。
+const collate = new Intl.Collator(['en'], { numeric: true }).compare
 
 /** 只读汇总一个场景在当前画布全部镜头里的视角与人物站位，不推测失效或不唯一的绑定。 */
 export function scenePrep(doc: PleinDoc, sceneElementId: string): ScenePrepResult | null {
@@ -83,16 +80,21 @@ export function scenePrep(doc: PleinDoc, sceneElementId: string): ScenePrepResul
   const unspecified: ScenePrepShot[] = []
   const ambiguous: ScenePrepAmbiguousShot[] = []
   const missing: ScenePrepMissingShot[] = []
+  // 分镜表按画布绘制顺序（z 分数索引，即用户看到的顺序）排；中文数字表名的码点/拼音
+  // 序都不等于集数顺序（三 < 二 < 十），表名不参与排序。
   const boards = [...doc.elements()]
     .filter((el) => el.nodeType === 'plein/storyboard')
-    .sort(
-      (a, b) => (a.name ?? '分镜表').localeCompare(b.name ?? '分镜表') || a.id.localeCompare(b.id),
-    )
+    .sort(compareZ)
+  const boardRank = new Map(boards.map((board, index) => [board.id, index]))
+  const compareShots = (a: ScenePrepShot, b: ScenePrepShot) =>
+    (boardRank.get(a.boardId) ?? 0) - (boardRank.get(b.boardId) ?? 0) ||
+    a.no - b.no ||
+    collate(a.shotId, b.shotId)
 
   for (const board of boards) {
     const record = continuityOf(doc, board.id)
     const boardName = board.name?.trim() || '分镜表'
-    const shots = shotsOf(board).sort((a, b) => a.no - b.no || a.id.localeCompare(b.id))
+    const shots = shotsOf(board).sort((a, b) => a.no - b.no || collate(a.id, b.id))
     for (const shot of shots) {
       if (!shotScenes(doc, shot, sceneIndex).some((item) => item.key === `asset:${scene.id}`))
         continue
