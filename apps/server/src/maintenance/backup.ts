@@ -82,6 +82,14 @@ export function backupInfo(dir: string, m: BackupManifest): LocalBackup {
   }
 }
 
+/** 备份遍历到的不可读目录：清单会缺内容而不自知，不能生成不完整的备份。 */
+function ensureReadable(unreadableDirs: string[]) {
+  if (unreadableDirs.length)
+    throw new Error(
+      `数据目录有不可读的子目录，为避免生成不完整的备份已停止：${unreadableDirs.join('、')}`,
+    )
+}
+
 /** SQLite 在线 backup 得到一致快照；文件流式校验，不把素材整份读入内存。 */
 export async function writeBackup(deps: {
   db: DB
@@ -119,7 +127,8 @@ export async function writeBackup(deps: {
       },
     ]
     const physical = await filesIn(deps.dataDir, 'assets')
-    const physicalPaths = new Set(physical.map((file) => file.path))
+    const physicalPaths = new Set(physical.files.map((file) => file.path))
+    ensureReadable(physical.unreadableDirs)
     // 遍历到的符号链接不打包也不让备份失败，只把路径记进清单供用户查看；
     // assets 整体被换成链接时这里的值就是 ['assets']。
     const skippedSymlinks = await symlinksIn(deps.dataDir, 'assets')
@@ -138,7 +147,7 @@ export async function writeBackup(deps: {
       if (!stat?.isSymbolicLink()) throw new Error(`素材文件缺失，未生成不完整备份：${id}`)
       missingAssets.add(id)
     }
-    for (const file of physical) {
+    for (const file of physical.files) {
       const id = file.path.split('/')[2]?.split('.')[0]
       if (!id || !assetIds.has(id) || !allowedPath(file.path)) continue
       const copied = await copyChecked(join(deps.dataDir, file.path), join(part, file.path))
@@ -181,10 +190,12 @@ export async function writeBackup(deps: {
       }
     }
     for (const directory of ['plugins', 'subtitle-recognition']) {
+      const scanned = await filesIn(deps.dataDir, directory)
+      ensureReadable(scanned.unreadableDirs)
       skippedSymlinks.push(
         ...(await symlinksIn(deps.dataDir, directory)).map((path) => `${directory}/${path}`),
       )
-      for (const file of await filesIn(deps.dataDir, directory)) {
+      for (const file of scanned.files) {
         if (!allowedPath(file.path)) continue
         files.push({
           path: file.path,

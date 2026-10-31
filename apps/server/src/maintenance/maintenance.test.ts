@@ -836,6 +836,32 @@ describe('本机数据维护', () => {
     expect(existsSync(maintenanceDir)).toBe(true)
   })
 
+  it('字幕目录不可读时清理中止并提示，备份失败且不生成', async () => {
+    const f = await fixture(),
+      asset = await f.asset()
+    // 素材仅由字幕 journal 里的 unknown 任务引用；目录不可读时若静默跳过，
+    // 引用扫描会误判未使用并把素材清掉（codex 复现场景）。
+    const dir = join(f.root, 'subtitle-recognition')
+    await mkdir(dir)
+    await atomicJson(join(dir, 'recognition.json'), {
+      assetId: asset.id,
+      record: { state: 'unknown', remoteId: 'remote', trace: {}, audit: [], history: [] },
+    })
+    await chmod(dir, 0o000)
+    try {
+      await expect(f.service.preview()).rejects.toThrow('不可读的子目录')
+      await expect(f.service.preview()).rejects.toThrow('subtitle-recognition')
+      const backupsBefore = (await f.service.status()).backups.length
+      await expect(f.service.backup()).rejects.toThrow('不可读的子目录')
+      expect((await f.service.status()).backups.length).toBe(backupsBefore)
+    } finally {
+      await chmod(dir, 0o700)
+    }
+    // 权限恢复后照常：journal 引用被保护，备份成功（lastError 保留上次失败记录）
+    expect((await f.service.preview()).assets).toBe(0)
+    await f.service.backup()
+  })
+
   it('未完成的回收清单在重启时自动恢复，保留文件和登记信息', async () => {
     const f = await fixture(),
       asset = await f.asset()

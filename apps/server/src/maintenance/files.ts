@@ -96,12 +96,16 @@ async function walk(
   return { files, symlinks, unreadableDirs }
 }
 
+export interface FileScan {
+  files: Array<{ path: string; bytes: number; mtime: number }>
+  /** 因权限不足而跳过的目录（相对 root）；完整性敏感的调用方必须检查。 */
+  unreadableDirs: string[]
+}
+
 /** 列出 root/prefix 下的普通文件；符号链接不跟随也不统计，避免越出数据目录。 */
-export async function filesIn(
-  root: string,
-  prefix = '',
-): Promise<Array<{ path: string; bytes: number; mtime: number }>> {
-  return (await walk(root, prefix, { stats: true, skip: new Set() })).files
+export async function filesIn(root: string, prefix = ''): Promise<FileScan> {
+  const { files, unreadableDirs } = await walk(root, prefix, { stats: true, skip: new Set() })
+  return { files, unreadableDirs }
 }
 
 /** 收集 root/prefix 下的符号链接路径（相对 root）；只记录，不跟随、不读取、不删除。 */

@@ -69,7 +69,13 @@ type Plan = { preview: CleanupPreview; revision: string; candidates: Candidate[]
 
 export class MaintenanceError extends Error {
   constructor(
-    readonly code: 'maintenance_busy' | 'changed' | 'expired' | 'not_found' | 'invalid',
+    readonly code:
+      | 'maintenance_busy'
+      | 'changed'
+      | 'expired'
+      | 'not_found'
+      | 'invalid'
+      | 'unreadable',
     message: string,
   ) {
     super(message)
@@ -380,7 +386,14 @@ export class MaintenanceService {
     }
     // 识别journal属于持久任务事实：unknown/pending也必须保护，不能当缓存清理。
     // 传前缀而不是拼接绝对路径，subtitle-recognition 被换成链接时不会跟随。
-    for (const file of await filesIn(this.deps.dataDir, 'subtitle-recognition')) {
+    const journal = await filesIn(this.deps.dataDir, 'subtitle-recognition')
+    // 引用扫描不完整就不能清理：漏读的 journal 可能让在用素材被当成未使用。
+    if (journal.unreadableDirs.length)
+      throw new MaintenanceError(
+        'unreadable',
+        `数据目录有不可读的子目录，为避免误删已停止清理：${journal.unreadableDirs.join('、')}`,
+      )
+    for (const file of journal.files) {
       if (file.path.endsWith('.json'))
         scan(JSON.stringify(await jsonFile(join(this.deps.dataDir, file.path))))
     }
@@ -408,7 +421,7 @@ export class MaintenanceService {
     const rows = this.deps.db.$client
       .prepare('SELECT * FROM assets ORDER BY id,owner_id')
       .all() as AssetRow[]
-    const disk = await filesIn(this.deps.dataDir, 'assets')
+    const disk = (await filesIn(this.deps.dataDir, 'assets')).files
     const cutoff = this.now() - this.state.settings.unusedDays * DAY
     const groups = new Map<string, Candidate>()
     for (const row of rows) {
@@ -437,7 +450,7 @@ export class MaintenanceService {
 
   async space(): Promise<DataSpace> {
     const scan = await this.scan()
-    const files = await filesIn(this.deps.dataDir)
+    const files = (await filesIn(this.deps.dataDir)).files
     const out: DataSpace = {
       total: 0,
       database: 0,
