@@ -521,6 +521,8 @@ export class MaintenanceService {
         expiresAt = createdAt + this.state.settings.trashDays * DAY
       if (!plan.candidates.length) return { id: null, assets: 0, bytes: 0, expiresAt }
       const dir = join(this.root, 'trash', id)
+      // 回收站目录与清单写入之前先确认 maintenance、maintenance/trash 层没有链接。
+      await assertInsideDataDir(this.deps.dataDir, `maintenance/trash/${id}`)
       await mkdir(dir, { recursive: true, mode: 0o700 })
       const trash: Trash = { id, createdAt, expiresAt, state: 'pending', items: plan.candidates }
       await atomicJson(join(dir, 'manifest.json'), trash)
@@ -569,8 +571,10 @@ export class MaintenanceService {
       for (const file of item.files) {
         const source = join(root, file.path),
           target = join(this.deps.dataDir, file.path)
+        // 源和目标都从 dataDir 起逐层检查：maintenance、maintenance/trash、
+        // 批次目录本身被换成链接时，读取和恢复都不得穿过；
         // 必须在 mkdir 之前检查：穿过链接的 mkdir 本身就会在目录外落文件。
-        await assertInsideDataDir(root, file.path)
+        await assertInsideDataDir(this.deps.dataDir, `maintenance/trash/${trash.id}/${file.path}`)
         await assertInsideDataDir(this.deps.dataDir, file.path)
         await mkdir(dirname(target), { recursive: true, mode: 0o700 })
         const sourceExists = await lstat(source).then(
@@ -618,6 +622,8 @@ export class MaintenanceService {
     return this.perform('restore', async () => {
       const trash = (await this.trashManifests()).find((t) => t.id === id)
       if (!trash) throw new MaintenanceError('not_found', '回收记录不存在')
+      // pending 状态的清单改写同样不得穿过 maintenance、trash 层的链接。
+      await assertInsideDataDir(this.deps.dataDir, `maintenance/trash/${id}`)
       trash.state = 'pending'
       await atomicJson(join(this.root, 'trash', id, 'manifest.json'), trash)
       await this.restoreTrashFiles(trash)

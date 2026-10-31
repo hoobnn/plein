@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, statSync } from 'node:fs'
 import {
   mkdtemp,
   mkdir,
@@ -924,6 +924,51 @@ describe('本机数据维护', () => {
     expect(f.assets.get('local', asset.id)).toBeTruthy()
     await expect(f.service.cleanup(preview.token)).rejects.toMatchObject({ code: 'expired' })
     doc.destroy()
+  })
+
+  it('maintenance 或 trash 被换成链接时恢复回收站被拒绝，外部文件不动', async () => {
+    const f = await fixture(),
+      asset = await f.asset()
+    await f.service.settings(MaintenanceSettings.parse({ autoBackup: false, trashDays: 1 }))
+    const result = await f.service.cleanup((await f.service.preview()).token)
+    const external = await mkdtemp(join(tmpdir(), 'plein-external-'))
+    cleanup.push(async () => rm(external, { recursive: true, force: true }))
+    const assetFile = join('assets', asset.id.slice(0, 2), asset.id)
+
+    // maintenance 整目录换成链接：清单状态不得经链接改写，恢复必须拒绝
+    const maintenanceDir = join(f.root, 'maintenance')
+    await rename(maintenanceDir, join(external, 'maintenance'))
+    await symlink(join(external, 'maintenance'), maintenanceDir)
+    await expect(f.service.restoreTrash(result.id!)).rejects.toThrow('符号链接')
+    const manifest = JSON.parse(
+      await readFile(join(external, 'maintenance', 'trash', result.id!, 'manifest.json'), 'utf8'),
+    ) as { state: string }
+    expect(manifest.state).toBe('ready')
+    expect(existsSync(join(external, 'maintenance', 'trash', result.id!, assetFile))).toBe(true)
+
+    // 还原后再把 trash 层换成链接：源路径同样要从 dataDir 起逐层检查
+    await rm(maintenanceDir)
+    await rename(join(external, 'maintenance'), maintenanceDir)
+    const trashDir = join(f.root, 'maintenance', 'trash')
+    await rename(trashDir, join(external, 'trash'))
+    await symlink(join(external, 'trash'), trashDir)
+    await expect(f.service.restoreTrash(result.id!)).rejects.toThrow('符号链接')
+    expect(existsSync(join(external, 'trash', result.id!, assetFile))).toBe(true)
+  })
+
+  it('maintenance 被换成链接时清理在建立回收站目录前拒绝，目录外无写入', async () => {
+    const f = await fixture()
+    await f.asset()
+    const preview = await f.service.preview()
+    const external = await mkdtemp(join(tmpdir(), 'plein-external-'))
+    cleanup.push(async () => rm(external, { recursive: true, force: true }))
+    const maintenanceDir = join(f.root, 'maintenance')
+    await rename(maintenanceDir, join(external, 'maintenance'))
+    await symlink(join(external, 'maintenance'), maintenanceDir)
+    // 回收站目录与清单写入之前就要拒绝，否则 mkdir 已经穿到目录外
+    await expect(f.service.cleanup(preview.token)).rejects.toThrow('符号链接')
+    // 链接目标里的回收站目录没有新增批次
+    expect(readdirSync(join(external, 'maintenance', 'trash'))).toEqual([])
   })
 
   it('未完成的回收清单在重启时自动恢复，保留文件和登记信息', async () => {
