@@ -1,5 +1,9 @@
 // @vitest-environment happy-dom
-import type { ProviderConfigView, ProviderInfo } from '@plein/protocol'
+import {
+  REMOTE_MODELS_PULL_TIMEOUT_MS,
+  type ProviderConfigView,
+  type ProviderInfo,
+} from '@plein/protocol'
 import { describe, expect, it } from 'vite-plus/test'
 import { mockFetch } from '../../testing/fetch'
 import { renderApp, screen, waitFor } from '../../testing/render'
@@ -165,7 +169,7 @@ describe('远端模型列表区域', () => {
     expect(screen.getByRole('button', { name: '刷新模型候选' })).toHaveProperty('disabled', true)
   })
 
-  it('awaitRemoteModelsSettled：轮询到 pending 消失为止，超过上限放弃', async () => {
+  it('awaitRemoteModelsSettled：轮询到 pending 消失为止，超时也带回最后视图', async () => {
     serve()
     const views: Array<Partial<ProviderConfigView> | undefined> = [
       { remoteModelsPending: true },
@@ -181,12 +185,45 @@ describe('远端模型列表区域', () => {
     expect(calls).toBe(3)
     expect(settled).toEqual({})
     calls = 0
+    // 超时不再返回 null：带回最后一次视图（仍 pending），调用方据此刷新目录
     const timeout = await awaitRemoteModelsSettled('acme/x', {
       attempts: 2,
       delayMs: 0,
       getConfig: async () => ({ remoteModelsPending: true }),
     })
-    expect(timeout).toBeNull()
+    expect(timeout).toEqual({ remoteModelsPending: true })
+  })
+
+  it('awaitRemoteModelsSettled：默认轮询窗口覆盖服务端拉取超时并留余量', async () => {
+    serve()
+    let calls = 0
+    await awaitRemoteModelsSettled('acme/x', {
+      delayMs: 0,
+      getConfig: async () => {
+        calls += 1
+        return { remoteModelsPending: true }
+      },
+    })
+    // 轮询总窗口 = (次数 - 1) × 间隔，须不小于服务端超时并留余量
+    expect((calls - 1) * 1500).toBeGreaterThanOrEqual(REMOTE_MODELS_PULL_TIMEOUT_MS * 1.2)
+  })
+
+  it('awaitRemoteModelsSettled：中止后立即停止，不再发起新的读取', async () => {
+    serve()
+    const controller = new AbortController()
+    let calls = 0
+    const pending = awaitRemoteModelsSettled('acme/x', {
+      delayMs: 0,
+      signal: controller.signal,
+      getConfig: async () => {
+        calls += 1
+        controller.abort()
+        return { remoteModelsPending: true }
+      },
+    })
+    const result = await pending
+    expect(result).toBeNull()
+    expect(calls).toBe(1)
   })
 
   it('挂载位互斥：候选平台不进标签区，合并平台不进字段旁', () => {

@@ -95,6 +95,12 @@ export interface Catalog {
   >
 }
 
+/**
+ * 服务端拉取远端模型列表的信号超时；前端轮询窗口按它推导（留余量），
+ * 改这里即可同时调整两侧
+ */
+export const REMOTE_MODELS_PULL_TIMEOUT_MS = 30_000
+
 /** 平台配置的读取视图：密钥只返回是否已填写 */
 export interface ProviderConfigView {
   enabled: boolean

@@ -249,12 +249,21 @@ export function ProviderRow({
    * 结束后更新本地视图并重载目录：生成器与候选都能看到拉取结果。
    * 超时就到此为止，后台仍在拉，之后手动刷新或重新进入设置可见
    */
+  // 组件卸载时中止仍在进行的等待，避免对已卸载行继续轮询与刷新
+  const remotePullAbort = useRef<AbortController | null>(null)
+  useEffect(() => () => remotePullAbort.current?.abort(), [])
   const settleRemotePull = async (view: ProviderConfigView | null) => {
     if (!view?.remoteModelsPending) return
-    const latest = await awaitRemoteModelsSettled(provider.id)
-    if (!latest) return
-    setConfig(latest)
-    await onSaved()
+    remotePullAbort.current = new AbortController()
+    // 等到结束或超时：两种结果都把已知最新视图写回并重载目录，
+    // 目录重载时后台若已完成，结果随之可见；被卸载中止时拿到 null，直接停下
+    const latest = await awaitRemoteModelsSettled(provider.id, {
+      signal: remotePullAbort.current.signal,
+    })
+    if (latest) {
+      setConfig(latest)
+      await onSaved()
+    }
   }
 
   const save = async (): Promise<ProviderConfigView | null> => {

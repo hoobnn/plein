@@ -1,4 +1,5 @@
 import {
+  REMOTE_MODELS_PULL_TIMEOUT_MS,
   type Catalog,
   DefaultModelUpdate,
   LocalPluginUpdate,
@@ -204,7 +205,11 @@ export function pluginRoutes(
       ) {
         if (providerConfigured(entry.def, configs.get(id).secrets))
           void host
-            .refreshRemoteModels(id, c.var.principal.id, AbortSignal.timeout(30_000))
+            .refreshRemoteModels(
+              id,
+              c.var.principal.id,
+              AbortSignal.timeout(REMOTE_MODELS_PULL_TIMEOUT_MS),
+            )
             .catch(() => {})
         else host.invalidateRemoteModels(id)
       }
@@ -228,7 +233,7 @@ export function pluginRoutes(
       const status = await host.refreshRemoteModels(
         id,
         c.var.principal.id,
-        AbortSignal.timeout(30_000),
+        AbortSignal.timeout(REMOTE_MODELS_PULL_TIMEOUT_MS),
       )
       if (!status)
         return c.json({ error: 'not_supported', message: '该平台不支持拉取远端模型列表' }, 400)
@@ -251,7 +256,7 @@ export function pluginRoutes(
         await host.testProvider(
           id,
           c.var.principal.id,
-          AbortSignal.timeout(30_000),
+          AbortSignal.timeout(REMOTE_MODELS_PULL_TIMEOUT_MS),
           body.data.credential,
         )
         return c.json({

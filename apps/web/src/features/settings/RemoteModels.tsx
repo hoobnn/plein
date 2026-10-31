@@ -1,4 +1,8 @@
-import type { ProviderConfigView, ProviderInfo } from '@plein/protocol'
+import {
+  REMOTE_MODELS_PULL_TIMEOUT_MS,
+  type ProviderConfigView,
+  type ProviderInfo,
+} from '@plein/protocol'
 import { useState } from 'react'
 import { api } from '../../api/client'
 import { fullTime, relativeTime } from '../../ui/format'
@@ -121,7 +125,16 @@ export function RemoteModels({
   )
 }
 
-/** 轮询间隔与次数上限：后台拉取最长 30 秒（服务端信号超时），这里取 10 × 1.5 秒 */
+/** 轮询间隔；总窗口按服务端拉取超时（REMOTE_MODELS_PULL_TIMEOUT_MS）推导并留 25% 余量 */
+const POLL_INTERVAL_MS = 1500
+export const REMOTE_MODELS_POLL_ATTEMPTS =
+  Math.ceil((REMOTE_MODELS_PULL_TIMEOUT_MS * 1.25) / POLL_INTERVAL_MS) + 1
+
+/**
+ * 等待保存触发的后台拉取结束：轮询 config 视图直到 pending 消失。
+ * 超时也返回最后一次读到的视图（可能仍 pending），由调用方刷新目录——
+ * 目录重载时后台若已完成，结果随之可见。组件卸载通过 signal 中止，返回 null
+ */
 export async function awaitRemoteModelsSettled<
   V extends { remoteModelsPending?: boolean } = ProviderConfigView,
 >(
@@ -129,22 +142,26 @@ export async function awaitRemoteModelsSettled<
   opts: {
     attempts?: number
     delayMs?: number
+    signal?: AbortSignal
     getConfig?: (id: string) => Promise<V | undefined>
   } = {},
 ): Promise<V | null> {
-  const attempts = opts.attempts ?? 10
-  const delay = opts.delayMs ?? 1500
+  const attempts = opts.attempts ?? REMOTE_MODELS_POLL_ATTEMPTS
+  const delay = opts.delayMs ?? POLL_INTERVAL_MS
   // 默认读真实 config 视图；测试注入更窄的视图形状
   const getConfig: (id: string) => Promise<V | undefined> =
     opts.getConfig ?? ((pid) => api.providerConfig(pid) as unknown as Promise<V>)
+  let last: V | undefined
   for (let attempt = 0; attempt < attempts; attempt++) {
+    if (opts.signal?.aborted) return null
     await new Promise((ok) => setTimeout(ok, delay))
+    if (opts.signal?.aborted) return null
     const view = await getConfig(id)
     // 字段缺省即表示拉取已结束；结束后由调用方重载目录与候选
     if (view && !view.remoteModelsPending) return view
+    last = view ?? last
   }
-  // 超时放弃：后台仍在拉，完成后用户手动刷新或下次进入设置时可见
-  return null
+  return last ?? null
 }
 
 /** 插件在设置 schema 里声明的 datalist 元素 id（如兼容渠道的「模型 ID」候选） */
