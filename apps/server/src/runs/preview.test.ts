@@ -843,3 +843,51 @@ it('持久引用在服务端重排后按身份映射，替换、删除及旧编�
     ),
   ).toBe(true)
 })
+
+it('上游文本中的参考编号随素材重排映射，失效身份在预览中阻断', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const first = createElement(doc, {
+    kind: 'image',
+    assetId: asset('a'),
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  const second = createElement(doc, {
+    kind: 'image',
+    assetId: asset('b'),
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  const prompt = addNode(doc, 'plein/text', { params: { text: '@image1 的人物向前走' } })
+  const video = addNode(doc, 'plein/video', {
+    params: {
+      model: 'plein/mock:video',
+      mode: 'reference',
+      prompt: '',
+      referenceBindings: { image1: { type: 'image', assetId: asset('a'), source: first } },
+    },
+  })
+  connect(doc, [first, 'image'], [video, 'images'])
+  connect(doc, [second, 'image'], [video, 'images'])
+  connect(doc, [prompt, 'text'], [video, 'prompt'])
+  const edges = inputEdges(doc, video, 'images')
+  reorderInputs(doc, [video, 'images'], edges.map((edge) => edge.id).reverse())
+  const ready = await preview(server, id, video)
+  expect(ready.status).toBe('ready')
+  expect(ready.prompt).toContain('@image2 的人物向前走')
+  updateElement(doc, first, { assetId: asset('c') })
+  const blocked = await preview(server, id, video)
+  expect(blocked.status).toBe('blocked')
+  expect(blocked.blocked).toContainEqual(
+    expect.objectContaining({
+      code: 'prepare_failed',
+      message: expect.stringContaining('已删除、替换'),
+    }),
+  )
+})
