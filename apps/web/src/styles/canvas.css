@@ -380,22 +380,30 @@
 }
 .plein-generator-body > :not(.plein-prompt) {
   flex-shrink: 0;
+  min-width: 0;
 }
 .plein-generator-body > .plein-prompt:not([data-large]) {
   display: flex;
-  flex: 1 0 144px;
+  flex: 1 1 144px;
   flex-direction: column;
+  min-width: 0;
+  min-height: 0;
 }
 .plein-generator-body > .plein-prompt:not([data-large]) > .plein-mention-input {
   display: flex;
   flex: 1;
-  min-height: 144px;
+  min-height: 0;
 }
 .plein-generator-body .plein-prompt:not([data-large]) .plein-prompt-input {
   field-sizing: fixed;
   flex: 1;
-  min-height: 144px;
+  min-width: 0;
+  min-height: 0;
   max-height: none;
+}
+.plein-generator-body .plein-prompt-references {
+  flex-shrink: 0;
+  min-width: 0;
 }
 
 /* 辅助区保持稳定的纵向层级，展开预览不挤走主编辑区。 */
