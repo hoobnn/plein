@@ -251,6 +251,7 @@ export const minimaxProvider = defineProvider({
       title: id,
       capabilities: ['video.generate' as const],
       limits: {
+        promptMaxLength: 7000,
         aspectRatios: ['auto', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
         resolutions:
           id === 'MiniMax-H3'

@@ -511,9 +511,7 @@ export const bailianProvider = defineProvider({
             model: req.model,
             input: {
               function: input.operation === 'upscale' ? 'super_resolution' : 'expand',
-              prompt:
-                input.prompt?.trim() ||
-                (input.operation === 'upscale' ? '图像超分' : '自然延展原图场景'),
+              prompt: input.prompt ?? '',
               base_image_url: await upload(input.image, req.model, ctx, source),
             },
             parameters,

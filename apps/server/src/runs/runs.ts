@@ -959,7 +959,14 @@ export class NodeRuns implements BatchHost {
     const voice = voiceOf(params)
     const model = this.resolveModel(params.model)
     const limit = model?.limit
-    const blocked = p.mentions?.blocked ?? []
+    const blocked = [...(p.mentions?.blocked ?? [])]
+    const promptLimit = model?.promptLimit
+    if (promptLimit !== undefined && prompt && prompt.length > promptLimit) {
+      blocked.push({
+        code: 'prepare_failed',
+        message: `最终提示词 ${prompt.length} 字符，超过模型上限 ${promptLimit} 字符（超出 ${prompt.length - promptLimit} 字符）。限制包含节点正文、上游文本、参考图对应说明及分隔符，请在「实际输入」查看并缩短相关内容。`,
+      })
+    }
     return {
       v: PREPARED_INPUT_VERSION,
       nodeId: el.id,
@@ -980,6 +987,7 @@ export class NodeRuns implements BatchHost {
         : {}),
       ...(limit === undefined ? {} : { referenceLimit: limit }),
       ...(prompt === undefined ? {} : { prompt }),
+      ...(promptLimit === undefined ? {} : { promptLimit }),
       params: shown,
       inputs: Object.fromEntries(
         Object.entries(p.inputs).map(([port, values]) => [
@@ -1022,6 +1030,7 @@ export class NodeRuns implements BatchHost {
       title: spec?.title ?? model,
       version: spec?.version,
       limit: spec?.limits?.references?.max,
+      promptLimit: spec?.limits?.promptMaxLength,
       plugin: entry ? this.host.registry.plugin(entry.plugin)?.manifest.version : undefined,
     }
   }
@@ -1630,7 +1639,7 @@ export class NodeRuns implements BatchHost {
         }
         return status === 'canceled' ? 'canceled' : 'failed'
       }
-      // @ 引用带来的依赖是软的：参考图出不来（比如被平台审核拦下）时，镜头只带文字设定照常出
+      // @ 引用带来的依赖是软的：参考图出不来（比如被平台审核拦下）时，镜头保留引用名称照常出，不追加文字设定
       const deps = graph.dependencies(targets)
       const hard = new FlowGraph(executionEdges(doc)).dependencies(targets)
       const soft = new Map(
@@ -2243,7 +2252,7 @@ export class NodeRuns implements BatchHost {
       referenceElement,
       def,
       continuation.inputs,
-      // @ 引用是软依赖：卡片的参考图节点还没结果（生成失败、被审核拦下）时只附文字设定
+      // @ 引用是软依赖：卡片的参考图节点还没结果（生成失败、被审核拦下）时仅保留引用名称，不追加文字设定
       (id) => this.collectInputs(doc, id, ownerId, signal, 0, origins, true, canvasId),
       this.resolveModel(el.params?.model)?.limit,
       async (assetId) => {

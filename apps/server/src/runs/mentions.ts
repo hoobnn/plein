@@ -9,7 +9,6 @@ import {
   pickEmpty,
   pickImages,
   pickLabel,
-  pickNotes,
   type ProfilePick,
   pickVoice,
   profileOf,
@@ -24,9 +23,6 @@ import type { InputIssue, InputRef, InputRefKind } from '@plein/protocol'
 import { NodeRunError } from '../plugins/host'
 
 type Inputs = Record<string, PortValue[]>
-
-/** 会把被引用资产的设定附在提示词后面的能力；配音等不附（台词里不该混进设定） */
-const DESCRIBE: ReadonlySet<string> = new Set(['text.chat', 'image.generate', 'video.generate'])
 
 /** 本次运行真正送进模型的资产引用，用于「执行前展示实际引用映射」 */
 interface UsedRef {
@@ -149,12 +145,12 @@ function checkMention(m: Mention, byId: Map<string, CanvasElement>): Hit | undef
 
 /**
  * 运行前处理提示词里的 @ 引用：
- * - 文本里的 `@林夏` 换成 `林夏`；对话、图片、视频节点在主提示词后附上被引用者的设定；
+ * - 文本里的 `@林夏` 换成 `林夏`，不隐式追加资产卡或档案项的文字设定；
  * - 被引用者的参考图并入节点的 `references` 输入（去重）；生成视频只在「多模态参考」模式并入 `images`；
  * - 配音节点没选音色、且只引用了一个有音色的角色时用它的音色——但只有同一家平台才沿用，
  *   跨平台的音色 ID 送过去多半是乱读，宁可停下来让用户重选；
  * - 模型声明了参考图上限（maxRefs）时，节点自己连入的图先占位，再按角色、场景、道具的顺序
- *   每张卡先放一张，有余量再放其余的；放不下的卡只附文字设定，并提示用户；
+ *   每张卡先放一张，有余量再放其余的；放不下的卡不送参考图，并提示用户；
  * - 汇总本次真正送进模型的引用（refs）和需要用户知道的提示（notices）。
  * 返回新的参数与输入，不改文档。
  */
@@ -211,7 +207,6 @@ export async function applyMentions(
   const refList: UsedRef[] = []
   const details: InputRef[] = []
   const blocked: InputIssue[] = []
-  const notes: string[] = []
   const voices: Array<{ name: string; voice: VoiceRef }> = []
   /** 参考图来自生成失败的上游：和「还没生成或没连」分开提示 */
   const failedRefs = new Set<string>()
@@ -240,13 +235,6 @@ export async function applyMentions(
       details.push(detail(target, label(h), priority, [target.assetId]))
       continue
     }
-    const description = [
-      pickNotes(String(target.params?.description ?? ''), h.pick),
-      h.sceneView?.description,
-    ]
-      .filter(Boolean)
-      .join('；')
-    if (description) notes.push(`${label(h)}：${description}`)
     const v = pickVoice(h.pick, voiceOf(target.params))
     if (hasVoice(v)) voices.push({ name: label(h), voice: v })
     const own = await collect(target.id)
@@ -332,8 +320,6 @@ export async function applyMentions(
   }
 
   const prompt = ['prompt', 'text'].find((k) => typeof params[k] === 'string')
-  if (prompt && notes.length && def.capability && DESCRIBE.has(def.capability))
-    params[prompt] = `${params[prompt]}\n\n设定：\n${notes.join('\n')}`
 
   if (def.capability === 'audio.speech' && !hasVoice(voiceOf(params)))
     applyVoice(params, voices, notices)
@@ -348,7 +334,7 @@ export async function applyMentions(
     const ignored = refList.flatMap((r) => (r.assetIds.length ? [r.name] : []))
     notices.push({
       code: 'unsupported_refs',
-      message: `@ 引用的参考图（${ignored.join('、')}）只在「多模态参考」模式下送入模型；当前模式未送入，提示词中对这些参考图的说明仍会作为文字发送`,
+      message: `@ 引用的参考图（${ignored.join('、')}）只在「多模态参考」模式下送入模型；当前模式未送入，仅保留提示词中的引用名称，不追加文字设定`,
     })
     for (const r of refList) r.assetIds = []
   }
@@ -532,7 +518,7 @@ function pickRefs(
     if (before > 0 && r.assetIds.length === 0) dropped.push(r)
   }
   // 一条给人看的汇总，按引用各记一条供程序判断时 message 相同
-  const message = `这个模型最多带 ${max} 张参考图，${dropped.map((r) => r.name).join('、')} 的参考图没有送入，只附了文字设定`
+  const message = `这个模型最多带 ${max} 张参考图，${dropped.map((r) => r.name).join('、')} 的参考图没有送入，仅保留引用名称，不追加文字设定`
   for (const r of dropped)
     notices.push({ code: 'optional_dropped', elementId: r.elementId, message })
   return all.filter((v) => kept.has(imageIds([v])[0] ?? ''))

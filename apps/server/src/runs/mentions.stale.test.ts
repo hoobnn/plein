@@ -50,7 +50,7 @@ const heroCard = (doc: PleinDoc, name: string, x: number) =>
   )
 
 describe('@ 引用改动后下游过期', () => {
-  it('改角色设定、换参考图，引用它的节点都会被标记为需要重跑', async () => {
+  it('改角色设定不影响下游输入，换参考图才需要重跑', async () => {
     const { server, id, doc } = await boot()
     const photo = createElement(doc, {
       kind: 'image',
@@ -67,10 +67,9 @@ describe('@ 引用改动后下游过期', () => {
     await run(server, id, shot, doc)
     expect(await staleOf(server, id)).toEqual({ stale: [], upstream: [], kept: [] })
 
-    // 改角色设定：设定会附进镜头图的提示词，结果已过期
+    // 角色描述不隐式追加到提示词，修改描述不改变下游实际输入
     setParams(doc, hero, { description: '三十岁，长发，黑风衣' })
-    expect((await staleOf(server, id)).stale).toEqual([shot])
-    await run(server, id, shot, doc)
+    expect((await staleOf(server, id)).stale).toEqual([])
     expect(await staleOf(server, id)).toEqual({ stale: [], upstream: [], kept: [] })
 
     // 换参考图：送进模型的参考图变了，结果也过期
@@ -126,7 +125,7 @@ describe('道具 / 风格卡', () => {
       prompt: string
       references?: Array<{ assetId: string }>
     }
-    expect(input.prompt).toContain('磨砂黑，铜盖有划痕')
+    expect(input.prompt).not.toContain('磨砂黑，铜盖有划痕')
     expect(input.references?.map((r) => r.assetId)).toEqual(['c'.repeat(64)])
   }, 30_000)
 })

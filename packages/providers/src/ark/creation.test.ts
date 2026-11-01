@@ -115,6 +115,7 @@ describe('Ark 创作扩展 HTTP 合同', () => {
     expect(f.body()).toMatchObject({
       model,
       image: 'data:image/png;base64,AQID',
+      prompt: '拆出人物',
       layer_decomposition: true,
       output_format: 'png',
       response_format: 'b64_json',
@@ -144,6 +145,14 @@ describe('Ark 创作扩展 HTTP 合同', () => {
       ],
     })
     expect(f.fetch).toHaveBeenCalledTimes(1)
+  })
+  it.each([undefined, ''])('用户未填写抠图提示词时 HTTP 请求不补入默认文字：%j', async (prompt) => {
+    const f = setup([{ data: [{ z_index: 1, b64_json: 'AQID' }] }])
+    await arkProvider.submit(
+      { capability: 'image.process', model, input: { image, operation: 'cutout', prompt } },
+      f.ctx,
+    )
+    expect(f.body()).toMatchObject({ prompt: '', layer_decomposition: true })
   })
   it.each([
     { mime: 'image/webp' },

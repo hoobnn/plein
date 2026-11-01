@@ -665,7 +665,7 @@ async function cutout(
   const data = await request(plane, ctx, '/images/generations', {
     model: wireModel(plane, model),
     image: `data:${source.mime};base64,${Buffer.from(source.data).toString('base64')}`,
-    prompt: input.prompt || '将主体与背景拆分，主体作为独立透明图层，保留边缘细节',
+    prompt: input.prompt ?? '',
     layer_decomposition: true,
     output_format: 'png',
     response_format: 'b64_json',

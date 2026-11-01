@@ -85,13 +85,13 @@ describe('必需参考与取舍', () => {
     expect(r.blocked).toEqual([])
   })
 
-  it('必需参考没有图：阻断；可选参考没有图：只附文字并记为 no_image', async () => {
+  it('必需参考没有图：阻断；可选参考没有图：保留引用名称并记为 no_image', async () => {
     const { doc, key } = scene({ keyImage: false })
     const optional = shot(doc, 'plein/image', { prompt: '@林夏 @钥匙' })
     const r1 = await applyMentions(doc, doc.get(optional)!, imageNode, {}, collect(doc), 3)
     expect(r1.blocked).toEqual([])
     expect(r1.details.find((d) => d.elementId === key)).toMatchObject({ reason: 'no_image' })
-    expect(r1.params.prompt).toContain('钥匙：钥匙的设定')
+    expect(r1.params.prompt).not.toContain('钥匙的设定')
 
     const required = shot(doc, 'plein/image', { prompt: '@林夏 @钥匙', requiredRefs: [key] })
     const r2 = await applyMentions(doc, doc.get(required)!, imageNode, {}, collect(doc), 3)

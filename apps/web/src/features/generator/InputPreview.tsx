@@ -109,11 +109,11 @@ function refState(r: InputRef): { text: string; tone: string; title?: string } {
   if (r.reason === 'selection_missing') return { text: '所选图已失效', tone: 'ui-tag-warning' }
   if (r.selected?.length === 0) return { text: '仅文字', tone: 'ui-tag' }
   if (r.reason === 'failed')
-    return { text: '参考图失败', tone: 'ui-tag-warning', title: '参考图生成失败，只附文字设定' }
+    return { text: '参考图失败', tone: 'ui-tag-warning', title: '参考图生成失败，不追加文字设定' }
   if (r.reason === 'no_image')
-    return { text: '无参考图', tone: 'ui-tag-warning', title: '还没有可用的参考图，只附文字设定' }
+    return { text: '无参考图', tone: 'ui-tag-warning', title: '还没有可用的参考图，不追加文字设定' }
   if (r.reason === 'unsupported')
-    return { text: '只附文字', tone: 'ui-tag', title: '当前模式不送参考图，只附文字设定' }
+    return { text: '未送参考图', tone: 'ui-tag', title: '当前模式不送参考图，不追加文字设定' }
   if (r.reason === 'over_limit')
     return r.sent.length
       ? {
@@ -121,7 +121,7 @@ function refState(r: InputRef): { text: string; tone: string; title?: string } {
           tone: 'ui-tag-warning',
           title: '超过模型的参考图上限，其余的没有送入',
         }
-      : { text: '超出上限', tone: 'ui-tag-warning', title: '超过模型的参考图上限，只附文字设定' }
+      : { text: '超出上限', tone: 'ui-tag-warning', title: '超过模型的参考图上限，不追加文字设定' }
   return { text: `送入 ${r.sent.length} 张`, tone: 'ui-tag-success' }
 }
 
@@ -139,6 +139,10 @@ function previewSummary(p: PreparedInput) {
   const parts = [
     p.model ? `${p.model.title}${p.model.auto ? '（自动）' : ''}` : local ? '本地处理' : '未选模型',
   ]
+  if (p.prompt !== undefined)
+    parts.push(
+      `最终提示词 ${p.prompt.length}${p.promptLimit === undefined ? '' : ` / ${p.promptLimit}`} 字符`,
+    )
   if (refs) parts.push(`${refs} 张参考图`)
   const values = Object.values(p.inputs).flat()
   const videos = values.filter((value) => value.type === 'video').length
@@ -229,6 +233,12 @@ export function InputPreview({
       aria-busy={loading}
     >
       {status}
+      {data.prompt !== undefined && (
+        <p className="text-xs text-ink-subtle">
+          最终提示词包含节点正文、上游文本、参考图对应说明及分隔符，按字符计数；不会自动追加引用卡片的文字设定。
+          {data.promptLimit !== undefined && `合计不得超过 ${data.promptLimit} 字符。`}
+        </p>
+      )}
       <button
         type="button"
         onClick={() => setOpen(!open)}

@@ -219,6 +219,8 @@ export class ProviderError extends Error {
  * 没声明的项按节点自己的范围处理。
  */
 export interface ModelLimits {
+  /** 最终提示词上限（含上游文本、参考图对应说明与分隔符，按 JS string.length 计数） */
+  promptMaxLength?: number
   /** 支持的画幅（`16:9` 这种写法） */
   aspectRatios?: string[]
   /** 可选分辨率（平台自己的写法，如 `720p`、`2K`）；不声明时不显示分辨率，用平台默认 */

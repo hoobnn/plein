@@ -640,7 +640,8 @@ export function GeneratorPanel({
               className={`px-1 text-xs ${problem ? 'text-ink-subtle' : 'text-danger'}`}
               title={problem ?? el.run?.error ?? undefined}
             >
-              {problem ?? el.run?.error ?? '生成失败'}
+              {problem ??
+                `上次生成失败：${el.run?.error ?? '生成失败'}。此为历史结果，当前输入请以「实际输入」为准。`}
             </p>
           )}
           <div className="plein-generator-toolbar">

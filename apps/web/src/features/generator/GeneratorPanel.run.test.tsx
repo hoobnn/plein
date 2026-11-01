@@ -288,3 +288,21 @@ describe('生成受理等待与取消', () => {
     await waitFor(() => expect(calls).toHaveLength(1))
   })
 })
+
+it('失败记录明确标为上次结果，不把当前可运行输入标为失败', async () => {
+  const { id, engine } = setup()
+  serveRun(id)
+  writeRun(engine.doc, id, {
+    id: 'old-run',
+    status: 'failed',
+    at: 1,
+    error: '视频提示词须为 1–7000 字符',
+  })
+  renderPanel(id, engine)
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(500)
+  })
+  expect(screen.getByText(/上次生成失败：视频提示词须为 1–7000 字符/)).toBeTruthy()
+  expect(screen.getByText(/此为历史结果，当前输入请以「实际输入」为准/)).toBeTruthy()
+  expect((runButton() as HTMLButtonElement).disabled).toBe(false)
+})

@@ -68,7 +68,8 @@ it('基础场景保持兼容，视角旧名只用该视角图；强引用、删�
   const input = await preview()
   expect(input.status).toBe('ready')
   expect(input.prompt).toContain('教室（门口正拍）')
-  expect(input.prompt).toContain('一楼教室；黑板在右边')
+  expect(input.prompt).not.toContain('一楼教室')
+  expect(input.prompt).not.toContain('黑板在右边')
   expect(input.inputs.references?.map((v) => v.assetId)).toEqual([assets[1]])
   expect(input.refs[0]?.available).toEqual([assets[1]])
 

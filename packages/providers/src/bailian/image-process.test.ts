@@ -44,6 +44,7 @@ describe('万相精修 HTTP 合同', () => {
           operation: input.operation,
           scale: input.scale,
           expansion: input.expansion,
+          prompt: '保留原有的红色屋顶',
         },
       },
       f.ctx,
@@ -59,10 +60,24 @@ describe('万相精修 HTTP 合同', () => {
       model,
       input: {
         function: input.functionName,
+        prompt: '保留原有的红色屋顶',
         base_image_url: expect.stringMatching(/^oss:\/\/tmp\//),
       },
       parameters: input.params,
     })
+  })
+  it.each([
+    { operation: 'upscale' as const, prompt: undefined },
+    { operation: 'upscale' as const, prompt: '' },
+    { operation: 'outpaint' as const, prompt: undefined },
+    { operation: 'outpaint' as const, prompt: '' },
+  ])('用户未填写提示词时 HTTP 请求不补入默认文字 %j', async (input) => {
+    const f = setup()
+    await bailianProvider.submit(
+      { capability: 'image.process', model, input: { image, ...input } },
+      f.ctx,
+    )
+    expect(f.body(2).input).toMatchObject({ prompt: '' })
   })
   it.each([
     { operation: 'upscale' as const, scale: NaN },

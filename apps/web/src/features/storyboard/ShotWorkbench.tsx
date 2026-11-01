@@ -1088,15 +1088,15 @@ function ShotSummary({
           const hasSent =
             !!refs?.some((ref) => ref.sent.length) ||
             sentImages.some((item) => item.source === asset.id)
-          // 没有可用图才是仅文字设定；有图没送是另一回事，原因收进 title
+          // 没有可用图时明确说明未送参考图；有图没送是另一回事，原因收进 title
           const onlyText = !!refs?.length && !hasSent && refs.every((ref) => !ref.available.length)
           const notSent = !hasSent && !onlyText && !!refs?.some((ref) => !ref.sent.length)
           const reasonText = (ref: InputRef) => {
             if (ref.selected?.length === 0) return '已选择仅文字，不送参考图'
-            if (ref.reason === 'failed') return '参考图生成失败，只附文字设定'
-            if (ref.reason === 'no_image') return '还没有可用的参考图，只附文字设定'
-            if (ref.reason === 'unsupported') return '当前模式不送参考图，只附文字设定'
-            if (ref.reason === 'over_limit') return '超过模型的参考图上限，只附文字设定'
+            if (ref.reason === 'failed') return '参考图生成失败，不追加文字设定'
+            if (ref.reason === 'no_image') return '还没有可用的参考图，不追加文字设定'
+            if (ref.reason === 'unsupported') return '当前模式不送参考图，不追加文字设定'
+            if (ref.reason === 'over_limit') return '超过模型的参考图上限，不追加文字设定'
             if (ref.reason === 'selection_missing') return '所选参考图已失效'
             return '参考图没有送入'
           }
@@ -1176,7 +1176,7 @@ function ShotSummary({
                 </>
               )}
               {!hasSent && !notSent && onlyText && (
-                <span className="block text-ink-subtle">仅文字设定</span>
+                <span className="block text-ink-subtle">无可用参考图</span>
               )}
               {review?.status === 'usable' && (
                 <span className="block text-ink-subtle">已人工认可</span>

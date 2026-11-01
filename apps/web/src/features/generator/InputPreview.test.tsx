@@ -294,3 +294,20 @@ it('提交回执在防抖计时中抵达时，不再发起已经过时的预览�
   expect(fetch).toHaveBeenCalledOnce()
   expect(screen.getByTestId('input-preview').getAttribute('aria-busy')).toBe('false')
 })
+
+it('折叠时也展示最终字符数、模型上限与追加内容说明', () => {
+  const { engine, doc, id } = fixture()
+  renderApp(
+    <InputPreview
+      engine={engine}
+      el={doc.get(id)!}
+      node={definition}
+      data={prepared(id, { prompt: '景'.repeat(7001), promptLimit: 7000 })}
+      loading={false}
+      error={null}
+      onRetry={() => {}}
+    />,
+  )
+  expect(screen.getByRole('button', { name: /最终提示词 7001 \/ 7000 字符/ })).toBeTruthy()
+  expect(screen.getByText(/上游文本、参考图对应说明及分隔符/)).toBeTruthy()
+})

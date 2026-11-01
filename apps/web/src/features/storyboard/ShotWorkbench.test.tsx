@@ -452,7 +452,7 @@ it('摘要按当前输入预览标记参考图将送入，不把丢弃的图说�
   })
   renderApp(<ShotWorkbench />)
   expect(await screen.findByText('参考图将送入模型')).toBeTruthy()
-  expect(screen.queryByText('仅文字设定')).toBeNull()
+  expect(screen.queryByText('无可用参考图')).toBeNull()
 })
 
 it('对照只取采用视频同组的末帧，缺失时回退分镜图', async () => {
@@ -768,7 +768,7 @@ it('同名卡未消歧或序号越界时提示引用不唯一，点击去分镜�
   )
 })
 
-it('有参考图但本次未送入时不标成仅文字设定，原因收进 title', async () => {
+it('有参考图但本次未送入时不标成无可用参考图，原因收进 title', async () => {
   const { doc, board, shots } = fixture(true)
   addActor(doc)
   bindCharacter(doc, board, shots, '@角色')
@@ -776,7 +776,7 @@ it('有参考图但本次未送入时不标成仅文字设定，原因收进 tit
   renderApp(<ShotWorkbench />)
   const badge = await screen.findByText('参考图将不送入')
   expect(badge.getAttribute('title')).toContain('上限')
-  expect(screen.queryByText('仅文字设定')).toBeNull()
+  expect(screen.queryByText('无可用参考图')).toBeNull()
   expect(screen.queryByText('参考图将送入模型')).toBeNull()
 })
 
@@ -819,7 +819,7 @@ it('非首帧模式不显示首帧送入数量', async () => {
   expect(screen.queryByText(/首帧：已送入/)).toBeNull()
 })
 
-it('摘要按已有字段区分仅文字设定与已人工认可', async () => {
+it('摘要按已有字段区分无可用参考图与已人工认可', async () => {
   const { doc, board, shots } = fixture(true)
   createElement(doc, {
     id: 'actor',
@@ -850,7 +850,7 @@ it('摘要按已有字段区分仅文字设定与已人工认可', async () => {
   bindCharacter(doc, board, shots, '@角色')
   mockSummary(summaryInput('video-one', '', []))
   renderApp(<ShotWorkbench />)
-  expect(await screen.findByText('仅文字设定')).toBeTruthy()
+  expect(await screen.findByText('无可用参考图')).toBeTruthy()
   expect(screen.getByText('已人工认可')).toBeTruthy()
   expect(screen.queryByText('参考图将送入模型')).toBeNull()
   expect(screen.queryByText('参考图将不送入')).toBeNull()

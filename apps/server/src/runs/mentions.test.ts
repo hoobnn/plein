@@ -64,13 +64,11 @@ describe('运行前解析 @ 引用', () => {
     expect(r.notices).toEqual([])
   })
 
-  it('图片节点：替换名字、附设定、并入参考图并去重', async () => {
+  it('图片节点：替换名字、并入参考图并去重，不追加文字设定', async () => {
     const { doc, photo } = setup()
     const n = node(doc, 'plein/image', { prompt: '@林夏站在天台，参考@定妆照' })
     const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))
-    expect(r.params.prompt).toBe(
-      '林夏站在天台，参考定妆照\n\n设定：\n林夏：二十岁，短发\n\n参考对应：\n林夏：图1\n定妆照：图1',
-    )
+    expect(r.params.prompt).toBe('林夏站在天台，参考定妆照\n\n参考对应：\n林夏：图1\n定妆照：图1')
     expect(r.inputs.references).toEqual([
       {
         type: 'image',
@@ -162,9 +160,7 @@ describe('运行前解析 @ 引用', () => {
     })
     const n = node(doc, 'plein/image', { prompt: '@打火机 在@林夏手里' })
     const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))
-    expect(r.params.prompt).toBe(
-      '打火机 在林夏手里\n\n设定：\n打火机：磨砂黑，铜盖有划痕\n林夏：二十岁，短发\n\n参考对应：\n林夏：图1',
-    )
+    expect(r.params.prompt).toBe('打火机 在林夏手里\n\n参考对应：\n林夏：图1')
     expect(r.refs).toEqual([
       { name: '打火机', elementId: doc.get(prop)!.id, assetIds: [] },
       { name: '林夏', elementId: doc.get(hero)!.id, assetIds: [doc.get(photo)!.assetId] },
@@ -189,10 +185,10 @@ describe('运行前解析 @ 引用', () => {
       collect(doc),
     )
     expect(framed.inputs.images).toEqual([first])
-    expect(framed.params.prompt).toContain('林夏：二十岁，短发')
+    expect(framed.params.prompt).not.toContain('二十岁，短发')
     expect(framed.refs[0]!.assetIds).toEqual([])
     expect(msg(framed.notices)).toContain(
-      '@ 引用的参考图（林夏）只在「多模态参考」模式下送入模型；当前模式未送入，提示词中对这些参考图的说明仍会作为文字发送',
+      '@ 引用的参考图（林夏）只在「多模态参考」模式下送入模型；当前模式未送入，仅保留提示词中的引用名称，不追加文字设定',
     )
   })
 
@@ -210,10 +206,10 @@ describe('运行前解析 @ 引用', () => {
     expect(r.inputs.images).toEqual([first])
     const notice = r.notices.find((n) => n.code === 'unsupported_refs')
     expect(notice?.message).toContain('林夏')
-    expect(notice?.message).toContain('提示词中对这些参考图的说明仍会作为文字发送')
+    expect(notice?.message).toContain('仅保留提示词中的引用名称，不追加文字设定')
   })
 
-  it('超过模型的参考图上限：先保角色、再场景，放不下的道具只附设定', async () => {
+  it('超过模型的参考图上限：先保角色、再场景，放不下的道具不送图、不追加设定', async () => {
     const { doc, hero } = setup()
     const card = (nodeType: string, name: string, asset: string, x: number) => {
       const img = createElement(doc, {
@@ -243,11 +239,11 @@ describe('运行前解析 @ 引用', () => {
       'b'.repeat(64),
       'a'.repeat(64),
     ])
-    expect(r.params.prompt).toContain('铁盒：铁盒的设定')
+    expect(r.params.prompt).not.toContain('铁盒的设定')
     expect(r.params.prompt).not.toContain('铁盒：图')
     expect(r.refs.find((x) => x.name === '铁盒')!.assetIds).toEqual([])
     expect(msg(r.notices)).toContain(
-      '这个模型最多带 2 张参考图，铁盒 的参考图没有送入，只附了文字设定',
+      '这个模型最多带 2 张参考图，铁盒 的参考图没有送入，仅保留引用名称，不追加文字设定',
     )
     expect(hero).toBeTruthy()
   })
@@ -259,14 +255,14 @@ describe('运行前解析 @ 引用', () => {
     expect(r.refs).toEqual([])
   })
 
-  it('改了角色设定，引用它的节点参数跟着变（下游因此过期）', async () => {
+  it('改了角色设定，引用它的节点提示词不变', async () => {
     const { doc, hero } = setup()
     const n = node(doc, 'plein/image', { prompt: '@林夏站在天台' })
     const before = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))
     setParams(doc, hero, { description: '三十岁，长发' })
     const after = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))
-    expect(before.params.prompt).not.toBe(after.params.prompt)
-    expect(after.params.prompt).toContain('林夏：三十岁，长发')
+    expect(before.params.prompt).toBe(after.params.prompt)
+    expect(after.params.prompt).not.toContain('三十岁，长发')
   })
 })
 
@@ -281,7 +277,7 @@ describe('重名不静默', () => {
     )
   })
 
-  it('写了 #序号就按序号取，设定不串', async () => {
+  it('写了 #序号就按序号取，不追加任一同名角色设定', async () => {
     const doc = createDoc(undefined, { schedule: () => {} })
     const a = character(doc, '林夏', { description: '主角，短发' }, 0)
     const b = character(doc, '林夏', { description: '路人，长发' }, 200)
@@ -289,8 +285,7 @@ describe('重名不静默', () => {
     const [, second] = [a, b].sort()
     const n = node(doc, 'plein/image', { prompt: '@林夏#2站在天台' })
     const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))
-    const desc = doc.get(second!)!.params!.description
-    expect(r.params.prompt).toBe(`林夏站在天台\n\n设定：\n林夏#2：${desc}`)
+    expect(r.params.prompt).toBe('林夏站在天台')
     expect(r.refs).toEqual([{ name: '林夏#2', elementId: second, assetIds: [] }])
     expect(r.details[0]?.name).toBe('林夏#2')
     expect(doc.get(a)!.name).toBe('林夏')
@@ -421,13 +416,13 @@ describe('角色档案：@林夏/少年/校服', () => {
     expressions: [],
   }
 
-  it('图片节点：时期与服饰的设定附上，图排在卡片参考图前面', async () => {
+  it('图片节点：时期与服饰只选择参考图，不附文字设定', async () => {
     const { doc, photo, hero } = setup()
     setParams(doc, hero, { profile })
     const n = node(doc, 'plein/image', { prompt: '@林夏/少年/校服站在天台' })
     const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))
     expect(r.params.prompt).toBe(
-      '林夏（少年·校服）站在天台\n\n设定：\n林夏（少年·校服）：二十岁，短发\n少年时期：十五岁\n服饰「校服」：蓝白校服\n\n参考对应：\n林夏（少年·校服）：图1、图2、图3',
+      '林夏（少年·校服）站在天台\n\n参考对应：\n林夏（少年·校服）：图1、图2、图3',
     )
     expect(r.inputs.references?.map((v) => ('assetId' in v ? v.assetId : ''))).toEqual([
       '1'.repeat(64),

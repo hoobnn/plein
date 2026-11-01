@@ -27,9 +27,9 @@ export type InputRefKind = 'character' | 'scene' | 'prop' | 'style' | 'image' | 
 /**
  * 参考图没有（全部）送进模型的原因：
  * - over_limit：超过模型的参考图上限，按优先级舍弃
- * - unsupported：当前节点或模式不收参考图（如生成视频不是「图片参考」模式），只附文字设定
- * - no_image：被引用者没有可用的参考图（还没生成或没连），只附文字设定
- * - failed：被引用者的参考图生成失败，只附文字设定
+ * - unsupported：当前节点或模式不收参考图（如生成视频不是「图片参考」模式），仅保留引用名称，不追加文字设定
+ * - no_image：被引用者没有可用的参考图（还没生成或没连），仅保留引用名称，不追加文字设定
+ * - failed：被引用者的参考图生成失败，仅保留引用名称，不追加文字设定
  */
 export type InputRefReason =
   | 'over_limit'
@@ -81,7 +81,7 @@ export interface InputValue {
  * - profile_miss / profile_conflict：@ 写的档案项不存在或冲突
  * - model_access_unverified：所选模型的当前账户权限未验证，配置或连接检查不能证明可用
  * - voice_unverified / voice_ambiguous：沿用的音色无法校验平台，或引用了多个有音色的角色
- * - unsupported_refs：当前模式不送参考图，只附文字设定
+ * - unsupported_refs：当前模式不送参考图，仅保留引用名称，不追加文字设定
  */
 export type InputIssueCode =
   | 'required_no_image'
@@ -132,8 +132,10 @@ export interface PreparedInput {
   model?: { ref: string; provider: string; title: string; auto?: boolean; version?: string }
   /** 模型的参考图上限；没声明时不限 */
   referenceLimit?: number
-  /** 展开 @ 并附上设定后的提示词（含上游文本） */
+  /** 解析 @ 后的最终提示词（含上游文本和参考图对应说明，不隐式追加设定） */
   prompt?: string
+  /** 最终提示词的字符数上限；计数包含上游文本、参考图对应说明及分隔符 */
+  promptLimit?: number
   /** 计入缓存的有效参数（不含提示词与内部字段） */
   params: Record<string, unknown>
   /** 各输入端口实际送入的值 */

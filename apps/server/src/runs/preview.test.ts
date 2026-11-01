@@ -15,7 +15,7 @@ import {
 } from '@plein/doc'
 import type { AssetRef, ProviderRequest } from '@plein/plugin-sdk'
 import type { JobList, PreparedInput } from '@plein/protocol'
-import { mockProvider } from '@plein/providers'
+import { minimaxProvider, mockProvider } from '@plein/providers'
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import * as Y from 'yjs'
 import type { Server } from '../app'
@@ -352,7 +352,7 @@ describe('实际输入预览', () => {
       expect(p.inputHash).toMatch(/^v2:/)
       expect(p.referenceLimit).toBe(3)
       expect(p.prompt).toContain('林夏 天台 铁盒 钥匙 推门而入')
-      expect(p.prompt).toContain('钥匙：钥匙的设定')
+      expect(p.prompt).not.toContain('钥匙的设定')
       expect(p.inputs.references?.map((v) => v.assetId)).toEqual([
         asset('a'),
         asset('b'),
@@ -491,7 +491,7 @@ describe('实际输入预览', () => {
     }
   })
 
-  it('卡片的参考图节点生成失败、没有结果：镜头只带文字设定照常运行，提示参考图失败', async () => {
+  it('卡片的参考图节点生成失败、没有结果：镜头只保留引用名称照常运行，提示参考图失败', async () => {
     const { server, id, doc, shot } = await boot()
     const prop = card(doc, 'plein/prop', '证物', null, 1200)
     const gen = addNode(doc, 'plein/image', { params: { prompt: '证物' }, x: 1200, y: -600 })
@@ -501,7 +501,7 @@ describe('实际输入预览', () => {
     const p = await preview(server, id, shot)
     expect(p.status).toBe('ready')
     expect(p.refs.find((r) => r.name === '证物')).toMatchObject({ sent: [], reason: 'failed' })
-    expect(p.prompt).toContain('证物的设定')
+    expect(p.prompt).not.toContain('证物的设定')
     const res = await run(server, id, shot)
     expect(res.status).toBe(202)
     const { runId } = (await res.json()) as { runId: string }
@@ -930,4 +930,54 @@ it('上游文本中的参考编号随素材重排映射，失效身份在预览�
       message: expect.stringContaining('已删除、替换'),
     }),
   )
+})
+
+it('MiniMax 最终提示词含上游文本与分隔符，7000 字符边界在预览和执行前一致阻断', async () => {
+  const { server } = await bootServer()
+  server.plugins.configs.update('minimax/api', {
+    enabled: true,
+    secrets: { MINIMAX_API_KEY: 'local-contract-test' },
+  })
+  const { id, doc } = await createCanvas(server)
+  const n = addNode(doc, 'plein/video', {
+    params: { model: 'minimax/api:MiniMax-H3', prompt: '景'.repeat(6997) },
+  })
+  const source = addNode(doc, 'plein/text', { params: { text: '海' } })
+  connect(doc, [source, 'text'], [n, 'prompt'])
+  const boundary = await preview(server, id, n)
+  expect(boundary.prompt?.length).toBe(7000)
+  expect(boundary.promptLimit).toBe(7000)
+  expect(boundary.status).toBe('ready')
+  setParams(doc, n, { prompt: '景'.repeat(6998) })
+  const blocked = await preview(server, id, n)
+  expect(blocked.prompt?.length).toBe(7001)
+  expect(blocked.status).toBe('blocked')
+  expect(blocked.blocked[0]?.message).toContain('超出 1 字符')
+  expect(blocked.blocked[0]?.message).toContain('上游文本')
+  const submit = vi.spyOn(minimaxProvider, 'submit')
+  const failed = server.runs.start(id, n, 'local')
+  expect(await server.runs.wait(failed)).toBe('failed')
+  expect(submit).not.toHaveBeenCalled()
+  await until(() => !server.runs.isRunning(id, n))
+  setParams(doc, n, { prompt: '短提示词' })
+  expect((await preview(server, id, n)).status).toBe('ready')
+}, 30_000)
+
+it('引用卡片的长描述不隐式加入最终提示词，也不消耗视频字符额度', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const description = '未要求加入的角色设定'.repeat(1000)
+  const hero = card(doc, 'plein/character', '林夏', null, 0)
+  setParams(doc, hero, { description })
+  const prompt = '@林夏' + '景'.repeat(6998)
+  const n = addNode(doc, 'plein/video', {
+    params: { model: 'minimax/api:MiniMax-H3', prompt },
+  })
+  const input = await preview(server, id, n)
+  expect(input.prompt).toBe('林夏' + '景'.repeat(6998))
+  expect(input.prompt?.length).toBe(7000)
+  expect(input.status).toBe('ready')
+  expect(doc.get(n)?.params?.prompt).toBe(prompt)
+  expect(doc.get(hero)?.params?.description).toBe(description)
 })
