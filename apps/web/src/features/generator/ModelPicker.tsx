@@ -35,7 +35,7 @@ export function ModelPicker({
   // 其他能力的通用模型参数未经确认，仅在设置的模型列表里展示。
   // 排序：内置在用在前，remote-only 随后（不会是弃用），已弃用置后
   const submittable = (m: Catalog['providers'][number]['models'][number]) =>
-    !m.remoteOnly || m.capabilities.includes('text.chat')
+    !m.agentOnly && (!m.remoteOnly || m.capabilities.includes('text.chat'))
   const providers = (catalog?.providers ?? [])
     .filter((p) => p.enabled && p.configured)
     .map((p) => ({

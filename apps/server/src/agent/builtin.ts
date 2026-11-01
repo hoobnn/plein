@@ -24,7 +24,9 @@ export interface BuiltinModel {
 
 /** 驱动内置智能体的模型：默认对话模型，且声明了 tools 特性；不满足时没有 */
 export function builtinModel(host: PluginHost, selected?: string): BuiltinModel | undefined {
-  const models = host.models('text.chat').filter((m) => m.features?.includes('tools'))
+  const models = host
+    .models('text.chat', { agent: true })
+    .filter((m) => m.features?.includes('tools'))
   const ref = selected ?? host.defaultModel('text.chat')
   const m = models.find((x) => x.ref === ref) ?? (selected ? undefined : models[0])
   return m?.features?.includes('tools')
@@ -108,6 +110,7 @@ export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
         { messages, tools, toolChoice: 'auto', temperature: 0.3, maxTokens: 8192 },
         {
           ownerId: t.ownerId,
+          usage: 'agent',
           signal: t.signal,
           onDelta: (d) => {
             streamed += d
@@ -122,7 +125,11 @@ export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
     const text = res.outputs.flatMap((o) => (o.type === 'text' ? [o.text] : [])).join('\n')
     const calls = res.outputs.flatMap((o) => (o.type === 'tool_calls' ? o.calls : []))
     if (text.trim()) t.onText(key, text, true)
+    const continuation = res.outputs.find((o) => o.type === 'tool_calls')
     append({
+      ...(continuation?.type === 'tool_calls' && continuation.continuation
+        ? { continuation: continuation.continuation }
+        : {}),
       role: 'assistant',
       content: text,
       ...(calls.length ? { toolCalls: calls } : {}),

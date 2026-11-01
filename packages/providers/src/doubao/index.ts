@@ -17,12 +17,12 @@ import {
 import { z } from 'zod'
 import { isJson, type Json, readText, redact, send } from '../shared/http'
 
-const settings = z.object({
+export const speechSettings = z.object({
   voice: z.string().min(1).default('zh_female_vv_uranus_bigtts').meta({ title: '默认音色 ID' }),
   format: z.enum(['mp3', 'wav']).default('mp3').meta({ title: '音频格式' }),
   sampleRate: z.enum(['16000', '24000', '48000']).default('24000').meta({ title: '采样率' }),
 })
-type Context = ProviderContext<z.output<typeof settings>>
+type Context = ProviderContext<z.output<typeof speechSettings>>
 const secrets = ['VOLC_SPEECH_API_KEY', 'VOLC_SPEECH_APP_ID', 'VOLC_SPEECH_ACCESS_KEY']
 
 /** 设置页显示的人读标题；变量名只用来存取密钥 */
@@ -279,7 +279,7 @@ function text(value: unknown, name: string, max = 3000): string {
  * 语音合成 2.0 里适合短剧角色的音色（官方音色列表：https://docs.volcengine.com/docs/6561/1257544），
  * 同性别同年龄段按顺序轮着分给不同角色
  */
-const TTS_VOICES: VoicePreset[] = [
+export const TTS_VOICES: VoicePreset[] = [
   { id: 'zh_female_vv_uranus_bigtts', title: 'Vivi 2.0', gender: 'female' },
   { id: 'zh_female_xiaohe_uranus_bigtts', title: '小何 2.0', gender: 'female' },
   { id: 'zh_female_linjianvhai_uranus_bigtts', title: '邻家女孩 2.0', gender: 'female' },
@@ -387,6 +387,45 @@ async function voiceResult(
   }
 }
 
+export async function synthesizeSpeech(
+  model: string,
+  input: CapabilityInput<'audio.speech'>,
+  ctx: Context,
+  plan = false,
+) {
+  const content = text(input.text, '合成文本')
+  const voice = input.voice ?? ctx.settings.voice
+  if (plan && (voice.startsWith('S_') || customVoiceId(voice)))
+    throw new ProviderError('invalid_input', 'Agent Plan 仅支持语音合成 2.0 预置音色')
+  const cloned = voice.startsWith('S_') || customVoiceId(voice)
+  if (model.startsWith('seed-icl-') && !cloned) {
+    throw new ProviderError('invalid_input', '声音复刻模型需要已创建的复刻或设计音色 ID')
+  }
+  // 登记音色的资源版本不能由 ID 判断；显式选择 1.0 时尊重选择，旧配置保留 2.0 默认值。
+  const resource = cloned ? (model === 'seed-icl-1.0' ? 'seed-icl-1.0' : 'seed-icl-2.0') : model
+  const speed = input.speed ?? 1
+  if (!Number.isFinite(speed) || speed < 0.5 || speed > 2)
+    throw new ProviderError('invalid_input', '语速须在 0.5 至 2 之间')
+  const response = await post(
+    ctx,
+    plan ? '/api/v3/plan/tts/unidirectional' : '/api/v3/tts/unidirectional',
+    {
+      req_params: {
+        text: content,
+        speaker: text(voice, '音色 ID'),
+        audio_params: {
+          format: ctx.settings.format === 'wav' ? 'pcm' : ctx.settings.format,
+          sample_rate: Number(ctx.settings.sampleRate),
+          speech_rate: Math.round((speed - 1) * 100),
+        },
+        additions: JSON.stringify(input.instruction ? { context_texts: [input.instruction] } : {}),
+      },
+    },
+    resource,
+  )
+  return response.decode((raw) => audioResult(raw, 'data', ctx, true))
+}
+
 export const doubaoProvider = defineProvider({
   testScope: 'configuration',
   id: 'doubao/speech',
@@ -394,7 +433,7 @@ export const doubaoProvider = defineProvider({
   description: '语音合成、Seed Audio 音乐与音效、录音文件极速识别；测试仅检查本地配置',
   docsUrl:
     'https://docs.volcengine.com/docs/DoubaoVoice/unidirectional-streaming-text-to-speech-http?lang=zh',
-  settings,
+  settings: speechSettings,
   secrets: secrets.map((name) => ({
     name,
     title: SECRET_TITLES[name] ?? name,
@@ -443,44 +482,8 @@ export const doubaoProvider = defineProvider({
       throw new ProviderError('invalid_input', '豆包语音模型不支持该能力')
     }
     headers(ctx)
-    if (req.capability === 'audio.speech') {
-      const input = req.input as CapabilityInput<'audio.speech'>
-      const content = text(input.text, '合成文本')
-      const voice = input.voice ?? ctx.settings.voice
-      const cloned = voice.startsWith('S_') || customVoiceId(voice)
-      if (req.model.startsWith('seed-icl-') && !cloned) {
-        throw new ProviderError('invalid_input', '声音复刻模型需要已创建的复刻或设计音色 ID')
-      }
-      // 登记音色的资源版本不能由 ID 判断；显式选择 1.0 时尊重选择，旧配置保留 2.0 默认值。
-      const resource = cloned
-        ? req.model === 'seed-icl-1.0'
-          ? 'seed-icl-1.0'
-          : 'seed-icl-2.0'
-        : req.model
-      const speed = input.speed ?? 1
-      if (!Number.isFinite(speed) || speed < 0.5 || speed > 2)
-        throw new ProviderError('invalid_input', '语速须在 0.5 至 2 之间')
-      const response = await post(
-        ctx,
-        '/api/v3/tts/unidirectional',
-        {
-          req_params: {
-            text: content,
-            speaker: text(voice, '音色 ID'),
-            audio_params: {
-              format: ctx.settings.format === 'wav' ? 'pcm' : ctx.settings.format,
-              sample_rate: Number(ctx.settings.sampleRate),
-              speech_rate: Math.round((speed - 1) * 100),
-            },
-            additions: JSON.stringify(
-              input.instruction ? { context_texts: [input.instruction] } : {},
-            ),
-          },
-        },
-        resource,
-      )
-      return response.decode((raw) => audioResult(raw, 'data', ctx, true))
-    }
+    if (req.capability === 'audio.speech')
+      return synthesizeSpeech(req.model, req.input as CapabilityInput<'audio.speech'>, ctx)
     if (req.capability === 'audio.music' || req.capability === 'audio.sfx') {
       const input = req.input as CapabilityInput<'audio.music'>
       if (

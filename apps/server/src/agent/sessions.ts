@@ -196,7 +196,9 @@ export class AgentSessions {
 
   async models(agent: AgentKind, refresh = false): Promise<AgentModelCatalog> {
     if (agent === 'builtin') {
-      const models = this.deps.host.models('text.chat').filter((m) => m.features?.includes('tools'))
+      const models = this.deps.host
+        .models('text.chat', { agent: true })
+        .filter((m) => m.features?.includes('tools'))
       const selected = builtinModel(this.deps.host)
       return {
         models: models.map((m) => ({ id: m.ref, title: m.title })),

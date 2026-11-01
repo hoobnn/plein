@@ -8,7 +8,7 @@
 | 豆包语音 `doubao/speech`        | TTS 2.0、已有声音复刻 1.0 / 2.0 合成、声音复刻 2.0 / 音色设计、Seed Audio 音乐 / 音效、极速录音识别                                  | `VOLC_SPEECH_API_KEY`，或 `VOLC_SPEECH_APP_ID` + `VOLC_SPEECH_ACCESS_KEY` |
 | 百炼 `aliyun/bailian`           | 千问对话、Qwen Image / 万相图片、万相局部重绘、Wan 3.0 视频、Qwen TTS                                                                | `DASHSCOPE_API_KEY`                                                       |
 | 方舟 `volc/ark`                 | Seed 对话、Seedream 图片、Seedance 视频                                                                                              | `ARK_API_KEY`                                                             |
-| 方舟 Agent Plan `volc/ark-plan` | 套餐内 Seedream 图片、Seedance 视频                                                                                                  | `ARK_AGENT_PLAN_API_KEY`                                                  |
+| 方舟 Agent Plan `volc/ark-plan` | 内置 Agent 对话、Seedream 图片、Seedance 视频、TTS / ASR                                                                             | `ARK_AGENT_PLAN_API_KEY`                                                  |
 
 ## 配置
 
@@ -23,7 +23,15 @@
 
 MiniMax 默认走中国区 `api.minimax.cn`，也可以选国际区 `api.minimax.io`，密钥要和地域对应。百炼支持北京、新加坡、美国三个地域；业务空间 ID 留空时，使用该地域的 DashScope 兼容端点。方舟默认北京地域；要用自定义模型，先在平台设置里填好模型 / Endpoint ID，再在模型列表里选「自定义」。
 
-火山方舟 Agent Plan 套餐单独作为一个平台「火山方舟 Agent Plan」（`volc/ark-plan`），填写 Agent Plan 专属 API Key（其他方舟 Key 不能混用），扣套餐额度。请求走套餐数据面 `https://ark.cn-beijing.volces.com/api/plan/v3`，模型名自动换成套餐里的预置名（如 `doubao-seedream-5.0-pro`、`doubao-seedance-2.5`）；模型 ID 与按量的方舟平台相同，节点换平台不用改参数。套餐覆盖 Seedream 5.0 Pro / Flash 和 Seedance 2.5 / 2.0 / 2.0 Fast / 2.0 Mini，Small / Medium 档不含视频。官方规定套餐里的文本模型只能在编程 / Agent 工具里用，所以这个平台不提供对话；Seedream Lite 不在套餐内，Seedance 草稿模式会在提交前拦下。视频参考的 TOS 配置要在这个平台里单独填写。参见 [Agent Plan 套餐概览](https://docs.volcengine.com/docs/ark/agent-plan-personal-plan-overview?lang=zh)。
+火山方舟 Agent Plan 套餐单独作为平台「火山方舟 Agent Plan」（`volc/ark-plan`），填写 Agent Plan 专属 API Key（不能和其他方舟 Key 混用），扣套餐额度。
+
+- **内置 Agent**：启用平台后，在助手的「对话模型」中选择 Doubao Seed、DeepSeek、GLM 或 Kimi 等套餐模型，也可在平台设置填写自定义套餐对话模型。套餐文本模型仅供内置 Agent 使用，不会出现在普通画布文本生成、提示词改写和默认生成模型里。对话走 `https://ark.cn-beijing.volces.com/api/plan/v3/chat/completions`。
+- **图片 / 视频**：支持套餐内 Seedream Pro / Flash 和 Seedance 2.5 / 2.0 / Fast / Mini；Small / Medium 档不含视频。模型 ID 与按量方舟平台保持一致，请求时自动换为套餐预置名。Seedream Lite 和 Seedance 草稿模式不支持。视频参考存储在此平台单独配置。
+- **语音合成**：`doubao-seed-tts-2.0` 使用套餐专属 HTTP 接口，支持预置音色、自填预置音色 ID、语速和语音指令，以及 MP3 / WAV 输出。声音复刻、音色设计、音乐和音效没有接入套餐，继续使用各平台已有能力。
+- **语音识别**：`doubao-seed-asr-2.0` 使用套餐专属 WebSocket 接口，读取本地 WAV、MP3 或 Ogg Opus，返回全文及平台提供的分句时间戳。最多 100 MB；不是普通豆包语音的录音极速识别接口。
+- **自动获取模型**：可选填写 `ARK_PLAN_ACCESS_KEY` 和 `ARK_PLAN_SECRET_KEY`（设置页的「模型目录 Access Key / Secret Key」），复用平台模型列表的自动拉取、24 小时缓存和手动刷新。官方目录接口只接受 AK/SK，专属 API Key 不能替代它们；无需查询目录时不填，内置目录照常可用。这组凭证仅用于目录查询，与视频参考存储的 AK/SK 分开。目录反映套餐产品支持范围，不代表当前账号的套餐档位权限；新发现的文本模型可用于内置 Agent，其他未适配模型仅展示。
+
+向量化和 Harness 没有作为生成模型接入：Plein 当前没有对应向量化能力，搜索、记忆等 Harness 也不是可直接套用生成接口的模型。参见官方[套餐概览](https://docs.volcengine.com/docs/ark/agent-plan-personal-plan-overview?lang=zh)、[语音接入](https://docs.volcengine.com/docs/ark/agent-plan-personal-voice-model?lang=zh)及[套餐模型目录 API](https://ark.volcengine.com/region:cn-beijing/docs/list-ark-agent-plan-model-api.md)。
 
 ## 接口实现
 

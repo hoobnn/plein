@@ -41,7 +41,10 @@ export function PromptTools({
   const [detail, setDetail] = useState<'refine' | 'expand'>('refine')
   const controller = useRef<AbortController | null>(null)
   const hasChat = (catalog?.providers ?? []).some(
-    (p) => p.enabled && p.configured && p.models.some((m) => m.capabilities.includes('text.chat')),
+    (p) =>
+      p.enabled &&
+      p.configured &&
+      p.models.some((m) => !m.agentOnly && m.capabilities.includes('text.chat')),
   )
   const target = node.capability === 'video.generate' ? 'video' : 'image'
   useEffect(() => {

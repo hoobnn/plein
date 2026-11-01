@@ -23,6 +23,14 @@ const catalog = (): Catalog => ({
       settingsSchema: {},
       secrets: [],
       models: [
+        { id: 'agent', title: '套餐 Agent 对话', capabilities: ['text.chat'], agentOnly: true },
+        {
+          id: 'new-agent',
+          title: '套餐新 Agent 对话',
+          capabilities: ['text.chat'],
+          agentOnly: true,
+          remoteOnly: true,
+        },
         { id: 'known', title: '内置对话', capabilities: ['text.chat'] },
         {
           id: 'brand-new',
@@ -56,6 +64,7 @@ async function open(capability: string) {
 describe('ModelPicker 的 remote-only 模型', () => {
   it('对话类 remote-only 进列表并带「新」徽标与通用默认提示', async () => {
     await open('text.chat')
+    expect(screen.queryByRole('option', { name: /套餐.*Agent/ })).toBeNull()
     const chat = screen.getByRole('option', { name: /远端新对话/ })
     expect(chat.textContent).toContain('新')
     expect(chat.textContent).toContain('参数为通用默认')

@@ -949,7 +949,9 @@ function DefaultModels({
     // remote-only 的通用参数未经平台验证
     options: ready.flatMap((p) =>
       p.models
-        .filter((m) => !m.deprecated && !m.remoteOnly && m.capabilities.includes(cap))
+        .filter(
+          (m) => !m.agentOnly && !m.deprecated && !m.remoteOnly && m.capabilities.includes(cap),
+        )
         .map((m) => ({
           value: `${p.id}:${m.id}`,
           label: `${p.title} · ${m.title ?? m.id}`,

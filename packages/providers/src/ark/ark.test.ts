@@ -565,13 +565,138 @@ describe('Agent Plan 套餐（volc/ark-plan）', () => {
     'Content-Type': 'application/json',
   }
 
-  it('只列套餐内的图片 / 视频模型，不提供对话', () => {
+  it('列出套餐图片、视频、Agent 对话及语音模型', () => {
     const ids = describeProvider(arkPlanProvider, 'volc/ark-plan').models.map((m) => m.id)
     expect(ids).toContain(IMAGE)
     expect(ids).toContain(VIDEO)
     expect(ids).not.toContain(CHAT)
-    expect(ids).not.toContain('custom-chat')
+    expect(ids).toContain('custom-chat')
+    expect(ids).toContain('doubao-seed-tts-2.0')
+    expect(ids).toContain('doubao-seed-asr-2.0')
     expect(ids).not.toContain('doubao-seedream-5-0-260128')
+  })
+
+  it('内置 Agent 文本使用套餐 Key 和专属对话路径，普通文本调用被拦截', async () => {
+    const { ctx, fetch, body } = plan([say('hello')])
+    const request = {
+      capability: 'text.chat' as const,
+      model: 'doubao-seed-2.1-pro',
+      input: { messages: [{ role: 'user' as const, content: 'hi' }] },
+    }
+    await expect(arkPlanProvider.submit(request, ctx)).rejects.toMatchObject({
+      code: 'invalid_input',
+    })
+    expect(fetch).not.toHaveBeenCalled()
+    const result = await arkPlanProvider.submit({ ...request, usage: 'agent' }, ctx)
+    expect(result).toMatchObject({ state: 'succeeded', outputs: [{ type: 'text', text: 'hello' }] })
+    expect(fetch).toHaveBeenCalledWith(
+      'https://ark.cn-beijing.volces.com/api/plan/v3/chat/completions',
+      expect.objectContaining({ headers }),
+    )
+    expect(body().model).toBe('doubao-seed-2.1-pro')
+  })
+
+  it('套餐工具调用原样保存并回传思考摘要和加密续传内容', async () => {
+    const { ctx, body } = plan([
+      chatSse([
+        {
+          choices: [
+            {
+              index: 0,
+              delta: {
+                role: 'assistant',
+                reasoning_content: '摘要',
+                encrypted_content: 'opaque',
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: 'call1',
+                    type: 'function',
+                    function: { name: 'get_canvas', arguments: '{}' },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+        { choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] },
+      ]),
+      say('done'),
+    ])
+    const model = 'doubao-seed-2.1-pro'
+    const messages = [{ role: 'user' as const, content: 'hi' }]
+    const result = await arkPlanProvider.submit(
+      {
+        capability: 'text.chat',
+        model,
+        usage: 'agent',
+        input: {
+          messages,
+          tools: [
+            {
+              name: 'get_canvas',
+              description: '读画布',
+              parameters: { type: 'object', properties: {} },
+            },
+          ],
+        },
+      },
+      ctx,
+    )
+    if (result.state !== 'succeeded') throw new Error('expected success')
+    const output = result.outputs.find((o) => o.type === 'tool_calls')
+    if (output?.type !== 'tool_calls') throw new Error('expected tool calls')
+    expect(output.continuation).toEqual({
+      model,
+      reasoningContent: '摘要',
+      encryptedContent: 'opaque',
+    })
+    await arkPlanProvider.submit(
+      {
+        capability: 'text.chat',
+        model,
+        usage: 'agent',
+        input: {
+          messages: [
+            ...messages,
+            {
+              role: 'assistant',
+              content: '',
+              toolCalls: output.calls,
+              continuation: output.continuation,
+            },
+            { role: 'tool', content: '{}', toolCallId: 'call1', toolName: 'get_canvas' },
+          ],
+        },
+      },
+      ctx,
+    )
+    expect(body(1).messages[1]).toMatchObject({
+      reasoning_content: '摘要',
+      encrypted_content: 'opaque',
+    })
+  })
+
+  it('TTS 使用套餐专属路径与 Key，拼接完整音频', async () => {
+    const { ctx, fetch, body } = plan([new Response('{"code":0,"data":"AQID"}\n{"code":20000000}')])
+    const result = await arkPlanProvider.submit(
+      { capability: 'audio.speech', model: 'doubao-seed-tts-2.0', input: { text: '你好' } },
+      ctx,
+    )
+    expect(fetch).toHaveBeenCalledWith(
+      'https://openspeech.bytedance.com/api/v3/plan/tts/unidirectional',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'X-Api-Key': 'plan-secret',
+          'X-Api-Resource-Id': 'seed-tts-2.0',
+        }),
+      }),
+    )
+    expect(body()).toMatchObject({
+      req_params: { speaker: 'zh_female_vv_uranus_bigtts', text: '你好' },
+    })
+    if (result.state !== 'succeeded') throw new Error('expected success')
+    expect(result.outputs[0]).toMatchObject({ type: 'file', data: new Uint8Array([1, 2, 3]) })
   })
 
   it('图片走专属数据面、专属 Key 和套餐模型名', async () => {

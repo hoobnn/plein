@@ -1,8 +1,13 @@
+import { capturePlanContinuation } from './plan-chat'
+import { speechSettings, synthesizeSpeech, TTS_VOICES } from '../doubao'
+import { transcribePlan } from './plan-speech'
+import { listPlanModels } from './plan-models'
 import { videoReferenceProblem, videoReferencePrompt } from '@plein/plugin-sdk'
 import { referenceStorageHost, referenceUploader } from './reference-upload'
 import { videoReferences } from '../shared/video-references'
 import {
   type AssetRef,
+  type ChatMessage,
   type CapabilityInput,
   definePlugin,
   defineProvider,
@@ -71,13 +76,13 @@ const settings = z.object({
   customImageModel: z.string().default('').meta({ title: '自定义图片模型 / Endpoint ID' }),
   customVideoModel: z.string().default('').meta({ title: '自定义视频模型 / Endpoint ID' }),
 })
-// Agent Plan 的文本模型不许 API 调用，不留自定义对话槽
-const planSettings = settings.omit({ customChatModel: true })
-type Context = ProviderContext<z.output<typeof planSettings>>
+// 套餐文本仅用于内置 Agent；语音和模型目录有各自的专属接口。
+const planSettings = settings.extend(speechSettings.shape)
+type Context = ProviderContext<z.output<typeof settings>>
 /** 按量付费数据面，或 Agent Plan 套餐数据面 */
 type Plane = 'api' | 'plan'
 
-// 套餐内的预置模型名与按量版本号不同；未列出的模型（对话、Seedream Lite）不在套餐内
+// 图片、视频预置模型名与按量版本号不同；Seedream Lite 不在套餐内
 const PLAN_MODELS: Record<string, string> = {
   'doubao-seedream-5-0-pro-260628': 'doubao-seedream-5.0-pro',
   'doubao-seedream-5-0-flash-260915': 'doubao-seedream-5.0-flash',
@@ -417,24 +422,43 @@ function remoteFile(url: unknown, kind: 'image' | 'video', mime: string): Provid
   return { type: 'file', kind, mime, url }
 }
 
-async function chat(model: string, input: CapabilityInput<'text.chat'>, ctx: Context) {
+async function chat(
+  plane: Plane,
+  model: string,
+  input: CapabilityInput<'text.chat'>,
+  ctx: Context,
+) {
   if (!input.messages.length) invalid('对话至少需要一条消息')
   extraParams(input.extra, ['thinking', 'top_p', 'frequency_penalty', 'presence_penalty'])
-  const key = ctx.secret('ARK_API_KEY')
-  if (!key) throw new ProviderError('auth', '请先配置 ARK_API_KEY')
-  return chatCompletion({
+  const key = apiKey(plane, ctx)
+  if (!key) throw new ProviderError('auth', `请先配置 ${SECRET[plane]}`)
+  const continuation: NonNullable<ChatMessage['continuation']> = { model: wireModel(plane, model) }
+  const result = await chatCompletion({
     ctx,
     label: '火山方舟',
-    baseURL: BASE_URL,
+    baseURL: plane === 'plan' ? PLAN_BASE_URL : BASE_URL,
     // 鉴权、传输失败和 HTTP 错误码归类沿用 request() 的规则；流必须以 [DONE] 结束
     fetch: async (url, init) => {
+      const body = asJson(JSON.parse(String(init?.body)))
+      if (plane === 'plan' && Array.isArray(body.messages)) {
+        body.messages = body.messages.map((message, index) => {
+          const saved = input.messages[index]?.continuation
+          return saved?.model === continuation.model && asJson(message).role === 'assistant'
+            ? {
+                ...asJson(message),
+                ...(saved.reasoningContent ? { reasoning_content: saved.reasoningContent } : {}),
+                ...(saved.encryptedContent ? { encrypted_content: saved.encryptedContent } : {}),
+              }
+            : message
+        })
+      }
       const res = await send(
         ctx,
         String(url),
         {
           method: 'POST',
           headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-          body: String(init?.body),
+          body: JSON.stringify(body),
         },
         {
           cancelled: '火山方舟请求已取消',
@@ -449,16 +473,20 @@ async function chat(model: string, input: CapabilityInput<'text.chat'>, ctx: Con
         throw withRetry(errorInfo(asJson(data).error, res.status, key), 'POST')
       }
       return requireSseDone(
-        res,
+        plane === 'plan' ? capturePlanContinuation(res, continuation) : res,
         () => new ProviderError('unknown', '火山方舟回答不完整或未收到 [DONE]；请勿自动重新提交'),
       )
     },
-    model,
+    model: wireModel(plane, model),
     input,
     image: (ref) => imageData(ref, ctx),
     structured: 'json_schema',
     streamError: (error) => withRetry(errorInfo(error, 200, key), 'POST'),
   })
+  if (plane === 'plan' && (continuation.reasoningContent || continuation.encryptedContent))
+    for (const output of result.outputs)
+      if (output.type === 'tool_calls') output.continuation = continuation
+  return result
 }
 
 async function image(
@@ -833,15 +861,15 @@ const TOS_SECRETS = [
   { name: 'ARK_TOS_SECRET_KEY', title: '存储 Secret Key（视频参考）' },
 ]
 
-/** 解析模型槽并按能力分派；对话只走按量数据面 */
+/** 解析模型槽并按能力分派；套餐文本须由内置 Agent 调用 */
 async function submitTo(
   plane: Plane,
   specs: ModelSpec[],
-  req: { capability: string; model: string; input: unknown; remoteOnly?: boolean },
+  req: { capability: string; model: string; input: unknown; remoteOnly?: boolean; usage?: 'agent' },
   ctx: Context & { settings: { customChatModel?: string } },
 ) {
   const spec = specs.find((model) => model.id === req.model)
-  // remoteOnly 是宿主核对过覆盖范围的远端新模型：只限对话，且套餐数据面不参与
+  // remoteOnly 是宿主核对过覆盖范围的远端新模型：只限对话
   if (
     spec
       ? !(spec.capabilities as readonly string[]).includes(req.capability)
@@ -858,8 +886,10 @@ async function submitTo(
           : req.model
   const model = custom.trim()
   if (!model) invalid('请在火山方舟设置中填写自定义模型 / Endpoint ID')
-  if (req.capability === 'text.chat' && plane === 'api')
-    return chat(model, req.input as CapabilityInput<'text.chat'>, ctx)
+  if (req.capability === 'text.chat') {
+    if (plane === 'plan' && req.usage !== 'agent') invalid('套餐文本模型仅供 Plein 内置 Agent 使用')
+    return chat(plane, model, req.input as CapabilityInput<'text.chat'>, ctx)
+  }
   if (req.capability === 'image.generate')
     return image(plane, model, req.input as CapabilityInput<'image.generate'>, ctx)
   if (req.capability === 'image.process')
@@ -943,31 +973,122 @@ export const arkProvider = defineProvider({
   // 列表是否含图片 / 视频模型未能在官方文档确证，先只覆盖对话；对话复用现有 chat() 路径
   remoteModelsScope: ['text.chat'],
   // 按量数据面地址固定北京，列表与设置无关
-  // OpenAI 兼容的模型列表；Agent Plan 套餐数据面的列表接口未确证，暂不给 planProvider 实现
+  // 按量使用 OpenAI 兼容模型列表；套餐使用独立管控面目录接口
   listRemoteModels: async (ctx) => openAiModelList(await request('api', ctx, '/models')),
   ...tasks('api'),
   submit: (req, ctx) => submitTo('api', models, req, ctx),
 })
 
 // 模型 ID 与按量平台一致，画布节点换平台不用改模型参数；请求时再换成套餐模型名
-const planModels = models.filter(
-  (model) => PLAN_MODELS[model.id] || model.id === 'custom-image' || model.id === 'custom-video',
-)
+const PLAN_CHAT_IDS = [
+  'ark-code-latest',
+  'minimax-m3',
+  'kimi-k2.7-code',
+  'doubao-seed-2.0-mini',
+  'doubao-seed-2.1-lite',
+  'doubao-seed-2.1-pro',
+  'doubao-seed-evolving',
+  'deepseek-v4-flash',
+  'deepseek-v4-pro',
+  'deepseek-v4.1-flash',
+  'deepseek-v4.1-flash-economy',
+  'glm-5.3',
+  'glm-5.3-flash',
+  'kimi-k2.8-preview',
+  'kimi-k3',
+  'kimi-k3.1-pro',
+]
+const planModels: ModelSpec[] = [
+  ...models.filter(
+    (model) => PLAN_MODELS[model.id] || model.id === 'custom-image' || model.id === 'custom-video',
+  ),
+  ...PLAN_CHAT_IDS.map((id): ModelSpec => ({
+    id,
+    title: id === 'ark-code-latest' ? 'Auto（套餐自动路由）' : id,
+    ...(['minimax-m3', 'kimi-k2.7-code'].includes(id) ? { deprecated: true as const } : {}),
+    capabilities: ['text.chat'],
+    agentOnly: true,
+    features: [
+      'tools',
+      ...(['glm-5.3-flash', 'deepseek-v4.1-flash', 'deepseek-v4.1-flash-economy'].includes(id)
+        ? ['vision' as const]
+        : []),
+    ],
+    description: 'Agent Plan 套餐文本模型，仅用于内置 Agent；可用性取决于套餐档位',
+  })),
+  {
+    id: 'custom-chat',
+    title: '自定义套餐对话模型',
+    capabilities: ['text.chat'],
+    features: ['tools'],
+    agentOnly: true,
+  },
+  {
+    id: 'doubao-seed-tts-2.0',
+    title: '豆包语音合成 2.0',
+    capabilities: ['audio.speech'],
+    limits: { speed: { min: 0.5, max: 2 } },
+    voices: TTS_VOICES,
+  },
+  { id: 'doubao-seed-asr-2.0', title: '豆包语音识别 2.0', capabilities: ['audio.transcribe'] },
+]
+const PLAN_DIRECTORY_SECRETS = [
+  {
+    name: 'ARK_PLAN_ACCESS_KEY',
+    title: '模型目录 Access Key（可选）',
+    help: '自动获取套餐模型时使用，不用于生成或视频参考存储',
+  },
+  { name: 'ARK_PLAN_SECRET_KEY', title: '模型目录 Secret Key（可选）' },
+]
 
 export const arkPlanProvider = defineProvider({
   id: 'volc/ark-plan',
   title: '火山方舟 Agent Plan',
   description:
-    'Agent Plan 套餐内的 Seedream 图片和 Seedance 视频，扣套餐额度；套餐文本模型不支持 API 调用，未接入对话',
+    '套餐内置 Agent 对话、Seedream 图片、Seedance 视频、语音合成与识别；模型目录查询可选配 AK/SK',
   docsUrl: 'https://docs.volcengine.com/docs/ark/agent-plan-personal-plan-overview?lang=zh',
   settings: planSettings,
   secrets: [
     { name: 'ARK_AGENT_PLAN_API_KEY', title: 'Agent Plan 专属 API Key', required: true },
+    ...PLAN_DIRECTORY_SECRETS,
     ...TOS_SECRETS,
   ],
   models: planModels.map((model) => ({ ...model, capabilities: [...model.capabilities] })),
+  remoteModelsScope: ['text.chat'],
+  listRemoteModels: async (ctx) => {
+    const entries = await listPlanModels(ctx)
+    const aliases = new Map(Object.entries(PLAN_MODELS).map(([id, alias]) => [alias, id]))
+    return entries
+      .map((entry) => {
+        const id = aliases.get(entry.id) ?? entry.id
+        const media = /seedream|seedance|tts|asr|embedding/.test(id)
+        return {
+          ...entry,
+          id,
+          ...(!media
+            ? { kind: 'llm' as const, agentOnly: true, features: ['tools' as const] }
+            : {}),
+        }
+      })
+      .filter((entry) => !/embedding|asr/.test(entry.id))
+  },
   ...tasks('plan'),
-  submit: (req, ctx) => submitTo('plan', planModels, req, ctx),
+  submit: (req, ctx) => {
+    if (req.model === 'doubao-seed-tts-2.0' && req.capability === 'audio.speech')
+      return synthesizeSpeech(
+        'seed-tts-2.0',
+        req.input as CapabilityInput<'audio.speech'>,
+        {
+          ...ctx,
+          secret: (name) =>
+            name === 'VOLC_SPEECH_API_KEY' ? ctx.secret('ARK_AGENT_PLAN_API_KEY') : undefined,
+        },
+        true,
+      )
+    if (req.model === 'doubao-seed-asr-2.0' && req.capability === 'audio.transcribe')
+      return transcribePlan(req.input as CapabilityInput<'audio.transcribe'>, ctx)
+    return submitTo('plan', planModels, req, ctx)
+  },
 })
 
 export { referenceStorageHost }
@@ -999,8 +1120,13 @@ export const arkPlanPlugin = defineServerPlugin(
       engines: { plein: `^${PLUGIN_API_VERSION}` },
       contributes: { providers: ['volc/ark-plan'] },
       permissions: {
-        network: NETWORK,
-        secrets: ['ARK_AGENT_PLAN_API_KEY', 'ARK_TOS_ACCESS_KEY', 'ARK_TOS_SECRET_KEY'],
+        network: [...NETWORK, 'openspeech.bytedance.com', 'ark.cn-beijing.volcengineapi.com'],
+        secrets: [
+          'ARK_AGENT_PLAN_API_KEY',
+          'ARK_TOS_ACCESS_KEY',
+          'ARK_TOS_SECRET_KEY',
+          ...PLAN_DIRECTORY_SECRETS.map((s) => s.name),
+        ],
         assets: 'read',
       },
     },

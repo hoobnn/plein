@@ -1,3 +1,4 @@
+import { scopedSocket } from './socket'
 import { createHash, randomUUID } from 'node:crypto'
 import {
   type CredentialLost,
@@ -11,6 +12,7 @@ import { createReadStream } from 'node:fs'
 import { readFile, rm } from 'node:fs/promises'
 import { Readable } from 'node:stream'
 import {
+  describeProvider,
   type AssetRef,
   Capability,
   CompositionSourceRef,
@@ -490,13 +492,18 @@ export class PluginHost {
   }
 
   /** 已启用平台中支持某能力的模型 */
-  models(capability: Capability): Array<ModelSpec & { ref: string; provider: string }> {
+  models(
+    capability: Capability,
+    opts: { agent?: boolean } = {},
+  ): Array<ModelSpec & { ref: string; provider: string }> {
     this.refreshConfiguredProviders()
     const out: Array<ModelSpec & { ref: string; provider: string }> = []
     for (const [id, { def }] of this.registry.providers) {
       if (!this.configs.get(id).enabled) continue
-      for (const m of def.models) {
-        if (m.capabilities.includes(capability))
+      for (const m of opts.agent
+        ? this.mergedModels(id, describeProvider(def, id).models)
+        : def.models) {
+        if ((!m.agentOnly || opts.agent) && m.capabilities.includes(capability))
           out.push({ ...m, ref: modelRef(id, m.id), provider: id })
       }
     }
@@ -637,6 +644,7 @@ export class PluginHost {
     input: CapabilityInput<C>,
     opts: {
       ownerId: string
+      usage?: 'agent'
       signal?: AbortSignal
       onProgress?: (p: number) => void
       onStage?: (stage: CallStage) => void
@@ -739,6 +747,13 @@ export class PluginHost {
     }
     if (!model && !remoteOnly)
       throw new ProviderError('invalid_input', `平台 ${entry.def.title} 没有模型 ${parsed.model}`)
+    if (
+      (model?.agentOnly ||
+        (!model &&
+          this.mergedModels(parsed.provider, []).find((m) => m.id === parsed.model)?.agentOnly)) &&
+      opts.usage !== 'agent'
+    )
+      throw new ProviderError('invalid_input', '该模型仅供 Plein 内置 Agent 使用')
     if (model && !model.capabilities.includes(capability)) {
       throw new ProviderError('invalid_input', `模型 ${model.title} 不支持 ${capability}`)
     }
@@ -1011,7 +1026,13 @@ export class PluginHost {
             }
             try {
               submitted = await def.submit(
-                { capability, model: parsed.model, input, ...(remoteOnly ? { remoteOnly } : {}) },
+                {
+                  capability,
+                  model: parsed.model,
+                  input,
+                  ...(remoteOnly ? { remoteOnly } : {}),
+                  ...(opts.usage ? { usage: opts.usage } : {}),
+                },
                 context,
               )
               break
@@ -1263,6 +1284,7 @@ export class PluginHost {
     )
     return {
       settings: settings.data,
+      socket: (url, headers) => scopedSocket(manifest, url, headers, signal),
       secret: scopedSecrets(manifest, secrets),
       fetch: ((input: string | URL | Request, init?: RequestInit) =>
         fetchScoped(input, {

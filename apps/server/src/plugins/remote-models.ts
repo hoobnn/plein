@@ -72,6 +72,8 @@ export function applyRemoteModels(
       capabilities: [inferCapability(m)],
       description: '参数为通用默认，以平台列表为准',
       remoteOnly: true,
+      ...(m.agentOnly ? { agentOnly: true } : {}),
+      ...(m.features ? { features: m.features } : {}),
     }))
   return [...local, ...extra]
 }

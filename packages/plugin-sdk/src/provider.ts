@@ -24,6 +24,8 @@ export interface ChatMessage {
   content: string | Array<{ type: 'text'; text: string } | { type: 'image'; image: AssetRef }>
   /** assistant：这一步模型发起的工具调用 */
   toolCalls?: ChatToolCall[]
+  /** 平台要求原样回传的思考续传字段，不作为助手正文显示。 */
+  continuation?: { model: string; reasoningContent?: string; encryptedContent?: string }
   /** tool：回应的是哪一次调用 */
   toolCallId?: string
   /** tool：被调用的工具名 */
@@ -134,7 +136,7 @@ export type ProviderOutput =
   | { type: 'text'; text: string }
   | { type: 'json'; value: unknown }
   /** text.chat 带 tools 时：模型要调用的工具（可能同时有一段 text） */
-  | { type: 'tool_calls'; calls: ChatToolCall[] }
+  | { type: 'tool_calls'; calls: ChatToolCall[]; continuation?: ChatMessage['continuation'] }
   | {
       type: 'file'
       kind: 'image' | 'video' | 'audio'
@@ -263,6 +265,8 @@ export interface ModelSpec {
   version?: string
   /** 对话模型的额外特性：tools（工具调用，内置智能体要用）、vision（看图） */
   features?: ModelFeature[]
+  /** 仅供内置 Agent 使用，不用于普通画布生成。 */
+  agentOnly?: boolean
   limits?: ModelLimits
   /** 每次提交的大致费用：影响分析据此估算重做的花费；不填算作未知 */
   price?: { amount: number; currency: string }
@@ -297,6 +301,8 @@ export interface RemoteModel {
   ownedBy?: string
   /** 平台侧的类型提示；没给时宿主按 id 前缀推断 */
   kind?: 'llm' | 'image' | 'video' | 'speech' | 'music'
+  agentOnly?: boolean
+  features?: ModelFeature[]
 }
 
 /** 复刻进度：训练是平台上的异步过程，宿主按 status 刷新 */
@@ -380,6 +386,8 @@ export interface ProviderRequest<C extends Capability = Capability> {
    * remote-only 会带这个标记提交，平台侧可据此放开静态目录校验
    */
   remoteOnly?: boolean
+  /** 由宿主内部 Agent 驱动设置。 */
+  usage?: 'agent'
 }
 
 /**
@@ -390,6 +398,16 @@ export interface ProviderContext<S = Record<string, unknown>> {
   settings: S
   secret(name: string): string | undefined
   fetch: typeof fetch
+  /** 宿主裁剪域名权限的二进制 WebSocket；信号中止时自动关闭。 */
+  socket?(
+    url: string,
+    headers: Record<string, string>,
+  ): Promise<{
+    logId?: string
+    send(data: Uint8Array): void
+    receive(): Promise<Uint8Array>
+    close(): void
+  }>
   signal: AbortSignal
   log(message: string, data?: Record<string, unknown>): void
   files: {

@@ -14,9 +14,27 @@ describe('内置平台插件的权限声明', () => {
     [
       '火山方舟 Agent Plan',
       arkPlanPlugin,
-      ['ARK_AGENT_PLAN_API_KEY', 'ARK_TOS_ACCESS_KEY', 'ARK_TOS_SECRET_KEY'],
-      ['volces.com', 'byteimg.com', 'ibytedtos.com', 'byteicdn.com'],
-      ['ark.cn-beijing.volces.com', 'test-bucket.tos-cn-beijing.volces.com'],
+      [
+        'ARK_AGENT_PLAN_API_KEY',
+        'ARK_TOS_ACCESS_KEY',
+        'ARK_TOS_SECRET_KEY',
+        'ARK_PLAN_ACCESS_KEY',
+        'ARK_PLAN_SECRET_KEY',
+      ],
+      [
+        'volces.com',
+        'byteimg.com',
+        'ibytedtos.com',
+        'byteicdn.com',
+        'bytedance.com',
+        'volcengineapi.com',
+      ],
+      [
+        'ark.cn-beijing.volces.com',
+        'test-bucket.tos-cn-beijing.volces.com',
+        'openspeech.bytedance.com',
+        'ark.cn-beijing.volcengineapi.com',
+      ],
     ],
     [
       '百炼',

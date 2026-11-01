@@ -22,12 +22,12 @@
 | 方舟对话            | `POST /api/v3/chat/completions`；共享流式实现                                                                                             | Chat Completions 的 `messages` 与 Responses 的 `input[]` 是不同协议；参考 MCP 对 Responses 历史消息的修正不应复制进此实现。                                                                              |
 | 方舟图片 / 抠图     | `POST /api/v3/images/generations`；`response_format=b64_json`，抠图使用 `layer_decomposition=true`、`output_format=png`                   | 普通生成按返回格式标记 MIME；抠图读取 `z_index/bounding_box`，背景层不作为主体候选。5.0 不支持 seed。                                                                                                    |
 | 方舟视频            | `POST /api/v3/contents/generations/tasks`；`content[]`，音频开关为 `generate_audio`                                                       | 顶层 `id` → 查询任务 → `content.video_url/last_frame_url`；尾帧 JPEG。本地图片和音频可 Data URI；本地视频尚未上传素材库，因此提交前阻断。                                                                |
-| 方舟 Agent Plan     | 图片 / 视频改用 `/api/plan/v3` 前缀，路径和请求体同上；`model` 换成套餐预置名（如 `doubao-seedance-2.5`），Bearer 用 Agent Plan 专属 Key  | `volc/ark-plan` 独立平台，模型 ID 与按量平台一致，查询 / 取消任务同样走套餐前缀。套餐文本模型禁止 API 调用，样片模式不支持，均在提交前阻断。                                                             |
+| 方舟 Agent Plan     | 图片 / 视频改用 `/api/plan/v3` 前缀，路径和请求体同上；`model` 换成套餐预置名（如 `doubao-seedance-2.5`），Bearer 用 Agent Plan 专属 Key  | `volc/ark-plan` 独立平台，模型 ID 与按量平台一致，查询 / 取消任务同样走套餐前缀。套餐文本通过同一前缀的 `/chat/completions` 调用，仅允许内置 Agent（`usage=agent`）；普通文本生成和草稿模式提交前阻断。  |
 | 方舟视频参考存储    | TOS 用官方 SDK 预签名；S3 兼容存储用 SigV4 查询串预签名，`PUT` 附 `x-amz-content-sha256: UNSIGNED-PAYLOAD`                                | 上传 15 分钟、读取 7 天签名；宿主按设置只额外放行上传主机。方舟只接受公网视频 URL 或预置 `asset://` 素材，不接受视频 Base64。                                                                            |
 
 音色设计使用独立的 `voiceDesign` 能力：豆包 `POST /api/v3/tts/voice_design` 的提示词为 `prompt.text_prompt` / `prompt.image_prompt.image_bytes`，试听为顶层 `text`，槽位为 `speaker_id`；MiniMax `POST /v1/voice_design` 使用顶层 `prompt` / `preview_text` / `voice_id`，响应 `trial_audio` 是 hex。豆包设计与复刻共用状态查询，MiniMax 设计同步返回音色 ID。详细限制及官方来源见[音色设计与声音复刻](../guide/providers.md#音色设计与声音复刻)。
 
-模型列表拉取（`listRemoteModels`，供设置页与内置目录比对）：MiniMax `GET /v1/models`（条目键为 `model`，只覆盖对话模型）；方舟 `GET /api/v3/models`（OpenAI 兼容，仅按量数据面，Agent Plan 套餐数据面未提供；覆盖范围先限对话）；百炼 `GET /compatible-mode/v1/models`（OpenAI 兼容模式，业务空间域名未提供；覆盖范围先限对话）；兼容渠道 `GET {baseURL}/models`（覆盖范围为空，只作设置页「模型 ID」的候选，不参与合并）。豆包（语音）没有公开的模型列表接口，不实现。可用性标记只落在覆盖范围内的能力上；覆盖范围内的对话类 remote-only 可复用各家对话路径以通用参数提交，其余能力的 remote-only 仅在设置里展示。列表缓存键为密钥指纹加 provider 声明的设置键（`remoteModelsSettings`：MiniMax 地域、百炼地域与业务空间、兼容渠道 Base URL）。
+模型列表拉取（`listRemoteModels`，供设置页与内置目录比对）：MiniMax `GET /v1/models`（条目键为 `model`，只覆盖对话模型）；方舟 `GET /api/v3/models`（OpenAI 兼容，仅按量数据面；覆盖范围先限对话）；百炼 `GET /compatible-mode/v1/models`（OpenAI 兼容模式，业务空间域名未提供；覆盖范围先限对话）；兼容渠道 `GET {baseURL}/models`（覆盖范围为空，只作设置页「模型 ID」的候选，不参与合并）。Agent Plan 使用管控面 `POST https://ark.cn-beijing.volcengineapi.com/?Action=ListArkAgentPlanModel&Version=2024-01-01`，请求 `Edition=personal`，从 `Result.Datas[].ModelID` 去重读取；需独立可选 AK/SK 签名，不猜测 `/api/plan/v3/models`。覆盖范围限对话，远端文本条目保留 `agentOnly`，不进入普通生成器；目录是产品支持范围，不能当成当前订阅权限。豆包（语音）没有公开的模型列表接口，不实现。可用性标记只落在覆盖范围内的能力上；覆盖范围内的对话类 remote-only 可复用各家对话路径以通用参数提交，其余能力的 remote-only 仅在设置里展示。列表缓存键为密钥指纹加 provider 声明的设置键（`remoteModelsSettings`：MiniMax 地域、百炼地域与业务空间、兼容渠道 Base URL）。
 
 MiniMax 复刻的主音频上传用途为 `voice_clone`（10–300 秒）；增强参考用途为 `prompt_audio`（小于 8 秒），对应 `clone_prompt.prompt_audio` 与 `clone_prompt.prompt_text`。可选试听同时发送 `text` 和 `model`。两家的降噪与归一化不再写死，默认关闭；豆包 `disable_volume_normalization` 与界面开关反向映射。短样本建议与平台硬性限制分别处理。
 
@@ -40,3 +40,7 @@ pnpm exec vp test run apps/server/src/plugins/plugins.test.ts
 ```
 
 本地通过不等于真实云端验收。生成类 POST 不自动重试，`submit_unknown` 与已有远端任务 ID 的恢复规则不变。
+
+Agent Plan 语音使用 `openspeech.bytedance.com`，`X-Api-Key` 为套餐专属 Key：TTS `POST /api/v3/plan/tts/unidirectional`，资源 ID `seed-tts-2.0`，复用普通豆包的完整流校验及 WAV 封装；ASR `wss://openspeech.bytedance.com/api/v3/plan/sauc/bigmodel_nostream`，资源 ID `volc.seedasr.sauc.duration`，二进制 gzip 消息，最后音频包使用负序号并等待服务端终包，缺终包不得当作成功。宿主 `ProviderContext.socket` 校验 WSS 和插件域名权限，不跟随重定向，响应有大小与队列上限，取消时关闭连接；旧宿主无该接口时 ASR 明确提示升级。协议见[官方语音接入](https://docs.volcengine.com/docs/ark/agent-plan-personal-voice-model?lang=zh)。
+
+Agent Plan 工具调用保留 `reasoning_content` 和 `encrypted_content`，随 assistant 消息持久化并在同模型的后续请求原样回传；不显示为助手正文，切换模型后不回传旧模型续传字段。参见[官方思考模式](https://docs.volcengine.com/docs/ark/deep-thinking?lang=zh)。

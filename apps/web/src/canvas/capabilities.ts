@@ -60,7 +60,7 @@ export function localContext(engine: Engine, catalog: Catalog | null): Capabilit
         (catalog?.providers ?? []).flatMap((p) =>
           p.enabled
             ? p.models
-                .filter((m) => m.capabilities.includes(capability))
+                .filter((m) => !m.agentOnly && m.capabilities.includes(capability))
                 .map((m) => ({ ref: `${p.id}:${m.id}`, title: m.title ?? m.id, voices: m.voices }))
             : [],
         ),
