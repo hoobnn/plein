@@ -34,6 +34,7 @@ import { resultActionMedia, type ResultActionMedia } from './resultActionMedia'
 import { LibraryAdd } from '../features/library/LibraryAdd'
 import { MediaTools } from './MediaTools'
 import { AssetDownloadButton } from './AssetDownloadButton'
+import { requestElementRename } from '../canvas/rename'
 
 const BAR_H = 40
 const TOP_RESERVED = 64
@@ -137,6 +138,17 @@ function ResultBarHost({ engine }: { engine: Engine }) {
       style={style}
       className="ui-bar ui-bar-sm ui-scrollbar pointer-events-auto fixed z-20 h-auto w-max flex-wrap overflow-y-auto"
     >
+      {!engine.doc.readOnly && (
+        <button
+          type="button"
+          className="ui-bar-btn"
+          title="修改名称并同步引用（F2）"
+          onClick={() => void requestElementRename(engine, el.id)}
+        >
+          <Icon name="pencil" size={14} />
+          重命名
+        </button>
+      )}
       {analysis && (
         <button
           type="button"

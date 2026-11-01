@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { type CanvasElement, primaryResult, setParam, updateElement } from '@plein/doc'
+import { type CanvasElement, primaryResult, setParam } from '@plein/doc'
 import {
   ASSET_NODE_TYPES,
   ANIMATIC_TYPE,
@@ -61,6 +61,7 @@ import { PromptTools } from './PromptTools'
 import { AiAnalysisEntry } from '../ai-shot-analysis/AiAnalysisEditor'
 import { RecipeLibrary } from './RecipeLibrary'
 import { CharacterImageArchiveButton } from '../library/ArchiveCharacterImage'
+import { saveElementName } from '../../canvas/rename'
 
 /** 生成节点需要提示词和输入预览；只有入口的节点使用紧凑面板。 */
 const EDITOR_W = 840
@@ -460,22 +461,22 @@ export function GeneratorPanel({
       }}
     >
       <div className="plein-generator-body ui-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto">
-        {ASSET_NODE_TYPES.has(node.type) && (
-          <NameField
-            value={el.name ?? node.title}
-            onChange={(name) => {
-              if (engine.doc.readOnly) {
-                useCanvas.getState().notify('画布已变为只读，名称未保存')
-                return false
-              }
-              engine.doc.undo.stopCapturing()
-              updateElement(engine.doc, el.id, { name })
-              engine.doc.undo.stopCapturing()
-            }}
-            hint={`在提示词里输入 @${el.name ?? node.title} 引用`}
-            trailing={canvasId ? <LibrarySave engine={engine} el={el} /> : null}
-          />
-        )}
+        <NameField
+          value={el.name ?? node.title}
+          onChange={(name) => {
+            if (engine.doc.readOnly) {
+              useCanvas.getState().notify('画布已变为只读，名称未保存')
+              return false
+            }
+            return saveElementName(engine, el.id, name)
+          }}
+          hint="改名时同步当前画布引用"
+          trailing={
+            canvasId && ASSET_NODE_TYPES.has(node.type) ? (
+              <LibrarySave engine={engine} el={el} />
+            ) : null
+          }
+        />
         {(node.inputs.length > 0 || actions) && (
           <Inputs
             engine={engine}

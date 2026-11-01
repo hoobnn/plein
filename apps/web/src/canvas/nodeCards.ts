@@ -31,6 +31,8 @@ import { shotsOf } from '../features/storyboard/model'
 import { clipOverlay } from './occlusion'
 import { cancelRequestKey, useCancelRequests } from '../features/runs/cancelRequests'
 import { runRequestKey, useRunRequests } from '../features/runs/runRequests'
+import { requestElementRename } from './rename'
+import { outlineIcon, outlineTitle, outlineType } from './outline'
 
 type PromptPreset = Catalog['prompts'][number]
 
@@ -50,7 +52,7 @@ interface Card {
   w: number
   h: number
   glyph: HTMLSpanElement
-  title: HTMLSpanElement
+  title: HTMLButtonElement
   status: HTMLSpanElement
   nav: HTMLSpanElement
   count: HTMLSpanElement
@@ -177,7 +179,8 @@ export class NodeCards {
     const want = new Set<string>()
     if (engine.highDetail) {
       for (const id of engine.visibleIds) {
-        if (engine.scene.get(id)?.kind === 'node') want.add(id)
+        const kind = engine.scene.get(id)?.kind
+        if (kind === 'node' || (kind !== 'frame' && engine.selection.has(id))) want.add(id)
       }
     }
     for (const [id, c] of this.cards) {
@@ -243,8 +246,17 @@ export class NodeCards {
     head.className = 'plein-node-head'
     const glyph = document.createElement('span')
     glyph.className = 'plein-node-glyph'
-    const title = document.createElement('span')
+    const title = document.createElement('button')
+    title.type = 'button'
     title.className = 'plein-node-title'
+    title.title = '修改名称并同步引用'
+    title.addEventListener('pointerdown', (event) => event.stopPropagation())
+    title.addEventListener('dblclick', (event) => event.stopPropagation())
+    title.addEventListener('click', (event) => {
+      event.stopPropagation()
+      this.engine.selection.set([id])
+      void requestElementRename(this.engine, id)
+    })
     const status = document.createElement('span')
     status.className = 'plein-node-status'
     const nav = document.createElement('span')
@@ -304,6 +316,20 @@ export class NodeCards {
 
   private render(card: Card, el: CanvasElement, selected: boolean) {
     const catalog = useCatalog.getState().catalog
+    // 导入的图片、视频、音频和文本也共用可编辑标题；只在选中时显示。
+    if (el.kind !== 'node') {
+      card.root.dataset.kind = outlineType(el)
+      card.root.dataset.selected = String(selected)
+      card.title.textContent = outlineTitle(el, catalog)
+      card.title.setAttribute('aria-label', `重命名：${card.title.textContent}`)
+      card.title.disabled = this.engine.doc.readOnly
+      card.glyph.replaceChildren(iconElement(outlineIcon(outlineType(el)), 14))
+      card.body.hidden = true
+      card.progress.hidden = true
+      card.nav.hidden = true
+      card.editMotion.hidden = true
+      return
+    }
     const info = findNode(catalog, el.nodeType)
     const pure = info ? isPure(info) : false
     const pk = info ? promptKey(info) : undefined
@@ -316,6 +342,7 @@ export class NodeCards {
       el.w,
       el.h,
       el.name,
+      this.engine.doc.readOnly,
       el.run,
       useRunRequests.getState().pending.has(runRequestKey(this.actions.canvasId, el.id)),
       useStale.getState().nodes.get(el.id),
@@ -344,6 +371,8 @@ export class NodeCards {
     card.root.dataset.kind = kind
     card.root.dataset.selected = String(selected)
     card.title.textContent = el.name ?? info?.title ?? el.nodeType ?? '节点'
+    card.title.setAttribute('aria-label', `重命名：${card.title.textContent}`)
+    card.title.disabled = this.engine.doc.readOnly
     card.glyph.replaceChildren(iconElement(glyphOf(el, kind), 14))
 
     let status = run ? STATUS_TEXT[run.status] : ''

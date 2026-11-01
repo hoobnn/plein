@@ -15,6 +15,7 @@ import { Popover } from '../ui/Popover'
 import { Presence } from '../ui/Presence'
 import { cancelGroup, runFrame } from '../features/runs/run'
 import { saveAsTemplate } from '../features/templates/actions'
+import { requestElementRename } from '../canvas/rename'
 import { ShotGroupPanel } from './ShotGroupPanel'
 
 /** Frame 预设色：写进元素的 color，GPU 渲染据此画底色和边框 */
@@ -85,6 +86,15 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
       style={style}
       className="ui-bar ui-bar-sm pointer-events-auto fixed z-20 h-auto w-max flex-wrap"
     >
+      <button
+        type="button"
+        className={btn}
+        title="修改名称并同步引用（F2）"
+        onClick={() => void requestElementRename(engine, el.id)}
+      >
+        <Icon name="pencil" size={14} />
+        重命名
+      </button>
       <button
         type="button"
         className={btn}

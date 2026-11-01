@@ -10,6 +10,7 @@ export * from './prompt-caps'
 export * from './read-view'
 
 export * from './clipboard'
+export * from './rename'
 
 export * from './sequence'
 export * from './review'

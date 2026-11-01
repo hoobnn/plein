@@ -69,7 +69,7 @@ it('搜索无匹配时 Enter 不创建；返回匹配结果后选择和撤销只
   expect([...engine.doc.elements()]).toEqual([])
   await user.clear(input)
   await user.type(input, 'Frame')
-  await user.click(screen.getByRole('option', { name: 'Frame' }))
+  await user.click(screen.getByRole('option', { name: '分组框' }))
   expect([...engine.doc.elements()].map((el) => el.kind)).toEqual(['frame'])
   engine.doc.undo.undo()
   expect([...engine.doc.elements()]).toEqual([])
@@ -259,4 +259,41 @@ it('底部工具单击切换，缩放输入获得焦点、确认数值或取消�
   await user.keyboard('{Escape}')
   expect(screen.queryByRole('dialog', { name: '缩放' })).toBeNull()
   expect(engine.zoomTo).toHaveBeenCalledTimes(1)
+})
+
+it('空白右键悬停展开二级新建菜单，选择后在右键位置创建并关闭', async () => {
+  const engine = engineForMenu()
+  useCanvas.setState({
+    engine,
+    menu: { kind: 'context', target: null, client: { x: 100, y: 100 }, world: { x: 500, y: 400 } },
+  })
+  const { user } = renderApp(<CanvasMenus canImport={false} />)
+  const trigger = screen.getByRole('menuitem', { name: '新建节点' })
+  expect(screen.queryByRole('dialog', { name: '添加节点' })).toBeNull()
+  await user.hover(trigger)
+  expect(trigger.getAttribute('aria-expanded')).toBe('true')
+  expect(document.activeElement).toBe(trigger)
+  await user.click(screen.getByRole('option', { name: '文档' }))
+  expect([...engine.doc.elements()].map((element) => element.kind)).toEqual(['markdown'])
+  expect(useCanvas.getState().menu).toBeNull()
+})
+
+it('二级新建菜单支持键盘进入、搜索与返回，外层菜单保留', async () => {
+  const engine = engineForMenu()
+  useCanvas.setState({
+    engine,
+    menu: { kind: 'context', target: null, client: { x: 100, y: 100 }, world: { x: 500, y: 400 } },
+  })
+  const { user } = renderApp(<CanvasMenus canImport={false} />)
+  const trigger = screen.getByRole('menuitem', { name: '新建节点' })
+  await user.keyboard('{ArrowRight}')
+  expect(document.activeElement).toBe(screen.getByRole('textbox', { name: '搜索节点' }))
+  await user.type(screen.getByRole('textbox'), 'Frame')
+  expect(screen.getByRole('option', { name: '分组框' })).toBeTruthy()
+  await user.keyboard('{Escape}')
+  expect(screen.queryByRole('dialog', { name: '添加节点' })).toBeNull()
+  expect(document.activeElement).toBe(trigger)
+  expect(useCanvas.getState().menu?.kind).toBe('context')
+  await user.keyboard('{Escape}')
+  expect(useCanvas.getState().menu).toBeNull()
 })

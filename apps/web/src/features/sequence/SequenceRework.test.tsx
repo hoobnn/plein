@@ -170,7 +170,7 @@ it('模态内编辑独立草稿并请求生成，明确选择候选后只替换�
     expect(draft.params?.prompt).toBe('原镜头输入')
     expect(submissions).toHaveLength(0)
     const generator = within(modal).getByTestId('generator')
-    const prompt = within(generator).getByRole('textbox')
+    const prompt = within(generator).getByRole('textbox', { name: '提示词', exact: true })
     await waitFor(() => expect(previews.at(-1)).toEqual({ nodeId: draft.id, prompt: '原镜头输入' }))
     await view.user.clear(prompt)
     await view.user.type(prompt, '返工后的镜头输入')

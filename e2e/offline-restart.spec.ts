@@ -130,9 +130,10 @@ test(
     await page.getByRole('button', { name: '新建项目', exact: true }).click()
     await expect(page).toHaveURL(/#\/c\//)
     await waitEngine(page)
-    await page.waitForFunction(
-      () => document.elementFromPoint(innerWidth / 2, innerHeight / 2)?.tagName === 'CANVAS',
-    )
+    await page.waitForFunction(() => {
+      const at = document.elementFromPoint(innerWidth / 2, innerHeight / 2)
+      return at?.tagName === 'CANVAS' || !!at?.closest('[aria-label="选择创作起点"]')
+    })
     const url = page.url()
     await expect(syncStatus(page)).toHaveAttribute('data-sync', 'connected')
     await addNode(page, '文本', { x: 400, y: 450 })

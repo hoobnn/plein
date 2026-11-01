@@ -85,9 +85,10 @@ test(
     await page.getByRole('button', { name: '新建项目', exact: true }).click()
     await expect(page).toHaveURL(/#\/c\//)
     await waitEngine(page)
-    await page.waitForFunction(
-      () => document.elementFromPoint(innerWidth / 2, innerHeight / 2)?.tagName === 'CANVAS',
-    )
+    await page.waitForFunction(() => {
+      const at = document.elementFromPoint(innerWidth / 2, innerHeight / 2)
+      return at?.tagName === 'CANVAS' || !!at?.closest('[aria-label="选择创作起点"]')
+    })
     await addNode(page, '短剧')
     const canvas = decodeURIComponent(page.url().split('#/c/')[1]!.split('?')[0]!)
     const api = (path: string) => `${server.url}${path}`

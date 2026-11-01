@@ -164,7 +164,19 @@ export async function newProject(page: Page, options: NewProjectOptions = {}) {
 
 /** 双击空白处打开添加菜单，搜索并选第一项 */
 export async function addNode(page: Page, query: string, at = { x: 720, y: 450 }) {
-  await page.mouse.dblclick(at.x, at.y)
+  // 空画布快捷卡片也居中显示；双击入口应选择卡片之外的空白处。
+  const blank = await page.evaluate((point) => {
+    const start = document
+      .elementFromPoint(point.x, point.y)
+      ?.closest('[aria-label="选择创作起点"]')
+    if (!start) return point
+    const rect = start.getBoundingClientRect()
+    return {
+      x: point.x,
+      y: rect.bottom + 16 < innerHeight - 120 ? rect.bottom + 16 : rect.top - 16,
+    }
+  }, at)
+  await page.mouse.dblclick(blank.x, blank.y)
   await page.getByPlaceholder('添加节点').fill(query)
   await page.keyboard.press('Enter')
 }

@@ -88,6 +88,26 @@
   color: var(--ink);
 }
 
+/* 二级新建菜单：左右两列之间保留连续的指针热区。 */
+.plein-create-submenu {
+  position: absolute;
+  z-index: 1;
+  padding: 4px;
+  border-radius: var(--radius-lg);
+  background: var(--menu);
+  box-shadow: var(--shadow-3);
+  backdrop-filter: blur(32px) saturate(1.8);
+}
+.plein-create-submenu::before {
+  position: absolute;
+  inset: 0 -12px;
+  z-index: -1;
+  content: "";
+}
+.ui-menu-item[aria-expanded="true"] {
+  background: var(--hover);
+}
+
 /* 顶栏名称随窗口收缩，保留旁边的视图按钮。 */
 .editor-project > .ui-bar-btn {
   min-width: 24px;
@@ -240,6 +260,12 @@
     flex-wrap: wrap;
   }
 }
+/* 极窄画布保持紧凑间距，避免多换一行后与助手入口重叠。 */
+@container plein-footer (max-width: 380px) {
+  .plein-footer > .ui-bar {
+    gap: 2px;
+  }
+}
 /* 拖宽度时不要动画，跟手 */
 .plein-resizing .plein-follow-sidebar {
   transition: none;
@@ -311,7 +337,7 @@
   contain-intrinsic-size: auto 44px;
   align-items: center;
   gap: 8px;
-  padding-right: 6px;
+  padding: 0 6px;
   border-radius: var(--radius-md);
   color: var(--ink);
   cursor: default;
@@ -325,9 +351,6 @@
 }
 .plein-layer[aria-selected="true"] {
   background: var(--accent-soft);
-}
-.plein-layer[aria-selected="true"]:not(:focus-visible) {
-  box-shadow: inset 2px 0 0 var(--accent);
 }
 .plein-layer:disabled {
   opacity: 0.5;

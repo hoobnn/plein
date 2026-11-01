@@ -178,7 +178,23 @@
   }
 }
 
-/* 空态入口只出现在有足够纵向空间的窗口，摆在画布上方：双击空白处的入口要留在画布中央。 */
+/* 快捷入口和操作提示共享画布可用区域的中心，随两侧面板一起避让。 */
+.plein-canvas-empty {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 24px 96px;
+  container: canvas-empty / size;
+}
+.plein-canvas-empty-content {
+  display: flex;
+  width: 100%;
+  max-width: 560px;
+  min-width: 0;
+  flex-direction: column;
+  gap: 28px;
+}
 .plein-canvas-start {
   display: grid;
   width: 100%;
@@ -213,6 +229,11 @@
   background: var(--surface-2);
 }
 @media (max-height: 520px), (max-width: 639px) {
+  .plein-canvas-start {
+    display: none;
+  }
+}
+@container canvas-empty (max-width: 480px) or (max-height: 340px) {
   .plein-canvas-start {
     display: none;
   }

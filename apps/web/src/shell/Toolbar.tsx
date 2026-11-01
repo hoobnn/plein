@@ -138,7 +138,7 @@ export function Toolbar({ canImport }: { canImport: boolean }) {
   if (!engine) return null
 
   return (
-    <div className="ui-bar pointer-events-auto">
+    <div className="ui-bar pointer-events-auto gap-1.5">
       <NodeMenu engine={engine} canImport={canImport} />
       <ToolToggle engine={engine} tool={tool} />
       {canImport && (

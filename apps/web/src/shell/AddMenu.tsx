@@ -32,6 +32,12 @@ const NODE_ICONS: Record<string, IconName> = {
   'plein/prop': 'puzzle',
   'plein/style': 'palette',
   'plein/effect': 'wand',
+  'plein/storyboard': 'board',
+  'plein/sequence': 'frames',
+  'plein/animatic': 'story',
+  'plein/motion': 'layers',
+  'plein/shot-analysis': 'shotGroup',
+  'plein/image-process': 'brush',
 }
 const CATEGORY_ICONS: Record<NodeInfo['category'], IconName> = {
   input: 'text',
@@ -46,6 +52,36 @@ const CATEGORY_ICONS: Record<NodeInfo['category'], IconName> = {
 const nodeIcon = (n: NodeInfo): IconName =>
   NODE_ICONS[n.type] ?? CATEGORY_ICONS[n.category] ?? 'workflow'
 
+/** 按创作用途组织，不把插件的技术分类直接暴露给用户。 */
+const SECTIONS = ['文本', '图片', '视频', '音频', '主体设定', '分镜与剪辑', '画布工具']
+const NODE_TITLES: Record<string, string> = {
+  'plein/llm': '文本生成',
+  'plein/sequence': '剪辑时间线',
+}
+const SUBJECT_TYPES = new Set([
+  'plein/character',
+  'plein/scene',
+  'plein/prop',
+  'plein/style',
+  'plein/effect',
+])
+const EDITING_TYPES = new Set([
+  'plein/storyboard',
+  'plein/sequence',
+  'plein/animatic',
+  'plein/motion',
+  'plein/shot-analysis',
+])
+function nodeSection(node: NodeInfo) {
+  if (SUBJECT_TYPES.has(node.type)) return '主体设定'
+  if (EDITING_TYPES.has(node.type) || node.category === 'story') return '分镜与剪辑'
+  return (
+    { input: '文本', text: '文本', image: '图片', video: '视频', audio: '音频', util: '画布工具' }[
+      node.category
+    ] ?? '画布工具'
+  )
+}
+
 const BASIC: Array<{
   id: string
   title: string
@@ -55,15 +91,15 @@ const BASIC: Array<{
 }> = [
   {
     id: 'markdown',
-    title: 'Markdown',
-    hint: '可编辑的文档，也能作为文本连到节点',
+    title: '文档',
+    hint: 'Markdown 文档，可编辑并作为文本连到节点',
     icon: 'doc',
     input: { kind: 'markdown', w: 320, h: 200, text: '# 新文档' },
   },
   {
     id: 'frame',
-    title: 'Frame',
-    hint: '分组容器，可整组运行、存为模板',
+    title: '分组框',
+    hint: 'Frame 分组容器，可整组运行、存为模板',
     icon: 'frame',
     input: { kind: 'frame', w: 640, h: 400, name: '新场景' },
   },
@@ -72,6 +108,7 @@ const BASIC: Array<{
 interface Item {
   id: string
   title: string
+  originalTitle?: string
   hint?: string
   icon: IconName
   section: string
@@ -93,6 +130,7 @@ export interface AddMenuProps {
   style?: React.CSSProperties
   /** 菜单在锚点的哪一侧：从那一侧长出 */
   side?: 'above' | 'below'
+  autoFocus?: boolean
 }
 
 /**
@@ -108,6 +146,7 @@ export function AddMenu({
   className = '',
   style,
   side = 'below',
+  autoFocus = true,
 }: AddMenuProps) {
   const exit = useExit()
   const nodes = useCatalog((s) => s.catalog?.nodes)
@@ -168,15 +207,20 @@ export function AddMenu({
     for (const n of pool)
       list.push({
         id: `${n.type}@${n.version}`,
-        title: n.title,
-        hint: n.description,
+        title: NODE_TITLES[n.type] ?? n.title,
+        originalTitle: n.title,
+        hint: `${n.title} · ${n.description ?? ''}`,
         icon: nodeIcon(n),
-        section: '添加节点',
+        section: nodeSection(n),
         run: (p) => placeElement(engine, nodeElement(n), p, from),
       })
     if (!from) {
       for (const b of BASIC)
-        list.push({ ...b, section: '添加节点', run: (p) => placeElement(engine, b.input, p) })
+        list.push({
+          ...b,
+          section: b.id === 'markdown' ? '文本' : '画布工具',
+          run: (p) => placeElement(engine, b.input, p),
+        })
       // 短剧模板：铺一整条流水线，只建结构和连线，不触发任何运行
       list.push({
         id: 'builtin/drama',
@@ -234,10 +278,19 @@ export function AddMenu({
         })
       }
     }
+    list.sort((a, b) => {
+      const rank = (section: string) => {
+        const index = SECTIONS.indexOf(section)
+        return index < 0 ? SECTIONS.length : index
+      }
+      return rank(a.section) - rank(b.section)
+    })
     const q = query.trim().toLowerCase()
     return q
       ? list
-          .filter((i) => `${i.title} ${i.hint ?? ''} ${i.id}`.toLowerCase().includes(q))
+          .filter((i) =>
+            `${i.title} ${i.section} ${i.hint ?? ''} ${i.id}`.toLowerCase().includes(q),
+          )
           .sort((a, b) => {
             const score = (title: string) =>
               title.toLowerCase() === q || title.toLowerCase().replace(/^生成/, '') === q
@@ -247,7 +300,9 @@ export function AddMenu({
                   : title.toLowerCase().includes(q)
                     ? 2
                     : 3
-            return score(a.title) - score(b.title)
+            const rank = (item: Item) =>
+              Math.min(score(item.title), score(item.originalTitle ?? item.title))
+            return rank(a) - rank(b)
           })
       : list
   }, [nodes, catalog, templates, engine, from, query, canImport, insertPluginTemplate])
@@ -277,7 +332,7 @@ export function AddMenu({
         <Icon name="search" />
         <input
           // oxlint-disable-next-line jsx-a11y/no-autofocus -- 弹出即可打字搜索
-          autoFocus
+          autoFocus={autoFocus}
           value={query}
           placeholder={
             from
@@ -311,10 +366,7 @@ export function AddMenu({
           <p className="px-3 pb-3 pt-1 text-sm text-ink-subtle">没有匹配的节点</p>
         )}
         {items.map((item, i) => {
-          const header =
-            item.section !== lastSection && (i > 0 || item.section.startsWith('插件模板'))
-              ? item.section
-              : null
+          const header = item.section !== lastSection ? item.section : null
           lastSection = item.section
           return (
             <div key={item.id} className="group relative">

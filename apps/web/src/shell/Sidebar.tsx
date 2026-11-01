@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { type CanvasElement, updateElement } from '@plein/doc'
+import { type CanvasElement } from '@plein/doc'
 import { LIBRARY_KINDS, libraryKindOfNode } from '@plein/nodes'
 import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { assetUrls } from '../api/client'
@@ -26,6 +26,7 @@ import { EmptyState } from '../ui/EmptyState'
 import { startSidebarResize } from './sidebarResize'
 import { LibraryReadStatus } from '../features/library/LibraryReadStatus'
 import { useLibraryPlacement } from '../features/library/useLibraryPlacement'
+import { saveElementName } from '../canvas/rename'
 
 const TABS: Array<{ id: SidebarTab; label: string }> = [
   { id: 'layers', label: '画布' },
@@ -421,9 +422,7 @@ function Layers({ engine }: { engine: Engine }) {
         useCanvas.getState().notify('名称已在其他位置更新，已保留输入；请确认后再次保存')
         return { expected: current.name ?? outlineTitle(current, catalog) }
       }
-      engine.doc.undo.stopCapturing()
-      updateElement(engine.doc, id, { name })
-      engine.doc.undo.stopCapturing()
+      if (!saveElementName(engine, id, name)) return { expected }
       finish(true)
       return
     }
@@ -669,7 +668,7 @@ const LayerRow = memo(function LayerRow({
           actions.navigate(el.id, key)
         }
       }}
-      style={{ paddingLeft: depth * 20 }}
+      style={{ paddingLeft: 6 + depth * 20 }}
       className="plein-layer group"
     >
       {el.kind === 'frame' && parent ? (

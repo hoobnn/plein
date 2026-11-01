@@ -95,13 +95,13 @@ test.describe('画布操作浏览器断点', { tag: '@core' }, () => {
     await page.setViewportSize({ width: 320, height: 640 })
     await page.goto('/#/demo?n=0')
     await waitEngine(page)
-    const prompt = page.getByText('双击空白处或按 Tab 添加节点', { exact: true })
+    const prompt = page.getByText(/双击\s*空白处或按\s*Tab\s*添加节点/)
     await expect(prompt).toBeVisible()
     const point = (await prompt.boundingBox())!
     await page.mouse.dblclick(point.x + point.width / 2, point.y + point.height / 2)
     const picker = page.getByRole('dialog', { name: '添加节点', exact: true })
     await picker.getByRole('textbox', { name: '搜索节点' }).fill('Markdown')
-    await picker.getByRole('option', { name: 'Markdown', exact: true }).click()
+    await picker.getByRole('option', { name: '文档', exact: true }).click()
     await expect(prompt).toHaveCount(0)
     await page.evaluate(() =>
       (window.__plein.engine as typeof window.__plein.engine & { undo(): void }).undo(),

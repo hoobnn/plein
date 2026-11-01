@@ -1,6 +1,6 @@
 import { useEngineVersion } from '../canvas/hooks'
-import type { CanvasMenuEvent, Engine } from '@plein/canvas-core'
-import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useState } from 'react'
+import { isEditableTarget, type CanvasMenuEvent, type Engine } from '@plein/canvas-core'
+import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { applyCast, castLibrary, castOf, describeCast } from '../canvas/cast'
 import { findNode, type NodeInfo } from '../canvas/nodes'
 import { useCanvas } from '../stores/canvas'
@@ -11,6 +11,9 @@ import { AddMenu } from './AddMenu'
 import { runFlowFrom, runFrame, runNode } from '../features/runs/run'
 import { Presence, useClosing, useExit } from '../ui/Presence'
 import { saveAsTemplate } from '../features/templates/actions'
+import { requestElementRename } from '../canvas/rename'
+import { dialogOpen } from '../ui/Dialog'
+import { Icon } from '../ui/icons'
 
 const MENU_W = 280
 
@@ -56,17 +59,33 @@ export function CanvasMenus({ canImport }: { canImport: boolean }) {
   const menu = useCanvas((s) => s.menu)
   const setMenu = useCanvas((s) => s.setMenu)
   const close = () => setMenu(null)
+  useEffect(() => {
+    const rename = (event: KeyboardEvent) => {
+      if (
+        event.key !== 'F2' ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.shiftKey ||
+        isEditableTarget(event.target) ||
+        dialogOpen() ||
+        !engine ||
+        engine.doc.readOnly
+      )
+        return
+      const ids = engine.selection.values()
+      if (ids.length !== 1) return
+      event.preventDefault()
+      void requestElementRename(engine, ids[0]!)
+    }
+    window.addEventListener('keydown', rename)
+    return () => window.removeEventListener('keydown', rename)
+  }, [engine])
   if (!engine || !menu) return <Presence>{null}</Presence>
   if (menu.kind === 'context')
     return (
       <Presence>
-        <ContextMenu
-          engine={engine}
-          menu={menu}
-          canImport={canImport}
-          onClose={close}
-          onAddNode={() => setMenu({ ...menu, kind: 'create' })}
-        />
+        <ContextMenu engine={engine} menu={menu} canImport={canImport} onClose={close} />
       </Presence>
     )
   return (
@@ -157,18 +176,157 @@ function Item(props: {
 
 const Sep = () => <div className="ui-sep" />
 
-function ContextMenu({
+/** 子菜单留在同一关闭区域内，鼠标可以穿过两列之间的间隙。 */
+function CreateSubmenu({
   engine,
   menu,
   canImport,
   onClose,
-  onAddNode,
+  anchor,
 }: {
   engine: Engine
   menu: Extract<CanvasMenuEvent, { kind: 'context' }>
   canImport: boolean
   onClose(): void
-  onAddNode(): void
+  anchor: { left: number; top: number }
+}) {
+  const [open, setOpen] = useState(false)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const panel = useRef<HTMLDivElement>(null)
+  const [focusOnOpen, setFocusOnOpen] = useState(false)
+  const [position, setPosition] = useState<{ left: number; top: number } | null>(null)
+  const closeSubmenu = () => {
+    setOpen(false)
+    trigger.current?.focus()
+  }
+  const enter = () => {
+    setFocusOnOpen(true)
+    setOpen(true)
+  }
+  useLayoutEffect(() => {
+    if (!open) return
+    const update = () => {
+      const button = trigger.current
+      const element = panel.current
+      if (!button || !element) return
+      const rect = button.getBoundingClientRect()
+      const width = element.offsetWidth
+      const height = element.offsetHeight
+      const right = rect.right + 8
+      const left =
+        right + width <= window.innerWidth - 8
+          ? right
+          : rect.left - width - 8 >= 8
+            ? rect.left - width - 8
+            : Math.max(8, Math.min(rect.left, window.innerWidth - width - 8))
+      const next = {
+        left: left - rect.left,
+        top: Math.max(8, Math.min(rect.top, window.innerHeight - height - 8)) - rect.top,
+      }
+      setPosition((prev) => (prev?.left === next.left && prev.top === next.top ? prev : next))
+    }
+    update()
+    const parent = trigger.current?.closest('[role="menu"]')
+    const leave = (event: Event) => {
+      const item = (event.target as HTMLElement).closest('[role="menuitem"]')
+      if (item && item !== trigger.current) setOpen(false)
+    }
+    parent?.addEventListener('pointerover', leave)
+    parent?.addEventListener('focusin', leave)
+    window.addEventListener('resize', update)
+    const observer = new ResizeObserver(update)
+    if (panel.current) observer.observe(panel.current)
+    return () => {
+      window.removeEventListener('resize', update)
+      parent?.removeEventListener('pointerover', leave)
+      parent?.removeEventListener('focusin', leave)
+      observer.disconnect()
+    }
+  }, [open, anchor.left, anchor.top])
+  useLayoutEffect(() => {
+    if (open && position && focusOnOpen) {
+      panel.current?.querySelector('input')?.focus({ preventScroll: true })
+      setFocusOnOpen(false)
+    }
+  }, [open, position, focusOnOpen])
+  return (
+    <div className="relative">
+      <button
+        ref={trigger}
+        type="button"
+        role="menuitem"
+        aria-haspopup="dialog"
+        aria-expanded={open && !engine.doc.readOnly}
+        disabled={engine.doc.readOnly}
+        className="ui-menu-item justify-between"
+        onPointerEnter={() => {
+          if (!engine.doc.readOnly) setOpen(true)
+        }}
+        onClick={enter}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowRight') {
+            event.preventDefault()
+            event.stopPropagation()
+            enter()
+          }
+        }}
+      >
+        <span>新建节点</span>
+        <Icon name="chevronRight" size={16} />
+      </button>
+      {open && !engine.doc.readOnly && (
+        <div
+          ref={panel}
+          role="group"
+          aria-label="新建节点选项"
+          className="plein-create-submenu"
+          style={{
+            ...position,
+            opacity: position ? 1 : 0,
+            width: 'min(260px, calc(100vw - 16px))',
+          }}
+          onKeyDown={(event) => {
+            event.stopPropagation()
+            if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return
+            if (event.key === 'ArrowLeft' || event.key === 'Escape') {
+              event.preventDefault()
+              closeSubmenu()
+            }
+          }}
+        >
+          <button type="button" className="ui-menu-item text-ink-muted" onClick={closeSubmenu}>
+            <Icon name="chevronLeft" size={16} />
+            新建节点
+          </button>
+          <AddMenu
+            engine={engine}
+            canImport={canImport}
+            at={() => menu.world}
+            onClose={onClose}
+            autoFocus={false}
+            style={{
+              maxHeight: 'min(560px, calc(100dvh - 56px))',
+              boxShadow: 'none',
+              background: 'transparent',
+              animation: 'none',
+            }}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ContextMenu({
+  engine,
+  menu,
+  canImport,
+  onClose,
+}: {
+  engine: Engine
+  menu: Extract<CanvasMenuEvent, { kind: 'context' }>
+  canImport: boolean
+  onClose(): void
 }) {
   useEngineVersion(engine)
   const readOnly = engine.doc.readOnly
@@ -213,23 +371,13 @@ function ContextMenu({
   if (menu.target === null) {
     items = (
       <>
-        <Item label="添加节点…" hint="双击" disabled={readOnly} onClick={edit(onAddNode)} />
-        {canImport && (
-          <>
-            <Item
-              label="导入文件…"
-              disabled={readOnly}
-              onClick={edit(() => window.dispatchEvent(new CustomEvent('plein:import-pick')))}
-            />
-            <Item
-              label="导入文件夹…"
-              disabled={readOnly}
-              onClick={edit(() =>
-                window.dispatchEvent(new CustomEvent('plein:import-pick-folder')),
-              )}
-            />
-          </>
-        )}
+        <CreateSubmenu
+          engine={engine}
+          menu={menu}
+          canImport={canImport}
+          onClose={onClose}
+          anchor={position}
+        />
         <Sep />
         <Item label="适应画布" hint={shortcut('shift+1')} onClick={act(() => engine.zoomToFit())} />
         <Item label="全选" hint={shortcut('mod+a')} onClick={act(() => engine.selectAll())} />
@@ -238,6 +386,14 @@ function ContextMenu({
   } else {
     items = (
       <>
+        {single && (
+          <Item
+            label="重命名…"
+            hint="F2"
+            disabled={readOnly}
+            onClick={edit(() => void requestElementRename(engine, single.id))}
+          />
+        )}
         {node?.executable && node.execution === 'job' && single && (
           <Item
             label="生成"
@@ -384,7 +540,7 @@ function ContextMenu({
         width: 220,
         maxWidth: 'calc(100vw - 16px)',
         maxHeight: 'calc(100dvh - 16px)',
-        overflowY: 'auto',
+        overflowY: menu.target === null ? 'visible' : 'auto',
         overscrollBehavior: 'contain',
       }}
       className="ui-menu pointer-events-auto fixed z-35"

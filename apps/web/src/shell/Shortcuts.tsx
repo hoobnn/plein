@@ -42,6 +42,7 @@ const GROUPS: Array<{ title: string; items: Array<[string, ...Combo[]]> }> = [
     items: [
       ['撤销 / 重做', [k('mod+z')], [k('mod+shift+z')]],
       ['全选', [k('mod+a')]],
+      ['重命名并同步引用', ['F2']],
       ['选择 / 抓手', ['V'], ['H']],
       ['微移（按住 ⇧ 每次 10）', ['方向键']],
       ['置于顶层 / 底层', [k('mod+]')], [k('mod+[')]],

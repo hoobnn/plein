@@ -42,6 +42,7 @@ export function NameField({
           aria-label="节点名称"
           aria-describedby={conflict ? conflictId : undefined}
           value={draft}
+          maxLength={200}
           onChange={(e) => setEdit({ base, draft: e.target.value })}
           onBlur={() => {
             if (!conflict) commit()
