@@ -19,6 +19,8 @@ export interface MentionChoice {
   thumbnail?: string
   poster?: boolean
   used: boolean
+  connected?: boolean
+  disabled?: boolean
 }
 export interface MentionPickerHandle {
   handleKey(event: KeyboardEvent): void
@@ -61,11 +63,11 @@ export function MentionPicker({
       `${c.name} ${c.insert} ${c.description}`.toLowerCase().includes(q),
   )
   const home = !category && !q
-  const items = home ? filtered.filter((c) => c.used) : filtered
+  const items = home ? filtered.filter((c) => c.used || c.connected) : filtered
   const total = items.length + (home ? CATEGORIES.length : 0)
   const choose = (i: number) => {
     const item = items[i]
-    if (item) onPick(item.insert)
+    if (item && !item.disabled) onPick(item.insert)
     else if (home && CATEGORIES[i - items.length]) {
       setCategory(CATEGORIES[i - items.length]!.id)
       setActive(0)
@@ -129,13 +131,18 @@ export function MentionPicker({
           </button>
         )}
         <div role="listbox" aria-label="引用资产" className="ui-scrollbar max-h-72 overflow-y-auto">
-          {home && items.length > 0 && <div className="ui-menu-label">已引用</div>}
+          {home && items.length > 0 && (
+            <div className="ui-menu-label">
+              {items.some((item) => item.connected) ? '参考素材' : '已引用'}
+            </div>
+          )}
           {items.map((item, i) => (
             <button
               key={item.key}
               type="button"
               role="option"
               aria-selected={i === active}
+              disabled={item.disabled}
               className="ui-menu-item"
               title={`${item.name} · ${item.description}`}
               onPointerDown={(e) => e.preventDefault()}

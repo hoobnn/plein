@@ -141,7 +141,7 @@ export function Inputs({
     else locate(up)
   }
 
-  const submitted = prepared ? submittedMedia(prepared) : null
+  const submitted = prepared && !preparing ? submittedMedia(prepared) : null
   const sentTiles = new Map<string, React.ReactNode>()
   const unusedTiles: React.ReactNode[] = []
   const insertToken = (token: string) => {
@@ -205,14 +205,14 @@ export function Inputs({
           'assetId' in value &&
           v.assetId === value.assetId,
       )
-      const unused = !!prepared && !sent
+      const unused = !!prepared && !preparing && !sent
       const tile = (
         <RefTile
           key={u.edgeId}
           index={sent?.index ?? n}
           unused={unused}
           up={u}
-          caption={unused ? '未送入' : (roleOf(port, i) ?? caption)}
+          caption={preparing ? '正在确认输入…' : unused ? '未送入' : (roleOf(port, i) ?? caption)}
           onReference={
             tokenOf(port, i) && u.value
               ? () => {
@@ -258,7 +258,7 @@ export function Inputs({
       )
       tiles.push(tile)
       if (sent) sentTiles.set(mediaKey(sent), tile)
-      else if (prepared) unusedTiles.push(tile)
+      else if (prepared && !preparing) unusedTiles.push(tile)
     }
     if (port.multiple || list.length === 0)
       adds.push(
@@ -414,7 +414,7 @@ export function Inputs({
           正在确认实际输入与编号…
         </p>
       )}
-      {submitted?.length || (!prepared && tiles.length) ? (
+      {submitted?.length || (!submitted && tiles.length) ? (
         <div
           data-testid="submitted-references"
           aria-label="实际送入的参考素材"

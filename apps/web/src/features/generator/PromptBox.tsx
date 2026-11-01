@@ -23,7 +23,7 @@ import { composingKey } from './composingKey'
 import { MentionTextarea } from '../../ui/MentionTextarea'
 import { Popover } from '../../ui/Popover'
 import { mentionParts } from '../../canvas/mentionText'
-import { findNode, mentionTargets, targetImages } from '../../canvas/nodes'
+import { findNode, mentionTargets, targetImages, upstreams } from '../../canvas/nodes'
 import { useCatalog } from '../../stores/catalog'
 import { videoReferenceTokens } from '@plein/plugin-sdk'
 import { submittedMedia } from './submittedMedia'
@@ -44,6 +44,7 @@ export function PromptBox({
   engine,
   selfId,
   prepared,
+  preparing = false,
   value,
   presets,
   placeholder,
@@ -55,6 +56,8 @@ export function PromptBox({
   engine: Engine
   selfId: string
   prepared?: PreparedInput | null
+  /** 编号只使用当前预览，刷新期间保留素材名称但禁止插入旧编号。 */
+  preparing?: boolean
   value: string
   presets: PromptPreset[]
   placeholder: string
@@ -178,12 +181,44 @@ export function PromptBox({
     findNode(catalog, element.nodeType)?.capability === 'video.generate'
   ) {
     const tokens = videoReferenceTokens(shown)
-    const items = prepared ? submittedMedia(prepared) : []
+    const pending = preparing || !prepared || prepared.nodeId !== selfId
+    const items = !pending && prepared ? submittedMedia(prepared) : []
+    const connected = upstreams(engine, selfId, catalog)
+    for (const [port, sources] of connected)
+      for (const up of sources) {
+        connectedIds.add(up.source.id)
+        const value = up.value
+        if (!value || !['image', 'video', 'audio'].includes(value.type)) continue
+        if (
+          items.some(
+            (item) =>
+              item.port === port &&
+              (!item.source || item.source === up.source.id) &&
+              'assetId' in value &&
+              item.assetId === value.assetId,
+          )
+        )
+          continue
+        const kind = value.type as 'image' | 'video' | 'audio'
+        choices.push({
+          key: `pending:${up.edgeId}`,
+          name: up.source.name ?? '参考素材',
+          insert: '',
+          category: kind,
+          description: pending ? '正在确认引用编号…' : '未送入当前模型',
+          thumbnail: kind === 'audio' || !('assetId' in value) ? undefined : value.assetId,
+          poster: kind === 'video',
+          used: false,
+          connected: true,
+          disabled: true,
+        })
+      }
     for (const item of items) {
       if (item.source) connectedIds.add(item.source)
       const source = item.source ? engine.doc.get(item.source) : undefined
       choices.push({
         key: item.token,
+        connected: true,
         name: source?.name ?? item.token,
         insert: item.token,
         category: item.type,
@@ -343,6 +378,7 @@ export function PromptBox({
                 engine={engine}
                 selfId={selfId}
                 prepared={prepared}
+                preparing={preparing}
                 value={value}
                 presets={presets}
                 placeholder={placeholder}

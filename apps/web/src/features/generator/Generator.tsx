@@ -483,7 +483,7 @@ export function GeneratorPanel({
             node={node}
             ups={ups}
             prepared={input.data}
-            preparing={input.loading}
+            preparing={input.loading || input.stale || !!input.error}
             trailing={actions}
             toolbar={
               presets.length > 0 ? (
@@ -557,6 +557,7 @@ export function GeneratorPanel({
             engine={engine}
             selfId={el.id}
             prepared={input.data}
+            preparing={input.loading || input.stale || !!input.error}
             value={String(params[pk] ?? '')}
             presets={presets}
             onPreset={(p) => {
