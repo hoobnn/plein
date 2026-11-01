@@ -145,6 +145,7 @@ async function boot() {
           } else updater.check?.()
         }
       : null,
+    identity.productName,
   )
   // 更新操作只接受当前主页面；页面重载或窗口重建后先读取主进程快照。
   const updateHandlers: Record<string, (...args: unknown[]) => unknown> = {
