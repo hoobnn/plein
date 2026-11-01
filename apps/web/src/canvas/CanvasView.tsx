@@ -45,6 +45,7 @@ import { watchStageHistory } from '../features/stage/history'
 import { watchMotionHistory } from '../features/motion/history'
 import { droppedFiles, MAX_IMPORT_FILES } from './dropped'
 import { CreationGuide } from '../features/creation-guide/CreationGuide'
+import { attachWheelContinuation } from './wheelContinuation'
 
 export type CanvasSource = { kind: 'remote'; canvasId: string } | { kind: 'demo'; count: number }
 
@@ -183,6 +184,7 @@ export function CanvasView({
           // 开发时方便在控制台调试
           if (import.meta.env.DEV) (window as { plein?: unknown }).plein = engine
           const off = attachImport(engine, host)
+          const offWheel = attachWheelContinuation(host)
           const offView = awareness ? publishView(engine, awareness as ViewAwareness) : () => {}
           const offTheme = useTheme.subscribe((s, prev) => {
             if (s.name !== prev.name) engine.setTheme(canvasTheme(s.name))
@@ -196,6 +198,7 @@ export function CanvasView({
             offMotionHistory()
             offTheme()
             off()
+            offWheel()
             offActivate()
             cards.destroy()
             badges.destroy()
