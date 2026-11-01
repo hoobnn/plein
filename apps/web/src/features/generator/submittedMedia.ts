@@ -1,5 +1,6 @@
 import { referenceAliases } from '@plein/plugin-sdk'
 import type { InputValue, PreparedInput } from '@plein/protocol'
+import type { Upstream } from '../../canvas/nodes'
 
 export type SubmittedMedia = InputValue & {
   type: 'image' | 'video' | 'audio'
@@ -20,11 +21,31 @@ export function submittedMedia(data: PreparedInput): SubmittedMedia[] {
   )
 }
 
-export function referenceMedia(data: PreparedInput, bindings: unknown) {
+export function referenceMedia(
+  data: PreparedInput,
+  bindings: unknown,
+  ups?: Map<string, Upstream[]>,
+) {
   return referenceAliases(
     submittedMedia(data)
       .filter((item) => !!item.assetId)
-      .map((item) => ({ ...item, assetId: item.assetId! })),
+      .map((item) => {
+        const candidates =
+          ups
+            ?.get(item.port)
+            ?.filter(
+              (up) =>
+                up.value &&
+                'assetId' in up.value &&
+                up.value.assetId === item.assetId &&
+                up.value.type === item.type,
+            ) ?? []
+        return {
+          ...item,
+          assetId: item.assetId!,
+          source: item.source ?? (candidates.length === 1 ? candidates[0]!.source.id : undefined),
+        }
+      }),
     bindings,
   )
 }

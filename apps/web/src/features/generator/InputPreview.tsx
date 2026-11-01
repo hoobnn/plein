@@ -192,7 +192,11 @@ export function InputPreview({
   ) : null
   if (!data)
     return status ? (
-      <div className="min-w-0 px-4" data-testid="input-preview" aria-busy={loading}>
+      <div
+        className="plein-input-preview min-w-0 px-4"
+        data-testid="input-preview"
+        aria-busy={loading}
+      >
         {status}
       </div>
     ) : null
@@ -219,13 +223,17 @@ export function InputPreview({
   const issues = data.blocked.length + data.notices.length
 
   return (
-    <div className="min-w-0 px-4" data-testid="input-preview" aria-busy={loading}>
+    <div
+      className="plein-input-preview min-w-0 px-4"
+      data-testid="input-preview"
+      aria-busy={loading}
+    >
       {status}
       <button
         type="button"
         onClick={() => setOpen(!open)}
         aria-expanded={open}
-        className="ui-btn ui-btn-quiet ui-btn-sm -ml-2.5 max-w-full"
+        className="plein-input-preview-toggle ui-btn ui-btn-quiet ui-btn-sm w-full"
       >
         <span className="flex-none">实际输入</span>
         <span className="truncate text-ink-subtle">{previewSummary(data)}</span>
@@ -235,149 +243,158 @@ export function InputPreview({
           issues > 0 && <span className="ui-tag ui-tag-warning">{issues} 条提示</span>
         )}
         {loading && <span className="ui-spinner size-3" aria-label="更新中" />}
-        <span className={`flex-none transition-transform ${open ? 'rotate-180' : ''}`}>
+        <span className={`ml-auto flex-none transition-transform ${open ? 'rotate-180' : ''}`}>
           <Icon name="chevronDown" size={14} />
         </span>
       </button>
       {open && (
-        <div className="flex flex-col gap-3 pt-2 pb-1 text-xs">
+        <div className="plein-input-preview-details ui-scrollbar text-xs">
           {!loading && !error && data.blocked.length > 0 && (
-            <ul role="alert" className="space-y-1 text-danger [overflow-wrap:anywhere]">
+            <ul
+              role="alert"
+              className="plein-input-preview-wide space-y-1 text-danger [overflow-wrap:anywhere]"
+            >
               {issueText(data.blocked).map((message) => (
                 <li key={message}>{message}</li>
               ))}
             </ul>
           )}
-          {data.refs.length > 0 && (
-            <section className="flex flex-col gap-1.5">
-              <h4 className="ui-section-title">
-                @ 引用
-                {data.referenceLimit !== undefined && (
-                  <span className="font-normal text-ink-subtle">
-                    {' '}
-                    · 模型最多 {data.referenceLimit} 张参考图
+          <div className="flex min-w-0 flex-col gap-3">
+            {data.refs.length > 0 && (
+              <section className="flex flex-col gap-1.5">
+                <h4 className="ui-section-title">
+                  @ 引用
+                  {data.referenceLimit !== undefined && (
+                    <span className="font-normal text-ink-subtle">
+                      {' '}
+                      · 模型最多 {data.referenceLimit} 张参考图
+                    </span>
+                  )}
+                </h4>
+                {data.refs.map((r) => {
+                  const state = refState(r)
+                  const thumb = r.sent[0] ?? r.available[0]
+                  return (
+                    <div key={`${r.elementId}-${r.name}`} className="flex items-center gap-2">
+                      <span className="relative size-8 flex-none overflow-hidden rounded-sm bg-surface-2">
+                        {thumb ? (
+                          <img
+                            src={assetUrls.variant(thumb, 'thumb-256')}
+                            alt=""
+                            className={`size-full object-cover ${r.sent.length ? '' : 'opacity-40'}`}
+                          />
+                        ) : (
+                          <span className="flex size-full items-center justify-center text-ink-subtle">
+                            <Icon name="image" size={14} />
+                          </span>
+                        )}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-ink">
+                        {r.name}
+                        <span className="text-ink-subtle"> · {KIND_LABEL[r.kind]}</span>
+                      </span>
+                      <span className={`ui-tag ${state.tone}`} title={state.title}>
+                        {state.text}
+                      </span>
+                      {canRequire && (
+                        <button
+                          type="button"
+                          onClick={() => toggleRequired(r.elementId)}
+                          aria-pressed={r.required}
+                          title={
+                            r.required
+                              ? '必需参考：缺图或放不下时不提交。点击改为可选'
+                              : '设为必需参考：优先送入，缺图或放不下时不提交'
+                          }
+                          className={`ui-btn ui-btn-xs ${r.required ? 'ui-btn-secondary text-accent' : 'ui-btn-quiet text-ink-subtle'}`}
+                        >
+                          <Icon name="star" size={12} />
+                          {r.required ? '必需' : '可选'}
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+              </section>
+            )}
+            {images.length > 0 && (
+              <section className="flex flex-col gap-1.5">
+                <h4 className="ui-section-title">送入顺序</h4>
+                <div className="ui-scrollbar flex gap-2 overflow-x-auto pb-0.5">
+                  {images.map((v) => (
+                    <figure
+                      key={`${v.port}-${v.source ?? ''}-${v.resultId ?? ''}-${v.assetId}`}
+                      className="flex w-12 flex-none flex-col items-center gap-1 text-2xs text-ink-subtle"
+                      title={nameOf(v.assetId, v.source)}
+                    >
+                      <span className="relative size-12 overflow-hidden rounded-md bg-surface-2 shadow-1">
+                        {v.type === 'audio' ? (
+                          <span className="flex size-full items-center justify-center">
+                            <Icon name="sound" size={20} />
+                          </span>
+                        ) : (
+                          <img
+                            src={assetUrls.variant(
+                              v.assetId!,
+                              v.type === 'video' ? 'poster' : 'thumb-256',
+                            )}
+                            alt=""
+                            className="size-full object-cover"
+                          />
+                        )}
+                        <span className="ui-badge absolute top-1 left-1 tabular-nums">
+                          {v.index}
+                        </span>
+                      </span>
+                      <figcaption className="w-full truncate text-center">
+                        {v.type === 'video' ? '视频 · ' : v.type === 'audio' ? '音频 · ' : ''}
+                        {nameOf(v.assetId, v.source)}
+                      </figcaption>
+                    </figure>
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
+          <div className="flex min-w-0 flex-col gap-3">
+            {data.prompt && (
+              <section className="flex flex-col gap-1.5">
+                <h4 className="ui-section-title">最终提示词</h4>
+                <p className="ui-scrollbar max-h-32 overflow-y-auto rounded-md bg-surface-2 px-2.5 py-2 whitespace-pre-wrap text-ink [overflow-wrap:anywhere]">
+                  {data.prompt}
+                </p>
+              </section>
+            )}
+            {(params.length > 0 || data.voice) && (
+              <section className="flex flex-wrap items-center gap-1.5">
+                <h4 className="ui-section-title mr-1">有效参数</h4>
+                {data.voice && (
+                  <span className="ui-chip h-auto max-w-full min-h-[var(--h-xs)] py-0.5">
+                    <span className="ui-scrollbar min-w-0 max-h-24 overflow-y-auto whitespace-pre-wrap break-all">
+                      音色 {data.voice.voiceId}
+                    </span>
                   </span>
                 )}
-              </h4>
-              {data.refs.map((r) => {
-                const state = refState(r)
-                const thumb = r.sent[0] ?? r.available[0]
-                return (
-                  <div key={`${r.elementId}-${r.name}`} className="flex items-center gap-2">
-                    <span className="relative size-8 flex-none overflow-hidden rounded-sm bg-surface-2">
-                      {thumb ? (
-                        <img
-                          src={assetUrls.variant(thumb, 'thumb-256')}
-                          alt=""
-                          className={`size-full object-cover ${r.sent.length ? '' : 'opacity-40'}`}
-                        />
-                      ) : (
-                        <span className="flex size-full items-center justify-center text-ink-subtle">
-                          <Icon name="image" size={14} />
-                        </span>
-                      )}
+                {params.map(([k, v]) => (
+                  <span key={k} className="ui-chip h-auto max-w-full min-h-[var(--h-xs)] py-0.5">
+                    <span className="ui-scrollbar min-w-0 max-h-24 overflow-y-auto whitespace-pre-wrap break-all">
+                      {fields.get(k)?.title ?? k}{' '}
+                      {fields.get(k)?.labels?.[String(v)] ??
+                        (k === 'duration' && v === -1
+                          ? '自动'
+                          : typeof v === 'boolean'
+                            ? v
+                              ? '开启'
+                              : '关闭'
+                            : String(v))}
                     </span>
-                    <span className="min-w-0 flex-1 truncate text-ink">
-                      {r.name}
-                      <span className="text-ink-subtle"> · {KIND_LABEL[r.kind]}</span>
-                    </span>
-                    <span className={`ui-tag ${state.tone}`} title={state.title}>
-                      {state.text}
-                    </span>
-                    {canRequire && (
-                      <button
-                        type="button"
-                        onClick={() => toggleRequired(r.elementId)}
-                        aria-pressed={r.required}
-                        title={
-                          r.required
-                            ? '必需参考：缺图或放不下时不提交。点击改为可选'
-                            : '设为必需参考：优先送入，缺图或放不下时不提交'
-                        }
-                        className={`ui-btn ui-btn-xs ${r.required ? 'ui-btn-secondary text-accent' : 'ui-btn-quiet text-ink-subtle'}`}
-                      >
-                        <Icon name="star" size={12} />
-                        {r.required ? '必需' : '可选'}
-                      </button>
-                    )}
-                  </div>
-                )
-              })}
-            </section>
-          )}
-          {images.length > 0 && (
-            <section className="flex flex-col gap-1.5">
-              <h4 className="ui-section-title">送入顺序</h4>
-              <div className="ui-scrollbar flex gap-2 overflow-x-auto pb-0.5">
-                {images.map((v) => (
-                  <figure
-                    key={`${v.port}-${v.source ?? ''}-${v.resultId ?? ''}-${v.assetId}`}
-                    className="flex w-12 flex-none flex-col items-center gap-1 text-2xs text-ink-subtle"
-                    title={nameOf(v.assetId, v.source)}
-                  >
-                    <span className="relative size-12 overflow-hidden rounded-md bg-surface-2 shadow-1">
-                      {v.type === 'audio' ? (
-                        <span className="flex size-full items-center justify-center">
-                          <Icon name="sound" size={20} />
-                        </span>
-                      ) : (
-                        <img
-                          src={assetUrls.variant(
-                            v.assetId!,
-                            v.type === 'video' ? 'poster' : 'thumb-256',
-                          )}
-                          alt=""
-                          className="size-full object-cover"
-                        />
-                      )}
-                      <span className="ui-badge absolute top-1 left-1 tabular-nums">{v.index}</span>
-                    </span>
-                    <figcaption className="w-full truncate text-center">
-                      {v.type === 'video' ? '视频 · ' : v.type === 'audio' ? '音频 · ' : ''}
-                      {nameOf(v.assetId, v.source)}
-                    </figcaption>
-                  </figure>
+                  </span>
                 ))}
-              </div>
-            </section>
-          )}
-          {data.prompt && (
-            <section className="flex flex-col gap-1.5">
-              <h4 className="ui-section-title">最终提示词</h4>
-              <p className="ui-scrollbar max-h-32 overflow-y-auto rounded-md bg-surface-2 px-2.5 py-2 whitespace-pre-wrap text-ink">
-                {data.prompt}
-              </p>
-            </section>
-          )}
-          {(params.length > 0 || data.voice) && (
-            <section className="flex flex-wrap items-center gap-1.5">
-              <h4 className="ui-section-title mr-1">有效参数</h4>
-              {data.voice && (
-                <span className="ui-chip h-auto max-w-full min-h-[var(--h-xs)] py-0.5">
-                  <span className="ui-scrollbar min-w-0 max-h-24 overflow-y-auto whitespace-pre-wrap break-all">
-                    音色 {data.voice.voiceId}
-                  </span>
-                </span>
-              )}
-              {params.map(([k, v]) => (
-                <span key={k} className="ui-chip h-auto max-w-full min-h-[var(--h-xs)] py-0.5">
-                  <span className="ui-scrollbar min-w-0 max-h-24 overflow-y-auto whitespace-pre-wrap break-all">
-                    {fields.get(k)?.title ?? k}{' '}
-                    {fields.get(k)?.labels?.[String(v)] ??
-                      (k === 'duration' && v === -1
-                        ? '自动'
-                        : typeof v === 'boolean'
-                          ? v
-                            ? '开启'
-                            : '关闭'
-                          : String(v))}
-                  </span>
-                </span>
-              ))}
-            </section>
-          )}
+              </section>
+            )}
+          </div>
           {data.notices.length > 0 && (
-            <ul className="flex flex-col gap-1 text-ink-subtle">
+            <ul className="plein-input-preview-wide flex flex-col gap-1 text-ink-subtle">
               {issueText(data.notices).map((n) => (
                 <li key={n}>{n}</li>
               ))}

@@ -844,6 +844,46 @@ it('持久引用在服务端重排后按身份映射，替换、删除及旧编�
   ).toBe(true)
 })
 
+it('名称引用使用来源当前结果，文件名不会被重复展开，原始提示词保持名称', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const name = '产品截图 2026.11.01.png'
+  const source = createElement(doc, {
+    kind: 'image',
+    name,
+    assetId: asset('a'),
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  const video = addNode(doc, 'plein/video', {
+    params: {
+      model: 'plein/mock:video',
+      mode: 'reference',
+      prompt: `@${name} 保持构图`,
+      [`referenceNameBinding:${encodeURIComponent(name)}:${source}`]: {
+        type: 'image',
+        assetId: asset('a'),
+        source,
+      },
+    },
+  })
+  connect(doc, [source, 'image'], [video, 'images'])
+  const before = await preview(server, id, video)
+  expect(before.status).toBe('ready')
+  expect(before.prompt).toContain('@image1 保持构图')
+  expect(before.inputs.images).toHaveLength(1)
+  updateElement(doc, source, { assetId: asset('b') })
+  const after = await preview(server, id, video)
+  expect(after.status).toBe('ready')
+  expect(after.inputs.images?.map((v) => v.assetId)).toEqual([asset('b')])
+  expect(after.prompt).toContain('@image1 保持构图')
+  expect(doc.get(video)!.params?.prompt).toBe(`@${name} 保持构图`)
+  expect(after.inputHash).not.toBe(before.inputHash)
+})
+
 it('上游文本中的参考编号随素材重排映射，失效身份在预览中阻断', async () => {
   const { server } = await bootServer()
   mockSettings(server, {})

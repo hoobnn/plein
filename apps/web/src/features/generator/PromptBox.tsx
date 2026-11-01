@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { setParam, type CanvasElement } from '@plein/doc'
+import { type CanvasElement } from '@plein/doc'
 import {
   findMentions,
   firstPlaceholder,
@@ -25,8 +25,9 @@ import { Popover } from '../../ui/Popover'
 import { mentionParts } from '../../canvas/mentionText'
 import { findNode, mentionTargets, targetImages, upstreams } from '../../canvas/nodes'
 import { useCatalog } from '../../stores/catalog'
-import { videoReferenceTokens } from '@plein/plugin-sdk'
+import { boundReferenceTokens, type ReferenceIdentity } from '@plein/plugin-sdk'
 import { referenceMedia } from './submittedMedia'
+import { bindReferenceName, migrateReferenceNames, referenceName } from './referenceNames'
 import { MentionPicker, type MentionChoice, type MentionPickerHandle } from './MentionPicker'
 
 export type PromptPreset = Catalog['prompts'][number]
@@ -116,6 +117,26 @@ export function PromptBox({
   })
   // 序号顺序要和 findMentions 一致，否则插进去的 #2 运行时指向另一张卡
   const targets = sortMentionTargets(mentionTargets(engine).filter((t) => t.id !== selfId))
+  useLayoutEffect(() => {
+    const el = engine.doc.get(selfId)
+    if (
+      engine.doc.readOnly ||
+      el?.params?.mode !== 'reference' ||
+      findNode(catalog, el.nodeType)?.capability !== 'video.generate'
+    )
+      return
+    const current: ReferenceIdentity[] = [...upstreams(engine, selfId, catalog).values()]
+      .flat()
+      .flatMap((up) => {
+        const value = up.value
+        return value && (value.type === 'image' || value.type === 'video' || value.type === 'audio')
+          ? [{ type: value.type, assetId: value.assetId, source: up.source.id }]
+          : []
+      })
+    const fresh = !preparing && prepared?.nodeId === selfId
+    if (fresh) current.push(...referenceMedia(prepared, el.params))
+    migrateReferenceNames(engine.doc, selfId, current, fresh)
+  })
   const q = query?.query.toLowerCase() ?? ''
   // 重名时给每张卡一条候选，插进提示词时自带 #序号，写完再改名字也不会串
   const counts = new Map<string, number>()
@@ -173,8 +194,13 @@ export function PromptBox({
           .slice(0, MAX_OPTIONS)
       : []
   const count = mentionOptions.length + presetOptions.length + profileOpts.length
-  const mentions = findMentions(shown, targets)
-  const missing = mentionParts(shown, targets).filter((p) => p.missing)
+  const bound = boundReferenceTokens(shown, engine.doc.get(selfId)?.params)
+  const mentions = findMentions(shown, targets).filter(
+    (m) => !bound.some((t) => t.start === m.start),
+  )
+  const missing = mentionParts(shown, targets).filter(
+    (p) => p.missing && !bound.some((t) => t.start <= p.start && t.end > p.start),
+  )
   const connectedIds = new Set<string>()
   const choices: MentionChoice[] = []
   const element = engine.doc.get(selfId)
@@ -182,10 +208,10 @@ export function PromptBox({
     element?.params?.mode === 'reference' &&
     findNode(catalog, element.nodeType)?.capability === 'video.generate'
   ) {
-    const tokens = videoReferenceTokens(shown)
+    const tokens = boundReferenceTokens(shown, element.params)
     const pending = preparing || !prepared || prepared.nodeId !== selfId
-    const items = !pending && prepared ? referenceMedia(prepared, element.params) : []
     const connected = upstreams(engine, selfId, catalog)
+    const items = !pending && prepared ? referenceMedia(prepared, element.params, connected) : []
     for (const [port, sources] of connected)
       for (const up of sources) {
         connectedIds.add(up.source.id)
@@ -210,7 +236,7 @@ export function PromptBox({
           description: preparationError
             ? '输入确认失败，请重试'
             : pending
-              ? '正在确认引用编号…'
+              ? '正在确认参考素材…'
               : '未送入当前模型',
           thumbnail: kind === 'audio' || !('assetId' in value) ? undefined : value.assetId,
           poster: kind === 'video',
@@ -225,14 +251,14 @@ export function PromptBox({
       choices.push({
         key: item.token,
         connected: true,
-        name: source?.name ?? item.token,
-        insert: item.token,
+        name: source?.name ?? referenceName(engine.doc, item),
+        insert: referenceName(engine.doc, item),
         category: item.type,
-        description: `@${item.token}`,
+        description: `@${referenceName(engine.doc, item)}`,
         thumbnail: item.type === 'audio' ? undefined : item.assetId,
         poster: item.type === 'video',
         used:
-          tokens.some((t) => `${t.kind}${t.index}` === item.token) ||
+          tokens.some((t) => t.name === referenceName(engine.doc, item)) ||
           mentions.some((m) => m.id === item.source),
       })
     }
@@ -281,21 +307,13 @@ export function PromptBox({
   const insert = (name: string) => {
     const item =
       prepared && !preparing
-        ? referenceMedia(prepared, engine.doc.get(selfId)?.params).find(
-            (entry) => entry.token === name,
-          )
+        ? referenceMedia(
+            prepared,
+            engine.doc.get(selfId)?.params,
+            upstreams(engine, selfId, catalog),
+          ).find((entry) => referenceName(engine.doc, entry) === name)
         : undefined
-    if (item)
-      setParam(
-        engine.doc,
-        selfId,
-        `referenceBinding:${name}:${item.source ?? ''}:${item.assetId}`,
-        {
-          type: item.type,
-          assetId: item.assetId,
-          ...(item.source ? { source: item.source } : {}),
-        },
-      )
+    if (item) bindReferenceName(engine.doc, selfId, item)
     replaceQuery(`@${name} `, (r) => [r.length, r.length])
   }
   const applyPreset = (p: PromptPreset) => {

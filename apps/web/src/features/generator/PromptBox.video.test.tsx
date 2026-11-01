@@ -29,7 +29,7 @@ it.each([
   ['video', true],
   ['audio', true],
 ] as const)(
-  '刚上传的 %s（放大编辑：%s）在刷新期间不引用旧编号，刷新后按实际输入编号插入',
+  '刚上传的 %s（放大编辑：%s）在刷新期间不引用旧编号，刷新后按素材名称插入',
   async (kind, expanded) => {
     mockResizeObserver()
     const doc = openDoc()
@@ -142,10 +142,10 @@ it.each([
     // 未写入正文的连入素材在 @ 首屏就能选，不必先找分类。
     const ready = within(menu).getByRole('option', { name: /刚上传的素材/ })
     expect(ready.hasAttribute('disabled')).toBe(false)
-    expect(ready.textContent).toContain(`@${kind}2`)
+    expect(ready.textContent).toContain('@刚上传的素材')
     await view.user.click(ready)
-    await waitFor(() => expect(field().value).toBe(`@${kind}2 `))
-    expect(doc.get(id)?.params?.prompt).toBe(`@${kind}2 `)
+    await waitFor(() => expect(field().value).toBe('@刚上传的素材 '))
+    expect(doc.get(id)?.params?.prompt).toBe('@刚上传的素材 ')
     const reopened = openDoc()
     try {
       applyUpdate(reopened.ydoc, encodeStateAsUpdate(doc.ydoc))

@@ -398,18 +398,53 @@
   max-height: none;
 }
 
-/* 收起的辅助信息共用一行；展开时恢复整行宽度，正文始终可独立滚动。 */
+/* 辅助区保持稳定的纵向层级，展开预览不挤走主编辑区。 */
 .plein-generator-inspectors {
   display: flex;
-  align-items: flex-start;
-  padding-block: 4px;
+  flex-direction: column;
+  gap: 4px;
+  padding-block: 8px;
+  border-top: 1px solid var(--line);
 }
 .plein-generator-inspectors > * {
-  flex: 1;
+  width: 100%;
   min-width: 0;
 }
-.plein-generator-inspectors:has(details[open], button[aria-expanded="true"]) {
-  display: block;
+.plein-generator-body > .plein-generator-inspectors {
+  flex-shrink: 1;
+  min-height: 80px;
+  max-height: 50%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.plein-generator-inspectors > .plein-input-preview {
+  flex-shrink: 0;
+}
+.plein-input-preview-toggle {
+  justify-content: flex-start;
+  gap: 8px;
+  padding-inline: 0;
+  background: transparent;
+}
+.plein-input-preview-details {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  max-height: 280px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+.plein-input-preview-wide {
+  grid-column: 1 / -1;
+}
+@container (min-width: 640px) {
+  .plein-input-preview-details {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  }
 }
 
 /* 输入时只改变颜色，不对正文或随内容变化的高度做过渡。 */

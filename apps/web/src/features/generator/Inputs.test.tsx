@@ -16,7 +16,7 @@ import { Inputs } from './Inputs'
 
 vi.mock('../../canvas/import', () => ({ importFiles: vi.fn() }))
 
-describe('多模态参考编号', () => {
+describe('多模态参考名称', () => {
   let doc: PleinDoc
   afterEach(() => doc?.destroy())
   function setup() {
@@ -74,11 +74,11 @@ describe('多模态参考编号', () => {
     return { ...renderApp(<Harness />), id, engine }
   }
 
-  it('多模态引用按类型编号并插入提示词，重排真实连线后显示最终顺序', async () => {
+  it('多模态引用按素材名称插入提示词，重排真实连线后显示最终顺序', async () => {
     const f = setup()
-    for (const token of ['@image1', '@image2', '@video1', '@audio1'])
+    for (const token of ['@素材0', '@素材1', '@素材2', '@素材3'])
       await f.user.click(screen.getByRole('button', { name: token }))
-    expect(doc.get(f.id)?.params?.prompt).toBe('参考 @image1 @image2 @video1 @audio1 ')
+    expect(doc.get(f.id)?.params?.prompt).toBe('参考 @素材0 @素材1 @素材2 @素材3 ')
     const before = inputEdges(doc, f.id, 'images').map((edge) => edge.from[0])
     await f.user.click(screen.getByRole('button', { name: '管理参考 2' }))
     await f.user.click(screen.getByRole('button', { name: '向前移动参考 2' }))
@@ -91,6 +91,32 @@ describe('多模态参考编号', () => {
       'asset2',
       'asset3',
     ])
+  })
+
+  it('从画布替换参考时，正文同步换成新图片名', async () => {
+    const f = setup()
+    await f.user.click(screen.getByRole('button', { name: '@素材0' }))
+    let replacement = ''
+    act(() => {
+      replacement = createElement(doc, {
+        kind: 'image',
+        name: '新版产品.png',
+        assetId: 'new',
+        x: 0,
+        y: 0,
+        w: 100,
+        h: 100,
+      })
+      doc.flush()
+    })
+    await f.user.click(screen.getByTitle('管理参考 1：素材0'))
+    await f.user.click(screen.getByRole('button', { name: '替换参考 1' }))
+    await f.user.selectOptions(
+      screen.getByRole('combobox', { name: '替换参考素材' }),
+      JSON.stringify([replacement, 'image']),
+    )
+    await waitFor(() => expect(doc.get(f.id)?.params?.prompt).toBe('参考 @新版产品.png '))
+    expect(inputEdges(doc, f.id, 'images')[0]!.from[0]).toBe(replacement)
   })
 })
 

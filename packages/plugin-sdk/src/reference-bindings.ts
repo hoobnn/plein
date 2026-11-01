@@ -7,7 +7,7 @@ export interface ReferenceIdentity {
 }
 export type ReferenceBindings = Record<string, ReferenceIdentity>
 
-/** 编号是持久别名；身份同时固定来源和资产，替换上游结果不会静默换图。 */
+/** 兼容旧编号绑定；名称引用绑定来源，迭代时使用该来源当前的结果。 */
 export function referenceBindings(value: unknown): ReferenceBindings {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   const record = value as Record<string, unknown>
@@ -15,21 +15,42 @@ export function referenceBindings(value: unknown): ReferenceBindings {
   const entries = Object.entries(
     nested && typeof nested === 'object' && !Array.isArray(nested) ? nested : {},
   )
+  const namedEntries: Array<[string, unknown]> = []
   for (const [key, item] of Object.entries(record)) {
-    if (key.startsWith('referenceBinding:'))
+    if (key.startsWith('referenceNameBinding:')) {
+      try {
+        namedEntries.push([
+          decodeURIComponent(key.slice('referenceNameBinding:'.length).split(':')[0]!),
+          item,
+        ])
+      } catch {
+        // 损坏的编码不影响其他素材引用。
+      }
+    } else if (key.startsWith('referenceBinding:'))
       entries.push([key.slice('referenceBinding:'.length), item])
     else if (/^(image|video|audio)[1-9]\d*(?::|$)/.test(key)) entries.push([key, item])
   }
-  const result: ReferenceBindings = {}
-  for (const [entry, item] of entries) {
-    const key = entry.split(':')[0]!
-    if (!/^(image|video|audio)[1-9]\d*$/.test(key) || !item || typeof item !== 'object') continue
+  const namedKeys = new Set(namedEntries.map(([name]) => name))
+  const result: ReferenceBindings = Object.create(null)
+  for (const [key, item] of [
+    ...entries
+      .map(
+        ([entry, item]) =>
+          [
+            /^(image|video|audio)[1-9]\d*:/.test(entry) ? entry.split(':')[0]! : entry,
+            item,
+          ] as const,
+      )
+      .filter(([name]) => !namedKeys.has(name)),
+    ...namedEntries,
+  ]) {
+    if (!key || !item || typeof item !== 'object') continue
     const identity = item as ReferenceIdentity
     if (
       !['image', 'video', 'audio'].includes(identity.type) ||
       typeof identity.assetId !== 'string' ||
       (identity.source !== undefined && typeof identity.source !== 'string') ||
-      !key.startsWith(identity.type)
+      (/^(image|video|audio)[1-9]\d*$/.test(key) && !key.startsWith(identity.type))
     )
       continue
     // 协作者同时分配同一别名时保留两条提案并使别名失效，不能用最后写入者覆盖引用身份。
@@ -46,7 +67,11 @@ export function sameReference(a: ReferenceIdentity, b: ReferenceIdentity) {
 }
 
 export function referenceAliases<T extends ReferenceIdentity>(items: T[], value: unknown) {
-  const bindings = referenceBindings(value)
+  const bindings = Object.fromEntries(
+    Object.entries(referenceBindings(value)).filter(([key]) =>
+      /^(image|video|audio)[1-9]\d*$/.test(key),
+    ),
+  )
   const occupied = new Set(Object.keys(bindings))
   return items.map((item) => {
     let token = Object.keys(bindings).find((key) => sameReference(bindings[key]!, item))
@@ -60,6 +85,31 @@ export function referenceAliases<T extends ReferenceIdentity>(items: T[], value:
   })
 }
 
+/** 用户写下的素材名称和旧编号；文件名中的空格、点号不截断。 */
+export function boundReferenceTokens(prompt: string, value: unknown) {
+  const bindings = referenceBindings(value)
+  const names = Object.keys(bindings).sort((a, b) => b.length - a.length)
+  const tokens = videoReferenceTokens(prompt).map((t) => ({ ...t, name: `${t.kind}${t.index}` }))
+  for (let start = prompt.indexOf('@'); start >= 0; start = prompt.indexOf('@', start + 1)) {
+    if (/[a-zA-Z0-9._%+@-]/.test(prompt[start - 1] ?? '')) continue
+    let slashes = 0
+    for (let i = start - 1; i >= 0 && prompt[i] === '\\'; i--) slashes++
+    if (slashes % 2) continue
+    const name = names.find(
+      (name) =>
+        prompt.startsWith(name, start + 1) &&
+        !/[a-zA-Z0-9_.%+#-]/.test(prompt[start + 1 + name.length] ?? ''),
+    )
+    if (!name) continue
+    const existing = tokens.findIndex((t) => t.start === start)
+    if (existing >= 0) tokens.splice(existing, 1)
+    tokens.push({ start, end: start + 1 + name.length, name, kind: bindings[name]!.type, index: 0 })
+  }
+  return tokens
+    .sort((a, b) => a.start - b.start)
+    .filter((t, i, all) => !all.slice(0, i).some((previous) => previous.end > t.start))
+}
+
 /** 服务端只按当前实际输入映射别名；无法证明身份时阻断，绝不退回位置猜测。 */
 export function resolveReferenceBindings(
   prompt: string,
@@ -70,11 +120,22 @@ export function resolveReferenceBindings(
   const counts = { image: 0, video: 0, audio: 0 }
   const numbered = items.map((item) => ({ ...item, index: ++counts[item.type] }))
   let text = prompt
-  for (const token of videoReferenceTokens(prompt).reverse()) {
-    const name = `${token.kind}${token.index}`
+  for (const token of boundReferenceTokens(prompt, value).reverse()) {
+    const name = token.name
     const binding = bindings[name]
     if (!binding) return { error: `引用 @${name} 尚未确认素材身份，请从参考素材重新选择` }
-    const current = numbered.find((item) => sameReference(binding, item))
+    const named =
+      value &&
+      typeof value === 'object' &&
+      Object.keys(value).some((key) =>
+        key.startsWith(`referenceNameBinding:${encodeURIComponent(name)}:`),
+      )
+    const legacy = !named && /^(image|video|audio)[1-9]\d*$/.test(name)
+    const current = numbered.find((item) =>
+      legacy || !binding.source
+        ? sameReference(binding, item)
+        : binding.source === item.source && binding.type === item.type,
+    )
     if (!current) return { error: `引用 @${name} 的素材已删除、替换或未送入，请重新选择` }
     text = text.slice(0, token.start) + `@${current.type}${current.index}` + text.slice(token.end)
   }

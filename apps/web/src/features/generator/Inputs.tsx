@@ -13,12 +13,13 @@ import {
 import type { PreparedInput } from '@plein/protocol'
 import { filterReferenceCandidates, referenceCandidates } from './referenceCandidates'
 import { referenceMedia, type SubmittedMedia } from './submittedMedia'
+import { bindReferenceName, referenceName, replaceReferenceName } from './referenceNames'
 import { RoleReferencePicker } from './RoleReferencePicker'
 import { useRef, useState } from 'react'
 import { assetUrls } from '../../api/client'
 import { importFiles } from '../../canvas/import'
 import { beginImport } from '../../canvas/importProgress'
-import type { NodeInfo, Upstream } from '../../canvas/nodes'
+import { upstreams, type NodeInfo, type Upstream } from '../../canvas/nodes'
 import { useCanvas } from '../../stores/canvas'
 import { Icon } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
@@ -109,8 +110,14 @@ export function Inputs({
         const out = src && (src.kind === 'image' || src.kind === 'video' || src.kind === 'audio')
         if (out) {
           engine.doc.undo.stopCapturing()
-          if (target?.edgeId) replaceInput(engine.doc, target.edgeId, [id, src.kind])
-          else connect(engine.doc, [id, src.kind], [el.id, port.id])
+          if (target?.edgeId) {
+            if (replaceInput(engine.doc, target.edgeId, [id, src.kind]) && expected && src.assetId)
+              replaceReferenceName(engine.doc, el.id, expected.from[0], {
+                type: src.kind as 'image' | 'video' | 'audio',
+                source: id,
+                assetId: src.assetId,
+              })
+          } else connect(engine.doc, [id, src.kind], [el.id, port.id])
           engine.doc.undo.stopCapturing()
         }
       }
@@ -143,31 +150,22 @@ export function Inputs({
     else locate(up)
   }
 
-  const submitted = prepared && !preparing ? referenceMedia(prepared, el.params) : null
+  const submitted = prepared && !preparing ? referenceMedia(prepared, el.params, ups) : null
   const sentTiles = new Map<string, React.ReactNode>()
   const unusedTiles: React.ReactNode[] = []
-  const insertToken = (token: string) => {
+  const insertToken = (name: string) => {
     const current = engine.doc.get(el.id)
     if (!current) return
-    const item = submitted?.find((entry) => entry.token === token)
-    if (item)
-      setParam(
-        engine.doc,
-        el.id,
-        `referenceBinding:${token}:${item.source ?? ''}:${item.assetId}`,
-        {
-          type: item.type,
-          assetId: item.assetId,
-          ...(item.source ? { source: item.source } : {}),
-        },
-      )
+    const item = submitted?.find((entry) => referenceName(engine.doc, entry) === name)
+    if (!item) return
     const prompt = String(current.params?.prompt ?? '')
     engine.doc.undo.stopCapturing()
+    bindReferenceName(engine.doc, el.id, item)
     setParam(
       engine.doc,
       el.id,
       'prompt',
-      `${prompt}${prompt && !/\s$/.test(prompt) ? ' ' : ''}@${token} `,
+      `${prompt}${prompt && !/\s$/.test(prompt) ? ' ' : ''}@${name} `,
     )
     engine.doc.undo.stopCapturing()
   }
@@ -185,7 +183,9 @@ export function Inputs({
         'assetId' in value &&
         v.assetId === value.assetId,
     )
-    return mode === 'reference' && sent && !preparing ? `@${sent.token}` : undefined
+    return mode === 'reference' && sent && !preparing
+      ? `@${referenceName(engine.doc, sent)}`
+      : undefined
   }
   const roleOf = (port: InputPort, i: number) => {
     const token = tokenOf(port, i)
@@ -419,7 +419,7 @@ export function Inputs({
       </div>
       {preparing && (
         <p role="status" className="text-2xs text-ink-subtle">
-          {preparationError ? '输入确认失败，请在实际输入处重试' : '正在确认实际输入与编号…'}
+          {preparationError ? '输入确认失败，请在实际输入处重试' : '正在确认参考素材…'}
         </p>
       )}
       {submitted?.length || (!submitted && tiles.length) ? (
@@ -441,7 +441,7 @@ export function Inputs({
                       data={prepared!}
                       onReference={
                         mode === 'reference' && !preparing
-                          ? () => insertToken(item.token)
+                          ? () => insertToken(referenceName(engine.doc, item))
                           : undefined
                       }
                     />
@@ -464,8 +464,23 @@ export function Inputs({
             value=""
             onChange={(e) => {
               const [id, portId] = JSON.parse(e.target.value) as [string, string]
+              const previous = engine.doc.getEdge(replacing.edgeId)
               engine.doc.undo.stopCapturing()
               const ok = replaceInput(engine.doc, replacing.edgeId, [id, portId])
+              const value = upstreams(engine, el.id, null)
+                .get(replacing.port.id)
+                ?.find((up) => up.edgeId === replacing.edgeId)?.value
+              if (
+                ok &&
+                previous &&
+                value &&
+                (value.type === 'image' || value.type === 'video' || value.type === 'audio')
+              )
+                replaceReferenceName(engine.doc, el.id, previous.from[0], {
+                  type: value.type,
+                  source: id,
+                  assetId: value.assetId,
+                })
               engine.doc.undo.stopCapturing()
               if (!ok) useCanvas.getState().notify('无法替换：素材重复或类型不匹配')
               setReplacing(null)
@@ -642,7 +657,7 @@ function RefTile({
             type="button"
             onClick={onReference}
             className="ui-btn ui-btn-xs ui-btn-quiet"
-            title={`在提示词末尾插入 ${caption}；编号按当前同类素材顺序`}
+            title={`在提示词末尾插入 ${caption}`}
           >
             {caption}
           </button>
@@ -789,7 +804,7 @@ function SubmittedTile({
   const origin = continuation ? '续镜接入' : refs.length ? '@ 引用' : '连线'
   const label =
     data.params.mode === 'reference'
-      ? `@${item.token}`
+      ? `@${referenceName(engine.doc, { ...item, assetId: item.assetId! })}`
       : `${item.type === 'image' ? '图片' : item.type === 'video' ? '视频' : '音频'}${item.index}`
   return (
     <div

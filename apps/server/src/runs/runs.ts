@@ -1,4 +1,4 @@
-import { videoReferenceTokens, resolveReferenceBindings } from '@plein/plugin-sdk'
+import { boundReferenceTokens, resolveReferenceBindings } from '@plein/plugin-sdk'
 import { videoModelProblem, videoReferencePrompt, videoTaskOverrides } from '@plein/plugin-sdk'
 import {
   imageProcessParams,
@@ -2227,11 +2227,12 @@ export class NodeRuns implements BatchHost {
     const continuation = continuationInputs(doc, el, def, collected)
     // 标记用户写下的编号，避免把资产卡展开后由宿主生成的编号当成旧画布引用。
     let referencePrompt = String(el.params?.prompt ?? '')
+    const referenceTokens = boundReferenceTokens(referencePrompt, el.params)
     if (def.capability === 'video.generate' && el.params?.mode === 'reference')
-      for (const token of videoReferenceTokens(referencePrompt).reverse())
+      for (const [index, token] of [...referenceTokens.entries()].reverse())
         referencePrompt =
           referencePrompt.slice(0, token.start) +
-          `\uE000${token.kind}${token.index}\uE001` +
+          `\uE000${index}\uE001` +
           referencePrompt.slice(token.end)
     const referenceElement =
       def.capability === 'video.generate' && el.params?.mode === 'reference'
@@ -2261,8 +2262,9 @@ export class NodeRuns implements BatchHost {
         .flat()
         .filter((item) => item.type === 'image' || item.type === 'video' || item.type === 'audio')
       params.prompt = String(params.prompt ?? '').replace(
-        /\uE000((?:image|video|audio)[1-9]\d*)\uE001/g,
-        (_match, alias: string) => {
+        /\uE000(\d+)\uE001/g,
+        (_match, index: string) => {
+          const alias = referenceTokens[Number(index)]!.name
           const resolved = resolveReferenceBindings(
             `@${alias}`,
             media as Array<{ type: 'image' | 'video' | 'audio'; assetId: string; source?: string }>,

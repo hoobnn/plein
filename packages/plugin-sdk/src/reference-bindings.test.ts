@@ -1,5 +1,9 @@
 import { expect, it } from 'vite-plus/test'
-import { referenceAliases, resolveReferenceBindings } from './reference-bindings'
+import {
+  boundReferenceTokens,
+  referenceAliases,
+  resolveReferenceBindings,
+} from './reference-bindings'
 
 const a = { type: 'image' as const, assetId: 'asset-a', source: 'source-a' }
 const b = { type: 'image' as const, assetId: 'asset-b', source: 'source-b' }
@@ -20,4 +24,30 @@ it('协作中的同别名冲突不会静默覆盖，重新打开后仍阻断', (
   const merged = JSON.parse(JSON.stringify({ 'image1:a': a, 'image1:b': b }))
   expect(resolveReferenceBindings('@image1', [a, b], merged).error).toBeTruthy()
   expect(referenceAliases([a, b], merged).map((item) => item.token)).toEqual(['image2', 'image3'])
+})
+
+it('文件名引用保留可读正文，提交时随来源的新结果和实际顺序映射', () => {
+  const name = '产品 图_2026.11.01.png'
+  const saved = { [`referenceNameBinding:${encodeURIComponent(name)}:${a.source}`]: a }
+  const prompt = `@${name} 向前移动，保持 @${name} 的构图`
+  expect(resolveReferenceBindings(prompt, [b, { ...a, assetId: 'new-result' }], saved)).toEqual({
+    prompt: '@image2 向前移动，保持 @image2 的构图',
+  })
+  expect(resolveReferenceBindings(prompt, [b], saved).error).toContain(name)
+  expect(prompt).toContain(name)
+  expect(boundReferenceTokens(`\\@${name} mail@${name} @@${name}`, saved)).toEqual([])
+})
+
+it('同名不同来源的绑定不猜测，数字形式的真实文件名也能引用', () => {
+  expect(
+    resolveReferenceBindings('@产品图', [a, b], {
+      'referenceNameBinding:产品图:a': a,
+      'referenceNameBinding:产品图:b': b,
+    }).error,
+  ).toBeTruthy()
+  expect(
+    resolveReferenceBindings('@image1', [{ ...a, assetId: 'new' }], {
+      'referenceNameBinding:image1:a': a,
+    }),
+  ).toEqual({ prompt: '@image1' })
 })
