@@ -76,9 +76,23 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
+  # 发版说明按 x / x.y 两级目录存放：v0.9.4 → docs/releases/v0/v0.9/v0.9.4.md
+  release-notes:
+    name: Resolve release notes path
+    runs-on: ubuntu-latest
+    outputs:
+      path: ${{ steps.path.outputs.path }}
+    steps:
+      - id: path
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          IFS=. read -r major minor _ <<< "$TAG"
+          echo "path=docs/releases/$major/$major.$minor/$TAG.md" >> "$GITHUB_OUTPUT"
+
   release:
     name: Sign, notarize and release
-    needs: [test, build]
+    needs: [test, build, release-notes]
     permissions:
       contents: write
     uses: hoobnn/ci-workflows/.github/workflows/macos-release.yml@v1
@@ -92,8 +106,8 @@ jobs:
       entitlements: apps/desktop/resources/entitlements.mac.plist
       arch-suffix: true
       make-dmg: true
-      # 有 docs/releases/<标签>.md 就用作发版说明，没有则自动生成
-      release-notes-file: docs/releases/${{ github.ref_name }}.md
+      # 有对应的发版说明文件就用作 Release 正文，没有则自动生成
+      release-notes-file: ${{ needs.release-notes.outputs.path }}
       sign: ${{ github.event_name == 'push' || inputs.sign }}
     secrets: inherit
 

@@ -43,7 +43,7 @@ pnpm typecheck
 | `pnpm perf`               | 画布渲染性能基准                                                                                         |
 | `pnpm perf:compare`       | 在同一 runner 顺序构建和测量基线、候选，比较完整样本并拒绝明显回退                                       |
 
-本地检查由 git 钩子（husky）完成，`pnpm install` 时自动装好：pre-commit 运行 `vp staged`，只格式化、检查暂存文件；pre-push 运行 `pnpm verify`，改了 `package.json` 或 `pnpm-lock.yaml` 时再跑 `pnpm audit:deps`。推送 main 不触发云端 CI，云端只在 Dependabot PR、打 `v*` 标签发版和手动运行（Actions → CI → Run workflow）时跑检查与性能（perf）；发版说明写在 `docs/releases/<标签>.md`，打标签时自动用作 Release 正文；依赖安全检查另有每周定时。急用可 `git push --no-verify` 跳过钩子，之后在 Actions 里手动补跑一次 CI。
+本地检查由 git 钩子（husky）完成，`pnpm install` 时自动装好：pre-commit 运行 `vp staged`，只格式化、检查暂存文件；pre-push 运行 `pnpm verify`，改了 `package.json` 或 `pnpm-lock.yaml` 时再跑 `pnpm audit:deps`。推送 main 不触发云端 CI，云端只在 Dependabot PR、打 `v*` 标签发版和手动运行（Actions → CI → Run workflow）时跑检查与性能（perf）；发版说明写在 `docs/releases/v<x>/v<x>.<y>/v<x>.<y>.<z>.md`，打标签时自动用作 Release 正文；依赖安全检查另有每周定时。急用可 `git push --no-verify` 跳过钩子，之后在 Actions 里手动补跑一次 CI。
 
 E2E 只在本地跑，云端不再跑：发版前运行 `pnpm e2e:core`，核心冒烟全绿才打标签。测试选层、新增 e2e 的准入规则与独立验收范围见 [测试指南](docs/dev/testing.md)。
 
@@ -141,7 +141,7 @@ pnpm dist:desktop        # 出 macOS 安装包（Apple 芯片），没有证书�
 
 ## 发版说明
 
-每个标签对应一份 `docs/releases/<标签>.md`，打标签时作为 Release 正文，也是应用内更新面板显示的说明。只写用户能感知的变化，测试、CI、内部重构和验收过程写进提交消息。结构固定为：
+每个标签对应一份发版说明，按主版本、次版本两级目录存放：`v0.9.4` 写在 `docs/releases/v0/v0.9/v0.9.4.md`，打标签时作为 Release 正文，也是应用内更新面板显示的说明。只写用户能感知的变化，测试、CI、内部重构和验收过程写进提交消息。结构固定为：
 
 1. 首行 `<!-- markdownlint-disable-file MD041 -->`。
 2. 有升级须知（能否自动更新、是否需要手动安装、数据兼容性）时，加一段 `> [!NOTE]`。
