@@ -196,7 +196,7 @@ for (const width of [320, 1440] as const) {
         const hidden = (await sidebar.getAttribute('aria-hidden')) === 'true'
         const side = (await sidebar.boundingBox())!
         const left = hidden ? 0 : side.x + side.width
-        const panel = await tasks.boundingBox()
+        const panel = (await tasks.count()) ? await tasks.boundingBox() : null
         const right = panel && !hidden ? panel.x : width
         return page.evaluate(
           ({ id, left, right }) => {
