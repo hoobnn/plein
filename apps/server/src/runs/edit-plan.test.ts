@@ -374,16 +374,16 @@ describe('智能体修改方案', () => {
     expect(doc.get(img3)!.params!.prompt).toBe(mine)
     expect(jobCount(server, canvas)).toBe(jobs)
 
-    // 参数没动、引用的角色设定变了：实际输入不同，同样不执行
+    // 角色设定文字不再隐式追加到提示词；只改设定不改变实际输入。
     const again = await mcp('propose_edit', {
       summary: '让第三镜头更紧张',
       edits: [{ id: img3, params: { prompt: TENSE } }],
     })
     setParams(doc, hero, { description: '长发，黑色风衣' })
     const changed = await mcp('apply_edit_plan', { plan_id: again.plan_id, scope: 'text' })
-    expect(changed.status).toBe('stale')
-    expect(changed.changed).toContain(img3)
-    expect(doc.get(img3)!.params!.prompt).toBe(mine)
+    expect(changed.status).toBe('applied')
+    expect(doc.get(img3)!.params!.prompt).toBe(TENSE)
+    expect(jobCount(server, canvas)).toBe(jobs)
   })
 
   it('逐项编辑：改字段的新值、去掉一个目标后重新检查；批准时跳过视频只出图', async () => {
