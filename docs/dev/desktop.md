@@ -87,6 +87,13 @@ Electron 主进程（apps/desktop）
 - CI：`.github/workflows/release.yml`（推送 `v*` 标签发布 GitHub Release；手动运行只出 Artifacts，可取消 `sign` 试运行，不需要凭据）。`ci.yml` 只跑检查与性能，不跑 e2e；e2e 在本地发版前跑（`pnpm e2e`），全绿才打标签。`build` job 用 setup-node 和 ffmpeg 缓存（按脚本内容）打出 ad-hoc 签名的 `Plein.app`，以 tar 上传；再调用 [hoobnn/ci-workflows](https://github.com/hoobnn/ci-workflows) 的 `macos-release.yml@v1`（`app-artifact`），用 `inner-binaries: auto` 和 `inner-entitlements` 由内向外重签 Helper、Framework、原生模块和 ffmpeg，公证后出 `Plein-<版本>-macOS-arm64.zip`、`.dmg` 和 `.sha256`。Helper 缺 `allow-jit` 会崩溃，所以内层签名必须带 entitlements。凭据与其他 macOS 应用相同，见 ci-workflows 的 README。本机 `pnpm dist:desktop` 照旧，没有证书时 ad-hoc 签名。
 - Intel Mac 暂不出包：要在 x64 机器上装依赖（sharp 的平台包）并单独构建 ffmpeg。
 
+### 差分更新
+
+- `release.yml` 的 `update-feed` job 下载复用工作流签名、公证后的最终 ZIP，运行 `apps/desktop/scripts/prepare-update.mjs <ZIP> <版本>` 生成 `<ZIP>.blockmap` 和 `latest-mac.yml`。生成过程不修改 ZIP，并核对 SHA-512、大小和 blockmap 格式；复用 lockfile 锁定的 electron-builder 内部实现，升级 builder 时必须通过下述合同测试。
+- blockmap 使用当前 electron-updater 6 支持的 gzip JSON v2。先上传 blockmap，再上传版本索引；不能在生成后重新打包或替换同版本 ZIP。保留历史 ZIP 和 blockmap，以支持跨版本差分下载。
+- 客户端默认尝试差分：使用缓存的 `update.zip` 复用未变字节，通过 HTTP Range 下载变化字节，重建完整 ZIP 并校验 SHA-512，再交给现有 macOS 更新安装链。无旧 ZIP 缓存（例如从 DMG 首次安装后的第一次更新）、blockmap 缺失或损坏、差分失败时会全量下载。缓存被清理后也需要一次全量下载；不承诺固定节省比例。
+- `pnpm --filter @plein/desktop test:update-feed` 使用真实 ZIP、当前 updater 的差分下载器及本地 HTTP Range 服务，验证连续/跨版本更新、重建字节一致、实际下载量减少，以及损坏 blockmap 的全量回退信号。该检查纳入 `pnpm verify`。GitHub Releases 上的实际下载、签名校验和安装仍需在正式发版后验收；这些本地检查不代替生产升级验收。
+
 ## 已定与默认
 
 - 采用 Electron（2026-10-12 确认）。

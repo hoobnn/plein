@@ -30,7 +30,7 @@
     "bench:recovery": "pnpm --filter @plein/server bench:recovery",
     "bench:e1": "node scripts/build-e2e-web.mjs && playwright test -c e2e/playwright.l4.config.ts e1-composition",
     "bench:rework": "node scripts/build-e2e-web.mjs && playwright test -c e2e/playwright.bench.config.ts",
-    "verify": "pnpm lint && pnpm typecheck && pnpm --filter @plein/desktop test:profile && pnpm test:e2e-lifecycle && pnpm test:coverage && pnpm smoke",
+    "verify": "pnpm lint && pnpm typecheck && pnpm --filter @plein/desktop test:profile && pnpm --filter @plein/desktop test:update-feed && pnpm test:e2e-lifecycle && pnpm test:coverage && pnpm smoke",
     "e2e": "node scripts/build-e2e-web.mjs && playwright test -c e2e/playwright.config.ts",
     "e2e:file": "node scripts/build-e2e-web.mjs && playwright test -c e2e/playwright.config.ts",
     "e2e:grep": "node scripts/build-e2e-web.mjs && playwright test -c e2e/playwright.config.ts --grep",

@@ -97,8 +97,8 @@ jobs:
       sign: ${{ github.event_name == 'push' || inputs.sign }}
     secrets: inherit
 
-  # 自动更新的索引：electron-updater 从最新 Release 读 latest-mac.yml，按里面的 sha512 校验下载的 zip。
-  # 必须用复用工作流签名、公证后的那个 zip 计算，所以等它发布完再生成
+  # 对复用工作流签名、公证后的最终 ZIP 生成 blockmap 和索引，不再重打 ZIP。
+  # 先上传 blockmap，最后发布索引；历史 ZIP / blockmap 保留供跨版本差分更新使用。
   update-feed:
     name: Publish update feed
     needs: release
@@ -107,25 +107,25 @@ jobs:
     permissions:
       contents: write
     steps:
-      - env:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Prepare and publish differential update
+        env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.release.outputs.version }}
           SUFFIX: ${{ needs.release.outputs.artifact-suffix }}
         run: |
           set -euo pipefail
           ZIP="Plein-${VERSION}-macOS${SUFFIX}.zip"
+          mkdir -p "$RUNNER_TEMP/plein-update"
+          cd "$RUNNER_TEMP/plein-update"
           gh release download "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" -p "$ZIP"
-          SHA512=$(openssl dgst -sha512 -binary "$ZIP" | base64 -w0)
-          SIZE=$(stat -c %s "$ZIP")
-          cat > latest-mac.yml <<YAML
-          version: ${VERSION}
-          files:
-            - url: ${ZIP}
-              sha512: ${SHA512}
-              size: ${SIZE}
-          path: ${ZIP}
-          sha512: ${SHA512}
-          releaseDate: '$(date -u +%Y-%m-%dT%H:%M:%S.000Z)'
-          YAML
+          node "$GITHUB_WORKSPACE/apps/desktop/scripts/prepare-update.mjs" "$ZIP" "$VERSION"
+          gh release upload "$GITHUB_REF_NAME" "$ZIP.blockmap" -R "$GITHUB_REPOSITORY" --clobber
           cat latest-mac.yml
           gh release upload "$GITHUB_REF_NAME" latest-mac.yml -R "$GITHUB_REPOSITORY" --clobber
