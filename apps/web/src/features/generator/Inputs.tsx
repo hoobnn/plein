@@ -12,7 +12,7 @@ import {
 } from '@plein/doc'
 import type { PreparedInput } from '@plein/protocol'
 import { filterReferenceCandidates, referenceCandidates } from './referenceCandidates'
-import { submittedMedia, type SubmittedMedia } from './submittedMedia'
+import { referenceMedia, type SubmittedMedia } from './submittedMedia'
 import { RoleReferencePicker } from './RoleReferencePicker'
 import { useRef, useState } from 'react'
 import { assetUrls } from '../../api/client'
@@ -41,6 +41,7 @@ export function Inputs({
   trailing,
   prepared,
   preparing,
+  preparationError,
   toolbar,
 }: {
   engine: Engine
@@ -51,6 +52,7 @@ export function Inputs({
   trailing?: React.ReactNode
   prepared?: PreparedInput | null
   preparing?: boolean
+  preparationError?: boolean
   toolbar?: React.ReactNode
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
@@ -141,12 +143,24 @@ export function Inputs({
     else locate(up)
   }
 
-  const submitted = prepared && !preparing ? submittedMedia(prepared) : null
+  const submitted = prepared && !preparing ? referenceMedia(prepared, el.params) : null
   const sentTiles = new Map<string, React.ReactNode>()
   const unusedTiles: React.ReactNode[] = []
   const insertToken = (token: string) => {
     const current = engine.doc.get(el.id)
     if (!current) return
+    const item = submitted?.find((entry) => entry.token === token)
+    if (item)
+      setParam(
+        engine.doc,
+        el.id,
+        `referenceBinding:${token}:${item.source ?? ''}:${item.assetId}`,
+        {
+          type: item.type,
+          assetId: item.assetId,
+          ...(item.source ? { source: item.source } : {}),
+        },
+      )
     const prompt = String(current.params?.prompt ?? '')
     engine.doc.undo.stopCapturing()
     setParam(
@@ -212,23 +226,17 @@ export function Inputs({
           index={sent?.index ?? n}
           unused={unused}
           up={u}
-          caption={preparing ? '正在确认输入…' : unused ? '未送入' : (roleOf(port, i) ?? caption)}
+          caption={
+            preparationError
+              ? '输入确认失败'
+              : preparing
+                ? '正在确认输入…'
+                : unused
+                  ? '未送入'
+                  : (roleOf(port, i) ?? caption)
+          }
           onReference={
-            tokenOf(port, i) && u.value
-              ? () => {
-                  const current = engine.doc.get(el.id)
-                  if (!current) return
-                  const prompt = String(current.params?.prompt ?? '')
-                  engine.doc.undo.stopCapturing()
-                  setParam(
-                    engine.doc,
-                    el.id,
-                    'prompt',
-                    `${prompt}${prompt && !/\s$/.test(prompt) ? ' ' : ''}${tokenOf(port, i)} `,
-                  )
-                  engine.doc.undo.stopCapturing()
-                }
-              : undefined
+            tokenOf(port, i) && u.value ? () => insertToken(tokenOf(port, i)!.slice(1)) : undefined
           }
           onLocate={() => locate(u)}
           onPreview={() => previewUpstream(u)}
@@ -411,7 +419,7 @@ export function Inputs({
       </div>
       {preparing && (
         <p role="status" className="text-2xs text-ink-subtle">
-          正在确认实际输入与编号…
+          {preparationError ? '输入确认失败，请在实际输入处重试' : '正在确认实际输入与编号…'}
         </p>
       )}
       {submitted?.length || (!submitted && tiles.length) ? (

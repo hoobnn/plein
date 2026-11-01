@@ -224,6 +224,17 @@ export const videoNode = defineNode({
       .default('text')
       .meta({ title: '生成模式', widget: 'videoMode', labels: VIDEO_MODE_LABELS }),
     prompt: textarea('提示词'),
+    referenceBindings: z
+      .record(
+        z.string(),
+        z.object({
+          type: z.enum(['image', 'video', 'audio']),
+          assetId: z.string(),
+          source: z.string().optional(),
+        }),
+      )
+      .optional()
+      .meta({ title: '素材引用身份', widget: 'hidden' }),
     duration: z.number().int().min(1).max(30).default(5).meta({ title: '时长（秒）' }),
     aspectRatio: z.enum(ASPECTS).default('16:9').meta({ title: '画幅' }),
     resolution: resolution(),

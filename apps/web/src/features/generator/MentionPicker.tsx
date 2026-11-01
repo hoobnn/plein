@@ -81,13 +81,22 @@ export function MentionPicker({
       onClose()
     } else if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && total) {
       event.preventDefault()
-      setActive((i) => (i + (event.key === 'ArrowDown' ? 1 : -1) + total) % total)
+      setActive((i) => {
+        const direction = event.key === 'ArrowDown' ? 1 : -1
+        for (let step = 1; step <= total; step++) {
+          const next = (i + direction * step + total) % total
+          if (next >= items.length || !items[next]?.disabled) return next
+        }
+        return i
+      })
     } else if (
       ((event.key === 'Enter' && !event.metaKey && !event.ctrlKey) || event.key === 'Tab') &&
       total
     ) {
+      const selected = Math.min(active, total - 1)
+      if (event.key === 'Tab' && items[selected]?.disabled) return
       event.preventDefault()
-      choose(Math.min(active, total - 1))
+      choose(selected)
     }
   }
   useImperativeHandle(ref, () => ({ handleKey }))

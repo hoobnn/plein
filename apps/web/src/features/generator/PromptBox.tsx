@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import type { CanvasElement } from '@plein/doc'
+import { setParam, type CanvasElement } from '@plein/doc'
 import {
   findMentions,
   firstPlaceholder,
@@ -26,7 +26,7 @@ import { mentionParts } from '../../canvas/mentionText'
 import { findNode, mentionTargets, targetImages, upstreams } from '../../canvas/nodes'
 import { useCatalog } from '../../stores/catalog'
 import { videoReferenceTokens } from '@plein/plugin-sdk'
-import { submittedMedia } from './submittedMedia'
+import { referenceMedia } from './submittedMedia'
 import { MentionPicker, type MentionChoice, type MentionPickerHandle } from './MentionPicker'
 
 export type PromptPreset = Catalog['prompts'][number]
@@ -45,6 +45,7 @@ export function PromptBox({
   selfId,
   prepared,
   preparing = false,
+  preparationError = false,
   value,
   presets,
   placeholder,
@@ -58,6 +59,7 @@ export function PromptBox({
   prepared?: PreparedInput | null
   /** 编号只使用当前预览，刷新期间保留素材名称但禁止插入旧编号。 */
   preparing?: boolean
+  preparationError?: boolean
   value: string
   presets: PromptPreset[]
   placeholder: string
@@ -182,7 +184,7 @@ export function PromptBox({
   ) {
     const tokens = videoReferenceTokens(shown)
     const pending = preparing || !prepared || prepared.nodeId !== selfId
-    const items = !pending && prepared ? submittedMedia(prepared) : []
+    const items = !pending && prepared ? referenceMedia(prepared, element.params) : []
     const connected = upstreams(engine, selfId, catalog)
     for (const [port, sources] of connected)
       for (const up of sources) {
@@ -205,7 +207,11 @@ export function PromptBox({
           name: up.source.name ?? '参考素材',
           insert: '',
           category: kind,
-          description: pending ? '正在确认引用编号…' : '未送入当前模型',
+          description: preparationError
+            ? '输入确认失败，请重试'
+            : pending
+              ? '正在确认引用编号…'
+              : '未送入当前模型',
           thumbnail: kind === 'audio' || !('assetId' in value) ? undefined : value.assetId,
           poster: kind === 'video',
           used: false,
@@ -226,7 +232,7 @@ export function PromptBox({
         thumbnail: item.type === 'audio' ? undefined : item.assetId,
         poster: item.type === 'video',
         used:
-          tokens.some((t) => t.kind === item.type && t.index === item.index) ||
+          tokens.some((t) => `${t.kind}${t.index}` === item.token) ||
           mentions.some((m) => m.id === item.source),
       })
     }
@@ -272,7 +278,26 @@ export function PromptBox({
       ref.current?.setSelectionRange(a!, b!)
     })
   }
-  const insert = (name: string) => replaceQuery(`@${name} `, (r) => [r.length, r.length])
+  const insert = (name: string) => {
+    const item =
+      prepared && !preparing
+        ? referenceMedia(prepared, engine.doc.get(selfId)?.params).find(
+            (entry) => entry.token === name,
+          )
+        : undefined
+    if (item)
+      setParam(
+        engine.doc,
+        selfId,
+        `referenceBinding:${name}:${item.source ?? ''}:${item.assetId}`,
+        {
+          type: item.type,
+          assetId: item.assetId,
+          ...(item.source ? { source: item.source } : {}),
+        },
+      )
+    replaceQuery(`@${name} `, (r) => [r.length, r.length])
+  }
   const applyPreset = (p: PromptPreset) => {
     onPreset(p)
     // 选中第一个【占位】，直接打字替换
@@ -379,6 +404,7 @@ export function PromptBox({
                 selfId={selfId}
                 prepared={prepared}
                 preparing={preparing}
+                preparationError={preparationError}
                 value={value}
                 presets={presets}
                 placeholder={placeholder}

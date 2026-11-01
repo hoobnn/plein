@@ -1,3 +1,4 @@
+import { videoReferenceTokens, resolveReferenceBindings } from '@plein/plugin-sdk'
 import { videoModelProblem, videoReferencePrompt, videoTaskOverrides } from '@plein/plugin-sdk'
 import {
   imageProcessParams,
@@ -949,6 +950,7 @@ export class NodeRuns implements BatchHost {
       'usedRefs',
       'requiredRefs',
       'referenceImagePicks',
+      'referenceBindings',
       'continuesFrom',
       'shotPresets',
       'voice',
@@ -2223,9 +2225,21 @@ export class NodeRuns implements BatchHost {
     const def = this.host.registry.latestNode(el.nodeType!)?.def
     if (!def) return { def, params: el.params, inputs: collected, origins }
     const continuation = continuationInputs(doc, el, def, collected)
+    // 标记用户写下的编号，避免把资产卡展开后由宿主生成的编号当成旧画布引用。
+    let referencePrompt = String(el.params?.prompt ?? '')
+    if (def.capability === 'video.generate' && el.params?.mode === 'reference')
+      for (const token of videoReferenceTokens(referencePrompt).reverse())
+        referencePrompt =
+          referencePrompt.slice(0, token.start) +
+          `\uE000${token.kind}${token.index}\uE001` +
+          referencePrompt.slice(token.end)
+    const referenceElement =
+      def.capability === 'video.generate' && el.params?.mode === 'reference'
+        ? { ...el, params: { ...el.params, prompt: referencePrompt } }
+        : el
     const { params, inputs, details, notices, blocked } = await applyMentions(
       doc,
-      el,
+      referenceElement,
       def,
       continuation.inputs,
       // @ 引用是软依赖：卡片的参考图节点还没结果（生成失败、被审核拦下）时只附文字设定
@@ -2242,6 +2256,34 @@ export class NodeRuns implements BatchHost {
       },
     )
     if (continuation.issue) blocked.push(continuation.issue)
+    if (def.capability === 'video.generate' && params.mode === 'reference') {
+      const media = Object.values(inputs)
+        .flat()
+        .filter((item) => item.type === 'image' || item.type === 'video' || item.type === 'audio')
+      params.prompt = String(params.prompt ?? '').replace(
+        /\uE000((?:image|video|audio)[1-9]\d*)\uE001/g,
+        (_match, alias: string) => {
+          const resolved = resolveReferenceBindings(
+            `@${alias}`,
+            media as Array<{ type: 'image' | 'video' | 'audio'; assetId: string; source?: string }>,
+            el.params,
+          )
+          if (resolved.error) blocked.push({ code: 'prepare_failed', message: resolved.error })
+          return resolved.prompt ?? `@${alias}`
+        },
+      )
+      for (const item of inputs.prompt ?? []) {
+        if (item.type !== 'text') continue
+        const upstream = resolveReferenceBindings(
+          item.text,
+          media as Array<{ type: 'image' | 'video' | 'audio'; assetId: string; source?: string }>,
+          el.params,
+        )
+        if (upstream.error) blocked.push({ code: 'prepare_failed', message: upstream.error })
+        else item.text = upstream.prompt!
+      }
+    }
+
     const modelRef = typeof params.model === 'string' ? parseModelRef(params.model) : null
     const spec =
       modelRef &&

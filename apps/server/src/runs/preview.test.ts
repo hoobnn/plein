@@ -7,6 +7,8 @@ import {
   inputEdges,
   moveElements,
   reorderInputs,
+  removeEdges,
+  updateElement,
   type PleinDoc,
   setParams,
   writeRun,
@@ -789,4 +791,55 @@ it('续镜旧连线缺失时仍以保存的尾帧为图片1，合并角色引用
   const linked = await preview(server, id, video)
   expect(linked.inputs.images?.map((v) => v.assetId)).toEqual([asset('b'), asset('c'), asset('d')])
   expect(linked.inputHash).toBe(missingEdge.inputHash)
+})
+
+it('持久引用在服务端重排后按身份映射，替换、删除及旧编号阻断', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const sources = ['a', 'b'].map((value) =>
+    createElement(doc, {
+      kind: 'image',
+      assetId: value.repeat(64),
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 100,
+    }),
+  )
+  const video = addNode(doc, 'plein/video', {
+    params: {
+      model: 'plein/mock:video',
+      mode: 'reference',
+      prompt: '@image1 移动',
+      referenceBindings: {
+        'image1:a': { type: 'image', assetId: 'a'.repeat(64), source: sources[0] },
+      },
+    },
+  })
+  for (const source of sources) connect(doc, [source, 'image'], [video, 'images'])
+  const edges = inputEdges(doc, video, 'images')
+  reorderInputs(doc, [video, 'images'], edges.map((edge) => edge.id).reverse())
+  const reordered = await preview(server, id, video)
+  expect(reordered.params.prompt).toBeUndefined()
+  expect(reordered.prompt).toContain('@image2')
+  expect(reordered.blocked.filter((issue) => issue.message.includes('引用 @image1'))).toEqual([])
+  updateElement(doc, sources[0]!, { assetId: 'c'.repeat(64) })
+  expect(
+    (await preview(server, id, video)).blocked.some((issue) =>
+      issue.message.includes('已删除、替换'),
+    ),
+  ).toBe(true)
+  removeEdges(doc, [edges[0]!.id])
+  expect(
+    (await preview(server, id, video)).blocked.some((issue) =>
+      issue.message.includes('已删除、替换'),
+    ),
+  ).toBe(true)
+  setParams(doc, video, { referenceBindings: undefined })
+  expect(
+    (await preview(server, id, video)).blocked.some((issue) =>
+      issue.message.includes('尚未确认素材身份'),
+    ),
+  ).toBe(true)
 })

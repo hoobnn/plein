@@ -2,7 +2,7 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { createReadStream } from 'node:fs'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
-import { connect, createElement } from '@plein/doc'
+import { connect, createElement, setParam } from '@plein/doc'
 import type { ProviderContext } from '@plein/plugin-sdk'
 import { arkProvider } from '@plein/providers'
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
@@ -86,6 +86,11 @@ describe.skipIf(!available)('火山本地素材经过宿主到 TOS / Ark HTTP �
         y: 0,
         w: 100,
         h: 100,
+      })
+      setParam(doc, target, `referenceBinding:${asset.kind}1:${source}:${asset.id}`, {
+        type: asset.kind,
+        assetId: asset.id,
+        source,
       })
       connect(
         doc,

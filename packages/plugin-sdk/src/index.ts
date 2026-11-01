@@ -15,3 +15,4 @@ export * from './provider'
 export * from './rpc'
 
 export * from './video-input'
+export * from './reference-bindings'

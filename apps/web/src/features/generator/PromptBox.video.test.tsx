@@ -6,6 +6,8 @@ import { corePlugin } from '@plein/nodes'
 import { describeNode } from '@plein/plugin-sdk'
 import { PREPARED_INPUT_VERSION, type Catalog, type PreparedInput } from '@plein/protocol'
 import { createRef } from 'react'
+import { applyUpdate, encodeStateAsUpdate } from 'yjs'
+import { resolveReferenceBindings } from '@plein/plugin-sdk'
 import { afterEach, expect, it } from 'vite-plus/test'
 import { useDocVersion } from '../../canvas/hooks'
 import { upstreams } from '../../canvas/nodes'
@@ -133,7 +135,7 @@ it.each([
     const pending = within(menu).getByRole('option', { name: /刚上传的素材/ })
     expect(pending.hasAttribute('disabled')).toBe(true)
     expect(menu.textContent).not.toContain(`@${kind}1`)
-    await view.user.keyboard('{ArrowDown}{Enter}')
+    await view.user.keyboard('{Enter}')
     expect(field().value).toBe('@')
     act(() => view.rerender(<Harness prepared={input(2)} preparing={false} />))
     menu = screen.getByRole('dialog', { name: '引用素材' })
@@ -144,6 +146,60 @@ it.each([
     await view.user.click(ready)
     await waitFor(() => expect(field().value).toBe(`@${kind}2 `))
     expect(doc.get(id)?.params?.prompt).toBe(`@${kind}2 `)
+    const reopened = openDoc()
+    try {
+      applyUpdate(reopened.ydoc, encodeStateAsUpdate(doc.ydoc))
+      const saved = reopened.get(id)!
+      expect(
+        resolveReferenceBindings(
+          String(saved.params?.prompt),
+          [
+            { type: kind, source: sources[1], assetId: 'asset-1' },
+            { type: kind, source: sources[0], assetId: 'asset-0' },
+          ],
+          saved.params,
+        ),
+      ).toEqual({ prompt: `@${kind}1 ` })
+    } finally {
+      reopened.destroy()
+    }
+
     expect(document.activeElement).toBe(field())
   },
 )
+
+it('两个离线协作者分配同一别名后合并并重开，冲突引用被阻断', () => {
+  const first = openDoc()
+  const second = openDoc()
+  const reopened = openDoc()
+  try {
+    const id = createElement(first, {
+      kind: 'node',
+      nodeType: 'plein/video',
+      params: {},
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 100,
+    })
+    applyUpdate(second.ydoc, encodeStateAsUpdate(first.ydoc))
+    const a = { type: 'image' as const, assetId: 'a', source: 'one' }
+    const b = { type: 'image' as const, assetId: 'b', source: 'two' }
+    setParam(first, id, 'referenceBinding:image1:one:a', a)
+    setParam(second, id, 'referenceBinding:image1:two:b', b)
+    applyUpdate(first.ydoc, encodeStateAsUpdate(second.ydoc))
+    applyUpdate(second.ydoc, encodeStateAsUpdate(first.ydoc))
+    applyUpdate(reopened.ydoc, encodeStateAsUpdate(first.ydoc))
+    expect(second.get(id)?.params).toEqual(first.get(id)?.params)
+    expect(
+      Object.keys(reopened.get(id)?.params ?? {}).filter((key) =>
+        key.startsWith('referenceBinding:'),
+      ),
+    ).toHaveLength(2)
+    expect(resolveReferenceBindings('@image1', [a, b], reopened.get(id)?.params).error).toBeTruthy()
+  } finally {
+    first.destroy()
+    second.destroy()
+    reopened.destroy()
+  }
+})

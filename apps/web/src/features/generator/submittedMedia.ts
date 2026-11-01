@@ -1,3 +1,4 @@
+import { referenceAliases } from '@plein/plugin-sdk'
 import type { InputValue, PreparedInput } from '@plein/protocol'
 
 export type SubmittedMedia = InputValue & {
@@ -16,5 +17,14 @@ export function submittedMedia(data: PreparedInput): SubmittedMedia[] {
       const index = ++counts[value.type]
       return [{ ...value, type: value.type, port, index, token: `${value.type}${index}` }]
     }),
+  )
+}
+
+export function referenceMedia(data: PreparedInput, bindings: unknown) {
+  return referenceAliases(
+    submittedMedia(data)
+      .filter((item) => !!item.assetId)
+      .map((item) => ({ ...item, assetId: item.assetId! })),
+    bindings,
   )
 }
