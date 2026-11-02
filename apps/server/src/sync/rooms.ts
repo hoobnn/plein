@@ -34,6 +34,11 @@ interface ConnState {
 /**
  * 一个画布的协作房间：内存中的 Y.Doc + 连接 + awareness，增量写入 SQLite。
  * 协议与 y-websocket 客户端兼容（sync / awareness 两类消息）。
+ *
+ * 数据访问例外：本文件直连 Drizzle 是有意为之，属于 CONTRIBUTING「数据访问」里的基础设施直连。
+ * 房间状态是协作同步的一部分，不是某个 HTTP 传输层的业务数据：
+ * 增量写入要用预编译语句走热路径，写增量与更新画布时间戳必须同事务，
+ * 拆到通用存储模块反而要把预编译语句和事务边界拆散。
  */
 export class Room {
   readonly doc = new Y.Doc({ gc: true })

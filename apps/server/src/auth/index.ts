@@ -14,6 +14,12 @@ import type { Secrets } from '../storage/secrets'
  * - none：本机免登录，所有请求视为所有者；
  * - password：Better Auth 邮箱密码登录。0.1.0 只允许创建一个所有者账号，
  *   多用户注册、角色、团队等账号体系以后在 Better Auth 上扩展。
+ *
+ *   数据访问例外：本文件直连 Drizzle 是有意为之，属于 CONTRIBUTING「数据访问」里的基础设施直连。
+ *   Better Auth 的 drizzleAdapter 要的就是同一个 db 实例与认证表 schema，
+ *   认证表和业务表共用一份迁移，不能把适配器接到别处的连接上；
+ *   「本机模式的数据归到所有者名下」也必须在创建账号的钩子里跟着同一个库走。
+ *   这里的查询只碰认证表与所有者归属，不含业务表的通用读写。
  */
 export interface AuthProvider {
   readonly required: boolean

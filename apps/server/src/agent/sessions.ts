@@ -124,7 +124,13 @@ export interface AgentDeps {
   enabled: boolean
 }
 
-/** 每轮独立执行身份；CLI 会话继续复用，进程和 MCP 凭据不跨轮复用。 */
+/**
+ * 每轮独立执行身份；CLI 会话继续复用，进程和 MCP 凭据不跨轮复用。
+ *
+ * 数据访问：本文件的会话读写暂时直连 Drizzle，属于 CONTRIBUTING「数据访问」里的待收项。
+ * 这个类下一波要整体拆分（会话、审批、执行分家），届时连同这里的查询一起收进
+ * agent 目录下的存储模块；本波只做分类登记，不动代码，避免与拆分冲突。
+ */
 export class AgentSessions {
   private live = new Map<string, Live>()
   private byToken = new Map<string, { session: Live; turn: TurnExecution }>()

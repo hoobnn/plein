@@ -98,6 +98,10 @@ import { openZipEntry, readZipIndex, safeEntryName, ZipError, type ZipEntry } fr
  * 资产库条目和外部依赖，流式写成 zip。导入分两步：先把包放进暂存区，校验版本、路径、哈希并解析文档，
  * 返回预检结果；确认后素材先进内容存储（按哈希寻址，多出来也不影响什么），数据库记录在一个事务里写入，
  * 失败时不留下半个项目。
+ *
+ * 数据访问：本文件的导入写入暂时直连 Drizzle，属于 CONTRIBUTING「数据访问」里的待收项。
+ * 这个文件下一波要整体拆分，届时连同这里的写入一起收进 projects 目录下的存储模块；
+ * 本波只做分类登记，不动代码，避免与拆分冲突。
  */
 
 export interface PackageDeps {
