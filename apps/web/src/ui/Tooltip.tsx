@@ -1,12 +1,13 @@
-import { Tooltip as Base } from '@base-ui/react/tooltip'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 
-interface ActiveTitle {
+export interface ActiveTitle {
   element: HTMLElement
   text: string
 }
 
-const TRIGGER_ID = 'plein-global-title-tooltip'
+const TooltipBubble = lazy(() =>
+  import('./TooltipBubble').then((module) => ({ default: module.TooltipBubble })),
+)
 
 function pointerEvent(type: string, relatedTarget?: EventTarget | null) {
   return new PointerEvent(type, {
@@ -26,19 +27,23 @@ function mouseEvent(type: string, relatedTarget?: EventTarget | null) {
 /**
  * 全局悬停提示：接管页面上所有 `title` 属性，换成与应用一致的提示气泡，不再弹系统原生的黄色小框。
  * 指针移入时把 title 暂存到 data-tip 并留空占位，移出时还原；悬停期间同步 React 对 title 的更新。
- * Base UI 负责延迟、相邻提示接力、定位与碰撞翻转。
+ * Base UI 气泡在首次有效悬停才下载，负责延迟、相邻提示接力、定位与碰撞翻转。
  */
 export function TooltipHost() {
-  const [handle] = useState(() => Base.createHandle())
   const [current, setCurrent] = useState<ActiveTitle | null>(null)
+  const [requested, setRequested] = useState(false)
+  const [bubbleReady, setBubbleReady] = useState(0)
   const currentRef = useRef(current)
   currentRef.current = current
   const trigger = useRef<HTMLElement>(null)
+  const closeRef = useRef<(() => void) | null>(null)
   const forwarded = useRef<HTMLElement | null>(null)
   const hide = useCallback(() => {
-    if (handle.isOpen) handle.close()
+    closeRef.current?.()
     setCurrent(null)
-  }, [handle])
+  }, [])
+  const close = useCallback(() => setCurrent(null), [])
+  const ready = useCallback(() => setBubbleReady((version) => version + 1), [])
 
   const overTrigger = useCallback((relatedTarget?: EventTarget | null) => {
     const element = trigger.current
@@ -58,7 +63,7 @@ export function TooltipHost() {
     element.dispatchEvent(mouseEvent('mouseout', relatedTarget))
   }, [])
 
-  // 新目标先由 Base UI Trigger 接管指针序列；首延迟和相邻目标的即时接力都由它决定。
+  // 气泡加载完成后交回当前目标；首延迟从 Trigger 接管指针序列时开始。
   useEffect(() => {
     const element = current?.element
     if (!element) return
@@ -69,7 +74,7 @@ export function TooltipHost() {
     queueMicrotask(() => {
       if (currentRef.current?.element === element) overTrigger(element)
     })
-  }, [current?.element, overTrigger])
+  }, [current?.element, bubbleReady, overTrigger])
 
   // title 接管只处理属性与无障碍名称，不再计算气泡位置或管理计时器。
   useEffect(() => {
@@ -143,6 +148,7 @@ export function TooltipHost() {
         forwarded.current = element
         overTrigger(event.relatedTarget)
       }
+      setRequested(true)
       setCurrent({ element, text })
     }
     const out = (event: PointerEvent) => {
@@ -170,37 +176,15 @@ export function TooltipHost() {
     }
   }, [hide, outTrigger, overTrigger])
 
-  return (
-    <Base.Provider delay={450} closeDelay={150} timeout={400}>
-      <Base.Root handle={handle} onOpenChange={(open) => !open && setCurrent(null)}>
-        <Base.Trigger
-          ref={(element: HTMLButtonElement | null) => {
-            trigger.current = element
-          }}
-          id={TRIGGER_ID}
-          handle={handle}
-          render={<span hidden aria-hidden="true" />}
-        />
-        {current && (
-          <Base.Portal>
-            <Base.Positioner
-              anchor={current.element}
-              side="bottom"
-              align="center"
-              sideOffset={6}
-              collisionPadding={8}
-              className="isolate z-80"
-            >
-              <Base.Popup
-                role="tooltip"
-                className="ui-tooltip pointer-events-none inline-flex max-w-xs origin-(--transform-origin) items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs break-words text-on-primary shadow-none"
-              >
-                {current.text}
-              </Base.Popup>
-            </Base.Positioner>
-          </Base.Portal>
-        )}
-      </Base.Root>
-    </Base.Provider>
-  )
+  return requested ? (
+    <Suspense fallback={null}>
+      <TooltipBubble
+        current={current}
+        trigger={trigger}
+        closeRef={closeRef}
+        onReady={ready}
+        onClose={close}
+      />
+    </Suspense>
+  ) : null
 }

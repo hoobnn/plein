@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { expect, it, vi } from 'vite-plus/test'
-import { act, fireEvent, renderApp, screen } from '../testing/render'
+import { act, fireEvent, renderApp, screen, waitFor } from '../testing/render'
 import { TooltipHost } from './Tooltip'
 
 async function setup(label = '生成', explicit = false) {
@@ -15,6 +15,9 @@ async function setup(label = '生成', explicit = false) {
   )
   const button = screen.getByRole('button')
   fireEvent.pointerOver(button, { pointerType: 'mouse' })
+  await waitFor(() =>
+    expect(document.querySelector('[data-base-ui-tooltip-trigger]')).not.toBeNull(),
+  )
   await act(() => vi.advanceTimersByTimeAsync(500))
   expect(screen.getByRole('tooltip').textContent).toBe(label)
   return button
@@ -49,6 +52,9 @@ it('首个提示等待 450ms，相邻按钮立即接力且保留关闭间隙', a
   const first = screen.getByRole('button', { name: '第一按钮' })
   const second = screen.getByRole('button', { name: '第二按钮' })
   fireEvent.pointerOver(first, { pointerType: 'mouse' })
+  await waitFor(() =>
+    expect(document.querySelector('[data-base-ui-tooltip-trigger]')).not.toBeNull(),
+  )
   await act(() => vi.advanceTimersByTimeAsync(449))
   expect(screen.queryByRole('tooltip')).toBeNull()
   await act(() => vi.advanceTimersByTimeAsync(1))
@@ -81,6 +87,9 @@ it('按钮与 SVG 子节点之间移动不关闭，离开后重新进入仍显�
   await act(() => vi.advanceTimersByTimeAsync(200))
   expect(screen.queryByRole('tooltip')).toBeNull()
   fireEvent.pointerOver(button, { pointerType: 'mouse' })
+  await waitFor(() =>
+    expect(document.querySelector('[data-base-ui-tooltip-trigger]')).not.toBeNull(),
+  )
   await act(() => vi.advanceTimersByTimeAsync(500))
   expect(screen.getByRole('tooltip').textContent).toBe('生成')
 })
