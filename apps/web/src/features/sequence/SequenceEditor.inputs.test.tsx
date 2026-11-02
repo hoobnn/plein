@@ -3,7 +3,9 @@ import { expect, it, vi } from 'vite-plus/test'
 import { fireEvent, renderApp, screen } from '../../testing/render'
 import { Modal } from '../../ui/Modal'
 import { TextCell } from '../storyboard/StoryboardCells'
-import { NumberField, RequiredSecondsField, SubtitleField } from './SequenceEditor'
+import { NumberField } from './fields/NumberField'
+import { RequiredSecondsField } from './fields/RequiredSecondsField'
+import { SubtitleField } from './fields/SubtitleField'
 
 for (const mode of ['native', 'legacy'] as const) {
   const composing = mode === 'native' ? { isComposing: true } : { keyCode: 229 }
