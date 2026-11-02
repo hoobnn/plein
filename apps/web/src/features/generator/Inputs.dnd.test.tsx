@@ -116,38 +116,48 @@ describe('参考图拖拽排序（dnd-kit）', () => {
   })
 
   it('拖拽中按 Esc 取消：不写文档、不产生撤销分组，点击预览不受影响', async () => {
-    const f = setup()
-    stubTileRects()
-    const order = () => inputEdges(f.doc, f.id, 'images').map((edge) => edge.from[0])
-    const stackSize = () => f.doc.undo.undoStack.length
-    const before = stackSize()
-    const tiles = screen.getAllByRole('group')
-    const button = within(tiles[1]!).getByRole('button', { name: /预览/ })
-    fireEvent.pointerDown(button, {
-      pointerId: 1,
-      button: 0,
-      isPrimary: true,
-      pointerType: 'mouse',
-      clientX: 144,
-      clientY: 24,
+    // 用可控计时器验证库的点击抑制窗口（拖拽激活到结束后 50ms 才移除监听）：
+    // 窗口内的落点点击被吞掉，窗口后恢复正常，不依赖真实时间。
+    // 只 fake setTimeout/Date：库的清理链还依赖 requestAnimationFrame，不能一并 fake
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
     })
-    fireEvent.pointerMove(button, { pointerId: 1, clientX: 130, clientY: 24 })
-    await act(async () => {})
-    fireEvent.keyDown(document, { key: 'Escape' })
-    await act(async () => {})
-    expect(order()).toEqual(f.sources)
-    expect(stackSize()).toBe(before)
-    // 取消后同一次按压的释放点击被库抑制（与旧原生拖拽取消一致）；
-    // 过了抑制窗口后点击恢复正常预览
-    const view = vi.spyOn(useCanvas.getState(), 'view')
-    fireEvent.click(button)
-    expect(view).not.toHaveBeenCalled()
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 60))
-    })
-    fireEvent.click(button)
-    expect(view).toHaveBeenCalled()
-    view.mockRestore()
+    try {
+      const f = setup()
+      stubTileRects()
+      const order = () => inputEdges(f.doc, f.id, 'images').map((edge) => edge.from[0])
+      const stackSize = () => f.doc.undo.undoStack.length
+      const before = stackSize()
+      const tiles = screen.getAllByRole('group')
+      const button = within(tiles[1]!).getByRole('button', { name: /预览/ })
+      fireEvent.pointerDown(button, {
+        pointerId: 1,
+        button: 0,
+        isPrimary: true,
+        pointerType: 'mouse',
+        clientX: 144,
+        clientY: 24,
+      })
+      fireEvent.pointerMove(button, { pointerId: 1, clientX: 130, clientY: 24 })
+      await act(async () => {})
+      fireEvent.keyDown(document, { key: 'Escape', code: 'Escape' })
+      await act(async () => {})
+      expect(order()).toEqual(f.sources)
+      expect(stackSize()).toBe(before)
+      // 取消后同一次按压的释放点击被库抑制（与旧原生拖拽取消一致）
+      const view = vi.spyOn(useCanvas.getState(), 'view')
+      fireEvent.click(button)
+      expect(view).not.toHaveBeenCalled()
+      // 过了抑制窗口后点击恢复正常预览
+      act(() => {
+        vi.advanceTimersByTime(60)
+      })
+      fireEvent.click(button)
+      expect(view).toHaveBeenCalled()
+      view.mockRestore()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('非 multiple 端口的参考不可拖：拖动尝试不改顺序、不产生撤销分组', async () => {
