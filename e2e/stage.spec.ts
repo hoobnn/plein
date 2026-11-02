@@ -184,10 +184,8 @@ test('3D 缓动中立即截图，来源机位与重新打开的画面一致', { 
   await dialog.getByRole('button', { name: '关闭', exact: true }).click()
   await expect(dialog).toHaveCount(0)
   const at = await centerOf(page, stage.id)
-  // 对话框退场动画的全屏 viewport 会再挡几帧指针，等落点真的回到画布再双击
-  await expect
-    .poll(() => page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName, at))
-    .toBe('CANVAS')
+  // 关闭后立刻双击就要能重开：退场浮层还在 DOM 里时，页面其余部分必须已经可交互
+  //（浮层退场即转非模态，见 ui/motion.ts 的 useOverlayModal）。
   await page.mouse.dblclick(at.x, at.y)
   await expect(canvas).toBeVisible()
   await dialog.locator('.stage-outline .stage-item').filter({ hasText: '35mm' }).click()
@@ -228,10 +226,7 @@ test('3D 用真实手柄移动和旋转人物，不误动机位', { tag: '@core'
   await dialog.getByRole('button', { name: '关闭', exact: true }).click()
   await expect(dialog).toHaveCount(0)
   const at = await centerOf(page, stage.id)
-  // 同上：等退场动画的全屏 viewport 让出指针再双击
-  await expect
-    .poll(() => page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName, at))
-    .toBe('CANVAS')
+  // 同上：退场中直接双击，必须能重开
   await page.mouse.dblclick(at.x, at.y)
   await expect(canvas).toBeVisible()
   expect((await read()).figures).toEqual(rotated.figures)
