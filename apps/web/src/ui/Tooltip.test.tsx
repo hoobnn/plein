@@ -64,6 +64,27 @@ it('首个提示等待 450ms，相邻按钮立即接力且保留关闭间隙', a
   expect(screen.queryByRole('tooltip')).toBeNull()
 })
 
+it('按钮与 SVG 子节点之间移动不关闭，离开后重新进入仍显示', async () => {
+  const button = await setup()
+  const svg = button.querySelector('svg')!
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+  svg.append(path)
+
+  fireEvent.pointerOver(svg, { pointerType: 'mouse' })
+  expect(screen.getByRole('tooltip').textContent).toBe('生成')
+  fireEvent.pointerOver(path, { pointerType: 'mouse' })
+  expect(screen.getByRole('tooltip').textContent).toBe('生成')
+  fireEvent.pointerOver(button, { pointerType: 'mouse' })
+  expect(screen.getByRole('tooltip').textContent).toBe('生成')
+
+  fireEvent.pointerOut(button, { relatedTarget: document.body, pointerType: 'mouse' })
+  await act(() => vi.advanceTimersByTimeAsync(200))
+  expect(screen.queryByRole('tooltip')).toBeNull()
+  fireEvent.pointerOver(button, { pointerType: 'mouse' })
+  await act(() => vi.advanceTimersByTimeAsync(500))
+  expect(screen.getByRole('tooltip').textContent).toBe('生成')
+})
+
 it('显式无障碍名称不被悬停标题覆盖', async () => {
   const button = await setup('生成', true)
   await act(async () => {

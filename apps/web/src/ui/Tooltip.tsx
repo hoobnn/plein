@@ -131,14 +131,14 @@ export function TooltipHost() {
     const over = (event: PointerEvent) => {
       if (event.target === trigger.current || event.pointerType === 'touch') return
       const active = currentRef.current
-      if (active && !active.element.contains(event.target as Node)) outTrigger(event.relatedTarget)
-      const element = (event.target as Element | null)?.closest?.<HTMLElement>('[title]')
-      const text = element?.getAttribute('title')?.trim()
-      if (!element || !text) return hide()
-      if (active?.element === element) {
+      if (active?.element.contains(event.target as Node)) {
         overTrigger(event.relatedTarget)
         return
       }
+      if (active) outTrigger(event.relatedTarget)
+      const element = (event.target as Element | null)?.closest?.<HTMLElement>('[title]')
+      const text = element?.getAttribute('title')?.trim()
+      if (!element || !text) return hide()
       if (active) {
         forwarded.current = element
         overTrigger(event.relatedTarget)
