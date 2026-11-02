@@ -384,10 +384,25 @@
 }
 .plein-generator-body > .plein-prompt:not([data-large]) {
   display: flex;
-  flex: 1 1 144px;
+  /* 编辑区是主体：不让位（shrink 0），吃掉剩余空间（grow 1）；
+     空间实在不够时由外层滚动兜底，参考区与辅助区先收缩。 */
+  flex: 1 0 auto;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+}
+/* 参考素材区：不参与收缩（收缩会盖住 / 裁掉瓦片，拖拽换序就废了）；
+   多图时靠上限 45% 约束、内部滚动，上传工具行吸顶，入口始终可用。 */
+.plein-generator-body > .plein-generator-inputs {
+  max-height: 45%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.plein-generator-body > .plein-generator-inputs > .plein-generator-input-tools {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
 }
 .plein-generator-body > .plein-prompt:not([data-large]) > .plein-mention-input {
   display: flex;
@@ -396,9 +411,11 @@
 }
 .plein-generator-body .plein-prompt:not([data-large]) .plein-prompt-input {
   field-sizing: fixed;
-  flex: 1;
+  flex: 1 1 0;
   min-width: 0;
-  min-height: 0;
+  /* 12 行 × text-base 行高 22px + 上下内边距 24px：长提示词的最小可编辑高度，
+     更长时在框内滚动，外层面板不再为它撑出滚动条。 */
+  min-height: calc(12 * var(--text-base--line-height) + 24px);
   max-height: none;
 }
 .plein-generator-body .plein-prompt-references {

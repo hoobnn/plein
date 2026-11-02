@@ -411,7 +411,7 @@ export function PromptBox({
             setQuery(null)
           }
         }}
-        className={`plein-prompt-input field-sizing-content ${large ? 'max-h-[65vh] min-h-80' : 'max-h-48 min-h-24'} w-full resize-none bg-transparent px-4 py-3 text-base text-ink outline-none placeholder:text-ink-subtle`}
+        className={`plein-prompt-input field-sizing-content ${large ? 'max-h-[65vh] min-h-80' : 'max-h-[65vh] min-h-72'} w-full resize-none bg-transparent px-4 py-3 text-base text-ink outline-none placeholder:text-ink-subtle`}
       />
       {!large && (
         <button

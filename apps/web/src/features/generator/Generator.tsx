@@ -50,11 +50,15 @@ import { saveElementName } from '../../canvas/rename'
 import { Icon } from '../../ui/icons'
 
 /** 生成节点需要提示词和输入预览；只有入口的节点使用紧凑面板。 */
-const EDITOR_W = 840
+const EDITOR_W = 960
 const EDITOR_H = 440
 const ASSET_EDITOR_W = 720
 const INLINE_EDITOR_W = 640
 const MIN_EDITOR_H = 180
+/** 默认面板高度随窗口增长的上限：再大的窗口也留出上半屏看画布。 */
+const EDITOR_MAX_H = 720
+/** 默认面板高度随窗口增长的比例：小窗口也至少留出 1/4 给画布。 */
+const EDITOR_WINDOW_RATIO = 0.75
 
 export function Generator() {
   const engine = useCanvas((s) => s.engine)
@@ -72,7 +76,8 @@ function GeneratorHost({ engine }: { engine: Engine }) {
   const registered = nodeRegistration(node.type)?.editor
   if (el.locked || engine.doc.readOnly)
     return registered?.lockedEntry ? registered.lockedEntry({ engine, el }) : null
-  // 特殊节点的尺寸在注册表里登记；其余按形态取（资产卡宽、纯文本窄、默认标准宽）
+  // 特殊节点的尺寸在注册表里登记；其余按形态取（资产卡宽、纯文本窄、默认标准宽）。
+  // 默认面板标记 grow：高度随窗口增长，长提示词的编辑区能占到剩余高度。
   const size = registered?.size ?? {
     width: ASSET_NODE_TYPES.has(node.type)
       ? ASSET_EDITOR_W
@@ -80,6 +85,7 @@ function GeneratorHost({ engine }: { engine: Engine }) {
         ? INLINE_EDITOR_W
         : EDITOR_W,
     height: EDITOR_H,
+    grow: true,
   }
   const content = registered?.content
   return (
@@ -104,7 +110,7 @@ function NodeBelow({
   engine: Engine
   nodeId: string
   title: string
-  size: { width: number; height: number }
+  size: { width: number; height: number; grow?: boolean }
   children: ReactNode
 }) {
   const place = () => {
@@ -120,12 +126,17 @@ function NodeBelow({
     const bottom = window.innerHeight - canvasBottomSpace(window.innerWidth, left).generator
     const width = Math.max(1, Math.min(size.width, right - left))
     const top = br.y + 12
+    // 默认生成面板（grow）高度随窗口增长（上限 EDITOR_MAX_H）：几百到上千字的长提示词
+    // 在编辑区内部滚动，而不是把面板压成几行；登记过专属尺寸的面板保持声明值。
     // 卡片下方放得下多少就占多少；实在放不下就保持高度、伸到窗口外，
     // 也不能盖住卡片：卡片上的输出端口要能直接拖线。
-    const height = Math.min(
-      size.height,
-      Math.max(bottom - top, Math.min(MIN_EDITOR_H, size.height)),
-    )
+    const desired = size.grow
+      ? Math.max(
+          size.height,
+          Math.min(Math.round(window.innerHeight * EDITOR_WINDOW_RATIO), EDITOR_MAX_H),
+        )
+      : size.height
+    const height = Math.min(desired, Math.max(bottom - top, Math.min(MIN_EDITOR_H, desired)))
     return {
       left: Math.max(left, Math.min((tl.x + br.x - width) / 2, right - width)),
       top,
