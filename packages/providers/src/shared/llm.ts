@@ -12,7 +12,7 @@ import {
   ProviderError,
   type ProviderOutput,
 } from '@plein/plugin-sdk'
-import { jsonSchema, type ModelMessage, Output, streamText, tool } from 'ai'
+import { jsonSchema, type LanguageModel, type ModelMessage, Output, streamText, tool } from 'ai'
 import { z } from 'zod'
 
 // AI SDK 默认把“平台不支持某功能”的提示打到控制台；json_object 降级是有意的，不刷屏
@@ -30,6 +30,11 @@ const RESERVED = new Set([
 ])
 
 export interface ChatOptions {
+  /** Responses 无状态工具循环需要回传加密思考块。 */
+  openaiResponses?: boolean
+  /** 原生协议模型；缺省使用共享 Chat Completions 适配器。 */
+  languageModel?: LanguageModel
+  providerOptions?: Parameters<typeof streamText>[0]['providerOptions']
   ctx: Pick<ProviderContext, 'signal' | 'stream'>
   /** 平台名，用在报错里（如“百炼”） */
   label: string
@@ -75,12 +80,27 @@ async function toMessages(opts: ChatOptions): Promise<ModelMessage[]> {
         }
       if (m.role === 'assistant') {
         const said = text(m.content)
-        if (!m.toolCalls?.length) return { role: 'assistant', content: said }
+        const encrypted =
+          opts.openaiResponses && m.continuation?.model === opts.model
+            ? m.continuation.encryptedContent
+            : undefined
+        if (!m.toolCalls?.length && !encrypted) return { role: 'assistant', content: said }
         return {
           role: 'assistant',
           content: [
+            ...(encrypted
+              ? [
+                  {
+                    type: 'reasoning' as const,
+                    text: '',
+                    providerOptions: {
+                      openai: { reasoningEncryptedContent: encrypted },
+                    },
+                  },
+                ]
+              : []),
             ...(said ? [{ type: 'text' as const, text: said }] : []),
-            ...m.toolCalls.map((c) => ({
+            ...(m.toolCalls ?? []).map((c) => ({
               type: 'tool-call' as const,
               toolCallId: c.id,
               toolName: c.name,
@@ -178,14 +198,14 @@ export async function chatCompletion(opts: ChatOptions) {
 
   let failure: unknown = null
   const result = streamText({
-    model: provider.chatModel(opts.model),
+    model: opts.languageModel ?? provider.chatModel(opts.model),
     messages,
     allowSystemInMessages: true,
     temperature: input.temperature,
     maxOutputTokens: input.maxTokens,
     maxRetries: 0,
     abortSignal: opts.ctx.signal,
-    providerOptions: { plein: extra },
+    providerOptions: opts.providerOptions ?? { plein: extra },
     ...(input.jsonSchema
       ? { output: Output.object({ schema: outputSchema(input.jsonSchema), name: 'plein_output' }) }
       : {}),
@@ -225,6 +245,7 @@ export async function chatCompletion(opts: ChatOptions) {
     // 其余是 AI SDK 自己的解析错误：原始信息只留在 cause 里，不进报错文案
     return new ProviderError('unknown', `${label}返回的对话数据无法解析；请勿自动重新提交`, {
       cause,
+      ...(opts.openaiResponses ? { outcome: 'unknown' as const, retryable: false } : {}),
     })
   }
   let text: string
@@ -253,6 +274,17 @@ export async function chatCompletion(opts: ChatOptions) {
     ...(text ? [{ type: 'text' as const, text }] : []),
     ...(calls.length ? [{ type: 'tool_calls' as const, calls }] : []),
   ]
+  if (opts.openaiResponses && calls.length) {
+    const reasoning = await result.reasoning
+    const encrypted = reasoning
+      .map((p) => p.providerMetadata?.openai?.reasoningEncryptedContent)
+      .find((value): value is string => typeof value === 'string' && !!value)
+    if (encrypted) {
+      const output = outputs.find((p) => p.type === 'tool_calls')
+      if (output?.type === 'tool_calls')
+        output.continuation = { model: opts.model, encryptedContent: encrypted }
+    }
+  }
   if (input.jsonSchema) {
     try {
       outputs = [{ type: 'json', value: await result.output }]

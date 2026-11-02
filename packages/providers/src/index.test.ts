@@ -1,9 +1,17 @@
 import { domainAllowed } from '@plein/plugin-sdk'
 import { describe, expect, it } from 'vite-plus/test'
-import { arkPlanPlugin, arkPlugin, bailianPlugin, doubaoPlugin, minimaxPlugin } from './index'
+import {
+  arkPlanPlugin,
+  arkPlugin,
+  bailianPlugin,
+  doubaoPlugin,
+  minimaxPlugin,
+  openaiPlugin,
+} from './index'
 
 describe('内置平台插件的权限声明', () => {
   it.each([
+    ['OpenAI', openaiPlugin, ['OPENAI_API_KEY'], ['openai.com'], ['api.openai.com']],
     [
       '火山方舟',
       arkPlugin,

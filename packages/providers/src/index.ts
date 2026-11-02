@@ -5,6 +5,7 @@
 export { mockPlugin, mockProvider } from './mock'
 export { minimaxPlugin, minimaxProvider } from './minimax'
 export { doubaoPlugin, doubaoProvider } from './doubao'
+export { openaiPlugin, openaiProvider } from './openai'
 export { bailianPlugin, bailianProvider } from './bailian'
 export { arkPlanPlugin, arkPlanProvider, arkPlugin, arkProvider, referenceStorageHost } from './ark'
 export {

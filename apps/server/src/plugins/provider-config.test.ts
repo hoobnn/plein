@@ -547,3 +547,39 @@ describe('兼容渠道', () => {
     expect(after.models.map((m) => m.id)).not.toContain(initial)
   })
 })
+
+describe('OpenAI 官方平台', () => {
+  it('默认关闭，保存密钥后进入普通生成与 Agent 模型目录，响应不泄露密钥', async () => {
+    const { call, server } = await boot()
+    const initial = (await call<Catalog>('/api/catalog')).body.providers.find(
+      (p) => p.id === 'openai/api',
+    )!
+    expect(initial.enabled).toBe(false)
+    expect(initial.secrets).toEqual([{ name: 'OPENAI_API_KEY', title: 'API Key', required: true }])
+    const saved = await call<ProviderConfigView>('/api/providers/openai/api/config', 'PUT', {
+      enabled: true,
+      secrets: { OPENAI_API_KEY: 'test-only-openai-secret' },
+    })
+    expect(saved.status).toBe(200)
+    expect(JSON.stringify(saved.body)).not.toContain('test-only-openai-secret')
+    const provider = (await call<Catalog>('/api/catalog')).body.providers.find(
+      (p) => p.id === 'openai/api',
+    )!
+    expect(provider.enabled).toBe(true)
+    expect(
+      provider.models.some(
+        (m) => m.id === 'gpt-image-2.5-sunburst' && m.capabilities.includes('image.edit'),
+      ),
+    ).toBe(true)
+    expect(
+      server.plugins
+        .models('text.chat', { agent: true })
+        .some((m) => m.ref === 'openai/api:gpt-6.1-sol' && m.features?.includes('tools')),
+    ).toBe(true)
+    expect(
+      server.plugins
+        .models('image.generate')
+        .some((m) => m.ref === 'openai/api:gpt-image-2.5-flare'),
+    ).toBe(true)
+  })
+})

@@ -6,6 +6,7 @@ import {
   doubaoPlugin,
   minimaxPlugin,
   mockPlugin,
+  openaiPlugin,
 } from '@plein/providers'
 import type { ServerPluginDefinition } from '@plein/plugin-sdk'
 import { coreServerPlugin } from '../executors/core'
@@ -20,6 +21,7 @@ export function builtinPlugins(opts: { mock: boolean }): ServerPluginDefinition[
     bailianPlugin,
     arkPlugin,
     arkPlanPlugin,
+    openaiPlugin,
     compatiblePlugin,
   ]
 }

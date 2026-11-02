@@ -1,6 +1,6 @@
 # 平台协议映射
 
-五个内置 Provider 入口 的端点、请求字段层级、素材编码与响应格式。字段契约以官方接口正文为准，改动适配器时同步更新本表；面向使用者的能力与限制见[模型平台接入](../guide/providers.md)。
+内置 Provider 入口 的端点、请求字段层级、素材编码与响应格式。字段契约以官方接口正文为准，改动适配器时同步更新本表；面向使用者的能力与限制见[模型平台接入](../guide/providers.md)。
 
 下表是现有实现对应的协议边界。端点路径相同并不代表不同模型的字段、地域和限制相同。
 
@@ -24,6 +24,8 @@
 | 方舟视频            | `POST /api/v3/contents/generations/tasks`；`content[]`，音频开关为 `generate_audio`                                                       | 顶层 `id` → 查询任务 → `content.video_url/last_frame_url`；尾帧 JPEG。本地图片和音频可 Data URI；本地视频尚未上传素材库，因此提交前阻断。                                                                |
 | 方舟 Agent Plan     | 图片 / 视频改用 `/api/plan/v3` 前缀，路径和请求体同上；`model` 换成套餐预置名（如 `doubao-seedance-2.5`），Bearer 用 Agent Plan 专属 Key  | `volc/ark-plan` 独立平台，模型 ID 与按量平台一致，查询 / 取消任务同样走套餐前缀。套餐文本通过同一前缀的 `/chat/completions` 调用，仅允许内置 Agent（`usage=agent`）；普通文本生成和草稿模式提交前阻断。  |
 | 方舟视频参考存储    | TOS 用官方 SDK 预签名；S3 兼容存储用 SigV4 查询串预签名，`PUT` 附 `x-amz-content-sha256: UNSIGNED-PAYLOAD`                                | 上传 15 分钟、读取 7 天签名；宿主按设置只额外放行上传主机。方舟只接受公网视频 URL 或预置 `asset://` 素材，不接受视频 Base64。                                                                            |
+| OpenAI 对话         | `POST /v1/responses`；AI SDK 原生 Responses 转换消息、工具和 JSON Schema，`store=false`                                                   | 验证 Responses 终包，保留同模型加密思考续传；不发送推理模型的 temperature。                                                                                                                              |
+| OpenAI 图片         | `POST /v1/images/generations`；有参考图或蒙版时 JSON `POST /v1/images/edits`，`images[].image_url` / `mask.image_url` 为 Data URL         | `data[].b64_json`；显式输出格式决定 MIME。蒙版白色重画转换为透明 alpha，原图和蒙版统一 PNG；不发送 `response_format`。                                                                                   |
 
 音色设计使用独立的 `voiceDesign` 能力：豆包 `POST /api/v3/tts/voice_design` 的提示词为 `prompt.text_prompt` / `prompt.image_prompt.image_bytes`，试听为顶层 `text`，槽位为 `speaker_id`；MiniMax `POST /v1/voice_design` 使用顶层 `prompt` / `preview_text` / `voice_id`，响应 `trial_audio` 是 hex。豆包设计与复刻共用状态查询，MiniMax 设计同步返回音色 ID。详细限制及官方来源见[音色设计与声音复刻](../guide/providers.md#音色设计与声音复刻)。
 
@@ -55,3 +57,5 @@ Agent Plan 工具调用保留 `reasoning_content` 和 `encrypted_content`，随 
 - Wan 3.0 的 `adaptive_duration` 为 Plein 表单字段，通过公共视频覆盖逻辑在实际输入中显示 `duration=-1`，适配器只发送原生 `duration`，不透传表单字段。
 
 官方来源和面向使用者的完整参数表见[模型平台参数](../guide/providers.md#图片和视频参数2026-11-02-核对)。
+
+OpenAI `GET /v1/models` 用于免费连接检查和设置页模型展示。列表不提供接口能力，`remoteModelsScope=[]`，不把未知 ID 当作可对话模型。原生 Responses 使用 `@ai-sdk/openai`；SSE 必须收到 `response.completed` / `response.incomplete` / `response.failed` / `error`，状态由 SDK 解释，缺终包不能作为成功。图像 JSON 协议见[官方 Images Edits](https://developers.openai.com/api/reference/resources/images/methods/edit)。
