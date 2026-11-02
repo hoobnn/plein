@@ -544,6 +544,51 @@ B1：`packages/doc` 内部。B2：`packages/doc`、新增 `packages/domain`、`p
 - `runs.ts`、`host.ts` 先复评职责边界，确有独立职责再拆，不为行数硬拆。
 - 拆分后同步更新 `import`，不改逻辑。
 
+#### `runs.ts` / `host.ts` 复评结论
+
+复评后两者都**本轮不拆**，理由不同。
+
+**`runs/runs.ts`（2587 行）：职责已分好，剩下的是状态机本身。**
+
+文件内已有清晰分区：`单节点`（`:483`）、`影响分析`（`:613`）、`批次快照`（`:682`）、`整组`（`:888`）、
+`任务恢复`（`:1163`）、`队列与执行`（`:1577`）。
+
+- `影响分析` 与 `批次快照` 两区已外移到 `runs/impact.ts`、`runs/batch.ts`，本文件只剩供它们复用的读取方法。
+- `单节点`（`start` / `startChecked` / `preview` / `inspect` / `cachedCandidate` / `resultMatches` / `planKey`）
+  与 `整组`（`runFlow` / `runBatch` / `runReviewedBatch` / `runImpact` / `runGroup`）是两套入口编排，
+  但共用同一套队列、缓存键与执行体（`execute` / `runOnce` / `prepare` / `cacheKey` / `collectInputs`）。
+- `任务恢复`（`recoverJob` / `resume` / `recover`）与 `队列与执行` 共享 `ActiveJob`、`this.store` 与
+  `enqueue`/`pump` 状态，不是可独立搬走的纯函数。
+
+唯一自包含的职责是「缓存键计算」（`cacheKey` / `keyMatches` / `legacyCacheKey` / `latestParams` / `hashKey` /
+`cacheParams`，约 100 行），它只依赖 `Prepared` 与元素，可纯搬到 `runs/cache-key.ts`；但它同时被
+`runs/impact.ts`、`runs/batch.ts` 与本文件的 `cachedCandidate` / `resultMatches` 使用，
+搬走要同时改三处调用方，收益与改动面不成比例。
+
+结论：**可拆但不值得**。触发条件：缓存键逻辑再长（超过 200 行）或出现第二个消费方时，先拆 `cache-key.ts`。
+
+**`plugins/host.ts`（1591 行）：边界在「平台」而非行数。**
+
+分区只有三段：`Provider`（`:172`–`:1127`，956 行）、`节点执行`（`:1128`–`:1392`，265 行）、`内部`（`:1393` 起）。
+
+- `Provider` 区自己又分两类：远端模型目录（`remoteModelsStatus` / `mergedModels` / `refreshRemoteModels` /
+  `models` / `defaultModel`，`:172`–`:312`）与平台能力调用（`testProvider` / `voiceClone` / `cloneVoice` /
+  `voiceDesign` / `designVoice` / `voiceStatus` / `services`，`:313`–`:1127`）。
+- `节点执行` 区（`runNode` / `verifySubmit` / `providerContext` / `storeOutputs` / `compose` /
+  `renderComposition`）与 `Provider` 区共享 `this.limiter`（限流）、`this.configs`（凭据）、
+  `this.registry`（插件注册表）三处状态，且 `runNode` 内部直接调用 `providerContext`。
+
+「远端模型目录」是唯一自包含的一块（只依赖 `this.remoteCache` 与 `this.configs`，不碰限流与执行体），约 140 行，
+可搬到 `plugins/remote-models.ts`。但它对外是 `PluginHost` 的公开方法，而 `PluginHost` 被 15 个服务端文件引用
+（含 `agent/tool-registry.ts`、`agent/plugin-caps.ts`、`runs/models.ts` 等），搬走要保留转发方法，多一层间接。
+
+结论：**同样可拆但不值得**，收益比 `runs.ts` 更小。
+
+两者的共同问题不是「文件大」，而是「外部依赖面宽」：`PluginHost` 被 15 个服务端文件引用，`NodeRuns` 被 6 个引用
+（含 `app.ts` 的构造点）。依赖面不变的前提下拆文件，只会让评审者多跳几个文件。
+
+建议：把 `runs.ts` / `host.ts` 列为「跟踪」项，等具体职责自然长大或出现第二个消费方时，按当时的实际边界拆。
+
 #### 理由
 
 - **这里的函数边界已经存在，只是没跨文件。** 把已独立的组件移到各自文件是零逻辑改动的纯搬移。
@@ -771,7 +816,7 @@ zustand v5 的 `useStore()` 不带 selector 时，**store 里任何字段变化�
 | --- | ------------------------------------------------------------------------------------- | --------------- | ------ |
 | 2.1 | 能力增加审批说明与执行前流程声明，调度器与审批去掉按名特判                            | D               | 已完成 |
 | 2.2 | 10 个直连文件分类，路由里的写操作收进存储模块                                         | F               | 已完成 |
-| 2.3 | `sessions.ts` / `tools.ts` / `package.ts` 拆分；复评 `runs.ts` / `host.ts`            | G（服务端部分） | 进行中 |
+| 2.3 | `sessions.ts` / `tools.ts` / `package.ts` 拆分；复评 `runs.ts` / `host.ts`            | G（服务端部分） | 已完成 |
 | 2.4 | 前端节点注册表、`RendererRegistry` 支持 nodeType、编辑器表驱动、删 `catalog.elements` | A2、A3          | 已完成 |
 | 2.5 | 侧栏换 react-resizable-panels、参考图排序换 dnd-kit                                   | I2              | 未开始 |
 | 2.6 | 引入 Motion，`Presence` 换 `AnimatePresence`，改写动效规范                            | I6              | 未开始 |
