@@ -1,7 +1,10 @@
 // @vitest-environment happy-dom
 import { expect, it, vi } from 'vite-plus/test'
 import { act, fireEvent, renderApp, screen, waitFor } from '../testing/render'
+import { MotionConfig } from 'motion/react'
 import { choiceDialog, confirmDialog, promptDialog } from './Dialog'
+import { DialogView } from './DialogView'
+import { AnimatePresence } from './motion'
 
 it.each([{ isComposing: true }, { keyCode: 229 }])(
   '输入对话框组字 Escape 保留草稿，取消后再次打开不复用旧草稿 %j',
@@ -112,4 +115,33 @@ it('三选一确认框可把初始焦点交给第三个选项，普通确认仍�
   })
   const confirm = await screen.findByRole('button', { name: '删除' })
   await waitFor(() => expect(document.activeElement).toBe(confirm))
+})
+
+it('关闭后退场动画期间焦点离开对话框，撤销快捷键不会落在已关闭的浮层上', async () => {
+  const req = {
+    id: 1,
+    kind: 'confirm' as const,
+    options: { title: '重命名节点' },
+    resolve() {},
+  }
+  const view = (open: boolean) => (
+    <AnimatePresence>
+      {open && <DialogView req={req} isCurrent={() => true} onFinish={() => {}} />}
+    </AnimatePresence>
+  )
+  const { rerender } = renderApp(view(true), {
+    dialogs: false,
+    // 用例默认开启减少动态效果；这里要保留退场动画，才能观察到退场期间的焦点
+    wrapper: ({ children }) => <MotionConfig reducedMotion="never">{children}</MotionConfig>,
+  })
+  const dialog = await screen.findByRole('dialog', { name: '重命名节点' })
+  const confirm = screen.getByRole('button', { name: '确定' })
+  confirm.focus()
+  expect(dialog.contains(document.activeElement)).toBe(true)
+  rerender(view(false))
+  // 退场动画保留 DOM：浮层已标记为退场，焦点必须立刻交出去，否则画布快捷键会被当成浮层内的输入。
+  expect(dialog.isConnected).toBe(true)
+  expect(dialog.getAttribute('data-plein-exiting')).toBe('')
+  expect(dialog.contains(document.activeElement)).toBe(false)
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 })

@@ -40,6 +40,7 @@ export function DialogView({
   const inputRef = useRef<HTMLInputElement>(null)
   const confirmRef = useRef<HTMLButtonElement>(null)
   const alternateRef = useRef<HTMLButtonElement>(null)
+  const popupRef = useRef<HTMLElement | null>(null)
   const closing = useOverlayClosing()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -64,6 +65,14 @@ export function DialogView({
     window.addEventListener('keydown', key, true)
     return () => window.removeEventListener('keydown', key, true)
   }, [finish, req.id, isCurrent])
+
+  // 退场动画保留 DOM，但焦点不能留在已关闭的对话框里：画布快捷键会把浮层内的按键让给浮层，
+  // 紧接着按下的撤销会没有响应。关闭后焦点由 Base UI 还给原来的元素。
+  useEffect(() => {
+    if (!closing) return
+    const active = document.activeElement
+    if (active instanceof HTMLElement && popupRef.current?.contains(active)) active.blur()
+  }, [closing])
 
   const value = text.trim()
   const canConfirm = req.kind === 'confirm' || value !== ''
@@ -113,6 +122,9 @@ export function DialogView({
         />
         <Dialog.Viewport className="app-dialog-viewport fixed inset-0 z-60 flex items-center justify-center p-4 sm:p-6">
           <Dialog.Popup
+            ref={(node: HTMLElement | null) => {
+              popupRef.current = node
+            }}
             aria-label={options.title}
             initialFocus={
               req.kind === 'prompt'
