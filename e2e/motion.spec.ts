@@ -54,6 +54,7 @@ test('冷启动不被 Motion 阻塞，延后浮层与首页提示正常进场', 
 
   await newProject(page)
   await page.getByRole('button', { name: '整理画布', exact: true }).click()
+  await page.getByRole('button', { name: '整理画布', exact: true }).click()
   await page.locator('.app-brand').click()
   await expect(page.getByRole('status').filter({ hasText: '画布已经很整齐了' })).toBeVisible()
 
@@ -63,7 +64,7 @@ test('冷启动不被 Motion 阻塞，延后浮层与首页提示正常进场', 
   expect(await settings.evaluate((element) => element.getAnimations().length)).toBeGreaterThan(0)
   await page.keyboard.press('Escape')
 
-  const card = page.getByRole('listitem').filter({ hasText: '未命名项目' })
+  const card = page.getByRole('listitem').filter({ hasText: '未命名项目' }).first()
   await card.hover()
   await card.getByRole('button', { name: '删除', exact: true }).click()
   const confirmation = page.getByRole('dialog', { name: /删除项目/ })

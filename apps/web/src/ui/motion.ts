@@ -184,7 +184,8 @@ export function useOverlayMotion(variants: Variants, custom?: PopSide) {
   return {
     initial: 'initial',
     animate: 'visible',
-    exit: reduced ? { opacity: 0, transition: { duration: 0 } } : 'exit',
+    // 无 exit 时 AnimatePresence 不保留退场队列，等价于零时长且同步清理。
+    exit: reduced ? undefined : 'exit',
     'data-plein-exiting': closing ? '' : undefined,
     variants,
     custom,
