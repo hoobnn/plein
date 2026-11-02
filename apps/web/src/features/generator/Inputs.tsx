@@ -10,11 +10,17 @@ import {
   replaceInput,
   type ResultValue,
 } from '@plein/doc'
-import type { PreparedInput } from '@plein/protocol'
+import type {
+  InputReferenceOrigin,
+  InputSentReference,
+  InputUnsentReference,
+  PreparedInput,
+} from '@plein/protocol'
 import { DndContext, type DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
+import type { ReferenceIdentity } from '@plein/plugin-sdk'
 import { filterReferenceCandidates, referenceCandidates } from './referenceCandidates'
-import { referenceMedia, type SubmittedMedia } from './submittedMedia'
+import { referenceMedia } from './submittedMedia'
 import { bindReferenceName, referenceName, replaceReferenceName } from './referenceNames'
 import { RoleReferencePicker } from './RoleReferencePicker'
 import { useRef, useState } from 'react'
@@ -32,6 +38,15 @@ type InputPort = NodeInfo['inputs'][number]
 
 /** 上传的素材放在节点左侧多远（世界坐标） */
 const UPLOAD_OFFSET = 420
+
+/** 来源角标：一张图可能同时来自连线、@ 引用、角色选择与续镜。 */
+const ORIGIN_LABEL: Record<InputReferenceOrigin, string> = {
+  edge: '连线',
+  mention: '@',
+  role: '角色',
+  continuation: '续镜',
+  binding: '绑定',
+}
 
 /**
  * 连入的素材（生成器顶部那一排）：参考图 / 首尾帧是带编号的缩略图，
@@ -162,19 +177,23 @@ export function Inputs({
         .view({ assetId: v.assetId, kind: v.type, name: up.source.name ?? '参考素材' })
     else locate(up)
   }
+  const previewAsset = (assetId: string, name: string) =>
+    useCanvas.getState().view({ assetId, kind: 'image', name })
+  const locateElement = (id: string) => {
+    if (!engine.doc.has(id)) return
+    engine.selection.set([id])
+    engine.zoomToFit([id])
+  }
 
   const submitted = prepared && !preparing ? referenceMedia(prepared, el.params, ups) : null
-  const sentTiles = new Map<string, React.ReactNode>()
-  const sentIds = new Map<string, string>()
-  const unusedTiles: React.ReactNode[] = []
-  const insertToken = (name: string) => {
+  /** 把这条参考插进提示词末尾，并建立名称绑定，正文里就能 @ 它。 */
+  const insertReference = (identity: ReferenceIdentity) => {
     const current = engine.doc.get(el.id)
     if (!current) return
-    const item = submitted?.find((entry) => referenceName(engine.doc, entry) === name)
-    if (!item) return
+    const name = referenceName(engine.doc, identity)
     const prompt = String(current.params?.prompt ?? '')
     engine.doc.undo.stopCapturing()
-    bindReferenceName(engine.doc, el.id, item)
+    bindReferenceName(engine.doc, el.id, identity)
     setParam(
       engine.doc,
       el.id,
@@ -183,144 +202,105 @@ export function Inputs({
     )
     engine.doc.undo.stopCapturing()
   }
-  const mediaKey = (v: SubmittedMedia) => `${v.port}:${v.token}`
   // 生成视频的图片按模式标注用途：图生视频第 1 张是首帧，首尾帧第 1、2 张分别是首帧、尾帧
   const mode = node.capability === 'video.generate' ? el.params?.mode : undefined
-  const tokenOf = (port: InputPort, i: number) => {
-    const value = ups.get(port.id)?.[i]?.value
-    const sent = submitted?.find(
-      (v) =>
-        value &&
-        v.type === value.type &&
-        v.port === port.id &&
-        (!v.source || v.source === ups.get(port.id)?.[i]?.source.id) &&
-        'assetId' in value &&
-        v.assetId === value.assetId,
-    )
-    return mode === 'reference' && sent && !preparing
-      ? `@${referenceName(engine.doc, sent)}`
-      : undefined
-  }
-  const roleOf = (port: InputPort, i: number) => {
-    const token = tokenOf(port, i)
-    if (token) return token
-    if (port.id === 'videos' || port.id === 'audios')
-      return mode === 'reference' ? port.label : '当前模式不使用'
-    if (port.id !== 'images') return undefined
-    if (mode === 'image') return i === 0 ? '首帧' : '未使用'
-    if (mode === 'lastFrame') return i === 0 ? '尾帧' : '未使用'
-    if (mode === 'frames') return ['首帧', '尾帧'][i] ?? '未使用'
-    if (mode === 'text') return '未使用'
+  // ── 顶部参考素材：只认服务端给的送入清单，编号与最终提示词一致 ──
+  const upsList = media.flatMap((port) => (ups.get(port.id) ?? []).map((u) => ({ port, u })))
+  /** 找到送入这张图的那条连线；只有连线来的素材才能排序、替换、移除。 */
+  const findUpstream = (item: InputSentReference) => {
+    for (const { port, u } of upsList) {
+      const v = u.value
+      if (!v || !('assetId' in v) || v.assetId !== item.assetId) continue
+      if (item.elementId && u.source.id !== item.elementId) continue
+      return { port, u }
+    }
     return undefined
   }
-
-  let n = 0
-  const tiles: React.ReactNode[] = []
-  /** 与 tiles 同序：排序容器需要的 edgeId 列表 */
-  const tileIds: string[] = []
-  const unusedIds: string[] = []
-  const adds: React.ReactNode[] = []
-  for (const port of media) {
-    const list = ups.get(port.id) ?? []
-    // 多连的“参考图”不逐个标端口名；首帧、尾帧这种单连输入在缩略图下标出
-    const caption = port.multiple ? undefined : port.label
-    for (const [i, u] of list.entries()) {
-      n++
-      const value = u.value
+  /** 服务端还没给清单时（例如旧记录），退回按连线顺序显示。 */
+  const fallbackSent = (): InputSentReference[] =>
+    upsList.flatMap(({ port, u }, index) => {
+      const v = u.value
+      if (!v || !('assetId' in v)) return []
       const sent = submitted?.find(
-        (v) =>
-          value &&
-          v.type === value.type &&
-          v.port === port.id &&
-          (!v.source || v.source === ups.get(port.id)?.[i]?.source.id) &&
-          'assetId' in value &&
-          v.assetId === value.assetId,
+        (item) =>
+          item.port === port.id &&
+          item.type === v.type &&
+          item.assetId === v.assetId &&
+          (!item.source || item.source === u.source.id),
       )
-      const unused = !!prepared && !preparing && !sent
-      const tile = (
-        <RefTile
-          key={u.edgeId}
-          index={sent?.index ?? n}
-          unused={unused}
-          up={u}
-          caption={
-            preparationError
-              ? '输入确认失败'
-              : preparing
-                ? '正在确认输入…'
-                : unused
-                  ? '未送入'
-                  : (roleOf(port, i) ?? caption)
-          }
-          onReference={
-            tokenOf(port, i) && u.value ? () => insertToken(tokenOf(port, i)!.slice(1)) : undefined
-          }
-          onLocate={() => locate(u)}
-          onPreview={() => previewUpstream(u)}
-          onRemove={() => disconnect(u)}
-          onReplace={() => setReplacing({ port, edgeId: u.edgeId })}
-          onUpload={() => pick(port, u.edgeId)}
-          draggable={!!port.multiple}
-          onMove={(delta) => {
-            const ids = list.map((item) => item.edgeId)
-            const j = i + delta
-            if (j < 0 || j >= ids.length) return
-            const ordered = [...ids]
-            ;[ordered[i], ordered[j]] = [ordered[j]!, ordered[i]!]
-            engine.doc.undo.stopCapturing()
-            reorderInputs(engine.doc, [el.id, port.id], ordered)
-            engine.doc.undo.stopCapturing()
-          }}
-          canPrevious={i > 0}
-          canNext={i < list.length - 1}
-        />
-      )
-      tiles.push(tile)
-      tileIds.push(u.edgeId)
-      if (sent) {
-        sentTiles.set(mediaKey(sent), tile)
-        sentIds.set(mediaKey(sent), u.edgeId)
-      } else if (prepared && !preparing) {
-        unusedTiles.push(tile)
-        unusedIds.push(u.edgeId)
-      }
-    }
-    if (port.multiple || list.length === 0)
-      adds.push(
-        <button
-          key={`add-${port.id}`}
-          type="button"
-          onClick={() => {
-            setAddAnchor(null)
-            pick(port)
-          }}
-          title={`上传${port.label}，也可以从画布上的对应素材拖线连入`}
-          className={`ui-btn ui-btn-sm ui-btn-secondary ${port.required && list.length === 0 ? 'text-danger' : ''}`}
-        >
-          <Icon name="plus" size={14} />
-          {port.label}
-        </button>,
-      )
+      return [
+        {
+          index: sent?.index ?? index + 1,
+          token: sent?.token ?? `图${sent?.index ?? index + 1}`,
+          assetId: v.assetId,
+          elementId: u.source.id,
+          name: u.source.name ?? '参考素材',
+          origins: ['edge' as const],
+        },
+      ]
+    })
+  const authoritative = Array.isArray(prepared?.sent)
+  const sentItems = authoritative ? prepared!.sent! : fallbackSent()
+  const unsentItems: InputUnsentReference[] = prepared?.unsent ?? []
+  const limit = prepared?.referenceLimit
+
+  const tiles: React.ReactNode[] = []
+  const sortableIds: string[] = []
+  for (const item of sentItems) {
+    const found = item.origins.includes('edge') ? findUpstream(item) : undefined
+    const port = found?.port
+    const up = found?.u
+    if (up && port) sortableIds.push(up.edgeId)
+    tiles.push(
+      <ReferenceTile
+        key={`${item.assetId}:${item.index}`}
+        item={item}
+        up={up}
+        index={item.index}
+        draggable={!!port?.multiple}
+        onLocate={
+          up ? () => locate(up) : item.elementId ? () => locateElement(item.elementId!) : undefined
+        }
+        onPreview={() => (up ? previewUpstream(up) : previewAsset(item.assetId, item.name))}
+        onRemove={up ? () => disconnect(up) : undefined}
+        onReplace={up && port ? () => setReplacing({ port, edgeId: up.edgeId }) : undefined}
+        onUpload={up && port ? () => pick(port, up.edgeId) : undefined}
+        onMove={
+          up && port
+            ? (delta) => {
+                const ids = (ups.get(port.id) ?? []).map((item) => item.edgeId)
+                const i = ids.indexOf(up.edgeId)
+                const j = i + delta
+                if (i < 0 || j < 0 || j >= ids.length) return
+                const ordered = [...ids]
+                ;[ordered[i], ordered[j]] = [ordered[j]!, ordered[i]!]
+                engine.doc.undo.stopCapturing()
+                reorderInputs(engine.doc, [el.id, port.id], ordered)
+                engine.doc.undo.stopCapturing()
+              }
+            : undefined
+        }
+        canPrevious={!!up && !!port && (ups.get(port.id) ?? [])[0]?.edgeId !== up.edgeId}
+        canNext={!!up && !!port && (ups.get(port.id) ?? []).at(-1)?.edgeId !== up.edgeId}
+        onReference={
+          up && identityOf(up) && mode === 'reference' && !preparing
+            ? () => insertReference(identityOf(up)!)
+            : undefined
+        }
+      />,
+    )
   }
 
   const candidates = filterReferenceCandidates(referenceCandidates(engine, el, media), canvasQuery)
-
-  // 主行可排序的 edgeId：有确认结果时按送入顺序（无瓦片的占位不参与排序），否则按连线顺序
-  const sortableIds = submitted
-    ? submitted.flatMap((item) => {
-        const id = sentIds.get(mediaKey(item))
-        return id ? [id] : []
-      })
-    : tileIds
-
-  if (!tiles.length && !adds.length && !texts.length && !trailing && !toolbar) return null
+  const hasTiles = tiles.length > 0
+  const hasAdds = media.some((port) => port.multiple || !(ups.get(port.id) ?? []).length)
+  if (!hasTiles && !hasAdds && !texts.length && !trailing && !toolbar) return null
   return (
-    // 拖拽换序的上下文：主行与未送入折叠区共用，放下才写文档，Esc 取消不写
     // 拖拽换序的上下文：主行与未送入折叠区共用，放下才写文档，Esc 取消不写
     <DndContext sensors={sensors} onDragEnd={onDragEnd}>
       <div className="plein-generator-inputs flex flex-col gap-1 px-4 pt-2">
         <div className="plein-generator-input-tools flex flex-wrap items-center gap-2 pr-9">
-          {adds.length > 0 && (
+          {hasAdds && (
             <>
               <button
                 type="button"
@@ -343,7 +323,23 @@ export function Inputs({
                     label="上传参考"
                     width={220}
                   >
-                    <div className="flex flex-col items-stretch gap-1">{adds}</div>
+                    <div className="flex flex-col items-stretch gap-1">
+                      {media.map((port) => (
+                        <button
+                          key={`add-${port.id}`}
+                          type="button"
+                          onClick={() => {
+                            setAddAnchor(null)
+                            pick(port)
+                          }}
+                          title={`上传${port.label}，也可以从画布上的对应素材拖线连入`}
+                          className={`ui-btn ui-btn-sm ui-btn-secondary ${port.required && !(ups.get(port.id) ?? []).length ? 'text-danger' : ''}`}
+                        >
+                          <Icon name="plus" size={14} />
+                          {port.label}
+                        </button>
+                      ))}
+                    </div>
                   </Popover>
                 )}
               </AnimatePresence>
@@ -450,43 +446,54 @@ export function Inputs({
             {preparationError ? '输入确认失败，请在实际输入处重试' : '正在确认参考素材…'}
           </p>
         )}
-        {/* 主行可排序的 edgeId：有确认结果时按送入顺序（无瓦片的占位不参与排序），否则按连线顺序 */}
-        <SortableContext items={sortableIds} strategy={horizontalListSortingStrategy}>
-          <div
-            data-testid="submitted-references"
-            aria-label="实际送入的参考素材"
-            aria-busy={preparing}
-            className="ui-scrollbar flex items-start gap-2 overflow-x-auto pt-1.5 pb-0.5"
-          >
-            {submitted
-              ? submitted.map(
-                  (item) =>
-                    sentTiles.get(mediaKey(item)) ?? (
-                      <SubmittedTile
-                        key={`${item.port}:${item.token}`}
-                        engine={engine}
-                        el={el}
-                        item={item}
-                        data={prepared!}
-                        onReference={
-                          mode === 'reference' && !preparing
-                            ? () => insertToken(referenceName(engine.doc, item))
-                            : undefined
-                        }
-                      />
-                    ),
-                )
-              : tiles}
+        <section
+          className="plein-generator-references flex min-w-0 flex-col gap-1"
+          aria-label="参考素材"
+        >
+          <div className="flex items-baseline gap-2 px-0.5 text-2xs text-ink-subtle">
+            <span className="font-medium text-ink-muted">参考素材</span>
+            <span>
+              送入 {sentItems.length} 张{limit !== undefined ? `（上限 ${limit}）` : ''}
+            </span>
           </div>
-        </SortableContext>
-        {unusedTiles.length > 0 && (
-          <details className="text-2xs text-ink-subtle" open={submitted?.length === 0}>
-            <summary className="cursor-pointer py-1">
-              未送入的连线素材 · {unusedTiles.length}
-            </summary>
-            <SortableContext items={unusedIds} strategy={horizontalListSortingStrategy}>
-              <div className="ui-scrollbar flex gap-2 overflow-x-auto py-1">{unusedTiles}</div>
-            </SortableContext>
+          {/* 主行可排序的 edgeId：按送入顺序排列 */}
+          <SortableContext items={sortableIds} strategy={horizontalListSortingStrategy}>
+            <div
+              data-testid="submitted-references"
+              aria-label="实际送入的参考素材"
+              aria-busy={preparing}
+              className="ui-scrollbar flex items-start gap-2 overflow-x-auto pt-1 pb-0.5"
+            >
+              {tiles}
+              {!tiles.length && (
+                <p className="py-2 text-2xs text-ink-subtle">还没有送入模型的参考素材</p>
+              )}
+            </div>
+          </SortableContext>
+        </section>
+        {unsentItems.length > 0 && (
+          <details className="plein-generator-unsent text-2xs text-ink-subtle">
+            <summary className="cursor-pointer py-1">未送入 · {unsentItems.length}</summary>
+            <ul className="flex flex-col gap-1 pb-1">
+              {unsentItems.map((item) => (
+                <li
+                  key={`${item.reason}:${item.elementId ?? ''}:${item.assetId ?? ''}:${item.name}`}
+                >
+                  <span className="text-ink-muted">{item.name}</span>
+                  <span className="mx-1">·</span>
+                  <span>{item.message}</span>
+                  {item.elementId && engine.doc.has(item.elementId) && (
+                    <button
+                      type="button"
+                      className="ui-btn ui-btn-xs ui-btn-quiet ml-1"
+                      onClick={() => locateElement(item.elementId!)}
+                    >
+                      定位到画布
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
           </details>
         )}
         {replacing && (
@@ -571,6 +578,13 @@ export function Inputs({
   )
 }
 
+/** 上游素材的身份，用于在提示词末尾插入 @ 名称。 */
+function identityOf(up: Upstream): ReferenceIdentity | undefined {
+  const value = up.value
+  if (!value || value.type === 'text' || value.type === 'json') return undefined
+  return { type: value.type, assetId: value.assetId, source: up.source.id }
+}
+
 function preview(v: ResultValue | undefined) {
   if (!v) return null
   if (v.type === 'image') return assetUrls.variant(v.assetId, 'thumb-256')
@@ -578,120 +592,145 @@ function preview(v: ResultValue | undefined) {
   return null
 }
 
-/** 参考素材保持紧凑；点击预览，低频管理操作放入独立菜单；多连端口的瓦片可拖拽换序（dnd-kit）。 */
-function RefTile({
-  index,
-  unused = false,
+/**
+ * 一张送入模型的参考素材：编号徽标与最终提示词一致，
+ * 名称和来源（连线 / @ / 角色 / 续镜）都写在图下面。
+ */
+function ReferenceTile({
+  item,
   up,
-  caption,
+  index,
+  draggable,
   onLocate,
   onRemove,
   onPreview,
   onReplace,
   onUpload,
-  draggable,
   onMove,
   canPrevious,
   canNext,
   onReference,
 }: {
+  item: InputSentReference
+  /** 连线来的素材才有；只靠 @ 送入的没有连线，只能显示与定位 */
+  up?: Upstream
   index: number
-  unused?: boolean
-  up: Upstream
-  caption?: string
-  onLocate(): void
-  onRemove(): void
-  onPreview(): void
-  onReplace(): void
-  onUpload(): void
-  /** 是否可拖：仅 multiple 端口；禁用时排序监听不接上 */
   draggable: boolean
-  onMove(delta: number): void
+  onLocate?(): void
+  onRemove?(): void
+  onPreview(): void
+  onReplace?(): void
+  onUpload?(): void
+  onMove?(delta: number): void
   canPrevious: boolean
   canNext: boolean
   onReference?(): void
 }) {
   // 不透传 attributes：键盘排序走 Alt+方向键与管理菜单，不走 dnd-kit 的 Enter/Space（避免劫持预览）
   const { listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
-    useSortable({ id: up.edgeId, disabled: !draggable })
+    useSortable({
+      id: up?.edgeId ?? `sent:${item.assetId}`,
+      disabled: !draggable || !up,
+    })
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null)
   const act = (action: () => void) => {
     setAnchor(null)
     action()
   }
-  const v = up.value
-  const img = preview(v)
-  const name = up.source.name ?? '上游'
-  const previewLabel = v
-    ? `预览「${name}」`
-    : up.source.adopted === null && up.source.results?.length
-      ? `「${name}」有候选待采用，点击定位来源`
-      : up.source.results?.length && up.outputLabel
-        ? `「${name}」当前候选缺少可确认的「${up.outputLabel}」输出，点击定位来源`
-        : `「${name}」还没有结果，点击定位来源`
+  const v = up?.value
+  const img = up ? preview(v) : assetUrls.variant(item.assetId, 'thumb-256')
+  const name = item.name
+  const origin = item.origins.map((o) => ORIGIN_LABEL[o]).filter(Boolean)
+  const previewLabel = up
+    ? v
+      ? `预览「${name}」`
+      : up.source.adopted === null && up.source.results?.length
+        ? `「${name}」有候选待采用，点击定位来源`
+        : up.source.results?.length && up.outputLabel
+          ? `「${name}」当前候选缺少可确认的「${up.outputLabel}」输出，点击定位来源`
+          : `「${name}」还没有结果，点击定位来源`
+    : `预览「${name}」`
   return (
     <div
       ref={setNodeRef}
       role="group"
-      aria-label={unused ? `未送入：${name}` : `参考 ${index}：${name}`}
-      data-asset-id={v && 'assetId' in v ? v.assetId : undefined}
+      aria-label={`参考 ${index}：${name}`}
+      data-asset-id={item.assetId}
+      title={`${item.token} · ${name}`}
       style={{
         transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
         transition,
         zIndex: isDragging ? 1 : undefined,
       }}
-      className="relative flex flex-none items-center gap-1 text-2xs text-ink-subtle"
+      className="relative flex w-[5.5rem] flex-none flex-col items-start gap-0.5 text-2xs text-ink-subtle"
     >
-      <button
-        type="button"
-        ref={setActivatorNodeRef}
-        {...(draggable ? listeners : {})}
-        onClick={onPreview}
-        aria-label={previewLabel}
-        title={previewLabel}
-        onKeyDown={(e) => {
-          if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
-            e.preventDefault()
-            onMove(e.key === 'ArrowLeft' ? -1 : 1)
-          }
-        }}
-        className="relative size-12 shrink-0 overflow-hidden rounded-md bg-surface-2 shadow-1"
-      >
-        {img ? (
-          <img src={img} alt="" className="size-full object-cover" />
-        ) : (
-          <span className="flex size-full items-center justify-center text-ink-subtle">
-            <Icon name={v?.type === 'video' ? 'video' : v?.type === 'audio' ? 'audio' : 'image'} />
+      <div className="relative">
+        <button
+          type="button"
+          ref={setActivatorNodeRef}
+          {...(draggable && up ? listeners : {})}
+          onClick={onPreview}
+          aria-label={previewLabel}
+          title={previewLabel}
+          onKeyDown={(e) => {
+            if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+              e.preventDefault()
+              onMove?.(e.key === 'ArrowLeft' ? -1 : 1)
+            }
+          }}
+          className="relative block size-11 shrink-0 overflow-hidden rounded-md bg-surface-2 shadow-1"
+        >
+          {img ? (
+            <img src={img} alt="" className="size-full object-cover" />
+          ) : (
+            <span className="flex size-full items-center justify-center text-ink-subtle">
+              <Icon
+                name={v?.type === 'video' ? 'video' : v?.type === 'audio' ? 'audio' : 'image'}
+              />
+            </span>
+          )}
+          <span className="absolute top-0.5 left-0.5 rounded bg-black/65 px-1 py-px text-2xs font-medium text-white tabular-nums">
+            {item.token}
           </span>
-        )}
-        <span className="absolute top-1 left-1 flex size-4 items-center justify-center rounded-full bg-black/60 text-2xs font-medium text-white tabular-nums">
-          {unused ? '—' : index}
-        </span>
-        {!v && <span className="absolute inset-0 bg-canvas/50" />}
-      </button>
-      <button
-        type="button"
-        onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
-        aria-label={`管理参考 ${index}`}
-        aria-expanded={!!anchor}
-        title={`管理参考 ${index}：${name}`}
-        className="absolute top-1 left-6 flex size-5 items-center justify-center rounded-md bg-surface/95 text-sm text-ink shadow-1"
-      >
-        ⋯
-      </button>
-      {caption &&
-        (onReference ? (
+          {!v && up && <span className="absolute inset-0 bg-canvas/50" />}
+        </button>
+        {(onRemove || onReplace || onLocate) && (
           <button
             type="button"
-            onClick={onReference}
-            className="ui-btn ui-btn-xs ui-btn-quiet"
-            title={`在提示词末尾插入 ${caption}`}
+            onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
+            aria-label={`管理参考 ${index}`}
+            aria-expanded={!!anchor}
+            title={`管理参考 ${index}：${name}`}
+            className="absolute top-0.5 left-6 flex size-5 items-center justify-center rounded-md bg-surface/95 text-sm text-ink shadow-1"
           >
-            {caption}
+            ⋯
           </button>
-        ) : (
-          <span>{caption}</span>
-        ))}
+        )}
+      </div>
+      {onReference ? (
+        <button
+          type="button"
+          onClick={onReference}
+          aria-label={`@${name}`}
+          title={`在提示词末尾插入 @${name}`}
+          className="w-full truncate text-left hover:text-accent"
+        >
+          {name}
+        </button>
+      ) : (
+        <span className="w-full truncate" title={name}>
+          {name}
+        </span>
+      )}
+      {origin.length > 0 && (
+        <span className="flex w-full flex-wrap gap-1">
+          {origin.map((label) => (
+            <span key={label} className="rounded bg-surface-2 px-1 text-2xs text-ink-subtle">
+              {label}
+            </span>
+          ))}
+        </span>
+      )}
       <AnimatePresence>
         {anchor && (
           <Popover
@@ -703,7 +742,7 @@ function RefTile({
             <p className="truncate px-2 py-1 text-xs text-ink-subtle" title={name}>
               {name}
             </p>
-            {draggable && (
+            {draggable && onMove && (
               <>
                 <button
                   type="button"
@@ -725,42 +764,50 @@ function RefTile({
                 </button>
               </>
             )}
-            <button
-              type="button"
-              className="ui-menu-item"
-              aria-label={`替换参考 ${index}`}
-              onClick={() => act(onReplace)}
-            >
-              <Icon name="retry" size={14} />
-              从画布替换
-            </button>
-            <button
-              type="button"
-              className="ui-menu-item"
-              aria-label={`上传替换参考 ${index}`}
-              onClick={() => act(onUpload)}
-            >
-              <Icon name="upload" size={14} />
-              上传替换
-            </button>
-            <button
-              type="button"
-              className="ui-menu-item"
-              aria-label={`定位参考 ${index}`}
-              onClick={() => act(onLocate)}
-            >
-              <Icon name="locate" size={14} />
-              定位来源
-            </button>
-            <button
-              type="button"
-              className="ui-menu-item text-danger"
-              aria-label={`断开「${name}」`}
-              onClick={() => act(onRemove)}
-            >
-              <Icon name="x" size={14} />
-              断开参考
-            </button>
+            {onReplace && (
+              <button
+                type="button"
+                className="ui-menu-item"
+                aria-label={`替换参考 ${index}`}
+                onClick={() => act(onReplace)}
+              >
+                <Icon name="retry" size={14} />
+                从画布替换
+              </button>
+            )}
+            {onUpload && (
+              <button
+                type="button"
+                className="ui-menu-item"
+                aria-label={`上传替换参考 ${index}`}
+                onClick={() => act(onUpload)}
+              >
+                <Icon name="upload" size={14} />
+                上传替换
+              </button>
+            )}
+            {onLocate && (
+              <button
+                type="button"
+                className="ui-menu-item"
+                aria-label={`定位参考 ${index}`}
+                onClick={() => act(onLocate)}
+              >
+                <Icon name="locate" size={14} />
+                定位来源
+              </button>
+            )}
+            {onRemove && (
+              <button
+                type="button"
+                className="ui-menu-item text-danger"
+                aria-label={`断开「${name}」`}
+                onClick={() => act(onRemove)}
+              >
+                <Icon name="x" size={14} />
+                断开参考
+              </button>
+            )}
           </Popover>
         )}
       </AnimatePresence>
@@ -801,79 +848,5 @@ function TextChip({
         <Icon name="x" size={12} />
       </button>
     </span>
-  )
-}
-
-function SubmittedTile({
-  engine,
-  el,
-  item,
-  data,
-  onReference,
-}: {
-  engine: Engine
-  el: CanvasElement
-  item: SubmittedMedia
-  data: PreparedInput
-  onReference?: () => void
-}) {
-  const refs = data.refs.filter((r) => item.assetId && r.sent.includes(item.assetId))
-  const source = item.source ? engine.doc.get(item.source) : undefined
-  const from = el.params?.continuesFrom as
-    | { frameAssetId?: string; last?: boolean }
-    | null
-    | undefined
-  const continuation = !!from && item.type === 'image' && item.index === 1
-  const name = continuation
-    ? from?.last
-      ? '前镜尾帧'
-      : '接续帧'
-    : refs.map((r) => r.name).join('、') || source?.name || '参考素材'
-  const origin = continuation ? '续镜接入' : refs.length ? '@ 引用' : '连线'
-  const label =
-    data.params.mode === 'reference'
-      ? `@${referenceName(engine.doc, { ...item, assetId: item.assetId! })}`
-      : `${item.type === 'image' ? '图片' : item.type === 'video' ? '视频' : '音频'}${item.index}`
-  return (
-    <div
-      role="group"
-      aria-label={`参考 ${item.index}：${name}`}
-      data-asset-id={item.assetId}
-      title={`${name} · ${origin}`}
-      className="relative flex flex-none items-center gap-1 text-2xs text-ink-subtle"
-    >
-      <button
-        type="button"
-        aria-label={`预览「${name}」`}
-        className="relative size-12 shrink-0 overflow-hidden rounded-md bg-surface-2"
-        onClick={() => {
-          if (item.assetId)
-            useCanvas.getState().view({ assetId: item.assetId, kind: item.type, name })
-        }}
-      >
-        {item.type === 'audio' ? (
-          <Icon name="sound" />
-        ) : (
-          <img
-            src={assetUrls.variant(item.assetId!, item.type === 'video' ? 'poster' : 'thumb-256')}
-            alt=""
-            className="size-full object-cover"
-          />
-        )}
-        <span className="absolute top-1 left-1 flex size-4 items-center justify-center rounded-full bg-black/60 text-2xs text-white">
-          {item.index}
-        </span>
-        <span className="absolute right-0 bottom-0 left-0 bg-black/60 py-0.5 text-2xs text-white">
-          {origin}
-        </span>
-      </button>
-      {onReference ? (
-        <button type="button" className="ui-btn ui-btn-xs ui-btn-quiet" onClick={onReference}>
-          {label}
-        </button>
-      ) : (
-        <span>{label}</span>
-      )}
-    </div>
   )
 }

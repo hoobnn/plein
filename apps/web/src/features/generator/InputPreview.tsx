@@ -1,12 +1,12 @@
 import { Tooltip } from '@base-ui/react/tooltip'
 import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement, setParam } from '@plein/doc'
-import type { InputIssue, InputRef, InputRefKind, PreparedInput } from '@plein/protocol'
+import type { InputIssue, PreparedInput } from '@plein/protocol'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, assetUrls } from '../../api/client'
+import { api } from '../../api/client'
 import { fieldsOf, type NodeInfo } from '../../canvas/nodes'
 import { Icon } from '../../ui/icons'
-import { submittedMedia } from './submittedMedia'
+import { useCanvas } from '../../stores/canvas'
 
 /** 改动后多久重新准备一次实际输入：打字时不逐字请求 */
 const DEBOUNCE_MS = 400
@@ -96,36 +96,6 @@ export function useInputPreview(engine: Engine, canvasId: string | null, nodeId:
   }
 }
 
-const KIND_LABEL: Record<InputRefKind, string> = {
-  character: '角色',
-  scene: '场景',
-  prop: '道具',
-  style: '风格',
-  image: '图片',
-  other: '引用',
-}
-
-/** 引用的用法标签：送了几张、为什么没送 */
-function refState(r: InputRef): { text: string; tone: string; title?: string } {
-  if (r.reason === 'selection_missing') return { text: '所选图已失效', tone: 'ui-tag-warning' }
-  if (r.selected?.length === 0) return { text: '仅文字', tone: 'ui-tag' }
-  if (r.reason === 'failed')
-    return { text: '参考图失败', tone: 'ui-tag-warning', title: '参考图生成失败，不追加文字设定' }
-  if (r.reason === 'no_image')
-    return { text: '无参考图', tone: 'ui-tag-warning', title: '还没有可用的参考图，不追加文字设定' }
-  if (r.reason === 'unsupported')
-    return { text: '未送参考图', tone: 'ui-tag', title: '当前模式不送参考图，不追加文字设定' }
-  if (r.reason === 'over_limit')
-    return r.sent.length
-      ? {
-          text: `送入 ${r.sent.length}/${(r.selected ?? r.available).length} 张`,
-          tone: 'ui-tag-warning',
-          title: '超过模型的参考图上限，其余的没有送入',
-        }
-      : { text: '超出上限', tone: 'ui-tag-warning', title: '超过模型的参考图上限，不追加文字设定' }
-  return { text: `送入 ${r.sent.length} 张`, tone: 'ui-tag-success' }
-}
-
 /** 提示和阻断给人看的文案；同一条提示可能按引用记了多次，只显示一次 */
 export function issueText(issues: InputIssue[]) {
   return [...new Set(issues.map((i) => i.message))]
@@ -133,9 +103,11 @@ export function issueText(issues: InputIssue[]) {
 
 /** 摘要一行：模型、参考图张数、降级和阻断数 */
 function previewSummary(p: PreparedInput) {
-  const refs = Object.values(p.inputs)
-    .flat()
-    .filter((v) => v.type === 'image').length
+  const refs =
+    p.sent?.length ??
+    Object.values(p.inputs)
+      .flat()
+      .filter((v) => v.type === 'image').length
   const local = p.nodeType === 'plein/sequence' || p.nodeType === 'plein/animatic'
   const parts = [
     p.model ? `${p.model.title}${p.model.auto ? '（自动）' : ''}` : local ? '本地处理' : '未选模型',
@@ -247,11 +219,8 @@ export function InputPreview({
       'requiredRefs',
       required.includes(id) ? required.filter((x) => x !== id) : [...required, id],
     )
-  // 送入的图标上来自哪个引用；自己连入的图用上游元素名
-  const nameOf = (assetId: string | undefined, source: string | undefined) =>
-    data.refs.find((r) => assetId && r.sent.includes(assetId))?.name ??
-    ((source && engine.doc.get(source)?.name) || '连入')
-  const images = submittedMedia(data)
+  // 必需参考是节点参数，留在「有效参数」里；参考素材本身看顶部的参考素材区。
+  const requiredRefs = data.refs.filter((ref) => ref.required)
   const params = Object.entries(data.params).filter(
     ([k, v]) => k !== 'model' && v !== '' && v !== undefined && typeof v !== 'object',
   )
@@ -295,114 +264,56 @@ export function InputPreview({
             </ul>
           )}
           <div className="flex min-w-0 flex-col gap-3">
-            {data.refs.length > 0 && (
-              <section className="flex flex-col gap-1.5">
-                <h4 className="ui-section-title">
-                  @ 引用
-                  {data.referenceLimit !== undefined && (
-                    <span className="font-normal text-ink-subtle">
-                      {' '}
-                      · 模型最多 {data.referenceLimit} 张参考图
-                    </span>
-                  )}
-                </h4>
-                {data.refs.map((r) => {
-                  const state = refState(r)
-                  const thumb = r.sent[0] ?? r.available[0]
-                  return (
-                    <div key={`${r.elementId}-${r.name}`} className="flex items-center gap-2">
-                      <span className="relative size-8 flex-none overflow-hidden rounded-sm bg-surface-2">
-                        {thumb ? (
-                          <img
-                            src={assetUrls.variant(thumb, 'thumb-256')}
-                            alt=""
-                            className={`size-full object-cover ${r.sent.length ? '' : 'opacity-40'}`}
-                          />
-                        ) : (
-                          <span className="flex size-full items-center justify-center text-ink-subtle">
-                            <Icon name="image" size={14} />
-                          </span>
-                        )}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-ink">
-                        {r.name}
-                        <span className="text-ink-subtle"> · {KIND_LABEL[r.kind]}</span>
-                      </span>
-                      <span className={`ui-tag ${state.tone}`} title={state.title}>
-                        {state.text}
-                      </span>
-                      {canRequire && (
-                        <button
-                          type="button"
-                          onClick={() => toggleRequired(r.elementId)}
-                          aria-pressed={r.required}
-                          title={
-                            r.required
-                              ? '必需参考：缺图或放不下时不提交。点击改为可选'
-                              : '设为必需参考：优先送入，缺图或放不下时不提交'
-                          }
-                          className={`ui-btn ui-btn-xs ${r.required ? 'ui-btn-secondary text-accent' : 'ui-btn-quiet text-ink-subtle'}`}
-                        >
-                          <Icon name="star" size={12} />
-                          {r.required ? '必需' : '可选'}
-                        </button>
-                      )}
-                    </div>
-                  )
-                })}
-              </section>
-            )}
-            {images.length > 0 && (
-              <section className="flex flex-col gap-1.5">
-                <h4 className="ui-section-title">送入顺序</h4>
-                <div className="ui-scrollbar flex gap-2 overflow-x-auto pb-0.5">
-                  {images.map((v) => (
-                    <figure
-                      key={`${v.port}-${v.source ?? ''}-${v.resultId ?? ''}-${v.assetId}`}
-                      className="flex w-12 flex-none flex-col items-center gap-1 text-2xs text-ink-subtle"
-                      title={nameOf(v.assetId, v.source)}
-                    >
-                      <span className="relative size-12 overflow-hidden rounded-md bg-surface-2 shadow-1">
-                        {v.type === 'audio' ? (
-                          <span className="flex size-full items-center justify-center">
-                            <Icon name="sound" size={20} />
-                          </span>
-                        ) : (
-                          <img
-                            src={assetUrls.variant(
-                              v.assetId!,
-                              v.type === 'video' ? 'poster' : 'thumb-256',
-                            )}
-                            alt=""
-                            className="size-full object-cover"
-                          />
-                        )}
-                        <span className="ui-badge absolute top-1 left-1 tabular-nums">
-                          {v.index}
-                        </span>
-                      </span>
-                      <figcaption className="w-full truncate text-center">
-                        {v.type === 'video' ? '视频 · ' : v.type === 'audio' ? '音频 · ' : ''}
-                        {nameOf(v.assetId, v.source)}
-                      </figcaption>
-                    </figure>
-                  ))}
-                </div>
-              </section>
-            )}
-          </div>
-          <div className="flex min-w-0 flex-col gap-3">
             {data.prompt && (
               <section className="flex flex-col gap-1.5">
-                <h4 className="ui-section-title">最终提示词</h4>
-                <p className="ui-scrollbar max-h-32 overflow-y-auto rounded-md bg-surface-2 px-2.5 py-2 whitespace-pre-wrap text-ink [overflow-wrap:anywhere]">
+                <h4 className="ui-section-title flex items-center gap-2">
+                  最终提示词
+                  <button
+                    type="button"
+                    className="ui-btn ui-btn-xs ui-btn-quiet ml-auto"
+                    aria-label="复制最终提示词"
+                    onClick={() => {
+                      void navigator.clipboard
+                        ?.writeText(data.prompt ?? '')
+                        .then(() => useCanvas.getState().notify('最终提示词已复制'))
+                        .catch(() => useCanvas.getState().notify('复制失败，请手动选中复制'))
+                    }}
+                  >
+                    <Icon name="copy" size={12} />
+                    复制
+                  </button>
+                </h4>
+                <p className="ui-scrollbar max-h-40 overflow-y-auto rounded-md bg-surface-2 px-2.5 py-2 whitespace-pre-wrap text-ink [overflow-wrap:anywhere]">
                   {data.prompt}
                 </p>
               </section>
             )}
-            {(params.length > 0 || data.voice) && (
+            {(params.length > 0 || data.voice || requiredRefs.length > 0) && (
               <section className="flex flex-wrap items-center gap-1.5">
                 <h4 className="ui-section-title mr-1">有效参数</h4>
+                {requiredRefs.map((ref) => (
+                  <span key={ref.elementId} className="flex items-center gap-1">
+                    <span className="ui-chip h-auto max-w-full min-h-[var(--h-xs)] py-0.5">
+                      <span className="truncate">{ref.name}</span>
+                    </span>
+                    {canRequire && (
+                      <button
+                        type="button"
+                        onClick={() => toggleRequired(ref.elementId)}
+                        aria-pressed={ref.required}
+                        title={
+                          ref.required
+                            ? '必需参考：缺图或放不下时不提交。点击改为可选'
+                            : '设为必需参考：优先送入，缺图或放不下时不提交'
+                        }
+                        className={`ui-btn ui-btn-xs ${ref.required ? 'ui-btn-secondary text-accent' : 'ui-btn-quiet text-ink-subtle'}`}
+                      >
+                        <Icon name="star" size={12} />
+                        {ref.required ? '必需' : '可选'}
+                      </button>
+                    )}
+                  </span>
+                ))}
                 {data.voice && (
                   <span className="ui-chip h-auto max-w-full min-h-[var(--h-xs)] py-0.5">
                     <span className="ui-scrollbar min-w-0 max-h-24 overflow-y-auto whitespace-pre-wrap break-all">

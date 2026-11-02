@@ -80,6 +80,8 @@ function setup(
       [...document.querySelectorAll('[data-testid="mention-highlights"] mark')].map((el) => ({
         text: el.textContent,
         state: el.getAttribute('data-state'),
+        warning: el.getAttribute('data-warning'),
+        id: el.getAttribute('data-mention-id'),
       })),
     remote: (value: string) =>
       act(() => {
@@ -142,7 +144,8 @@ it('重命名和删除显示失效，撤销重做恢复对应引用状态', () =
     f.doc.flush()
   })
   expect(f.marks()[0]?.state).toBe('missing')
-  expect(document.body.textContent).toContain('未找到：')
+  // 断链的引用在编辑器里带警示与原因，不再单列一栏。
+  expect(f.marks()[0]?.warning).toContain('未找到元素')
   act(() => {
     f.doc.undo.undo()
     f.doc.flush()
@@ -299,7 +302,7 @@ it('邮箱、转义说明不触发补全或缺失提示，正文按原样保存'
   expect(f.doc.get(f.selfId)?.params?.text).toBe(text)
 })
 
-it('重名角色档案补全保留消歧编号，引用缩略图来自所选时期', async () => {
+it('重名角色档案补全保留消歧编号，候选缩略图来自所选时期', async () => {
   const targets = ['a', 'b'].map((image) => ({
     name: '林夏',
     params: {
@@ -325,13 +328,16 @@ it('重名角色档案补全保留消歧编号，引用缩略图来自所选时�
     .filter((el) => el.name === '林夏')
     .sort((a, b) => a.id.localeCompare(b.id))[1]!
   await f.user.type(f.field(), '@林夏#2/青')
-  expect(await screen.findByRole('option', { name: /青年/ })).toBeTruthy()
-  await f.user.keyboard('{Enter}')
-  await waitFor(() => expect(f.field().value).toBe('@林夏#2/青年 '))
-  const chip = screen.getByRole('button', { name: '林夏#2（青年）' })
+  const option = await screen.findByRole('option', { name: /青年/ })
   const expected = (second.params!.profile as { periods: Array<{ images: string[] }> }).periods[0]!
     .images[0]!
-  expect(chip.querySelector('img')?.getAttribute('src')).toContain(expected)
-  await f.user.click(chip)
+  expect(option.querySelector('img')?.getAttribute('src')).toContain(expected)
+  await f.user.keyboard('{Enter}')
+  await waitFor(() => expect(f.field().value).toBe('@林夏#2/青年 '))
+  // 正文里的标记指向第二个「林夏」，组合点击可以定位到画布上的那张卡。
+  await waitFor(() => expect(f.marks()[0]?.id).toBe(second.id))
+  const field = f.field()
+  field.setSelectionRange(0, 1)
+  fireEvent.click(field, { metaKey: true })
   expect(f.select).toHaveBeenLastCalledWith([second.id])
 })

@@ -3,11 +3,8 @@ import { type CanvasElement } from '@plein/doc'
 import {
   findMentions,
   firstPlaceholder,
-  mentionProblem,
   matchProfile,
   mentionQuery,
-  pickLabel,
-  pickImages,
   profileOptions,
   SLOT_LABELS,
   slashQuery,
@@ -22,7 +19,6 @@ import { Icon } from '../../ui/icons'
 import { composingKey } from './composingKey'
 import { MentionTextarea } from '../../ui/MentionTextarea'
 import { Popover } from '../../ui/Popover'
-import { mentionParts } from '../../canvas/mentionText'
 import { findNode, mentionTargets, targetImages, upstreams } from '../../canvas/nodes'
 import { useCatalog } from '../../stores/catalog'
 import { boundReferenceTokens, referenceBindings, type ReferenceIdentity } from '@plein/plugin-sdk'
@@ -198,17 +194,30 @@ export function PromptBox({
   const mentions = findMentions(shown, targets).filter(
     (m) => !bound.some((t) => t.start === m.start),
   )
+  // 编号只有一份：服务端给的最终提示词编号，直接拿来当编辑器里的徽标。
+  const fresh = !preparing && prepared?.nodeId === selfId
+  const sentTokens = new Map((prepared?.sent ?? []).map((item) => [item.index, item.token]))
+  const numbers =
+    fresh && prepared
+      ? prepared.promptReferences?.map((ref) => ({
+          start: ref.start,
+          end: ref.end,
+          labels: ref.indices.map((index) => sentTokens.get(index) ?? `图${index}`),
+          name: ref.name,
+          ...(ref.reason ? { reason: ref.reason } : {}),
+          ...(ref.message ? { message: ref.message } : {}),
+        }))
+      : undefined
   const referenceState = referenceMode
     ? {
         bindings: element?.params,
-        items:
-          !preparing && prepared?.nodeId === selfId
-            ? referenceMedia(prepared, element?.params, upstreams(engine, selfId, catalog))
-            : [],
+        items: fresh
+          ? referenceMedia(prepared!, element?.params, upstreams(engine, selfId, catalog))
+          : [],
         pending: preparing || prepared?.nodeId !== selfId,
+        ...(numbers ? { numbers } : {}),
       }
     : undefined
-  const missing = mentionParts(shown, targets, referenceState).filter((p) => p.missing)
   const connectedIds = new Set<string>()
   const choices: MentionChoice[] = []
   if (element && referenceMode) {
@@ -443,83 +452,6 @@ export function PromptBox({
           </Modal>
         )}
       </AnimatePresence>
-      {(mentions.length > 0 || missing.length > 0) && (
-        <div className="plein-prompt-references flex items-center gap-2 px-4 pb-1 text-xs text-ink-subtle">
-          <span className="shrink-0 whitespace-nowrap">引用</span>
-          <div className="ui-scrollbar flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-1">
-            {[...new Map(missing.map((p) => [p.text, p])).values()].map((part) => (
-              <span
-                key={part.text}
-                title={part.warning}
-                className="plein-prompt-ref gap-1 text-warning"
-              >
-                <Icon name="warning" size={12} />
-                <span className="truncate">未找到：{part.text}</span>
-              </span>
-            ))}
-            {[
-              ...new Map(
-                mentions.flatMap((m) => [
-                  [
-                    `${m.id ?? `?${m.name}`}:${pickLabel(m.name, m.pick ?? {})}:${m.sceneView?.id ?? ''}`,
-                    m,
-                  ] as const,
-                ]),
-              ).values(),
-            ].map((m) => {
-              if (!m.id) {
-                // 指不明的引用当场说清，不等到运行才报错
-                return (
-                  <span
-                    key={`?${m.name}`}
-                    className="plein-prompt-ref gap-1 bg-warning/10 px-1.5 text-warning"
-                  >
-                    <Icon name="warning" size={12} />
-                    <span className="truncate" title={mentionProblem(m)}>
-                      {mentionProblem(m)}
-                    </span>
-                  </span>
-                )
-              }
-              const target = engine.doc.get(m.id)
-              if (!target) return null
-              const baseLabel = pickLabel(
-                m.total > 1 ? `${m.name}#${m.index}` : m.name,
-                m.pick ?? {},
-              )
-              const label = m.sceneView ? `${baseLabel}（${m.sceneView.name}）` : baseLabel
-              const warn =
-                m.sceneViewMiss !== undefined
-                  ? `视角「${m.sceneViewMiss}」不存在，请重新选择`
-                  : m.profileMiss
-                    ? `「${m.name}」的档案里没有「${m.profileMiss}」`
-                    : m.profileConflict
-              return (
-                <span key={`${m.id}:${label}`} className="contents">
-                  <MentionChip
-                    engine={engine}
-                    name={label}
-                    target={target}
-                    imageId={
-                      m.sceneView
-                        ? (m.sceneView.images[0] ?? null)
-                        : pickImages(m.pick ?? {}, targetImages(engine, target))[0]
-                    }
-                  />
-                  {warn && (
-                    <span className="plein-prompt-ref gap-1 bg-warning/10 px-1.5 text-warning">
-                      <Icon name="warning" size={12} />
-                      <span className="truncate" title={warn}>
-                        {warn}
-                      </span>
-                    </span>
-                  )}
-                </span>
-              )
-            })}
-          </div>
-        </div>
-      )}
       {presetOptions.length > 0 && ref.current && (
         <Popover
           anchor={ref.current}
@@ -634,54 +566,4 @@ function targetKind(t: CanvasElement) {
   if (t.nodeType === 'plein/style') return '风格'
   if (t.nodeType === 'plein/effect') return '特效'
   return '图片'
-}
-
-/** 被引用资产的 24 小图：第一张参考图，没有时是灰底占位 */
-function Thumb({
-  engine,
-  target,
-  imageId,
-}: {
-  engine: Engine
-  target: CanvasElement
-  imageId?: string | null
-}) {
-  const id = imageId === undefined ? targetImages(engine, target)[0] : imageId
-  return id ? (
-    <img
-      src={assetUrls.variant(id, 'thumb-256')}
-      alt=""
-      className="size-6 flex-none rounded-sm object-cover"
-    />
-  ) : (
-    <span className="size-6 flex-none rounded-sm bg-surface-3" />
-  )
-}
-
-/** 提示词里的一个引用：点一下定位到画布上的资产 */
-function MentionChip({
-  engine,
-  name,
-  target,
-  imageId,
-}: {
-  engine: Engine
-  name: string
-  target: CanvasElement
-  imageId?: string | null
-}) {
-  return (
-    <button
-      type="button"
-      title={`定位到「${name}」`}
-      onClick={() => {
-        engine.selection.set([target.id])
-        engine.zoomToFit([target.id])
-      }}
-      className="plein-prompt-ref gap-1.5 bg-surface-2 pr-2 pl-0.5 text-ink-muted hover:bg-accent-soft hover:text-accent"
-    >
-      <Thumb engine={engine} target={target} imageId={imageId} />
-      <span className="truncate">{name}</span>
-    </button>
-  )
 }

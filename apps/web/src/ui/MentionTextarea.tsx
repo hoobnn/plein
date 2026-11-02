@@ -113,8 +113,21 @@ export function MentionTextarea({
                 data-state={part.missing ? 'missing' : part.warning ? 'warning' : 'resolved'}
                 data-mention-id={part.id}
                 data-warning={part.warning}
+                title={part.badge?.title ?? part.warning}
               >
-                {part.text}
+                {part.badge ? (
+                  <>
+                    {/* 原文保留占位宽度，徽标叠在上面，正文不会跟着挪位 */}
+                    <span className="plein-mention-raw">{part.text}</span>
+                    <span className="plein-mention-badge">
+                      {part.badge.labels.length > 1
+                        ? `${part.badge.labels[0]}+${part.badge.labels.length - 1}`
+                        : part.badge.labels[0]}
+                    </span>
+                  </>
+                ) : (
+                  part.text
+                )}
               </mark>
             ) : (
               part.text

@@ -7,11 +7,27 @@ import {
 } from '@plein/plugin-sdk'
 import { findMentions, isMentionStart, mentionProblem, type MentionTarget } from '@plein/nodes'
 
+/** 正文里一处引用的最终编号与问题：编号来自服务端，与最终提示词完全一致。 */
+export interface MentionNumber {
+  /** 原文里的起止位置 */
+  start: number
+  end: number
+  /** 最终提示词里的编号写法，如「图片3」；一张资产卡可能对应多张图 */
+  labels: string[]
+  /** 引用的名字 */
+  name?: string
+  /** 送不进去的原因 */
+  reason?: string
+  message?: string
+}
+
 /** 有效引用共用生成解析器；找不到目标的 @ 写法单独标为缺失，不绑定到猜测的元素。 */
 export interface MentionReferences {
   bindings: unknown
   items: ReferenceIdentity[]
   pending?: boolean
+  /** 服务端给的编号与问题；有这一项时以它为准，不再本地猜。 */
+  numbers?: MentionNumber[]
 }
 
 export function mentionParts(
@@ -26,6 +42,8 @@ export function mentionParts(
     warning?: string
     missing?: true
     mention?: true
+    /** 送入模型的编号徽标（与服务端给的最终提示词一致） */
+    badge?: { labels: string[]; title: string }
   }> = []
   let end = 0
   const bindings = referenceBindings(references?.bindings)
@@ -84,13 +102,23 @@ export function mentionParts(
   for (const m of ranges) {
     if (m.start < end) continue
     if (m.start > end) parts.push({ text: text.slice(end, m.start), start: end })
+    // 服务端给了这一处的编号与问题时以它为准：面板与最终提示词说同一件事。
+    const number = references?.numbers?.find((n) => n.start === m.start)
+    const badge =
+      number && number.labels.length && !number.reason
+        ? {
+            labels: number.labels,
+            title: [number.name, number.labels.join('、')].filter(Boolean).join(' · '),
+          }
+        : undefined
     parts.push({
       text: text.slice(m.start, m.end),
       start: m.start,
       mention: true,
       id: 'id' in m ? m.id : undefined,
       missing: 'missing' in m ? m.missing : undefined,
-      warning: m.warning,
+      warning: number ? number.message : m.warning,
+      ...(badge ? { badge } : {}),
     })
     end = m.end
   }

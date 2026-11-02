@@ -254,10 +254,9 @@ it('同一资产来自两个节点时保留两个顺序项，参数显示标签�
     />,
   )
   await view.user.click(screen.getByRole('button', { name: /实际输入/ }))
-  expect(screen.getAllByRole('figure').map((el) => el.textContent)).toEqual([
-    '1循环开场',
-    '2循环结束',
-  ])
+  // 送入顺序不再在这里重复列图：看顶部的参考素材区，这里只留张数与参数。
+  expect(screen.getByRole('button', { name: /实际输入/ }).textContent).toContain('2 张参考图')
+  expect(screen.queryAllByRole('figure')).toHaveLength(0)
   expect(screen.getByText('生成模式 图生视频')).toBeTruthy()
   expect(screen.getByText('生成音频 关闭')).toBeTruthy()
   view.rerender(
@@ -273,7 +272,6 @@ it('同一资产来自两个节点时保留两个顺序项，参数显示标签�
   )
   expect(screen.getByText('生成模式 文生视频')).toBeTruthy()
   expect(screen.getByText('生成音频 开启')).toBeTruthy()
-  expect(screen.getAllByRole('figure')).toHaveLength(2)
   expect(errors.mock.calls.filter(([message]) => String(message).includes('same key'))).toEqual([])
 })
 

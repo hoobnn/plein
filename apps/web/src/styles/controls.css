@@ -23,6 +23,31 @@
   background: var(--accent-soft);
   outline: 1px solid var(--accent);
 }
+/* 引用徽标：只显示送入模型的编号。原文保留占位宽度，徽标叠在上面，正文不会跟着挪位。 */
+.plein-mention:has(> .plein-mention-badge) {
+  position: relative;
+  background: transparent;
+  color: inherit;
+}
+.plein-mention-raw {
+  visibility: hidden;
+}
+.plein-mention-badge {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  border-radius: 4px;
+  padding: 0 4px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-size: 0.8em;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+}
 .plein-mention-input textarea {
   color: transparent;
   caret-color: var(--ink);

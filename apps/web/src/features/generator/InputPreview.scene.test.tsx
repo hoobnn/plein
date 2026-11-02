@@ -19,6 +19,15 @@ it('同一场景的多个视角分别显示，缺图视角保留阻断说明', a
       status: 'blocked',
       params: {},
       inputs: {},
+      sent: [
+        {
+          index: 1,
+          token: '图1',
+          assetId: 'a'.repeat(64),
+          name: '教室（门口）',
+          origins: ['mention'],
+        },
+      ],
       notices: [],
       blocked: [{ code: 'required_no_image', message: '教室（空机位）没有参考图' }],
       refs: [
@@ -53,10 +62,11 @@ it('同一场景的多个视角分别显示，缺图视角保留阻断说明', a
       />,
     )
     await user.click(screen.getByRole('button', { name: /实际输入/ }))
-    expect(screen.getByText('教室（门口）')).toBeTruthy()
-    expect(screen.getByText('教室（空机位）')).toBeTruthy()
+    // 视角清单不再在这里重复列出：送入的看顶部参考素材区，缺图的看「未送入」。
+    expect(screen.getByRole('button', { name: /实际输入/ }).textContent).toContain('1 张参考图')
     expect(screen.getByRole('alert').textContent).toContain('空机位）没有参考图')
-    expect(screen.getByText('无参考图')).toBeTruthy()
+    // 必需参考是节点参数，留在「有效参数」里。
+    expect(screen.getByText('教室（空机位）')).toBeTruthy()
     unmount()
   } finally {
     doc.destroy()
