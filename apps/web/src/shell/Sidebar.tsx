@@ -1,7 +1,24 @@
 import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement } from '@plein/doc'
 import { LIBRARY_KINDS, libraryKindOfNode } from '@plein/nodes'
-import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from 'react'
+import {
+  type PanelImperativeHandle,
+  type PanelSize,
+  Group,
+  Panel,
+  Separator,
+} from 'react-resizable-panels'
 import { useShallow } from 'zustand/react/shallow'
 import { assetUrls } from '../api/client'
 import { mediaOf } from '../canvas/grid'
@@ -24,7 +41,7 @@ import { MenuSelect } from '../ui/MenuSelect'
 import { SlidePill, SlideSwap } from '../ui/Slide'
 import { KIND_ICONS } from '../features/library/LibraryAdd'
 import { EmptyState } from '../ui/EmptyState'
-import { startSidebarResize } from './sidebarResize'
+import { createSidebarResizeController } from './sidebarResizeController'
 import { LibraryReadStatus } from '../features/library/LibraryReadStatus'
 import { useLibraryPlacement } from '../features/library/useLibraryPlacement'
 import { saveElementName } from '../canvas/rename'
@@ -48,102 +65,225 @@ const TYPE_FILTERS: Array<{ value: TypeFilter; label: string }> = [
 export function Sidebar({ open }: { open: boolean }) {
   const engine = useCanvas((s) => s.engine)
   const canvasId = useCanvas((s) => s.canvasId)
-  const { tab, setTab, width } = useSidebar(
-    useShallow((s) => ({ tab: s.tab, setTab: s.setTab, width: s.width })),
-  )
+  const { tab, setTab } = useSidebar(useShallow((s) => ({ tab: s.tab, setTab: s.setTab })))
+  const panelRef = useRef<PanelImperativeHandle>(null)
+  const groupRef = useRef<HTMLDivElement | null>(null)
   // 资产库在服务端，本地演示没有
   const current = canvasId ? tab : 'layers'
   return (
-    // 收起时保留在 DOM 里做滑出动画，inert 让它不可聚焦、不可点
-    <aside
-      aria-label="侧栏"
-      aria-hidden={!open}
-      inert={!open}
-      data-open={open || undefined}
-      className="plein-sidebar"
-      style={{ width }}
+    // 面板组是浮在画布左侧的浮层：面板装侧栏本体，分隔条在右边缘拖宽度，
+    // 剩下的面板只是占位（不透明度与指针事件都让给下面的画布）。
+    // 宽高交给 .plein-sidebar-group 定位，覆盖库的内联 100%，溢出走可见让收起动画滑出。
+    <Group
+      orientation="horizontal"
+      className="plein-sidebar-group"
+      elementRef={groupRef}
+      style={{ width: 'auto', height: 'auto', overflow: 'visible' }}
     >
-      {/* 紧凑侧栏：外层内边距统一 12（--panel-pad-sm），与搜索、列表、页脚对齐 */}
-      <div className="px-(--panel-pad-sm) pt-3 pb-1">
-        <div role="tablist" aria-label="侧栏内容" className="ui-slide flex gap-1">
-          <SlidePill variant="tab" />
-          {TABS.filter((t) => canvasId || t.id === 'layers').map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              aria-selected={current === t.id}
-              onClick={() => setTab(t.id)}
-              className="plein-sidebar-tab"
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
-      <SlideSwap
-        index={TABS.findIndex((t) => t.id === current)}
-        className="flex min-h-0 flex-1 flex-col overflow-hidden"
-      >
-        {current === 'layers' ? (
-          engine ? (
-            <Layers engine={engine} />
-          ) : (
-            <div className="flex-1" />
-          )
-        ) : (
-          <Assets engine={engine} />
-        )}
-      </SlideSwap>
-      {engine && (
-        <footer className="flex h-10 flex-none items-center border-t border-line px-(--panel-pad-sm)">
-          {current === 'assets' ? <AssetCount /> : <Count engine={engine} />}
-        </footer>
-      )}
-      <ResizeHandle active={open} />
-    </aside>
+      <SidebarPanel panelRef={panelRef}>
+        <aside
+          aria-label="侧栏"
+          aria-hidden={!open}
+          inert={!open}
+          data-open={open || undefined}
+          className="plein-sidebar"
+        >
+          {/* 紧凑侧栏：外层内边距统一 12（--panel-pad-sm），与搜索、列表、页脚对齐 */}
+          <div className="px-(--panel-pad-sm) pt-3 pb-1">
+            <div role="tablist" aria-label="侧栏内容" className="ui-slide flex gap-1">
+              <SlidePill variant="tab" />
+              {TABS.filter((t) => canvasId || t.id === 'layers').map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={current === t.id}
+                  onClick={() => setTab(t.id)}
+                  className="plein-sidebar-tab"
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <SlideSwap
+            index={TABS.findIndex((t) => t.id === current)}
+            className="flex min-h-0 flex-1 flex-col overflow-hidden"
+          >
+            {current === 'layers' ? (
+              engine ? (
+                <Layers engine={engine} />
+              ) : (
+                <div className="flex-1" />
+              )
+            ) : (
+              <Assets engine={engine} />
+            )}
+          </SlideSwap>
+          {engine && (
+            <footer className="flex h-10 flex-none items-center border-t border-line px-(--panel-pad-sm)">
+              {current === 'assets' ? <AssetCount /> : <Count engine={engine} />}
+            </footer>
+          )}
+        </aside>
+      </SidebarPanel>
+      <ResizeHandle active={open} groupRef={groupRef} panelRef={panelRef} />
+      {/* 占位面板：吞下侧栏之外的画布区域，仅参与布局，不做任何渲染 */}
+      <Panel className="plein-sidebar-rest" />
+    </Group>
   )
 }
 
-/** 右边缘拖动改宽度；双击恢复默认，聚焦后方向键微调 */
-function ResizeHandle({ active }: { active: boolean }) {
-  const width = useSidebar((s) => s.width)
+/** 侧栏本体所在的面板：像素约束与窗口缩放时的像素保持交给库，已存偏好宽度首次量到尺寸时套上。 */
+function SidebarPanel({
+  children,
+  panelRef,
+}: {
+  children: React.ReactNode
+  panelRef: RefObject<PanelImperativeHandle | null>
+}) {
+  const synced = useRef(false)
+  const onResize = useCallback(
+    (size: PanelSize) => {
+      const width = Math.round(size.inPixels)
+      if (width <= 0) return
+      if (!synced.current) {
+        synced.current = true
+        const stored = useSidebar.getState().width
+        if (width !== stored) panelRef.current?.resize(stored)
+        return
+      }
+      useSidebar.getState().setWidth(width, false)
+    },
+    [panelRef],
+  )
+  return (
+    <Panel
+      minSize={SIDEBAR_WIDTH.min}
+      maxSize={SIDEBAR_WIDTH.max}
+      // 双击恢复的默认值；已存宽度由 onResize 首帧套上，不闪烁
+      defaultSize={SIDEBAR_WIDTH.default}
+      // 窗口缩放时保持像素宽度，不按比例漂移
+      groupResizeBehavior="preserve-pixel-size"
+      panelRef={panelRef}
+      onResize={onResize}
+      style={{ overflow: 'visible' }}
+    >
+      {children}
+    </Panel>
+  )
+}
+
+function ResizeHandle({
+  active,
+  groupRef,
+  panelRef,
+}: {
+  active: boolean
+  groupRef: RefObject<HTMLDivElement | null>
+  panelRef: RefObject<PanelImperativeHandle | null>
+}) {
   const setWidth = useSidebar((s) => s.setWidth)
   const [dragging, setDragging] = useState(false)
-  const cancel = useRef<(() => void) | null>(null)
-  // 收起侧栏或离开画布都可能发生在指针松开前。
-  useEffect(() => () => cancel.current?.(), [active])
-
-  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!active || e.button !== 0 || cancel.current) return
-    e.preventDefault()
-    setDragging(true)
-    cancel.current = startSidebarResize(e.currentTarget, e.nativeEvent, () => {
-      cancel.current = null
+  const separatorRef = useRef<HTMLDivElement | null>(null)
+  const controller = useMemo(
+    () =>
+      createSidebarResizeController({
+        getWidth: () => useSidebar.getState().width,
+        setWidth,
+        resize: (width) => panelRef.current?.resize(width),
+        // 库在 panel 预览模式下取消不回滚布局：合成 pointercancel 让它结束拖拽，宽度由 cancel 恢复
+        cancelLibraryDrag: (pointerId) =>
+          groupRef.current?.dispatchEvent(
+            new PointerEvent('pointercancel', { pointerId, bubbles: false }),
+          ),
+      }),
+    [setWidth, groupRef, panelRef],
+  )
+  // 面板当前像素宽度：提交偏好以它为准（store 可能落后渲染一帧）
+  const panelWidth = useCallback(() => {
+    const px = panelRef.current?.getSize().inPixels
+    return px && px > 0 ? Math.round(px) : useSidebar.getState().width
+  }, [panelRef])
+  // endDrag 与取消监听互相引用：用 ref 固定 endDrag，监听器身份保持稳定可移除
+  const endDragRef = useRef<(commit: boolean) => void>(() => {})
+  const onDragBlur = useCallback(() => endDragRef.current(false), [])
+  const onDragKey = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.isComposing || e.keyCode === 229 || e.key !== 'Escape' || !controller.active) return
+      e.preventDefault()
+      e.stopPropagation()
+      endDragRef.current(false)
+    },
+    [controller],
+  )
+  const endDrag = useCallback(
+    (commit: boolean) => {
+      if (!controller.active) return
+      if (commit) controller.commit(panelWidth())
+      else controller.cancel()
+      document.documentElement.classList.remove('plein-resizing')
+      window.removeEventListener('blur', onDragBlur)
+      window.removeEventListener('keydown', onDragKey, true)
       setDragging(false)
-    })
-  }
+    },
+    [controller, panelWidth, onDragBlur, onDragKey],
+  )
+  endDragRef.current = endDrag
+  // 收起侧栏或卸载都可能发生在指针松开前：按取消处理，恢复原宽度
+  useEffect(() => {
+    if (!active) endDrag(false)
+  }, [active, endDrag])
+  useEffect(() => () => endDrag(false), [endDrag])
+
+  // 方向键按像素微调：拦在库的 keydown（组宽 5% 步长）之前，保持旧的 8/40px 步长，并补上 Home/End 到边界
+  useEffect(() => {
+    const el = separatorRef.current
+    if (!el) return
+    const onKeydown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return
+      const key = e.key
+      if (key !== 'ArrowLeft' && key !== 'ArrowRight' && key !== 'Home' && key !== 'End') return
+      e.preventDefault()
+      e.stopPropagation()
+      controller.key(key, e.shiftKey)
+    }
+    el.addEventListener('keydown', onKeydown, true)
+    return () => el.removeEventListener('keydown', onKeydown, true)
+  }, [controller])
+
+  const onPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!active || e.button !== 0 || controller.active) return
+      e.preventDefault()
+      controller.begin(e.pointerId)
+      setDragging(true)
+      document.documentElement.classList.add('plein-resizing')
+      window.addEventListener('blur', onDragBlur)
+      window.addEventListener('keydown', onDragKey, true)
+    },
+    [active, controller, onDragBlur, onDragKey],
+  )
 
   return (
-    <div
-      role="separator"
-      aria-orientation="vertical"
+    <Separator
+      elementRef={separatorRef}
+      disabled={!active}
       aria-label="调整侧栏宽度"
-      aria-valuenow={width}
-      aria-valuemin={SIDEBAR_WIDTH.min}
-      aria-valuemax={SIDEBAR_WIDTH.max}
-      tabIndex={0}
       title="拖动调整宽度，双击恢复默认"
       data-dragging={dragging || undefined}
       onPointerDown={onPointerDown}
-      onDoubleClick={() => setWidth(SIDEBAR_WIDTH.default)}
-      onKeyDown={(e) => {
-        const step = e.shiftKey ? 40 : 8
-        if (e.key === 'ArrowLeft') setWidth(width - step)
-        else if (e.key === 'ArrowRight') setWidth(width + step)
-        else return
+      onPointerUp={(e) => {
+        if (e.button !== 0) return
+        endDrag(true)
+      }}
+      onPointerCancel={() => endDrag(false)}
+      onLostPointerCapture={() => endDrag(false)}
+      onDoubleClickCapture={(e) => {
+        // 库的双击恢复不写偏好：拦在库的捕获监听前自己处理，与旧行为一致（写回默认宽度的偏好）
         e.preventDefault()
-        e.stopPropagation()
+        setWidth(SIDEBAR_WIDTH.default)
+        panelRef.current?.resize(SIDEBAR_WIDTH.default)
       }}
       className="plein-sidebar-resize"
     />

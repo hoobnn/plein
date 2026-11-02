@@ -316,9 +316,9 @@ it('树键盘：方向键移动焦点，Enter 与空格激活选区，Tab 离开
   await waitFor(() => expect(f.selection.values()).toEqual([f.ids.c]))
   fireEvent.keyDown(middle, { key: 'Enter' })
   await waitFor(() => expect(f.selection.values()).toEqual([f.ids.b]))
-  // Tab 移出树到宽度手柄，Shift+Tab 回到树的停靠行（当前焦点行）
+  // Tab 移出树到宽度手柄（面板组的分隔条，在侧栏本体外层），Shift+Tab 回到树的停靠行（当前焦点行）
   await f.user.tab()
-  expect(document.activeElement).toBe(tree().getByRole('separator', { name: '调整侧栏宽度' }))
+  expect(document.activeElement).toBe(screen.getByRole('separator', { name: '调整侧栏宽度' }))
   await f.user.tab({ shift: true })
   await waitFor(() => {
     expect(document.activeElement?.getAttribute('data-id')).toBe(f.ids.c)

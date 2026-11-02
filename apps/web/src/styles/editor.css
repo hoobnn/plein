@@ -199,21 +199,29 @@
   color: var(--ink-muted);
 }
 
-/* 工作流左侧栏：项目 / 画布、页签、图层树、底部收起 */
-.plein-sidebar {
+/* 工作流左侧栏：项目 / 画布、页签、图层树、底部收起。
+   定位与层叠在面板组浮层上：库的面板组占据旧侧栏的位置，面板装侧栏本体。 */
+.plein-sidebar-group {
   position: absolute;
   top: calc(var(--chrome-h) + 20px);
   bottom: 12px;
   left: 12px;
+  right: 0;
   /* 卡片下方的编辑器也是 z-20，侧栏要压过它：编辑器再宽也不能挡住元素树 */
   z-index: 22;
+  /* 浮层本身不拦截画布的指针事件，只留给侧栏本体与拖动条 */
+  pointer-events: none;
+}
+.plein-sidebar {
+  /* 填满所在面板；收起：向左滑出并淡出，结束后再隐藏 */
+  height: 100%;
+  pointer-events: auto;
   display: flex;
   flex-direction: column;
   border-radius: var(--radius-xl);
   /* 面积大，用不透明底，免得底下的卡片透出来 */
   background: var(--surface);
   box-shadow: var(--shadow-2);
-  /* 收起：向左滑出并淡出，结束后再隐藏 */
   opacity: 0;
   transform: translateX(calc(-100% - 12px));
   visibility: hidden;
@@ -277,17 +285,21 @@
     transition: none;
   }
 }
-/* 右边缘的拖动条：热区 8px 跨在边框上，悬停或拖动时边框变成强调色 */
+/* 右边缘的拖动条：面板组里占 8px 宽，负外边距让它跨在面板边缘，
+   悬停或拖动时边框变成强调色；收起时由库标记 disabled，一并隐藏 */
 .plein-sidebar-resize {
-  position: absolute;
-  top: 0;
-  right: -4px;
-  bottom: 0;
+  position: relative;
   z-index: 1;
+  flex: none;
   width: 8px;
+  margin-left: -4px;
+  margin-right: -4px;
   cursor: col-resize;
   outline: none;
-  touch-action: none;
+  pointer-events: auto;
+}
+.plein-sidebar-resize[data-separator="disabled"] {
+  visibility: hidden;
 }
 .plein-sidebar-resize::after {
   position: absolute;
