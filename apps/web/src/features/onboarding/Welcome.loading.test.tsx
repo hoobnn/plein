@@ -42,7 +42,6 @@ it('首次引导模块等待有状态反馈，加载完成后显示真实配置�
     nodes: [],
     templates: [],
     prompts: [],
-    elements: [],
     defaultModels: {},
     providers: [],
   }

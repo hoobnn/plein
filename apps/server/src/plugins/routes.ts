@@ -76,17 +76,6 @@ export function catalogOf(host: PluginHost): Catalog {
     defaultModels: host.defaultModels(),
     templates: [...registry.templates.values()].map((t) => ({ ...t.def, plugin: t.plugin })),
     prompts: [...registry.prompts.values()].map((p) => ({ ...p.def, plugin: p.plugin })),
-    elements: [...registry.elements.values()].map((e) => ({
-      type: e.def.type,
-      title: e.def.title,
-      description: e.def.description,
-      defaultSize: e.def.defaultSize,
-      dataSchema: z.toJSONSchema(e.def.data, { io: 'input', unrepresentable: 'any' }) as Record<
-        string,
-        unknown
-      >,
-      plugin: e.plugin,
-    })),
   }
   return catalog
 }

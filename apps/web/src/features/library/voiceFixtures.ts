@@ -6,7 +6,6 @@ export const voiceCatalog = {
   defaultModels: {},
   templates: [],
   prompts: [],
-  elements: [],
   providers: [
     {
       id: 'plein/mock',

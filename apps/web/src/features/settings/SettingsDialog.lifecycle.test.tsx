@@ -24,7 +24,6 @@ const catalog = (over: Partial<Catalog> = {}): Catalog =>
     nodes: [],
     templates: [],
     prompts: [],
-    elements: [],
     providers: [],
     defaultModels: {},
     ...over,

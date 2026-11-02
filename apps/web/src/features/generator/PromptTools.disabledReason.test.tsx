@@ -24,7 +24,6 @@ const catalog = (withChat: boolean): Catalog =>
     nodes: [],
     templates: [],
     prompts: [],
-    elements: [],
     plugins: [],
     defaultModels: {},
   }) as unknown as Catalog

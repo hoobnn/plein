@@ -172,7 +172,6 @@ const minimalCatalog = {
   defaultModels: {},
   templates: [],
   prompts: [],
-  elements: [],
 } as unknown as ReturnType<typeof useCatalog.getState>['catalog']
 
 const panel = () => screen.getByRole('complementary', { name: '任务' })

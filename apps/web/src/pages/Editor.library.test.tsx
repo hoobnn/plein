@@ -45,7 +45,6 @@ const catalog: Catalog = {
   defaultModels: {},
   templates: [],
   prompts: [],
-  elements: [],
 }
 
 it.each(['恢复', '缓存'] as const)(

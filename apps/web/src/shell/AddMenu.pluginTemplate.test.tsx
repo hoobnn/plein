@@ -67,7 +67,6 @@ function catalog(): Catalog {
     defaultModels: {},
     templates: [template],
     prompts: [],
-    elements: [],
   } as unknown as Catalog
 }
 

@@ -13,7 +13,6 @@ const catalog: Catalog = {
   defaultModels: {},
   templates: [],
   prompts: [],
-  elements: [],
 }
 function node(extra: Partial<CanvasElement> = {}): CanvasElement {
   const doc = openDoc()

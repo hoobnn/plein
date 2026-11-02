@@ -77,7 +77,6 @@ export function sequenceFixture(
       defaultModels: {},
       templates: [],
       prompts: [],
-      elements: [],
       nodes: [sequenceNode, animaticNode].map((node) => ({
         ...describeNode(node, 'plein/core'),
         executable: true,

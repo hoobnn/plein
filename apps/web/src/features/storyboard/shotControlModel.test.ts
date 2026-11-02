@@ -15,7 +15,6 @@ const catalogOf = (): Catalog => ({
   nodes: [],
   templates: [],
   prompts: [],
-  elements: [],
   defaultModels: { 'video.generate': 'test/p:video', 'image.generate': 'test/p:image' },
   providers: [
     {

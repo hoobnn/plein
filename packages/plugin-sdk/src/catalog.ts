@@ -1,8 +1,4 @@
-import type {
-  ElementTypeDefinition,
-  PromptPresetDefinition,
-  TemplateDefinition,
-} from './contributions'
+import type { PromptPresetDefinition, TemplateDefinition } from './contributions'
 import type { PluginManifest } from './manifest'
 import type { NodeDescriptor } from './node'
 import type { ModelInfo, ProviderDescriptor } from './provider'
@@ -68,10 +64,6 @@ export interface Catalog {
   defaultModels: Partial<Record<string, string>>
   templates: Array<TemplateDefinition & { plugin: string }>
   prompts: Array<PromptPresetDefinition & { plugin: string }>
-  elements: Array<
-    Pick<ElementTypeDefinition, 'type' | 'title' | 'description' | 'defaultSize'> & {
-      dataSchema: Record<string, unknown>
-      plugin: string
-    }
-  >
 }
+// 元素类型未进目录：插件可以声明，但宿主还渲染不了（沙箱方案未落地），
+// 目录里不保留没有消费者的字段；能上屏时再加回。

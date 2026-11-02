@@ -10,7 +10,6 @@ const catalog: Catalog = {
   nodes: [],
   templates: [],
   prompts: [],
-  elements: [],
   defaultModels: { 'image.generate': 'test/platform:current' },
   providers: [
     {

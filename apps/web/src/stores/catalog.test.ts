@@ -11,7 +11,6 @@ const catalog = (ref: string): Catalog => ({
   defaultModels: { 'text.chat': ref },
   templates: [],
   prompts: [],
-  elements: [],
 })
 function pending() {
   let resolve!: (value: Catalog) => void

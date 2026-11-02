@@ -92,7 +92,6 @@ it('模态内编辑独立草稿并请求生成，明确选择候选后只替换�
       nodes: [{ ...video, executable: true }],
       plugins: [],
       prompts: [],
-      elements: [],
       templates: [],
       defaultModels: {},
       providers: [

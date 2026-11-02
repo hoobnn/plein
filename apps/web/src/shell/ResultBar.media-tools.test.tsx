@@ -57,7 +57,6 @@ it('生成视频只为采用结果显示唯一工具入口，锁定后移至浮�
       defaultModels: {},
       prompts: [],
       templates: [],
-      elements: [],
       plugins: [],
     } as unknown as Catalog,
   })

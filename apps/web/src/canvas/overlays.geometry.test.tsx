@@ -18,7 +18,6 @@ it('连续小数尺寸几何预览复用卡片与便签正文，不扫描全图�
     catalog: {
       plugins: [],
       providers: [],
-      elements: [],
       defaultModels: {},
       templates: [],
       prompts: [],
@@ -119,7 +118,6 @@ it('预览尺寸跨过阈值时更新生成卡片预设，取消后恢复', () =
     catalog: {
       plugins: [],
       providers: [],
-      elements: [],
       defaultModels: {},
       templates: [],
       nodes: [descriptor],

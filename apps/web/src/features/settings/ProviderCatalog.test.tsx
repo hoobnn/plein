@@ -66,7 +66,6 @@ const catalogOf = (): Catalog => ({
   nodes: [],
   templates: [],
   prompts: [],
-  elements: [],
   defaultModels: { 'text.chat': state.defaultModel },
   providers: [{ ...provider, enabled: state.enabled }],
 })

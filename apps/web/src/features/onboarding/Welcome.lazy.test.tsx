@@ -13,7 +13,6 @@ const catalog = (configured = false): Catalog => ({
   nodes: [],
   templates: [],
   prompts: [],
-  elements: [],
   defaultModels: {},
   providers: configured
     ? [

@@ -43,7 +43,6 @@ const catalog = {
   nodes: [],
   templates: [],
   prompts: [],
-  elements: [],
   plugins: [],
   defaultModels: {},
 } as unknown as Catalog

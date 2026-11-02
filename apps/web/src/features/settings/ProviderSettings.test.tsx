@@ -8,7 +8,6 @@ const catalog = (): Catalog => ({
   nodes: [],
   templates: [],
   prompts: [],
-  elements: [],
   defaultModels: { 'text.chat': 'test/platform:chat' },
   providers: [
     {

@@ -26,7 +26,6 @@ export const catalog: Catalog = {
   defaultModels: {},
   templates: [],
   prompts: [],
-  elements: [],
 }
 
 /** 真实文档与相机；只替换 GPU 引擎边界的选区、定位和场景矩形读取。 */
