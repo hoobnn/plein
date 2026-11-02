@@ -1294,7 +1294,7 @@ it('旁路改名后越界的 @林夏#2 按普通 blocked 预览，不自动改�
     message: '「@林夏#2」不存在，画布上「林夏」只有 @林夏',
   })
   expect(blocked.unsent).toContainEqual(
-    expect.objectContaining({ name: '林夏', reason: 'mention_ambiguous' }),
+    expect.objectContaining({ name: '林夏#2', reason: 'mention_ambiguous' }),
   )
 
   // 改回去后引用恢复，节点重新可运行
@@ -1303,6 +1303,48 @@ it('旁路改名后越界的 @林夏#2 按普通 blocked 预览，不自动改�
   expect(recovered.status).toBe('ready')
   expect(recovered.prompt).toContain('回头')
 })
+
+it('未送入的消歧失败条目用用户原文的名字，不补序号；有效引用仍带序号', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  imgEl(doc, 'dup.png', asset('a'), 0)
+  imgEl(doc, 'dup.png', asset('b'), 300)
+  const shot = addNode(doc, 'plein/image', {
+    params: { model: 'plein/mock:image', prompt: '@dup.png#2 和 @dup.png' },
+    y: 400,
+  })
+  const input = await preview(server, id, shot)
+  expect(input.status).toBe('blocked')
+  // 有效的 @dup.png#2 照常消歧送入，条目名带序号
+  expect(input.sent?.map((item) => item.name)).toEqual(['dup.png#2'])
+  // 消歧失败的 @dup.png 用用户原文的名字：文案让用户写成 @dup.png#1 或 @dup.png#2，
+  // 条目名再显示推断的 dup.png#1 就与文案互相矛盾
+  expect(input.unsent).toEqual([
+    expect.objectContaining({
+      name: 'dup.png',
+      reason: 'mention_ambiguous',
+      message: '画布上有 2 个「dup.png」，请写成 @dup.png#1 或 @dup.png#2',
+    }),
+  ])
+  expect(input.unsent?.[0]?.message).toContain(`「${input.unsent?.[0]?.name}」`)
+
+  // 越界的 @林夏#2：只有一个「林夏」，按原文取名（带用户写的 #2，不丢也不改）
+  card(doc, 'plein/character', '林夏', null, 700)
+  const hero = addNode(doc, 'plein/image', {
+    params: { model: 'plein/mock:image', prompt: '@林夏#2 回头' },
+    y: 800,
+  })
+  const over = await preview(server, id, hero)
+  expect(over.status).toBe('blocked')
+  expect(over.blocked).toContainEqual({
+    code: 'prepare_failed',
+    message: '「@林夏#2」不存在，画布上「林夏」只有 @林夏',
+  })
+  expect(over.unsent).toEqual([
+    expect.objectContaining({ name: '林夏#2', reason: 'mention_ambiguous' }),
+  ])
+}, 30_000)
 
 it('消歧失败与有效引用混排、非参考模式视频：原文保留，有效引用照常处理', async () => {
   const { server } = await bootServer()

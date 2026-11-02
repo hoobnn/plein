@@ -266,7 +266,13 @@ export function referencePreview({
 
   for (const mention of mentions) {
     const problem = mentionProblem(mention)
-    const name = mentionName(mention)
+    // 有效的引用用带 #序号 / 视角后缀的显示名（与改写后的正文一致）。消歧失败的引用
+    // （重名没写序号、序号越界）不会被改写，文案让用户自己写成 @dup.png#1 或
+    // @dup.png#2，条目名再显示推断的 dup.png#1 就自相矛盾：按用户原文取名
+    // （`@dup.png` 取 dup.png，越界的 `@林夏#2` 取林夏#2）。
+    const name = problem
+      ? `${mention.name}${mention.index === undefined ? '' : `#${mention.index}`}`
+      : mentionName(mention)
     const detail = mention.id
       ? details.find((item) => item.elementId === mention.id && item.name === name)
       : undefined
@@ -296,7 +302,8 @@ export function referencePreview({
       addUnsent(
         {
           ...(mention.id ? { elementId: mention.id } : {}),
-          // 与文案里的名字一致：用带 #序号 / 视角后缀的显示名，不用裸 mention.name。
+          // 与文案里的名字一致：有效引用用带 #序号 / 视角后缀的显示名，
+          // 消歧失败用用户原文的名字（见上），不用裸 mention.name。
           name,
           reason,
           message,
