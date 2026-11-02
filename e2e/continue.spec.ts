@@ -251,7 +251,9 @@ test('连续性使用真实首末帧、实际视频切点和固定角色参考 @
     return dialog
   }
   const dialog = await open()
-  await dialog.getByLabel('筛选镜头验收').selectOption('all')
+  // 审核下拉已换成 ui/Select（Base UI），点开触发器再点选项；弹层挂在 body 上
+  await dialog.getByRole('combobox', { name: '筛选镜头验收' }).click()
+  await page.getByRole('option', { name: '全部镜头' }).click()
   await dialog
     .locator('[data-shot-id="s2"]')
     .getByRole('button', { name: '与上一镜连续性审看', exact: true })
@@ -263,7 +265,8 @@ test('连续性使用真实首末帧、实际视频切点和固定角色参考 @
   await expect(head).toBeVisible()
   expect(await tail.getAttribute('src')).not.toContain('poster')
   expect(await head.getAttribute('src')).not.toBe(await tail.getAttribute('src'))
-  await continuity.getByRole('combobox', { name: /^固定角色参考/ }).selectOption(fixture.reference)
+  await continuity.getByRole('combobox', { name: /^固定角色参考/ }).click()
+  await page.getByRole('option', { name: /^固定主角/ }).click()
   await expect(continuity.getByRole('img', { name: '固定角色参考', exact: true })).toBeVisible()
   await continuity.locator('video').evaluateAll((videos) =>
     videos.forEach((video) => {
@@ -281,7 +284,8 @@ test('连续性使用真实首末帧、实际视频切点和固定角色参考 @
   await continuity.getByRole('button', { name: '保存为需修改', exact: true }).click()
   await continuity.screenshot({ path: testInfo.outputPath('continuity-review.png') })
   await continuity.getByRole('button', { name: '关闭', exact: true }).click()
-  await dialog.getByLabel('筛选镜头验收').selectOption('changes')
+  await dialog.getByRole('combobox', { name: '筛选镜头验收' }).click()
+  await page.getByRole('option', { name: '需修改' }).click()
   await expect(dialog.locator('[data-shot-id="s2"]')).toBeVisible()
   await dialog.getByRole('button', { name: '关闭', exact: true }).click()
   await page.reload()
