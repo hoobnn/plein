@@ -134,18 +134,19 @@ Nova Switch 是独立的 32 × 18.4（`--switch-w` / `--switch-h`），圆钮 16
 | `--dur-move` | 360ms | 大块位移：侧栏收起展开、工作流 ↔ 故事板整页切换、封面 |
 | `--dur-exit` | 140ms | 所有浮层的退场                                        |
 
-- 曲线：进场的位移和缩放用 `--ease-spring`，颜色用 `--ease-standard`，退场用 `--ease-exit`（加速离开，不回弹）。
-- Tailwind 的 `transition-colors` 等默认就是 120ms 加标准曲线，组件里不写 `duration-*`。
-- **进场**：菜单、弹层从锚点那一侧长出（`data-side="above|below"`，Base UI 定位的弹层是 `top|bottom`，决定变换原点和 4px 位移），从 97% 缩放淡入；提示条从上方落下；底部提示条（`.ui-pop-up`）从下方升起；右侧面板（`.ui-pop-right`）从右侧滑入；对话框遮罩淡入、面板从 98.5% 略微上浮着弹出，避免大面积文字明显缩放。动画的起止由元素上的 `--pop-from` / `--pop-to` / `--pop-origin` 决定，关键帧只有 `ui-pop-in` / `ui-pop-out` 一套。
-- **退场**：浮层都要有。打开处写成 `<Presence>{open && <X />}</Presence>`，X 的根元素铺上 `useExit()`；关闭时元素标上 `data-closing`，播完 `ui-pop-out`（遮罩是 `ui-fade-out`）再卸载，收起途中不响应指针、Esc 和点外面。Base UI 自己管理挂载的下拉和菜单（`ui/Select.tsx`、`ui/MenuSelect.tsx`）关闭时标 `data-ending-style`，同样播 `ui-pop-out`。退场比进场快，位移和缩放也比进场小。
-- **从触发点长出**：Base UI 定位的弹层原点取定位器给的 `--transform-origin`，碰撞平移或翻转后仍指向触发按钮；手动定位的浮层用 `--pop-origin`。下拉和弹层下方放不下时保留最低高度（下拉 168、弹层 200，矮窗口不超过 40vh），溢出交给定位器翻到另一侧，不压成一两行。
+- 曲线：进场的位移和缩放用 `--ease-spring`，颜色用 `--ease-standard`，退场用 `--ease-exit`（加速离开，不回弹）。Motion 的时长和曲线集中在 `ui/motion.ts`，与这些令牌一一对应；组件里不写散落的动画数值。
+- Tailwind 的 `transition-colors` 等默认就是 120ms 加标准曲线，组件里不写 `duration-*`。简单悬停、按下、颜色和尺寸过渡仍用 CSS，不套 Motion。
+- **Motion 用法**：根部 `MotionProvider` 用 `LazyMotion strict` 异步加载 `domAnimation`，并用 `MotionConfig reducedMotion="user"` 跟随系统偏好。浮层打开处写成 `<AnimatePresence>{open && <X />}</AnimatePresence>`（从 `ui/motion` 导入），X 的浮层根元素用 `m.*` 和 `useOverlayMotion(...)` 声明 `exit`；Base UI 的 `Popup` / `Backdrop` 通过 `render` 交给 `m.*`，禁止直接使用 `motion.*`。位移、缩放、原点和退场方向统一选 `ui/motion.ts` 里的变体。
+- **进场与退场**：菜单、弹层从锚点那一侧长出（`data-side="above|below"`，Base UI 定位的弹层是 `top|bottom`，决定变换原点和 4px 位移），从 97% 缩放淡入；提示条从上方落下；底部提示条从下方升起；右侧面板从右侧滑入；对话框遮罩淡入、面板从 98.5% 略微上浮着弹出，避免大面积文字明显缩放。`AnimatePresence` 等 `exit` 播完再卸载，退场比进场快，位移和缩放也比进场小；收起期间标 `data-plein-exiting`，不响应指针、Esc 和点外面。
+- **仍用 CSS 的浮层**：Base UI 自己管理挂载的下拉与菜单（`ui/Select.tsx`、`ui/MenuSelect.tsx`）保持 `data-starting-style` / `data-ending-style` 和 `ui-pop-in` / `ui-pop-out`，不要再套 `AnimatePresence`。这些 CSS 动画的起止仍由 `--pop-from` / `--pop-to` / `--pop-origin` 决定；View Transitions 也继续使用现有关键帧。
+- **从触发点长出**：Base UI 定位的弹层原点取定位器给的 `--transform-origin`，碰撞平移或翻转后仍指向触发按钮；手动定位的浮层用 `--pop-origin`，Motion 变体读取同一组 CSS 变量。下拉和弹层下方放不下时保留最低高度（下拉 168、弹层 200，矮窗口不超过 40vh），溢出交给定位器翻到另一侧，不压成一两行。
 - **提示气泡接力**：只有第一个提示等 450ms；移出后气泡多留 150ms，期间移到另一个带说明的按钮，同一个气泡滑过去换字，不重新弹出。按下、键盘、滚轮和窗口失焦仍立即收起。
 - 菜单项悬停：底色移入立即出现、移出时淡掉。
 - **页面切换**：工作流 ↔ 故事板用 `slideView` 左右滑；首页 ↔ 画布用 `zoomView`，被点的项目卡片放大成画布、回首页时缩回卡片，Logo（`.app-brand`）和右侧操作区（`.app-actions`）滑到新位置，时长 `--dur-move`。都基于 View Transitions，减少动态效果时直接切。
 - **连续操作**：新转场接管旧转场并释放旧共享元素名称；旧完成回调不能擦除新转场标记。再次选择当前可见视图，也会取消尚未执行的另一个目标。
 - **稳定与跟手**：主题卡片、导航、面板容器在切换中保留，输入框随内容变化的高度即时更新；按钮用轻微按下反馈，不改变布局尺寸。位移悬停只用于精确指针，触屏操作保持可见。
 - 循环的环境动画（吉祥物、运行中的脉冲、加载圈）不受这些令牌约束。
-- 系统开启“减少动态效果”时，末尾 `styles/motion.css` 将动画和过渡压至 0.01ms，取消延迟和循环，退场直接卸载；不清除画布定位所需的 `transform`。首页悬停位移和小满眼睛跟随也停用，不确定进度保留静态状态提示。
+- 系统开启“减少动态效果”时，`ui/motion` 的 `AnimatePresence` 不再保留退场队列，关闭即卸载，`MotionConfig` 同时关闭位移和缩放动画；末尾 `styles/motion.css` 仍将 CSS 动画和过渡压至 0.01ms，取消延迟和循环，不清除画布定位所需的 `transform`。首页悬停位移和小满眼睛跟随也停用，不确定进度保留静态状态提示。
 
 ## 状态
 
