@@ -1,7 +1,10 @@
 // @vitest-environment happy-dom
-import { expect, it, vi } from 'vite-plus/test'
+import { beforeAll, expect, it, vi } from 'vite-plus/test'
 import { act, fireEvent, renderApp, screen, waitFor } from '../testing/render'
 import { TooltipHost } from './Tooltip'
+
+// 在假计时器外完成真实模块加载；懒加载时机由 Tooltip.lazy.test.tsx 单独验证。
+beforeAll(() => import('./TooltipBubble'))
 
 async function setup(label = '生成', explicit = false) {
   vi.useFakeTimers()
