@@ -561,7 +561,8 @@ B1：`packages/doc` 内部。B2：`packages/doc`、新增 `packages/domain`、`p
   `enqueue`/`pump` 状态，不是可独立搬走的纯函数。
 
 唯一自包含的职责是「缓存键计算」（`cacheKey` / `keyMatches` / `legacyCacheKey` / `latestParams` / `hashKey` /
-`cacheParams`，约 100 行），它只依赖 `Prepared` 与元素，可纯搬到 `runs/cache-key.ts`；但它同时被
+`cacheParams`，约 100 行），可搬到 `runs/cache-key.ts`。它不只依赖 `Prepared` 与元素：`resolveModel` 读宿主
+注册表、键里还带渲染器身份，搬走时要把模型版本、插件版本与渲染器身份作为参数显式传入。它同时被
 `runs/impact.ts`、`runs/batch.ts` 与本文件的 `cachedCandidate` / `resultMatches` 使用，
 搬走要同时改三处调用方，收益与改动面不成比例。
 
@@ -578,8 +579,9 @@ B1：`packages/doc` 内部。B2：`packages/doc`、新增 `packages/domain`、`p
   `renderComposition`）与 `Provider` 区共享 `this.limiter`（限流）、`this.configs`（凭据）、
   `this.registry`（插件注册表）三处状态，且 `runNode` 内部直接调用 `providerContext`。
 
-「远端模型目录」是唯一自包含的一块（只依赖 `this.remoteCache` 与 `this.configs`，不碰限流与执行体），约 140 行，
-可搬到 `plugins/remote-models.ts`。但它对外是 `PluginHost` 的公开方法，而 `PluginHost` 被 15 个服务端文件引用
+「远端模型目录」是相对独立的一块（不碰限流与执行体），约 140 行。除 `this.remoteCache` 与 `this.configs` 外，
+它还依赖注册表刷新、`remoteGenerations` / `remotePulling` 两份并发状态与 `providerContext` 凭据上下文，
+搬走时要一并保留这些并发控制与凭据传递。可搬到 `plugins/remote-models.ts`。但它对外是 `PluginHost` 的公开方法，而 `PluginHost` 被 15 个服务端文件引用
 （含 `agent/tool-registry.ts`、`agent/plugin-caps.ts`、`runs/models.ts` 等），搬走要保留转发方法，多一层间接。
 
 结论：**同样可拆但不值得**，收益比 `runs.ts` 更小。
