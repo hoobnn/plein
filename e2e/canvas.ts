@@ -177,7 +177,12 @@ export async function addNode(page: Page, query: string, at = { x: 720, y: 450 }
     }
   }, at)
   await page.mouse.dblclick(blank.x, blank.y)
-  await page.getByRole('textbox', { name: '搜索节点', exact: true }).fill(query)
+  // 上一份添加菜单可能还在退场：只认正在使用的那一份，避免两个「搜索节点」输入框同时匹配。
+  const search = page
+    .locator('[role="dialog"][aria-label="添加节点"]:not([data-plein-exiting])')
+    .getByRole('textbox', { name: '搜索节点', exact: true })
+  await expect(search).toHaveCount(1)
+  await search.fill(query)
   await page.keyboard.press('Enter')
 }
 
