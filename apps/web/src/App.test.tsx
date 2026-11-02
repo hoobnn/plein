@@ -114,6 +114,8 @@ it('连接失败保留具体原因，重试有防重，恢复后仍留在原画�
 })
 
 it('会话接口自身 401 时停止自动读取，手动重试可恢复', async () => {
+  // 会话恢复与首次使用引导无关，避免懒加载的引导对话框抢先遮住首页标题。
+  localStorage.setItem('plein.welcome', '1')
   let reads = 0
   mockFetch((request) => {
     const url = new URL(request.url)
