@@ -9,7 +9,7 @@ import { readGuidePreferences } from './preferences'
 
 export function goalScopeOf(facts: GuideFacts, canvasId: string): ProductionGoalScope | undefined {
   if (!facts.board) return undefined
-  const selected = facts.board.production?.selection?.sequenceId
+  const selected = facts.board.production?.target?.sequenceId
   if ((selected && !facts.sequence) || (facts.sequences.length > 1 && !facts.sequence))
     return undefined
   return {

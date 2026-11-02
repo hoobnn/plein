@@ -37,7 +37,7 @@ const confirm = (doc: ReturnType<typeof openDoc>, id: string, canvasId = 'canvas
   })
 
 describe('production文档合同', () => {
-  it('公开production完整快照与selection、历史记录和未知嵌套值隔离，显式命令仍可撤销重做', () => {
+  it('公开production完整快照与target、历史记录和未知嵌套值隔离，显式命令仍可撤销重做', () => {
     const { doc, id } = board()
     confirm(doc, id)
     appendProductionDecision(doc, {
@@ -84,8 +84,8 @@ describe('production文档合同', () => {
     })
     expect(JSON.stringify(empty)).toBe(emptyJson)
     for (const read of [readProduction(map)!, doc.get(id)!.production!]) {
-      expect(Reflect.set(read, 'selection', { trialShotId: 'forged' })).toBe(false)
-      expect(Reflect.set(read.selection!, 'trialShotId', 'forged')).toBe(false)
+      expect(Reflect.set(read, 'target', { trialShotId: 'forged' })).toBe(false)
+      expect(Reflect.set(read.target!, 'trialShotId', 'forged')).toBe(false)
       expect(() => read.confirmations.pop()).toThrow(TypeError)
       expect(() => read.decisions.pop()).toThrow(TypeError)
       for (const record of [...read.confirmations, ...read.decisions]) {
@@ -110,16 +110,16 @@ describe('production文档合同', () => {
     doc.undo.redo()
     expect(currentProductionConfirmation(doc.get(id), 'canvas')?.id).toBe(current.id)
     expect(selectProductionTarget(doc, id, { trialShotId: undefined })).toBe(true)
-    expect(doc.get(id)!.production!.selection).toEqual({})
+    expect(doc.get(id)!.production!.target).toEqual({})
     doc.destroy()
   })
 
-  it('production创建和正式追加不保留调用方selection或scope未知嵌套对象的别名', () => {
+  it('production创建和正式追加不保留调用方target或scope未知嵌套对象的别名', () => {
     const { doc, id } = board()
     confirm(doc, id)
     const record = {
       ...clone(doc.get(id)!.production!),
-      selection: { trialShotId: 'shot-one', extra: { values: ['selection-original'] } },
+      target: { trialShotId: 'shot-one', extra: { values: ['target-original'] } },
     }
     const created = createElement(
       doc,
@@ -127,10 +127,10 @@ describe('production文档合同', () => {
     )
     const createdMap = productionMapOf(doc, created)!
     const createdBytes = Y.encodeStateAsUpdate(doc.ydoc)
-    record.selection.extra.values.push('outside')
+    record.target.extra.values.push('outside')
     record.confirmations[0]!.actor.userId = 'outside'
-    expect((createdMap.get('selection') as Y.Map<unknown>).get('extra')).toEqual({
-      values: ['selection-original'],
+    expect((createdMap.get('target') as Y.Map<unknown>).get('extra')).toEqual({
+      values: ['target-original'],
     })
     expect(doc.get(created)!.production!.confirmations[0]!.actor.userId).toBe('alice')
     expect(Y.encodeStateAsUpdate(doc.ydoc)).toEqual(createdBytes)
@@ -301,14 +301,14 @@ describe('production文档合同', () => {
     selectProductionTarget(doc, id, { trialShotId: 'shot-one', sequenceId: 'sequence' })
     expect(doc.undo.undoStack).toHaveLength(2)
     doc.undo.undo()
-    expect(doc.get(id)!.production!.selection).toEqual({})
+    expect(doc.get(id)!.production!.target).toEqual({})
     doc.undo.undo()
     expect(currentProductionConfirmation(doc.get(id), 'canvas')).toBeUndefined()
     doc.undo.redo()
     doc.undo.redo()
     const reopened = openDoc(doc.ydoc)
     expect(currentProductionConfirmation(reopened.get(id), 'canvas')).toEqual(saved)
-    expect(reopened.get(id)!.production!.selection!.trialShotId).toBe('shot-one')
+    expect(reopened.get(id)!.production!.target!.trialShotId).toBe('shot-one')
     reopened.destroy()
     doc.destroy()
   })
@@ -359,7 +359,7 @@ describe('production文档合同', () => {
     selectProductionTarget(doc, id, { trialShotId: 'shot-one', sequenceId: sequence })
     const [copy, copiedSequence] = duplicateElements(doc, [id, sequence])
     const production = doc.get(copy!)!.production!
-    expect(production.selection).toEqual({ trialShotId: 'shot-one', sequenceId: copiedSequence })
+    expect(production.target).toEqual({ trialShotId: 'shot-one', sequenceId: copiedSequence })
     expect(production.confirmations[0]).toMatchObject({
       historical: true,
       scope: { canvasId: 'canvas', boardId: id },
@@ -373,7 +373,7 @@ describe('production文档合同', () => {
     expect(currentProductionConfirmation(doc.get(id), 'canvas')).toBeUndefined()
     const destination = openDoc()
     const [imported] = importElements(destination, exportElements(doc, [id]))
-    expect(destination.get(imported!)!.production!.selection).toEqual({ trialShotId: 'shot-one' })
+    expect(destination.get(imported!)!.production!.target).toEqual({ trialShotId: 'shot-one' })
     expect(currentProductionDecisions(destination.get(imported!), 'canvas')).toEqual([])
     destination.destroy()
     doc.destroy()
@@ -386,7 +386,7 @@ describe('production文档合同', () => {
     const upgraded = createDoc(doc.ydoc, { schedule: () => {} })
     expect(upgraded.schemaVersion).toBe(SCHEMA_VERSION)
     expect(upgraded.get(id)!.production).toEqual({
-      selection: {},
+      target: {},
       confirmations: [],
       decisions: [],
     })
@@ -405,6 +405,46 @@ describe('production文档合同', () => {
       }),
     ).toThrow(ReadOnlyDocError)
     upgraded.destroy()
+    doc.destroy()
+  })
+
+  it('v11→v12 迁移：旧字段 selection 改名 target，含旧字段的文档打开后目标不丢', () => {
+    const { doc, id } = board()
+    selectProductionTarget(doc, id, { trialShotId: 'shot-one' })
+    // 把存储字段名改回旧名，模拟 v11 旧客户端写出的文档
+    const raw = new Y.Doc()
+    Y.applyUpdate(raw, Y.encodeStateAsUpdate(doc.ydoc))
+    const elements = raw.getMap<unknown>('elements')
+    const production = elements.get(id) as Y.Map<unknown>
+    production.set('selection', production.get('target'))
+    production.delete('target')
+    raw.getMap('meta').set('schemaVersion', 11)
+    doc.destroy()
+
+    const restored = openDoc(raw)
+    expect(restored.schemaVersion).toBe(SCHEMA_VERSION)
+    expect(restored.get(id)!.production!.target).toEqual({ trialShotId: 'shot-one' })
+    const map = productionMapOf(restored, id)!
+    expect(map.get('selection')).toBeUndefined()
+    expect(map.get('target')).toBeInstanceOf(Y.Map)
+    // 迁移后仍可写，且写入不复活旧字段
+    expect(selectProductionTarget(restored, id, { sequenceId: 'seq-2' })).toBe(true)
+    expect(map.get('selection')).toBeUndefined()
+    restored.destroy()
+  })
+
+  it('未迁移的旧 production 嵌套 Map 兼容读取，读取不写文档', () => {
+    const { doc, id } = board()
+    selectProductionTarget(doc, id, { trialShotId: 'shot-two' })
+    const map = productionMapOf(doc, id) as Y.Map<unknown>
+    const legacy = new Y.Map([...(map.get('target') as Y.Map<unknown>).entries()])
+    map.set('selection', legacy)
+    map.delete('target')
+    expect(readProduction(map)).toEqual({
+      target: { trialShotId: 'shot-two' },
+      confirmations: [],
+      decisions: [],
+    })
     doc.destroy()
   })
 })

@@ -260,8 +260,8 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
     )
       sequences.push(all[0]!)
   }
-  const sequenceId = board.production?.selection?.sequenceId ?? options.sequenceId
-  const trialShotId = board.production?.selection?.trialShotId ?? options.trialShotId
+  const sequenceId = board.production?.target?.sequenceId ?? options.sequenceId
+  const trialShotId = board.production?.target?.trialShotId ?? options.trialShotId
   const sequence = sequenceId
     ? sequences.find((el) => el.id === sequenceId)
     : sequences.length === 1

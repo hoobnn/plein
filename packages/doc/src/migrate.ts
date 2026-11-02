@@ -8,7 +8,7 @@ import { migrateStoryboardIdentity } from './migrate-storyboard'
 import { materializeSequenceV1 } from './domain/sequence-instances'
 
 /** 当前文档 schema 版本 */
-export const SCHEMA_VERSION = 11
+export const SCHEMA_VERSION = 12
 
 export interface MigrateResult {
   version: number
@@ -31,7 +31,25 @@ const MIGRATIONS: Migration[] = [
   v8ToV9,
   v9ToV10,
   v10ToV11,
+  v11ToV12,
 ]
+
+/** v11 → v12：production.selection 改名 target（共享的制作目标指针，不是运行时选中）。 */
+function v11ToV12(ydoc: Y.Doc) {
+  for (const value of ydoc.getMap<unknown>('elements').values()) {
+    if (!(value instanceof Y.Map)) continue
+    const production = value.get('production')
+    if (!(production instanceof Y.Map) || !production.has('selection')) continue
+    if (!(production.get('target') instanceof Y.Map)) {
+      const selection = production.get('selection')
+      production.set(
+        'target',
+        selection instanceof Y.Map ? new Y.Map([...selection.entries()]) : new Y.Map(),
+      )
+    }
+    production.delete('selection')
+  }
+}
 
 function v10ToV11(ydoc: Y.Doc) {
   const elements = ydoc.getMap<unknown>('elements')

@@ -305,7 +305,7 @@ function Guide({
               <p className="truncate text-xs text-ink-subtle">{facts.board.name ?? '分镜'}</p>
             )}
             {(facts.shots.length > 1 ||
-              ((facts.board.production?.selection?.trialShotId ?? preferences.trialShotId) &&
+              ((facts.board.production?.target?.trialShotId ?? preferences.trialShotId) &&
                 !facts.trialShot)) && (
               <label className="ui-field" htmlFor={`${canvasId}-guide-shot`}>
                 <span className="ui-label">先试哪一镜</span>
@@ -348,7 +348,7 @@ function Guide({
               </label>
             )}
             {(facts.sequences.length > 1 ||
-              ((facts.board.production?.selection?.sequenceId ?? preferences.sequenceId) &&
+              ((facts.board.production?.target?.sequenceId ?? preferences.sequenceId) &&
                 !facts.sequence &&
                 facts.sequences.length > 0)) && (
               <label className="ui-field" htmlFor={`${canvasId}-guide-sequence`}>

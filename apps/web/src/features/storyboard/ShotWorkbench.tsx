@@ -134,7 +134,7 @@ function Workbench({
   const [child, setChild] = useState<'controls' | 'sync' | 'pair' | null>(null)
   const [batch, setBatch] = useState<{ role: ShotRole; reuseExisting: boolean } | null>(null)
   const [sequenceId, setSequenceId] = useState(
-    () => engine.doc.get(boardId)?.production?.selection?.sequenceId ?? '',
+    () => engine.doc.get(boardId)?.production?.target?.sequenceId ?? '',
   )
   const [error, setError] = useState('')
   const active = useCallback(() => {

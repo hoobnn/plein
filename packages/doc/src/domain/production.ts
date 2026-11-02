@@ -53,12 +53,12 @@ export interface ProductionDecision {
   at: number
   historical?: boolean
 }
-export interface ProductionSelection {
+export interface ProductionTarget {
   trialShotId?: string
   sequenceId?: string
 }
 export interface ProductionRecord {
-  selection?: ProductionSelection
+  target?: ProductionTarget
   confirmations: ProductionConfirmation[]
   decisions: ProductionDecision[]
   goals?: ProductionGoalRevision[]
@@ -117,7 +117,7 @@ const ordered = <T extends { at: number; id: string }>(a: T, b: T) =>
 export function createProductionMap(record?: ProductionRecord): Y.Map<unknown> {
   const snapshot = record ? clone(record) : undefined
   const map = new Y.Map<unknown>()
-  map.set('selection', new Y.Map(Object.entries(snapshot?.selection ?? {})))
+  map.set('target', new Y.Map(Object.entries(snapshot?.target ?? {})))
   map.set(
     'confirmations',
     new Y.Map(
@@ -141,8 +141,9 @@ export function productionMapOf(doc: PleinDoc, boardId: string): Y.Map<unknown> 
 }
 export function readProduction(value: unknown): ProductionRecord | undefined {
   if (!(value instanceof Y.Map)) return undefined
-  const selection = value.get('selection')
-  const pick = selection instanceof Y.Map ? selection.toJSON() : {}
+  // 旧字段 selection 在 schema v11→v12 迁到 target；未迁移的嵌套 Y.Map 兼容读
+  const stored = value.get('target') ?? value.get('selection')
+  const pick = stored instanceof Y.Map ? stored.toJSON() : {}
   const confirmations = value.get('confirmations')
   const decisions = value.get('decisions')
   const goals = readProductionGoals(value.get('goals'))
@@ -160,7 +161,7 @@ export function readProduction(value: unknown): ProductionRecord | undefined {
       (continuity.subjects.length || continuity.plans.length || continuity.observations.length)
         ? { continuity }
         : {}),
-      selection: {
+      target: {
         ...(typeof pick.trialShotId === 'string' ? { trialShotId: pick.trialShotId } : {}),
         ...(typeof pick.sequenceId === 'string' ? { sequenceId: pick.sequenceId } : {}),
       },
@@ -238,7 +239,7 @@ function mutate(doc: PleinDoc, boardId: string, fn: (map: Y.Map<unknown>) => voi
   const map = productionMapOf(doc, boardId)
   if (
     !map ||
-    !['selection', 'confirmations', 'decisions'].every((key) => map.get(key) instanceof Y.Map)
+    !['target', 'confirmations', 'decisions'].every((key) => map.get(key) instanceof Y.Map)
   )
     return false
   doc.undo.stopCapturing()
@@ -252,16 +253,18 @@ function mutate(doc: PleinDoc, boardId: string, fn: (map: Y.Map<unknown>) => voi
 export function selectProductionTarget(
   doc: PleinDoc,
   boardId: string,
-  selection: ProductionSelection,
+  target: ProductionTarget,
 ): boolean {
   return mutate(doc, boardId, (map) => {
-    const target = map.get('selection') as Y.Map<unknown>
+    const stored = map.get('target') as Y.Map<unknown>
     for (const key of ['trialShotId', 'sequenceId'] as const) {
-      if (key in selection) {
-        if (selection[key] === undefined) target.delete(key)
-        else target.set(key, clone(selection[key]))
+      if (key in target) {
+        if (target[key] === undefined) stored.delete(key)
+        else stored.set(key, clone(target[key]))
       }
     }
+    // 写入只认 target；旧客户端并发写入的 selection 字段在这里一并清掉
+    if (map.get('selection') instanceof Y.Map) map.delete('selection')
   })
 }
 /** 同端连续操作即使同毫秒也保持追加顺序；跨端同时间由 ID 确定。 */
@@ -335,10 +338,10 @@ export function copyProduction(
     ...(record.goals?.length ? { goals: copyProductionGoals(record.goals, ids, canvasId) } : {}),
     ...(record.sourceMap ? { sourceMap: copySourceMap(record.sourceMap, ids) } : {}),
     ...(record.continuity ? { continuity: copyContinuity(record.continuity, ids) } : {}),
-    selection: {
-      ...(record.selection?.trialShotId ? { trialShotId: record.selection.trialShotId } : {}),
-      ...(record.selection?.sequenceId && ids.has(record.selection.sequenceId)
-        ? { sequenceId: ids.get(record.selection.sequenceId)! }
+    target: {
+      ...(record.target?.trialShotId ? { trialShotId: record.target.trialShotId } : {}),
+      ...(record.target?.sequenceId && ids.has(record.target.sequenceId)
+        ? { sequenceId: ids.get(record.target.sequenceId)! }
         : {}),
     },
     confirmations: record.confirmations.map((r) => ({ ...clone(r), historical: true })),
