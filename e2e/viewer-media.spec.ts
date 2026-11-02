@@ -221,7 +221,12 @@ test.describe('媒体浏览器冒烟', { tag: '@core' }, () => {
       )
       .toBe(true)
     // 同一 URL 可能复用已解码缓存，用受控错误事件检查两侧状态隔离。
-    await duplicate.dispatchEvent('error', { bubbles: false })
+    // 注入要排在真实 load 的处理之后：complete 为真只说明资源就位，load 任务可能
+    // 还在队列里，迟到的 onLoad 会把刚注入的失败态清掉（预期 1 个 alert 会变 0）。
+    // 派发排进页面自己的定时器队列，就一定晚于先入队的 load 任务。
+    await duplicate.evaluate((image: HTMLImageElement) => {
+      setTimeout(() => image.dispatchEvent(new Event('error', { bubbles: false })), 0)
+    })
     await expect(viewer.getByRole('alert')).toHaveCount(1)
     await expect(viewer.getByRole('alert')).toHaveText('候选 B加载失败')
     await expect
