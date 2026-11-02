@@ -45,8 +45,13 @@ for (const kind of ['video', 'audio'] as const) {
 
     const panel = page.getByRole('dialog', { name: '素材', exact: true })
     const preview = page.getByRole('dialog', { name: '素材预览', exact: true })
-    const open = async () => {
-      if (!(await panel.isVisible())) {
+    /**
+     * alreadyOpen：视频流程只关预览对话框，素材面板一直开着；音频流程关的是面板本身，
+     * 第二次要完整重开。面板被预览盖住时 Base UI 会把它标为隐藏，isVisible 探测
+     * 分不清「被盖住」和「没开」，所以由用例自己记录状态。
+     */
+    const open = async (alreadyOpen = false) => {
+      if (!alreadyOpen) {
         await page.getByRole('button', { name: '素材', exact: true }).click()
         await panel.getByRole('combobox', { name: '关联项目' }).click()
         await page.getByRole('option', { name: '全部项目', exact: true }).click()
@@ -107,8 +112,8 @@ for (const kind of ['video', 'audio'] as const) {
     await expect(surface).toHaveCount(0)
     await released(playing!)
 
-    // 重新打开后注入加载失败：报错的同时旧播放器也要释放
-    await open()
+    // 重新打开后注入加载失败：报错的同时旧播放器也要释放（视频只关了预览，面板还开着）
+    await open(kind === 'video')
     await play()
     const failing = await player.elementHandle()
     handles.push(failing!)
