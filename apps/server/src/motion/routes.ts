@@ -19,7 +19,11 @@ const PreviewRequest = z.object({ params: MotionParams, inputs: Inputs.default({
 const SourceManifest = z.object({
   schema: z.literal('plein.motion-source.v1'),
   templateVersion: z.literal(MOTION_TEMPLATE_VERSION),
-  engine: z.object({ name: z.literal('hyperframes'), version: z.literal(HYPERFRAMES_VERSION) }),
+  engine: z.object({
+    name: z.literal('hyperframes'),
+    // Restore validated template parameters, including projects archived before the runtime upgrade.
+    version: z.enum(['0.8.186', HYPERFRAMES_VERSION]),
+  }),
   params: MotionParams,
   inputs: z.record(z.string(), z.object({ assetId, mime: z.string() })).default({}),
 })

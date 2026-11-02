@@ -1,3 +1,4 @@
+import { HYPERFRAMES_VERSION } from './runtime'
 import { Readable } from 'node:stream'
 import { unlink } from 'node:fs/promises'
 import { describe, expect, it } from 'vite-plus/test'
@@ -78,65 +79,68 @@ describe('动态合成预览API与冻结源恢复', () => {
     }
   })
 
-  it('恢复候选冻结参数和旧输入为独立节点；原件物理缺失时明确拒绝', async () => {
-    const { server } = await bootServer()
-    const { id: canvasId, doc } = await createCanvas(server)
-    const image = await server.assets.ingest('local', Readable.from([Buffer.from('image')]), {
-      mime: 'image/png',
-      name: '原图.png',
-    })
-    const manifest = {
-      schema: 'plein.motion-source.v1',
-      templateVersion: 1,
-      engine: { name: 'hyperframes', version: '0.8.186' },
-      params: { ...params, template: 'character', title: '原版' },
-      inputs: { image: { assetId: image.id, mime: image.mime } },
-    }
-    const file = await server.assets.ingest(
-      'local',
-      Readable.from([Buffer.from(JSON.stringify(manifest))]),
-      { mime: 'application/json', name: 'source.json' },
-    )
-    const path = `/api/motion/source/${file.id}`
-    const source = await request(server, path)
-    expect(source.status).toBe(200)
-    expect(await source.json()).toMatchObject({
-      params: { title: '原版' },
-      inputs: { image: image.id },
-    })
-    const response = await request(server, `${path}/restore`, {
-      method: 'POST',
-      body: JSON.stringify({ canvasId }),
-    })
-    expect(response.status).toBe(201)
-    const { nodeId } = (await response.json()) as { nodeId: string }
-    expect(doc.get(nodeId)?.params).toMatchObject({ title: '原版', template: 'character' })
-    expect([...doc.edges()].filter((edge) => edge.to[0] === nodeId)).toHaveLength(1)
-    const count = doc.size
-    const incompatible = await server.assets.ingest(
-      'local',
-      Readable.from([Buffer.from(JSON.stringify({ ...manifest, templateVersion: 2 }))]),
-      { mime: 'application/json', name: 'future-source.json' },
-    )
-    expect((await request(server, `/api/motion/source/${incompatible.id}`)).status).toBe(404)
-    expect(
-      (
-        await request(server, `/api/motion/source/${incompatible.id}/restore`, {
-          method: 'POST',
-          body: JSON.stringify({ canvasId }),
-        })
-      ).status,
-    ).toBe(422)
-    expect(doc.size).toBe(count)
-    await unlink(server.assets.originalPath(image.id))
-    expect((await request(server, path)).status).toBe(404)
-    const failed = await request(server, `${path}/restore`, {
-      method: 'POST',
-      body: JSON.stringify({ canvasId }),
-    })
-    expect(failed.status).toBe(422)
-    expect(doc.size).toBe(count)
-  })
+  it.each(['0.8.186', HYPERFRAMES_VERSION])(
+    '恢复 %s 候选冻结参数和旧输入为独立节点；原件物理缺失时明确拒绝',
+    async (version) => {
+      const { server } = await bootServer()
+      const { id: canvasId, doc } = await createCanvas(server)
+      const image = await server.assets.ingest('local', Readable.from([Buffer.from('image')]), {
+        mime: 'image/png',
+        name: '原图.png',
+      })
+      const manifest = {
+        schema: 'plein.motion-source.v1',
+        templateVersion: 1,
+        engine: { name: 'hyperframes', version },
+        params: { ...params, template: 'character', title: '原版' },
+        inputs: { image: { assetId: image.id, mime: image.mime } },
+      }
+      const file = await server.assets.ingest(
+        'local',
+        Readable.from([Buffer.from(JSON.stringify(manifest))]),
+        { mime: 'application/json', name: 'source.json' },
+      )
+      const path = `/api/motion/source/${file.id}`
+      const source = await request(server, path)
+      expect(source.status).toBe(200)
+      expect(await source.json()).toMatchObject({
+        params: { title: '原版' },
+        inputs: { image: image.id },
+      })
+      const response = await request(server, `${path}/restore`, {
+        method: 'POST',
+        body: JSON.stringify({ canvasId }),
+      })
+      expect(response.status).toBe(201)
+      const { nodeId } = (await response.json()) as { nodeId: string }
+      expect(doc.get(nodeId)?.params).toMatchObject({ title: '原版', template: 'character' })
+      expect([...doc.edges()].filter((edge) => edge.to[0] === nodeId)).toHaveLength(1)
+      const count = doc.size
+      const incompatible = await server.assets.ingest(
+        'local',
+        Readable.from([Buffer.from(JSON.stringify({ ...manifest, templateVersion: 2 }))]),
+        { mime: 'application/json', name: 'future-source.json' },
+      )
+      expect((await request(server, `/api/motion/source/${incompatible.id}`)).status).toBe(404)
+      expect(
+        (
+          await request(server, `/api/motion/source/${incompatible.id}/restore`, {
+            method: 'POST',
+            body: JSON.stringify({ canvasId }),
+          })
+        ).status,
+      ).toBe(422)
+      expect(doc.size).toBe(count)
+      await unlink(server.assets.originalPath(image.id))
+      expect((await request(server, path)).status).toBe(404)
+      const failed = await request(server, `${path}/restore`, {
+        method: 'POST',
+        body: JSON.stringify({ canvasId }),
+      })
+      expect(failed.status).toBe(422)
+      expect(doc.size).toBe(count)
+    },
+  )
 })
 
 it('受控字幕API只接受cue参数，透明会话沿用相同释放合同', async () => {

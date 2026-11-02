@@ -12,7 +12,7 @@ import { runMotionWorker } from './child'
 import { motionRendererIdentity } from './identity'
 import { probeMotionRuntime } from './probe'
 import { abortError, motionEnvironment, MotionError } from './process'
-import { HYPERFRAMES_VERSION, motionRuntimeAssets } from './runtime'
+import { GSAP_VERSION, FONT_VERSION, HYPERFRAMES_VERSION, motionRuntimeAssets } from './runtime'
 import { assertLocalMotionHtml } from './security'
 import type { MotionRenderOptions } from './render'
 
@@ -99,8 +99,8 @@ async function buildSource(
         {
           producer: HYPERFRAMES_VERSION,
           sdk: HYPERFRAMES_VERSION,
-          gsap: '3.14.2',
-          font: '@fontsource/noto-sans-sc@5.2.8',
+          gsap: GSAP_VERSION,
+          font: `@fontsource/noto-sans-sc@${FONT_VERSION}`,
         },
         null,
         2,

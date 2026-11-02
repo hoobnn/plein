@@ -1,6 +1,6 @@
 # 动态合成
 
-Plein 的内置 `plein/motion` 节点使用本机合成渲染 SDK 渲染 HTML 动态合成，输出 MP4，并保存对应的源工程 ZIP、来源清单和原素材依赖。当前固定使用 `@hyperframes/producer`、`@hyperframes/sdk`、`@hyperframes/player` 0.8.186；渲染参数是 30 fps、`standard`、MP4、`strict`，单个 worker 内 `workers: 1`。
+Plein 的内置 `plein/motion` 节点使用本机合成渲染 SDK 渲染 HTML 动态合成，输出 MP4，并保存对应的源工程 ZIP、来源清单和原素材依赖。当前固定使用 `@hyperframes/producer`、`@hyperframes/sdk`、`@hyperframes/player` 0.8.218；渲染参数是 30 fps、`standard`、MP4、`strict`，单个 worker 内 `workers: 1`。
 
 模板与参数合同见 [motion.ts](../../packages/nodes/src/motion.ts)，执行与物化见 [render.ts](../../apps/server/src/motion/render.ts)。
 
@@ -44,7 +44,7 @@ pnpm dev
 
 ## 离线资源与许可
 
-`motionRuntimeAssets()` 从安装包依赖定位 GSAP 3.14.2 与 `@fontsource/noto-sans-sc` 5.2.8。项目物化 `vendor/gsap.min.js`、字体 CSS、400/700 两种字重的全部 WOFF2 子集及许可说明；当前锁定版本共有 202 个 WOFF2 子集。字体 CSS 保留完整 `unicode-range`，移除重复 WOFF fallback，与 stage 只复制 WOFF2 的规则一致。
+`motionRuntimeAssets()` 从安装包依赖定位 GSAP 3.15.0 与 `@fontsource/noto-sans-sc` 5.3.1。项目物化 `vendor/gsap.min.js`、字体 CSS、400/700 两种字重的全部 WOFF2 子集及许可说明；当前锁定版本共有 202 个 WOFF2 子集。字体 CSS 保留完整 `unicode-range`，移除重复 WOFF fallback，与 stage 只复制 WOFF2 的规则一致。
 
 源工程中的素材、脚本与字体使用本地相对路径。DOM 检查分别审查资源属性、CSS、script 执行上下文，拒绝外部 URL、绝对路径、目录越界和联网脚本；普通转义标题文字中的 `fetch(...)` 或 `url(...)` 不会按代码执行。此合同只接受受限模板与结构化覆盖，不是任意 HTML/JavaScript 的执行沙箱。
 
