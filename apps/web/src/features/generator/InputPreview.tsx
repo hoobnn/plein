@@ -1,3 +1,4 @@
+import { Tooltip } from '@base-ui/react/tooltip'
 import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement, setParam } from '@plein/doc'
 import type { InputIssue, InputRef, InputRefKind, PreparedInput } from '@plein/protocol'
@@ -150,7 +151,37 @@ function previewSummary(p: PreparedInput) {
   if (videos) parts.push(`${videos} 段参考视频`)
   if (audios) parts.push(`${audios} 段参考音频`)
   if (p.voice) parts.push(`音色 ${p.voice.voiceId}`)
-  return parts.join(' · ')
+  return parts.map((part, index) => (
+    <span key={part}>
+      {index > 0 && ' · '}
+      {part}
+      {index === 1 && p.prompt !== undefined && (
+        <Tooltip.Root>
+          <Tooltip.Trigger
+            // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- 说明标记需可聚焦，避免在展开按钮中嵌套 button。
+            render={<span role="note" tabIndex={0} />}
+            aria-label="提示词字符说明"
+            className="ml-1 inline-flex align-middle text-ink-subtle outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            <Icon name="info" size={12} />
+          </Tooltip.Trigger>
+          <Tooltip.Portal>
+            <Tooltip.Positioner sideOffset={6} className="z-80">
+              <Tooltip.Popup
+                role="tooltip"
+                className="ui-tooltip max-w-[min(280px,calc(100vw-16px))] break-words"
+              >
+                最终提示词包含节点正文、上游文本、参考图对应说明及分隔符，按字符计数；不会自动追加引用卡片的文字设定。
+                {p.promptLimit !== undefined && `合计不得超过 ${p.promptLimit} 字符。`}
+              </Tooltip.Popup>
+            </Tooltip.Positioner>
+          </Tooltip.Portal>
+        </Tooltip.Root>
+      )}
+    </span>
+  ))
 }
 
 /**
@@ -233,12 +264,6 @@ export function InputPreview({
       aria-busy={loading}
     >
       {status}
-      {data.prompt !== undefined && (
-        <p className="text-xs text-ink-subtle">
-          最终提示词包含节点正文、上游文本、参考图对应说明及分隔符，按字符计数；不会自动追加引用卡片的文字设定。
-          {data.promptLimit !== undefined && `合计不得超过 ${data.promptLimit} 字符。`}
-        </p>
-      )}
       <button
         type="button"
         onClick={() => setOpen(!open)}
