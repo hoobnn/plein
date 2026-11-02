@@ -3,7 +3,8 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { m, MotionConfig } from 'motion/react'
 import { expect, it } from 'vite-plus/test'
-import { renderApp, screen, waitFor } from '../testing/render'
+import { mockMatchMedia } from '../testing/browser'
+import { act, renderApp, screen, waitFor } from '../testing/render'
 import { AnimatePresence, fadeVariants, useOverlayMotion } from './motion'
 
 function OverlayContent() {
@@ -17,6 +18,15 @@ function Overlay({ open }: { open: boolean }) {
 it('减少动态效果时零时长退场并卸载', async () => {
   const { rerender } = renderApp(<Overlay open />, { dialogs: false })
   await screen.findByTestId('overlay')
+  rerender(<Overlay open={false} />)
+  expect(screen.queryByTestId('overlay')).toBeNull()
+})
+
+it('运行中开启减少动态效果后关闭会同步卸载', async () => {
+  const media = mockMatchMedia(() => false)
+  const { rerender } = renderApp(<Overlay open />, { dialogs: false })
+  await screen.findByTestId('overlay')
+  act(() => media.set('(prefers-reduced-motion: reduce)', true))
   rerender(<Overlay open={false} />)
   expect(screen.queryByTestId('overlay')).toBeNull()
 })

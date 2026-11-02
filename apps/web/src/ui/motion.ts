@@ -1,11 +1,11 @@
 import {
   AnimatePresence as MotionAnimate,
   type AnimatePresenceProps,
+  MotionConfigContext,
   useIsPresent,
-  useReducedMotionConfig,
   type Variants,
 } from 'motion/react'
-import { createElement, type ReactNode } from 'react'
+import { createElement, type ReactNode, useContext, useSyncExternalStore } from 'react'
 
 /**
  * 与 tokens.css 一一对应：spring = cubic-bezier(0.22, 1, 0.36, 1)，
@@ -148,9 +148,24 @@ export const fadeVariants: Variants = {
   },
 }
 
+const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)'
+const subscribeReducedMotion = (notify: () => void) => {
+  const query = window.matchMedia(REDUCED_MOTION_QUERY)
+  query.addEventListener('change', notify)
+  return () => query.removeEventListener('change', notify)
+}
+const readReducedMotion = () => window.matchMedia(REDUCED_MOTION_QUERY).matches
+
+/** Motion 自己只缓存首次读取值；关闭时必须使用最新的系统偏好。 */
+function useLatestReducedMotion() {
+  const { reducedMotion } = useContext(MotionConfigContext)
+  const system = useSyncExternalStore(subscribeReducedMotion, readReducedMotion, () => false)
+  return reducedMotion === 'never' ? false : reducedMotion === 'always' || system
+}
+
 /** 减少动态效果时绕过保留队列，关闭即卸载；其余情况交给 Motion 等待 exit。 */
 export function AnimatePresence(props: AnimatePresenceProps & { children?: ReactNode }) {
-  const reduced = useReducedMotionConfig()
+  const reduced = useLatestReducedMotion()
   return reduced ? props.children : createElement(MotionAnimate, props)
 }
 
