@@ -189,10 +189,9 @@ describe('approvalFor 对照：各能力的确认策略', () => {
 
   it('run_node：always 都问；rules 里视频要问、一轮跑满要问，其它不问', () => {
     expect(ask('auto', get('run_node'), { id: unit.img })).toBeNull()
-    // 声明不感知审批模式：非视频无次数压力时声明返回 null，always 回退统一说法
     expect(ask('always', get('run_node'), { id: unit.img })).toEqual({
-      reason: '运行节点',
-      ids: [],
+      reason: '运行 「图」',
+      ids: [unit.img],
     })
     expect(ask('rules', get('run_node'), { id: unit.img })).toBeNull()
     expect(ask('rules', get('run_node'), { id: unit.img }, { runCount: RUN_LIMIT - 1 })).toBeNull()
@@ -209,9 +208,9 @@ describe('approvalFor 对照：各能力的确认策略', () => {
       reason: '生成视频 「视频」（较贵、较慢）',
       ids: [unit.vid],
     })
-    // always 下声明值同样生效：视频用声明的说法
+    // always 不带「较贵、较慢」的说法
     expect(ask('always', get('run_node'), { id: unit.vid })).toEqual({
-      reason: '生成视频 「视频」（较贵、较慢）',
+      reason: '运行 「视频」',
       ids: [unit.vid],
     })
   })

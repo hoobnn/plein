@@ -125,7 +125,8 @@ export interface CapabilityDefinition<
   /**
    * 确认的说法，以及显式放行（exempt）：返回 { reason, ids } 或 { exempt } = 要确认 / 放行，
    * 两种审批模式同样生效；返回 null = rules 模式下不需要确认（always 下回退为统一说法）。
-   * 通用回退（always 都问；rules 里破坏性的、插件能力花钱或删东西的问）在调度器，声明关不掉。
+   * extra.mode 只读，用于生成说明文案；是否必须确认由调度层兜底，声明关不掉通用回退
+   * （always 都问；rules 里破坏性的、插件能力花钱或删东西的问）。
    */
   approval?: (
     input: z.output<S>,

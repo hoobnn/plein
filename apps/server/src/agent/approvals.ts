@@ -38,7 +38,7 @@ export function approvalFor(
   const effect = typeof cap.effect === 'function' ? cap.effect(input, ctx) : cap.effect
   if (effect !== 'run' && effect !== 'destructive') return null
   if (cap.approval) {
-    const declared = cap.approval(input, ctx, { changes })
+    const declared = cap.approval(input, ctx, { mode, changes })
     if (declared) return 'exempt' in declared ? null : declared
     if (mode === 'always') return { reason: cap.title, ids: [] }
     // 插件能力声明了也关不掉 rules 下的通用回退：宿主不知道它具体做什么
