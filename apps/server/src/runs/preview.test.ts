@@ -2118,18 +2118,20 @@ it('不收参考图的节点也给出 sent / unsent：@ 有图的卡明确说明
     }),
   ])
   expect(connected.inputs.images?.map((value) => value.assetId)).toEqual([asset('b')])
-  const seen: Array<Record<string, any>> = []
+  const seen: Array<{ messages?: Array<{ content: unknown }> }> = []
   const submit = mockProvider.submit
   vi.spyOn(mockProvider, 'submit').mockImplementation(async (req, ctx) => {
-    seen.push(req.input as Record<string, any>)
+    seen.push(req.input as { messages?: Array<{ content: unknown }> })
     return submit.call(mockProvider, req, ctx)
   })
   const res = await run(server, id, llm, connected.inputHash)
   expect(res.status).toBe(202)
   const { runId } = (await res.json()) as { runId: string }
   expect(await server.runs.wait(runId)).toBe('succeeded')
-  const messages = seen[0]!['messages'] as Array<{ content: unknown }>
-  const content = messages.at(-1)!.content as Array<{ type: string; image?: { assetId: string } }>
+  const content = seen[0]!.messages?.at(-1)!.content as Array<{
+    type: string
+    image?: { assetId: string }
+  }>
   expect(
     content.filter((part) => part.type === 'image').map((part) => part.image?.assetId),
   ).toEqual([asset('b')])
