@@ -1,27 +1,22 @@
 import { API, CreateCanvas, UpdateCanvas } from '@plein/protocol'
-import { and, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import type { AuthEnv } from '../auth'
 import {
-  canvasColumns,
+  deleteCanvas,
+  getCanvas,
   insertCanvas,
   insertProject,
   listCanvases,
   ownsProject,
   toCanvas,
+  updateCanvasTitle,
 } from '../storage/canvases'
 import type { DB } from '../storage/db'
-import { canvases } from '../storage/schema'
 import type { Previewer } from '../storage/previews'
 import type { Rooms } from '../sync/rooms'
 
 export function canvasRoutes(db: DB, rooms: Rooms, preview: Previewer) {
-  const get = (owner: string, id: string) =>
-    db
-      .select(canvasColumns)
-      .from(canvases)
-      .where(and(eq(canvases.id, id), eq(canvases.owner_id, owner)))
-      .get()
+  const get = (owner: string, id: string) => getCanvas(db, owner, id)
   const notFound = { error: 'not_found', message: '画布不存在' }
 
   return new Hono<AuthEnv>()
@@ -50,20 +45,14 @@ export function canvasRoutes(db: DB, rooms: Rooms, preview: Previewer) {
       const body = UpdateCanvas.safeParse(await c.req.json().catch(() => null))
       if (!body.success) return c.json({ error: 'invalid', message: body.error.message }, 400)
       const id = c.req.param('id')
-      const res = db
-        .update(canvases)
-        .set({ title: body.data.title, updated_at: Date.now() })
-        .where(and(eq(canvases.id, id), eq(canvases.owner_id, c.var.principal.id)))
-        .run()
-      return res.changes ? c.json(toCanvas(get(c.var.principal.id, id)!)) : c.json(notFound, 404)
+      const owner = c.var.principal.id
+      const changed = updateCanvasTitle(db, owner, id, body.data.title)
+      return changed ? c.json(toCanvas(get(owner, id)!)) : c.json(notFound, 404)
     })
     .delete('/api/canvases/:id', (c) => {
       const id = c.req.param('id')
-      const res = db
-        .delete(canvases)
-        .where(and(eq(canvases.id, id), eq(canvases.owner_id, c.var.principal.id)))
-        .run()
-      if (!res.changes) return c.json(notFound, 404)
+      const deleted = deleteCanvas(db, c.var.principal.id, id)
+      if (!deleted) return c.json(notFound, 404)
       rooms.drop(id)
       return c.body(null, 204)
     })
