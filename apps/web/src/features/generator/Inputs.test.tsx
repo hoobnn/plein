@@ -29,17 +29,30 @@ describe('多模态参考名称', () => {
       unsent?: (sources: string[], assets: string[]) => PreparedInput['unsent']
       params?: Record<string, unknown>
       requirable?: boolean
+      capability?: string
+      noMediaPorts?: boolean
     } = {},
   ) {
     doc = openDoc()
+    const text = options.capability === 'text.chat'
+    const type = text ? 'plein/llm' : 'plein/video'
     const node = {
-      type: 'plein/video',
-      capability: 'video.generate',
+      type,
+      capability: options.capability ?? 'video.generate',
       defaults: {},
       inputs: [
-        { id: 'images', label: '图片', type: 'image', multiple: true },
-        { id: 'videos', label: '视频', type: 'video', multiple: true },
-        { id: 'audios', label: '音频', type: 'audio', multiple: true },
+        ...(text ? [{ id: 'prompt', label: '输入', type: 'text', multiple: true }] : []),
+        ...(options.noMediaPorts
+          ? []
+          : [
+              { id: 'images', label: '图片', type: 'image', multiple: true },
+              ...(text
+                ? []
+                : [
+                    { id: 'videos', label: '视频', type: 'video', multiple: true },
+                    { id: 'audios', label: '音频', type: 'audio', multiple: true },
+                  ]),
+            ]),
       ],
       outputs: [],
       ...(options.requirable
@@ -48,7 +61,7 @@ describe('多模态参考名称', () => {
     } as unknown as NodeInfo
     const id = createElement(doc, {
       kind: 'node',
-      nodeType: 'plein/video',
+      nodeType: type,
       ports: { inputs: node.inputs, outputs: [] },
       x: 0,
       y: 0,
@@ -75,7 +88,7 @@ describe('多模态参考名称', () => {
       })
       sources.push(source)
       assets.push(`asset${i}`)
-      if (options.connected !== false)
+      if (options.connected !== false && node.inputs.some((p) => p.type === kind))
         connect(
           doc,
           [source, kind],
@@ -158,6 +171,110 @@ describe('多模态参考名称', () => {
     ])
     expect(screen.getByRole('button', { name: '管理参考 3' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '管理参考 4' })).toBeTruthy()
+  })
+
+  it('服务端标明首尾帧用途时徽标写「首帧」「尾帧」，不显示平台编号', () => {
+    setup({
+      sent: (sources, assets) => [
+        {
+          index: 1,
+          token: '@image1',
+          role: 'firstFrame',
+          assetId: assets[0]!,
+          elementId: sources[0]!,
+          name: '首帧图',
+          origins: ['edge'],
+        },
+        {
+          index: 2,
+          token: '@image2',
+          role: 'lastFrame',
+          assetId: assets[1]!,
+          elementId: sources[1]!,
+          name: '尾帧图',
+          origins: ['edge'],
+        },
+      ],
+    })
+    const groups = within(screen.getByLabelText('实际送入的参考素材')).getAllByRole('group')
+    const badges = groups.slice(0, 2).map((group) => group.querySelector('[data-token]')!)
+    expect(badges.map((badge) => badge.textContent)).toEqual(['首帧', '尾帧'])
+    // token 仍保留原值，只是不再显示成平台编号
+    expect(badges.map((badge) => badge.getAttribute('data-token'))).toEqual(['@image1', '@image2'])
+    expect(screen.queryByText('@image1')).toBeNull()
+    expect(screen.queryByText('@image2')).toBeNull()
+  })
+
+  it.each([
+    ['image', ['首帧', '图片2']],
+    ['lastFrame', ['尾帧', '图片2']],
+    ['frames', ['首帧', '尾帧']],
+  ] as const)('服务端没给 sent 时 %s 模式按图片位置标注首尾帧', (mode, expected) => {
+    setup({ params: { mode } })
+    const groups = within(screen.getByLabelText('实际送入的参考素材')).getAllByRole('group')
+    const images = groups
+      .filter((group) => ['asset0', 'asset1'].includes(group.getAttribute('data-asset-id')!))
+      .map((group) => group.querySelector('[data-token]')!)
+    expect(images.map((badge) => badge.textContent)).toEqual(expected)
+    expect(images.every((badge) => badge.getAttribute('data-token') !== 'image1')).toBe(true)
+  })
+
+  it.each([
+    ['minimax/api:MiniMax-H3', ['图片1', '图片2']],
+    ['volc/ark:doubao-seedance-2-0-260128', ['@image1', '@image2']],
+  ] as const)('服务端没给 sent 时图片徽标沿用平台编号（%s）', (model, expected) => {
+    setup({ model })
+    const groups = within(screen.getByLabelText('实际送入的参考素材')).getAllByRole('group')
+    const images = groups
+      .filter((group) => ['asset0', 'asset1'].includes(group.getAttribute('data-asset-id')!))
+      .map((group) => group.querySelector('[data-token]')!)
+    expect(images.map((badge) => badge.textContent)).toEqual(expected)
+    expect(images.map((badge) => badge.getAttribute('data-token'))).toEqual(expected)
+  })
+
+  it('文本节点按服务端清单显示参考区，并列出不支持的 @ 引用', () => {
+    setup({
+      capability: 'text.chat',
+      sent: () => [],
+      unsent: (sources, assets) => [
+        {
+          elementId: sources[0]!,
+          assetId: assets[0]!,
+          name: '林夏',
+          reason: 'unsupported',
+          message: '当前节点不送参考图，仅保留引用名称',
+          origins: ['mention'],
+        },
+      ],
+    })
+    expect(screen.getByText(/送入 0 项/)).toBeTruthy()
+    // 服务端明确给了空 sent 时不能退回按连线显示，否则等于谎报已送入
+    expect(
+      within(screen.getByLabelText('实际送入的参考素材')).queryAllByRole('group'),
+    ).toHaveLength(0)
+    expect(screen.getByText('未送入 · 1')).toBeTruthy()
+    expect(screen.getByText('当前节点不送参考图，仅保留引用名称')).toBeTruthy()
+  })
+
+  it('没有媒体端口的节点也显示服务端报告的未送入引用', () => {
+    setup({
+      capability: 'text.chat',
+      noMediaPorts: true,
+      sent: () => [],
+      unsent: (sources, assets) => [
+        {
+          elementId: sources[0]!,
+          assetId: assets[0]!,
+          name: '林夏',
+          reason: 'unsupported',
+          message: '当前节点不送参考图，仅保留引用名称',
+          origins: ['mention'],
+        },
+      ],
+    })
+    expect(screen.getByLabelText('参考素材')).toBeTruthy()
+    expect(screen.getByText('未送入 · 1')).toBeTruthy()
+    expect(screen.getByText('当前节点不送参考图，仅保留引用名称')).toBeTruthy()
   })
 
   it('已删除元素的残留 id 不在参考面板上显示为必需', async () => {

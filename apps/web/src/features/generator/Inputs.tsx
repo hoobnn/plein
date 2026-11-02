@@ -18,7 +18,12 @@ import type {
 } from '@plein/protocol'
 import { DndContext, type DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
-import { parseModelRef, referenceLabelStyle, type ReferenceIdentity } from '@plein/plugin-sdk'
+import {
+  parseModelRef,
+  referenceLabelStyle,
+  referenceMediaLabel,
+  type ReferenceIdentity,
+} from '@plein/plugin-sdk'
 import { filterReferenceCandidates, referenceCandidates } from './referenceCandidates'
 import { referenceMedia, submittedMedia } from './submittedMedia'
 import { bindReferenceName, referenceName, replaceReferenceName } from './referenceNames'
@@ -48,9 +53,15 @@ const ORIGIN_LABEL: Record<InputReferenceOrigin, string> = {
   binding: '绑定',
 }
 
+/** 视频非参考模式下图片的用途；这时提示词里没有平台编号。 */
+const FRAME_ROLE_LABEL: Record<NonNullable<InputSentReference['role']>, string> = {
+  firstFrame: '首帧',
+  lastFrame: '尾帧',
+}
+
 /**
- * 视频 / 音频在最终提示词里的编号写法：MiniMax 写「视频1」，方舟系保留 @video1。
- * 图片的编号由服务端 sent 直接给出，不在这里重算。
+ * 图片 / 视频 / 音频在最终提示词里的编号写法：图片节点写「图1」，
+ * MiniMax 写「图片1」「视频1」，方舟系写「@image1」「@video1」。
  */
 function mediaToken(
   node: NodeInfo,
@@ -58,13 +69,11 @@ function mediaToken(
   type: 'image' | 'video' | 'audio',
   index: number,
 ) {
-  if (type === 'image') return `图${index}`
-  if (
-    referenceLabelStyle(node.capability, parseModelRef(String(params?.model ?? ''))?.provider) ===
-    'minimax-video'
+  return referenceMediaLabel(
+    referenceLabelStyle(node.capability, parseModelRef(String(params?.model ?? ''))?.provider),
+    type,
+    index,
   )
-    return `${type === 'video' ? '视频' : '音频'}${index}`
-  return `@${type}${index}`
 }
 
 /**
@@ -226,6 +235,15 @@ export function Inputs({
   }
   // 生成视频的图片按模式标注用途：图生视频第 1 张是首帧，首尾帧第 1、2 张分别是首帧、尾帧
   const mode = node.capability === 'video.generate' ? el.params?.mode : undefined
+  /** 非参考模式的视频里，图片按位置表示首帧 / 尾帧；这些位置没有平台编号。 */
+  const frameRole = (position: number): InputSentReference['role'] => {
+    if (!mode) return undefined
+    if (mode === 'image') return position === 1 ? 'firstFrame' : undefined
+    if (mode === 'lastFrame') return position === 1 ? 'lastFrame' : undefined
+    if (mode === 'frames')
+      return position === 1 ? 'firstFrame' : position === 2 ? 'lastFrame' : undefined
+    return undefined
+  }
   // ── 顶部参考素材：只认服务端给的送入清单，编号与最终提示词一致 ──
   const upsList = media.flatMap((port) => (ups.get(port.id) ?? []).map((u) => ({ port, u })))
   /** 找到送入这张图的那条连线；只有连线来的素材才能排序、替换、移除。 */
@@ -261,10 +279,12 @@ export function Inputs({
     engine.doc.undo.stopCapturing()
   }
   /** 服务端还没给清单时（例如旧记录），退回按连线顺序显示。 */
-  const fallbackSent = (): InputSentReference[] =>
-    upsList.flatMap(({ port, u }, index) => {
+  const fallbackSent = (): InputSentReference[] => {
+    let imageCount = 0
+    return upsList.flatMap(({ port, u }, index) => {
       const v = u.value
       if (!v || !('assetId' in v)) return []
+      const position = v.type === 'image' ? ++imageCount : undefined
       const sent = submitted?.find(
         (item) =>
           item.port === port.id &&
@@ -272,13 +292,14 @@ export function Inputs({
           item.assetId === v.assetId &&
           (!item.source || item.source === u.source.id),
       )
+      const number = sent?.index ?? position ?? index + 1
+      // 首尾帧模式下按图片位置标用途；服务端给了 sent 时按它给出的顺序。
+      const role = position ? frameRole(sent?.index ?? position) : undefined
       return [
         {
-          index: sent?.index ?? index + 1,
-          token:
-            v.type === 'image'
-              ? (sent?.token ?? `图${sent?.index ?? index + 1}`)
-              : mediaToken(node, el.params, v.type, sent?.index ?? index + 1),
+          index: number,
+          token: mediaToken(node, el.params, v.type, number),
+          ...(role ? { role } : {}),
           assetId: v.assetId,
           kind: v.type,
           elementId: u.source.id,
@@ -287,6 +308,7 @@ export function Inputs({
         },
       ]
     })
+  }
   /**
    * 服务端 sent 只包含图片。参考视频 / 音频同样必须出现在唯一的顶部列表里，
    * 按媒体类型各自编号（与最终提示词一致），并从实际输入补进来。
@@ -408,7 +430,9 @@ export function Inputs({
   const candidates = filterReferenceCandidates(referenceCandidates(engine, el, media), canvasQuery)
   const hasTiles = tiles.length > 0
   const hasAdds = media.some((port) => port.multiple || !(ups.get(port.id) ?? []).length)
-  if (!hasTiles && !hasAdds && !texts.length && !trailing && !toolbar) return null
+  // 没有媒体端口 / 连线的节点也要显示服务端报告的未送入项（例如 @ 的参考图不被支持）。
+  if (!hasTiles && !hasAdds && !texts.length && !unsentItems.length && !trailing && !toolbar)
+    return null
   return (
     // 拖拽换序的上下文：主行与未送入折叠区共用，放下才写文档，Esc 取消不写
     <DndContext sensors={sensors} onDragEnd={onDragEnd}>
@@ -859,6 +883,8 @@ function ReferenceTile({
         ? null
         : assetUrls.variant(item.assetId, 'thumb-256')
   const name = item.name
+  // 首尾帧按用途显示，不显示平台参考编号（这时提示词不编号）。
+  const badge = item.role ? FRAME_ROLE_LABEL[item.role] : item.token
   const origin = item.origins.map((o) => ORIGIN_LABEL[o]).filter(Boolean)
   const previewLabel = up
     ? v
@@ -875,7 +901,7 @@ function ReferenceTile({
       role="group"
       aria-label={`参考 ${index}：${name}`}
       data-asset-id={item.assetId}
-      title={`${item.token} · ${name}`}
+      title={`${badge} · ${name}`}
       style={{
         transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
         transition,
@@ -910,9 +936,10 @@ function ReferenceTile({
         </button>
         <span
           data-token={item.token}
+          data-role={item.role}
           className="pointer-events-none absolute top-0.5 left-0.5 z-10 rounded bg-black/65 px-1 py-px text-2xs font-medium whitespace-nowrap text-white tabular-nums"
         >
-          {item.token}
+          {badge}
         </span>
         {(onRemove || onReplace || onLocate || (canRequire && onToggleRequired)) && (
           <button
