@@ -35,3 +35,18 @@ test('重名与无效序号保持消歧警示，不把任一目标误标为已�
   expect(parts[1]?.id).toBeUndefined()
   expect(parts[2]).toMatchObject({ id: 'b', warning: undefined })
 })
+
+test('名称绑定高亮完整文件名，断开输入标为失效，刷新期间保留待确认状态', () => {
+  const name = '田野 2026.png'
+  const identity = { type: 'image' as const, source: 'generated', assetId: 'asset' }
+  const bindings = { [`referenceNameBinding:${encodeURIComponent(name)}:generated`]: identity }
+  const text = `参考 @${name} 的背景，再参考 @${name}`
+  const referenced = (items: (typeof identity)[], pending = false) =>
+    mentionParts(text, [], { bindings, items, pending }).filter((part) => part.mention)
+  expect(referenced([identity])).toEqual([
+    expect.objectContaining({ text: `@${name}`, id: 'generated', missing: undefined }),
+    expect.objectContaining({ text: `@${name}`, id: 'generated', missing: undefined }),
+  ])
+  expect(referenced([]).every((part) => part.missing)).toBe(true)
+  expect(referenced([], true).every((part) => !part.missing && part.warning)).toBe(true)
+})

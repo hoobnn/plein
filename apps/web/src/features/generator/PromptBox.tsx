@@ -25,7 +25,7 @@ import { Popover } from '../../ui/Popover'
 import { mentionParts } from '../../canvas/mentionText'
 import { findNode, mentionTargets, targetImages, upstreams } from '../../canvas/nodes'
 import { useCatalog } from '../../stores/catalog'
-import { boundReferenceTokens, type ReferenceIdentity } from '@plein/plugin-sdk'
+import { boundReferenceTokens, referenceBindings, type ReferenceIdentity } from '@plein/plugin-sdk'
 import { referenceMedia } from './submittedMedia'
 import { bindReferenceName, migrateReferenceNames, referenceName } from './referenceNames'
 import { MentionPicker, type MentionChoice, type MentionPickerHandle } from './MentionPicker'
@@ -117,14 +117,14 @@ export function PromptBox({
   })
   // 序号顺序要和 findMentions 一致，否则插进去的 #2 运行时指向另一张卡
   const targets = sortMentionTargets(mentionTargets(engine).filter((t) => t.id !== selfId))
+  const element = engine.doc.get(selfId)
+  const capability = findNode(catalog, element?.nodeType)?.capability
+  const referenceMode =
+    capability === 'image.generate' ||
+    (capability === 'video.generate' && element?.params?.mode === 'reference')
   useLayoutEffect(() => {
     const el = engine.doc.get(selfId)
-    if (
-      engine.doc.readOnly ||
-      el?.params?.mode !== 'reference' ||
-      findNode(catalog, el.nodeType)?.capability !== 'video.generate'
-    )
-      return
+    if (engine.doc.readOnly || !el || !referenceMode) return
     const current: ReferenceIdentity[] = [...upstreams(engine, selfId, catalog).values()]
       .flat()
       .flatMap((up) => {
@@ -198,16 +198,20 @@ export function PromptBox({
   const mentions = findMentions(shown, targets).filter(
     (m) => !bound.some((t) => t.start === m.start),
   )
-  const missing = mentionParts(shown, targets).filter(
-    (p) => p.missing && !bound.some((t) => t.start <= p.start && t.end > p.start),
-  )
+  const referenceState = referenceMode
+    ? {
+        bindings: element?.params,
+        items:
+          !preparing && prepared?.nodeId === selfId
+            ? referenceMedia(prepared, element?.params, upstreams(engine, selfId, catalog))
+            : [],
+        pending: preparing || prepared?.nodeId !== selfId,
+      }
+    : undefined
+  const missing = mentionParts(shown, targets, referenceState).filter((p) => p.missing)
   const connectedIds = new Set<string>()
   const choices: MentionChoice[] = []
-  const element = engine.doc.get(selfId)
-  if (
-    element?.params?.mode === 'reference' &&
-    findNode(catalog, element.nodeType)?.capability === 'video.generate'
-  ) {
+  if (element && referenceMode) {
     const tokens = boundReferenceTokens(shown, element.params)
     const pending = preparing || !prepared || prepared.nodeId !== selfId
     const connected = upstreams(engine, selfId, catalog)
@@ -281,7 +285,11 @@ export function PromptBox({
   const detect = (text: string, caret: number) => {
     const slash = presets.length ? slashQuery(text, caret) : null
     if (slash) return { kind: '/' as const, ...slash }
-    const at = mentionQuery(text, caret, targets)
+    const at = mentionQuery(text, caret, [
+      ...targets,
+      ...Object.keys(referenceBindings(element?.params)).map((name) => ({ id: name, name })),
+      ...choices.filter((c) => !c.disabled).map((c) => ({ id: c.key, name: c.insert })),
+    ])
     return at && { kind: '@' as const, ...at }
   }
   const update = (text: string, caret: number) => {
@@ -349,6 +357,7 @@ export function PromptBox({
     <div className="plein-prompt relative" data-large={large || undefined}>
       <MentionTextarea
         targets={targets}
+        references={referenceState}
         onLocate={(id) => {
           if (!engine.doc.has(id)) return
           engine.selection.set([id])

@@ -115,6 +115,8 @@ export function resolveReferenceBindings(
   prompt: string,
   items: ReferenceIdentity[],
   value: unknown,
+  format: (item: ReferenceIdentity & { index: number }) => string = (item) =>
+    `@${item.type}${item.index}`,
 ) {
   const bindings = referenceBindings(value)
   const counts = { image: 0, video: 0, audio: 0 }
@@ -137,7 +139,7 @@ export function resolveReferenceBindings(
         : binding.source === item.source && binding.type === item.type,
     )
     if (!current) return { error: `引用 @${name} 的素材已删除、替换或未送入，请重新选择` }
-    text = text.slice(0, token.start) + `@${current.type}${current.index}` + text.slice(token.end)
+    text = text.slice(0, token.start) + format(current) + text.slice(token.end)
   }
   return { prompt: text }
 }

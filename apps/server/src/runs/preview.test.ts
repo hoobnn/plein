@@ -981,3 +981,64 @@ it('引用卡片的长描述不隐式加入最终提示词，也不消耗视频�
   expect(doc.get(n)?.params?.prompt).toBe(prompt)
   expect(doc.get(hero)?.params?.description).toBe(description)
 })
+
+it('图片生成名称引用按实际多图顺序映射，重复提及不重复送图，断连阻断', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const names = ['生成图片#1', '生成图片#2']
+  const sources = names.map((_, index) => {
+    const source = addNode(doc, 'plein/image', { name: '生成图片' })
+    addResults(doc, source, [
+      {
+        id: `result-${index}`,
+        runId: 'source-run',
+        at: 1,
+        port: 'images',
+        value: { type: 'image', assetId: asset(index ? 'b' : 'a') },
+      },
+    ])
+    return source
+  })
+  const bindings = Object.fromEntries(
+    names.map((name, index) => [
+      `referenceNameBinding:${encodeURIComponent(name)}:${sources[index]}`,
+      { type: 'image', assetId: asset(index ? 'b' : 'a'), source: sources[index] },
+    ]),
+  )
+  const prompt = `保留 @${names[0]} 的人物，在 @${names[1]} 中奔跑，再参考 @${names[0]}`
+  const image = addNode(doc, 'plein/image', {
+    params: { model: 'plein/mock:image', prompt, ...bindings },
+  })
+  for (const source of sources) connect(doc, [source, 'images'], [image, 'references'])
+  const edges = inputEdges(doc, image, 'references')
+  const first = await preview(server, id, image)
+  expect(first.status).toBe('ready')
+  expect(first.prompt).toBe('保留 图1 的人物，在 图2 中奔跑，再参考 图1')
+  expect(first.inputs.references?.map((v) => v.assetId)).toEqual([asset('a'), asset('b')])
+  expect(doc.get(image)?.params?.prompt).toBe(prompt)
+  reorderInputs(doc, [image, 'references'], edges.map((edge) => edge.id).reverse())
+  const reordered = await preview(server, id, image)
+  expect(reordered.prompt).toBe('保留 图2 的人物，在 图1 中奔跑，再参考 图2')
+  expect(reordered.inputs.references?.map((v) => v.assetId)).toEqual([asset('b'), asset('a')])
+  // 同一来源生成新结果时跟随当前采用结果。
+  addResults(doc, sources[0]!, [
+    {
+      id: 'new',
+      runId: 'new-run',
+      at: 2,
+      port: 'images',
+      value: { type: 'image', assetId: asset('c') },
+    },
+  ])
+  expect((await preview(server, id, image)).inputs.references?.map((v) => v.assetId)).toEqual([
+    asset('b'),
+    asset('c'),
+  ])
+  removeEdges(doc, [edges[0]!.id])
+  const disconnected = await preview(server, id, image)
+  expect(disconnected.status).toBe('blocked')
+  expect(disconnected.blocked).toContainEqual(
+    expect.objectContaining({ message: expect.stringContaining('已删除、替换或未送入') }),
+  )
+})

@@ -2237,16 +2237,18 @@ export class NodeRuns implements BatchHost {
     // 标记用户写下的编号，避免把资产卡展开后由宿主生成的编号当成旧画布引用。
     let referencePrompt = String(el.params?.prompt ?? '')
     const referenceTokens = boundReferenceTokens(referencePrompt, el.params)
-    if (def.capability === 'video.generate' && el.params?.mode === 'reference')
+    const referenceMode =
+      def.capability === 'image.generate' ||
+      (def.capability === 'video.generate' && el.params?.mode === 'reference')
+    if (referenceMode)
       for (const [index, token] of [...referenceTokens.entries()].reverse())
         referencePrompt =
           referencePrompt.slice(0, token.start) +
           `\uE000${index}\uE001` +
           referencePrompt.slice(token.end)
-    const referenceElement =
-      def.capability === 'video.generate' && el.params?.mode === 'reference'
-        ? { ...el, params: { ...el.params, prompt: referencePrompt } }
-        : el
+    const referenceElement = referenceMode
+      ? { ...el, params: { ...el.params, prompt: referencePrompt } }
+      : el
     const { params, inputs, details, notices, blocked } = await applyMentions(
       doc,
       referenceElement,
@@ -2266,7 +2268,9 @@ export class NodeRuns implements BatchHost {
       },
     )
     if (continuation.issue) blocked.push(continuation.issue)
-    if (def.capability === 'video.generate' && params.mode === 'reference') {
+    if (referenceMode) {
+      const formatReference = (item: { type: string; index: number }) =>
+        def.capability === 'image.generate' ? `图${item.index}` : `@${item.type}${item.index}`
       const media = Object.values(inputs)
         .flat()
         .filter((item) => item.type === 'image' || item.type === 'video' || item.type === 'audio')
@@ -2278,6 +2282,7 @@ export class NodeRuns implements BatchHost {
             `@${alias}`,
             media as Array<{ type: 'image' | 'video' | 'audio'; assetId: string; source?: string }>,
             el.params,
+            formatReference,
           )
           if (resolved.error) blocked.push({ code: 'prepare_failed', message: resolved.error })
           return resolved.prompt ?? `@${alias}`
@@ -2289,6 +2294,7 @@ export class NodeRuns implements BatchHost {
           item.text,
           media as Array<{ type: 'image' | 'video' | 'audio'; assetId: string; source?: string }>,
           el.params,
+          formatReference,
         )
         if (upstream.error) blocked.push({ code: 'prepare_failed', message: upstream.error })
         else item.text = upstream.prompt!

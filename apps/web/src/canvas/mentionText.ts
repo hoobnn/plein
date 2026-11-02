@@ -1,8 +1,24 @@
-import { videoReferenceTokens } from '@plein/plugin-sdk'
+import {
+  boundReferenceTokens,
+  referenceBindings,
+  resolveReferenceBindings,
+  type ReferenceIdentity,
+  videoReferenceTokens,
+} from '@plein/plugin-sdk'
 import { findMentions, isMentionStart, mentionProblem, type MentionTarget } from '@plein/nodes'
 
 /** 有效引用共用生成解析器；找不到目标的 @ 写法单独标为缺失，不绑定到猜测的元素。 */
-export function mentionParts(text: string, targets: readonly MentionTarget[]) {
+export interface MentionReferences {
+  bindings: unknown
+  items: ReferenceIdentity[]
+  pending?: boolean
+}
+
+export function mentionParts(
+  text: string,
+  targets: readonly MentionTarget[],
+  references?: MentionReferences,
+) {
   const parts: Array<{
     text: string
     start: number
@@ -12,11 +28,27 @@ export function mentionParts(text: string, targets: readonly MentionTarget[]) {
     mention?: true
   }> = []
   let end = 0
-  const matches = findMentions(text, targets)
+  const bindings = referenceBindings(references?.bindings)
+  const bound = references ? boundReferenceTokens(text, references.bindings) : []
+  const matches = findMentions(text, targets).filter(
+    (m) => !bound.some((t) => t.start <= m.start && t.end > m.start),
+  )
   const reserved = new Set(videoReferenceTokens(text).map((t) => t.start))
   const unknown =
     /@[^\s@，。,.!！?？:：;；、（）()【】[\]「」"'“”]+(?:[ \t]+·[ \t]*[^\s@，。,.!！?？:：;；、（）()【】[\]「」"'“”]+)*/g
   const ranges = [
+    ...bound.map((token) => {
+      const error = references?.pending
+        ? undefined
+        : resolveReferenceBindings(`@${token.name}`, references!.items, references!.bindings).error
+      return {
+        start: token.start,
+        end: token.end,
+        id: bindings[token.name]?.source,
+        ...(error ? { missing: true as const } : {}),
+        warning: error ?? (references?.pending ? '正在确认参考素材…' : undefined),
+      }
+    }),
     ...matches.map((m) => ({
       start: m.start,
       end: m.end,
@@ -35,6 +67,7 @@ export function mentionParts(text: string, targets: readonly MentionTarget[]) {
       if (
         !isMentionStart(text, start) ||
         reserved.has(start) ||
+        bound.some((t) => start >= t.start && start < t.end) ||
         matches.some((m) => start >= m.start && start < m.end)
       )
         return []

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import type { Engine } from '@plein/canvas-core'
-import { connect, createElement, setParam, type PleinDoc } from '@plein/doc'
+import { addResults, connect, createElement, setParam, type PleinDoc } from '@plein/doc'
 import { openDoc } from '@plein/doc/testing'
 import { corePlugin } from '@plein/nodes'
 import { describeNode } from '@plein/plugin-sdk'
@@ -22,21 +22,23 @@ const docs: PleinDoc[] = []
 afterEach(() => docs.splice(0).forEach((doc) => doc.destroy()))
 
 it.each([
-  ['image', false],
-  ['video', false],
-  ['audio', false],
-  ['image', true],
-  ['video', true],
-  ['audio', true],
+  ['image', false, 'plein/video'],
+  ['video', false, 'plein/video'],
+  ['audio', false, 'plein/video'],
+  ['image', true, 'plein/video'],
+  ['video', true, 'plein/video'],
+  ['audio', true, 'plein/video'],
+  ['image', false, 'plein/image'],
+  ['image', true, 'plein/image'],
 ] as const)(
-  '刚上传的 %s（放大编辑：%s）在刷新期间不引用旧编号，刷新后按素材名称插入',
-  async (kind, expanded) => {
+  '刚上传的 %s（放大编辑：%s，节点：%s）在刷新期间不引用旧编号，刷新后按素材名称插入',
+  async (kind, expanded, nodeType) => {
     mockResizeObserver()
     const doc = openDoc()
     docs.push(doc)
     const node = {
       ...describeNode(
-        corePlugin.nodes.find((n) => n.type === 'plein/video')!,
+        corePlugin.nodes.find((n) => n.type === nodeType)!,
         'plein/core',
       ),
       executable: true,
@@ -53,10 +55,20 @@ it.each([
       w: 200,
       h: 100,
     })
-    const port = kind === 'image' ? 'images' : kind === 'video' ? 'videos' : 'audios'
+    const port =
+      nodeType === 'plein/image'
+        ? 'references'
+        : kind === 'image'
+          ? 'images'
+          : kind === 'video'
+            ? 'videos'
+            : 'audios'
     const sources = ['原素材', '刚上传的素材'].map((name, index) => {
       const source = createElement(doc, {
-        kind,
+        kind: nodeType === 'plein/image' ? 'node' : kind,
+        ...(nodeType === 'plein/image'
+          ? { nodeType, ports: { inputs: node.inputs, outputs: node.outputs } }
+          : {}),
         name,
         assetId: `asset-${index}`,
         x: index * 200,
@@ -64,7 +76,17 @@ it.each([
         w: 200,
         h: 100,
       })
-      connect(doc, [source, kind], [id, port])
+      if (nodeType === 'plein/image')
+        addResults(doc, source, [
+          {
+            id: `result-${index}`,
+            runId: 'run',
+            at: 1,
+            port: 'images',
+            value: { type: 'image', assetId: `asset-${index}` },
+          },
+        ])
+      connect(doc, [source, nodeType === 'plein/image' ? 'images' : kind], [id, port])
       return source
     })
     doc.flush()
@@ -146,6 +168,9 @@ it.each([
     await view.user.click(ready)
     await waitFor(() => expect(field().value).toBe('@刚上传的素材 '))
     expect(doc.get(id)?.params?.prompt).toBe('@刚上传的素材 ')
+    expect(
+      document.querySelector('[data-testid="mention-highlights"] mark')?.getAttribute('data-state'),
+    ).toBe('resolved')
     const reopened = openDoc()
     try {
       applyUpdate(reopened.ydoc, encodeStateAsUpdate(doc.ydoc))

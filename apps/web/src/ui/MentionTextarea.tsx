@@ -6,13 +6,14 @@ import {
   useRef,
   type ComponentPropsWithRef,
 } from 'react'
-import { mentionParts } from '../canvas/mentionText'
+import { mentionParts, type MentionReferences } from '../canvas/mentionText'
 
 /** 保留原生 textarea 的输入、选择、IME 与复制行为，镜像层显示正文和引用颜色。 */
 export function MentionTextarea({
   ref,
   value,
   targets,
+  references,
   onScroll,
   onClick,
   onPointerMove,
@@ -21,6 +22,7 @@ export function MentionTextarea({
 }: Omit<ComponentPropsWithRef<'textarea'>, 'value'> & {
   value: string
   targets: readonly MentionTarget[]
+  references?: MentionReferences
   onLocate?(id: string): void
 }) {
   const input = useRef<HTMLTextAreaElement>(null)
@@ -68,7 +70,7 @@ export function MentionTextarea({
           onClick?.(event)
           if (!onLocate || (!event.metaKey && !event.ctrlKey)) return
           const at = event.currentTarget.selectionStart
-          const part = mentionParts(value, targets).find(
+          const part = mentionParts(value, targets, references).find(
             (p) => p.mention && at >= p.start && at < p.start + p.text.length,
           )
           if (part?.id) {
@@ -103,7 +105,7 @@ export function MentionTextarea({
         data-testid="mention-highlights"
       >
         <div ref={content}>
-          {mentionParts(value, targets).map((part) =>
+          {mentionParts(value, targets, references).map((part) =>
             part.mention ? (
               <mark
                 key={part.start}
