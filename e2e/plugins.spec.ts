@@ -31,10 +31,6 @@ test(
     await expect(row).toContainText('已加载', { timeout: 20_000 })
 
     await page.keyboard.press('Escape')
-    // 退场动画期间面板仍盖在画布上（Base UI 还会把面板外标成 inert），等它真的从 DOM 卸掉再双击。
-    await expect(
-      page.getByRole('dialog', { name: '设置', exact: true, includeHidden: true }),
-    ).toHaveCount(0)
     await addNode(page, '大声说')
     await expect
       .poll(async () => (await elements(page)).some((e) => e.nodeType === 'acme/shout'))

@@ -1,5 +1,5 @@
 import { expect, test, type Locator } from './fixtures'
-import { addNode, newProject } from './canvas'
+import { addNode, elements, newProject } from './canvas'
 
 const noCssAnimation = async (locator: Locator) => {
   await expect(locator).toBeVisible()
@@ -128,4 +128,35 @@ test('Motion 浮层不叠加旧 CSS 进场动画', async ({ page }) => {
 
   await page.getByRole('button', { name: '整理画布', exact: true }).click()
   await noCssAnimation(page.getByRole('status').filter({ hasText: '画布已经很整齐了' }))
+})
+
+test('面板退场中页面已可交互：关闭设置后立刻双击画布能添加节点', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await newProject(page)
+  await page.getByRole('button', { name: '设置', exact: true }).click()
+  const settings = page.getByRole('dialog', { name: '设置', exact: true })
+  await expect(settings).toBeVisible()
+  // 记录双击那一刻是否还有浮层在退场：等面板卸载后再双击的写法测不到这个问题。
+  await page.evaluate(() => {
+    const state = window as unknown as { exitingAtDoubleClick: boolean | null }
+    state.exitingAtDoubleClick = null
+    window.addEventListener(
+      'dblclick',
+      () => {
+        state.exitingAtDoubleClick = document.querySelector('[data-plein-exiting]') !== null
+      },
+      { capture: true, once: true },
+    )
+  })
+  await page.keyboard.press('Escape')
+  // 退场动画还没播完：浮层仍在 DOM 里，页面其余部分必须已经能接住下一次双击。
+  await expect(page.locator('[data-plein-exiting]').first()).toBeAttached()
+  await expect(page.locator('#root')).not.toHaveAttribute('aria-hidden', 'true')
+  await addNode(page, '文本', { x: 720, y: 450 })
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { exitingAtDoubleClick: boolean }).exitingAtDoubleClick,
+    ),
+  ).toBe(true)
+  await expect.poll(async () => (await elements(page)).length).toBe(1)
 })
