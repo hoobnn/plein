@@ -2046,6 +2046,13 @@ export class NodeRuns implements BatchHost {
     )
     const def = this.host.registry.latestNode(el.nodeType!)?.def
     if (!def) return { def, params: el.params, inputs: collected, origins }
+    const modelRef = typeof el.params?.model === 'string' ? parseModelRef(el.params.model) : null
+    const spec =
+      modelRef &&
+      this.host.registry.providers
+        .get(modelRef.provider)
+        ?.def.models.find((m) => m.id === modelRef.model)
+    const limits = spec?.limits
     const continuation = continuationInputs(doc, el, def, collected)
     // 标记用户写下的编号，避免把资产卡展开后由宿主生成的编号当成旧画布引用。
     let referencePrompt = String(el.params?.prompt ?? '')
@@ -2079,6 +2086,7 @@ export class NodeRuns implements BatchHost {
           return false
         }
       },
+      limits?.referenceMedia ?? { video: 0, audio: 0 },
     )
     if (continuation.issue) blocked.push(continuation.issue)
     if (referenceMode) {
@@ -2116,6 +2124,7 @@ export class NodeRuns implements BatchHost {
           media,
           imageLabel: numbering.label,
           isStale,
+          mediaSupported: (kind) => kind === 'image' || (limits?.referenceMedia?.[kind] ?? 0) > 0,
         })
       const report = (result: BoundReference, name: string) => {
         if (result.error) blocked.push({ code: 'prepare_failed', message: result.error })
@@ -2146,13 +2155,6 @@ export class NodeRuns implements BatchHost {
       }
     }
 
-    const modelRef = typeof params.model === 'string' ? parseModelRef(params.model) : null
-    const spec =
-      modelRef &&
-      this.host.registry.providers
-        .get(modelRef.provider)
-        ?.def.models.find((m) => m.id === modelRef.model)
-    const limits = spec?.limits
     const effective = this.latestParams(el, { def, params, inputs }) ?? {}
     const analysisProblem = aiAnalysisProblem(
       this.host,
@@ -2281,6 +2283,7 @@ export class NodeRuns implements BatchHost {
       collected,
       details,
       referenceLimit: limits?.references?.max,
+      referenceMediaLimits: limits?.referenceMedia ?? { video: 0, audio: 0 },
     })
     return {
       def,

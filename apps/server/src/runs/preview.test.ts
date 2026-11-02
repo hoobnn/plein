@@ -1357,6 +1357,67 @@ it('@ 特效卡送入参考视频并写成名字加视频编号', async () => {
   expect(input.unsent).toEqual([])
 })
 
+it('模型不收视频音频参考时，@ 引用进入 unsent 且不编号', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  for (const [kind, name, assetId] of [
+    ['video', '舞.mp4', asset('c')],
+    ['audio', '歌.mp3', asset('d')],
+    ['image', '人物.png', asset('a')],
+  ] as const)
+    createElement(doc, { kind, name, assetId, x: 0, y: 0, w: 100, h: 100 })
+  const model = mockProvider.models.find((item) => item.id === 'video')!
+  const before = model.limits
+  try {
+    model.limits = { ...before, referenceMedia: { video: 0, audio: 0 } }
+    const video = addNode(doc, 'plein/video', {
+      params: {
+        model: 'plein/mock:video',
+        mode: 'reference',
+        prompt: '动作 @舞.mp4，配乐 @歌.mp3，人物 @人物.png',
+      },
+    })
+    const input = await preview(server, id, video)
+    expect(input.status).toBe('ready')
+    expect(input.prompt).toBe('动作 舞.mp4，配乐 歌.mp3，人物 @image1')
+    expect(input.inputs.videos).toBeUndefined()
+    expect(input.inputs.audios).toBeUndefined()
+    expect(input.inputs.images?.map((value) => value.assetId)).toEqual([asset('a')])
+    expect(input.promptReferences).toEqual([
+      expect.objectContaining({
+        text: '@舞.mp4',
+        indices: [],
+        kind: 'video',
+        reason: 'unsupported',
+      }),
+      expect.objectContaining({
+        text: '@歌.mp3',
+        indices: [],
+        kind: 'audio',
+        reason: 'unsupported',
+      }),
+      expect.objectContaining({ text: '@人物.png', indices: [1] }),
+    ])
+    expect(input.unsent).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: '舞.mp4',
+          reason: 'unsupported',
+          message: expect.stringContaining('参考视频'),
+        }),
+        expect.objectContaining({
+          name: '歌.mp3',
+          reason: 'unsupported',
+          message: expect.stringContaining('参考音频'),
+        }),
+      ]),
+    )
+  } finally {
+    model.limits = before
+  }
+})
+
 it('MiniMax 最终提示词含上游文本与分隔符，7000 字符边界在预览和执行前一致阻断', async () => {
   const { server } = await bootServer()
   server.plugins.configs.update('minimax/api', {

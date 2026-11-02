@@ -36,6 +36,7 @@ export function resolveBoundReference({
   media,
   imageLabel,
   isStale,
+  mediaSupported,
 }: {
   /** 提示词里写下的名字（不含 @） */
   name: string
@@ -47,6 +48,8 @@ export function resolveBoundReference({
   imageLabel(assetId: string): string | undefined
   /** 判断这条绑定是不是已经失效的残留 */
   isStale(binding: ReferenceIdentity): boolean
+  /** 当前模型是否接收这类媒体；缺省兼容既有调用。 */
+  mediaSupported?(kind: ReferenceIdentity['type']): boolean
 }): BoundReference {
   const bindings = referenceBindings(params)
   const binding = bindings[name]
@@ -75,6 +78,7 @@ export function resolveBoundReference({
     if (/^(video|audio)[1-9]\d*$/.test(name)) return { text: `@${name}`, stale: true }
     return { text: name, error: `引用 @${name} 尚未确认素材身份，请从参考素材重新选择` }
   }
+  if (mediaSupported && !mediaSupported(binding.type)) return { text: name }
   const named = Object.keys(params).some((key) =>
     key.startsWith(`referenceNameBinding:${encodeURIComponent(name)}:`),
   )
