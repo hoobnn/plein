@@ -2,13 +2,12 @@ import { createHash } from 'node:crypto'
 import { stableStringify } from '@plein/canonical'
 import { sequenceNode } from '@plein/nodes'
 import { ProviderError } from '@plein/plugin-sdk'
-import { and, desc, eq } from 'drizzle-orm'
 import { z } from 'zod'
 
 import type { CallRecord } from '../plugins/provider-protocol'
 import { cacheParams } from '../runs/runs'
 import type { DB } from '../storage/db'
-import { jobs } from '../storage/schema'
+import { legacySubtitleJobs } from './store'
 
 const frozenSchema = z.object({
   params: z.record(z.string(), z.unknown()),
@@ -56,12 +55,7 @@ export function legacySubtitleRecord(
   const { ownerId, assetId, model, modelVersion, pluginVersion } = request
   let unresolved = false
   let unresolvedJob = ''
-  const rows = db
-    .select({ id: jobs.id, frozen: jobs.frozen, calls: jobs.calls, omit: jobs.cache_omit })
-    .from(jobs)
-    .where(and(eq(jobs.owner_id, ownerId), eq(jobs.node_type, 'plein/sequence')))
-    .orderBy(desc(jobs.created_at))
-    .all()
+  const rows = legacySubtitleJobs(db, ownerId)
   for (const row of rows) {
     const frozen = frozenSchema.safeParse(parse(row.frozen))
     if (
