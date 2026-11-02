@@ -2060,12 +2060,27 @@ export class NodeRuns implements BatchHost {
     const referenceMode =
       def.capability === 'image.generate' ||
       (def.capability === 'video.generate' && el.params?.mode === 'reference')
-    if (referenceMode)
+    const upstreamReferences: Array<{
+      item: Extract<PortValue, { type: 'text' }>
+      tokens: ReturnType<typeof boundReferenceTokens>
+    }> = []
+    if (referenceMode) {
       for (const [index, token] of [...referenceTokens.entries()].reverse())
         referencePrompt =
           referencePrompt.slice(0, token.start) +
           `\uE000${index}\uE001` +
           referencePrompt.slice(token.end)
+      // 上游也在展开 @ 之前标记原始绑定；后面只还原这些位置，不扫描新生成的编号。
+      for (const item of continuation.inputs.prompt ?? []) {
+        if (item.type !== 'text') continue
+        const tokens = boundReferenceTokens(item.text, el.params)
+        if (!tokens.length) continue
+        upstreamReferences.push({ item, tokens })
+        for (const [index, token] of [...tokens.entries()].reverse())
+          item.text =
+            item.text.slice(0, token.start) + `\uE000${index}\uE001` + item.text.slice(token.end)
+      }
+    }
     const referenceElement = referenceMode
       ? { ...el, params: { ...el.params, prompt: referencePrompt } }
       : el
@@ -2143,16 +2158,13 @@ export class NodeRuns implements BatchHost {
           return result.text
         },
       )
-      for (const item of inputs.prompt ?? []) {
-        if (item.type !== 'text') continue
-        let text = item.text
-        for (const token of boundReferenceTokens(text, el.params).toReversed()) {
-          const result = resolveOne(token.name)
-          report(result, token.name)
-          text = text.slice(0, token.start) + result.text + text.slice(token.end)
-        }
-        item.text = text
-      }
+      for (const { item, tokens } of upstreamReferences)
+        item.text = item.text.replace(/\uE000(\d+)\uE001/g, (_match, index: string) => {
+          const alias = tokens[Number(index)]!.name
+          const result = resolveOne(alias)
+          report(result, alias)
+          return result.text
+        })
     }
 
     const effective = this.latestParams(el, { def, params, inputs }) ?? {}

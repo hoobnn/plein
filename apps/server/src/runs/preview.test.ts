@@ -1220,6 +1220,77 @@ it('上游文本中的参考编号随素材重排映射，失效身份在预览�
   )
 })
 
+it.each([
+  {
+    platform: '图片节点',
+    type: 'plein/image',
+    model: 'plein/mock:image',
+    port: 'references',
+    first: '图1',
+    second: '图2',
+  },
+  {
+    platform: 'MiniMax',
+    type: 'plein/video',
+    model: 'minimax/api:MiniMax-H3',
+    port: 'images',
+    first: '图片1',
+    second: '图片2',
+  },
+  {
+    platform: '方舟',
+    type: 'plein/video',
+    model: 'volc/ark:doubao-seedance-2-0-260128',
+    port: 'images',
+    first: '@image1',
+    second: '@image2',
+  },
+])('$platform：历史绑定、正文旧编号与上游引用分别只映射一次', async (item) => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const first = createElement(doc, {
+    kind: 'image',
+    name: '叶舒文件.png',
+    assetId: asset('a'),
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  const second = createElement(doc, {
+    kind: 'image',
+    name: '安可.png',
+    assetId: asset('b'),
+    x: 200,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  const upstream = addNode(doc, 'plein/text', {
+    params: { text: '上游 @叶舒文件.png' },
+  })
+  const target = addNode(doc, item.type, {
+    params: {
+      model: item.model,
+      mode: 'reference',
+      prompt: '正文 @image2',
+      referenceBindings: {
+        // 历史 image1 指向安可；上游叶舒生成的新编号不能再按这条绑定改指安可。
+        image1: { type: 'image', assetId: asset('b'), source: second },
+      },
+    },
+  })
+  connect(doc, [first, 'image'], [target, item.port])
+  connect(doc, [second, 'image'], [target, item.port])
+  connect(doc, [upstream, 'text'], [target, 'prompt'])
+  const input = await preview(server, id, target)
+  expect(input.status).toBe('ready')
+  expect(input.prompt).toBe(`正文 ${item.second}\n\n上游 ${item.first}`)
+  expect(input.inputs[item.port]?.map((value) => value.assetId)).toEqual([asset('a'), asset('b')])
+  expect(input.notices).toEqual([])
+})
+
 it('上游文本与节点正文统一解析 @ 引用、去重并汇总未送入', async () => {
   const { server } = await bootServer()
   mockSettings(server, {})
