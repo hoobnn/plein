@@ -1,7 +1,6 @@
 import type { CapabilityDefinition } from '@plein/capabilities'
 import type { AgentApprovalMode, StoryboardBatchPlan } from '@plein/protocol'
 import type { z } from 'zod'
-import { canvasActionInfo } from './action-caps'
 import { newId } from '../ids'
 import type { AgentChanges } from './changes'
 import type { ServerContext } from './tools'
@@ -22,11 +21,10 @@ export interface ApprovalRequest {
 type Cap = CapabilityDefinition<z.ZodObject, ServerContext>
 
 /**
- * 确认策略（调度层，不散进各个能力）：
- * - auto：全部直接执行；
- * - always：花钱（run）和破坏性（destructive）的都问；
- * - rules（默认）：视频生成、整组 / 上下游 / 分镜批量运行、删用户已有的东西、一轮里运行超过 RUN_LIMIT 次、
- *   插件能力花钱或删东西时才问。
+ * 确认策略（调度层）：
+ * - auto：全部直接执行；effect 不是 run / destructive 的直接放行——这两条是通用规则；
+ * - 声明了 approval 的能力自己决定各审批模式下要不要问、说明怎么写（含 always）；
+ * - 未声明的：always 都问；rules 里破坏性的、插件能力花钱或删东西的问，其它不问。
  */
 export function approvalFor(
   mode: AgentApprovalMode,
@@ -38,65 +36,12 @@ export function approvalFor(
   if (mode === 'auto') return null
   const effect = typeof cap.effect === 'function' ? cap.effect(input, ctx) : cap.effect
   if (effect !== 'run' && effect !== 'destructive') return null
-
-  const name = (id: string) =>
-    ctx.withDoc((doc) => {
-      const el = doc.get(id)
-      return el ? `「${el.name ?? el.kind}」` : id
-    })
-
-  if (cap.name === 'delete_elements') {
-    const ids = (input.ids as string[]).filter((i) => !changes.createdThisTurn(i))
-    if (!ids.length) return null
-    return { reason: `删除你已有的 ${ids.length} 个元素`, ids }
-  }
-  if (cap.name === 'run_frame') {
-    const frame = String(input.frame_id)
-    return {
-      reason: `整组运行 ${name(frame)}${input.video ? '（包括视频）' : ''}`,
-      ids: [frame],
-    }
-  }
-  if (cap.name === 'run_storyboard') {
-    const board = String(input.id)
-    const what =
-      { image: '分镜图', video: '镜头视频', speech: '配音', sfx: '音效' }[String(input.role)] ?? ''
-    return { reason: `批量生成${name(board)}的${what}`, ids: [board] }
-  }
-  // 智能体自己执行修改方案（没经过方案卡片）：要生成就先问，范围写进确认
-  if (cap.name === 'apply_edit_plan')
-    return {
-      reason: input.scope === 'images' ? '按修改方案生成候选图' : '按修改方案执行全部生成步骤',
-      ids: [],
-    }
-  if (cap.name === 'run_flow') {
-    const node = String(input.id)
-    return {
-      reason: `${input.scope === 'upstream' ? '运行到' : '运行下游：'}${name(node)}`,
-      ids: [node],
-    }
-  }
-  if (cap.name === 'run_node') {
-    const node = String(input.id)
-    const capability = ctx.withDoc((doc) => {
-      const type = doc.get(node)?.nodeType
-      return type ? ctx.nodes.latest(type)?.def.capability : undefined
-    })
-    if (mode === 'always') return { reason: `运行 ${name(node)}`, ids: [node] }
-    if (capability === 'video.generate')
-      return { reason: `生成视频 ${name(node)}（较贵、较慢）`, ids: [node] }
-    if (changes.runCount >= RUN_LIMIT)
-      return {
-        reason: `运行 ${name(node)}：这一轮已经运行了 ${changes.runCount} 次`,
-        ids: [node],
-      }
-    return null
-  }
-  if (cap.name === 'perform_canvas_action')
-    return { reason: canvasActionInfo(String(input.action)).title, ids: [] }
-  if (cap.name === 'recover_job' || effect === 'destructive') return { reason: cap.title, ids: [] }
+  if (cap.approval) return cap.approval(input, ctx, { mode, changes })
+  const fallback = { reason: cap.title, ids: [] }
+  if (mode === 'always') return fallback
+  if (effect === 'destructive') return fallback
   // 插件能力会花钱或删东西时，规则模式下也先问：宿主不知道它具体做什么
-  if (mode === 'always' || cap.group === 'plugin') return { reason: cap.title, ids: [] }
+  if (cap.group === 'plugin') return fallback
   return null
 }
 

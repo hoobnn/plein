@@ -264,6 +264,8 @@ export const performCanvasAction = cap({
   group: 'project',
   where: 'server',
   effect: (a) => action(a.action).effect,
+  // 确认里写操作自己的标题（与列表里一致）
+  approval: (a) => ({ reason: action(a.action).title, ids: [] }),
   description:
     '执行 list_canvas_actions 列出的操作。必须先查询具体 action 的 schema，input 按契约填写。调用与界面相同的服务及所有权校验。资产库、模板、音色、字幕记录和跨画布同步独立保存，不属于当前轮画布撤销；导出只返回下载地址。付费操作与删除遵循原确认规则。',
   input: z

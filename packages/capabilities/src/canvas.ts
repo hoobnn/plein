@@ -320,6 +320,12 @@ export const deleteElementsCap = defineCapability({
   group: 'edit',
   where: 'doc',
   effect: 'destructive',
+  // 删本轮自己建的不问；删用户已有的要问，范围写进确认（always 模式下同样不问自建的）
+  approval: (a, _ctx, { changes }) => {
+    const ids = a.ids.filter((i) => !changes.createdThisTurn(i))
+    if (!ids.length) return null
+    return { reason: `删除你已有的 ${ids.length} 个元素`, ids }
+  },
   input: z.object({ ids: z.array(id).min(1) }),
   run: (ctx, { ids }) =>
     ctx.withDoc((doc) => {

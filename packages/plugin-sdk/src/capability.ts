@@ -1,4 +1,5 @@
 import type { z } from 'zod'
+import type { CapabilityApproval, CapabilityApprovalContext } from './approval'
 import type { ExecutorContext } from './executor'
 import { NAMESPACED_ID, vendorOf } from './ids'
 
@@ -42,6 +43,11 @@ export interface PluginCapabilityDefinition<S extends z.ZodObject = z.ZodObject>
   description: string
   effect: CapabilityEffect
   input: S
+  /**
+   * 审批说明（只对内置插件开放；第三方插件不能提供能力）：rules 模式下返回 null 表示不问，
+   * always 模式下宿主以声明为准。插件拿不到运行上下文，只能看本次输入与宿主给的改动集。
+   */
+  approval?: (input: z.output<S>, extra: CapabilityApprovalContext) => CapabilityApproval | null
   /**
    * 出现在 ⌘K 命令面板里：always 一直显示，selection 有选区时显示（选区经 ctx.selection 传入）。
    * 从面板调用时输入为 {}，所以输入的每个字段都要可选。不填则只给智能体用。

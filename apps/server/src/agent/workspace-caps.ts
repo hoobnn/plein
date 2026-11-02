@@ -75,12 +75,16 @@ export const listJobs = cap({
       ? ctx.env.runs.latestForNodes(ctx.env.canvasId, a.node_ids)
       : ctx.env.runs.list(ctx.env.canvasId, a.limit),
 })
+const RECOVER_JOB_TITLE = '恢复生成任务'
+
 export const recoverJob = cap({
   name: 'recover_job',
-  title: '恢复生成任务',
+  title: RECOVER_JOB_TITLE,
   group: 'run',
   where: 'server',
   effect: (a) => (a.operation.action === 'resubmit' ? 'run' : 'edit'),
+  // refetch / attach 只是查询或标记，不问；resubmit 是 run，总是问（run 分支）
+  approval: () => ({ reason: RECOVER_JOB_TITLE, ids: [] }),
   description:
     '与任务面板共用恢复规则：refetch 重新获取已受理任务；attach 用平台任务 ID 续查；dismiss 标为已处理；resubmit 只用于用户已经核实平台未受理的未知任务，会重新提交并计费。不会创建新的输入方案。先 list_jobs 核对原任务。',
   input: z.object({

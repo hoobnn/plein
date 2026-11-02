@@ -66,7 +66,7 @@ import type { NodeRuns } from '../runs/runs'
 import { storyboardBatchesOf, type StoryboardBatches } from '../runs/storyboard-batch'
 import type { LibraryStore } from '../library/store'
 import type { Rooms } from '../sync/rooms'
-import { type Approvals, approvalFor } from './approvals'
+import { type Approvals, approvalFor, RUN_LIMIT } from './approvals'
 import type { AgentChanges } from './changes'
 import { APPLY_EDIT, editPlanCapabilities, planBrief, PROPOSE_EDIT } from './edit-plan'
 import { libraryCapabilities } from './library'
@@ -225,6 +225,13 @@ const asset = (ctx: ServerContext, assetId: string) => {
   return a
 }
 
+/** 确认卡片里的元素名（找不到时给 id） */
+const elName = (ctx: ServerContext, elId: string) =>
+  ctx.withDoc((doc) => {
+    const el = doc.get(elId)
+    return el ? `「${el.name ?? el.kind}」` : elId
+  })
+
 const runNode = serverCapability({
   name: 'run_node',
   title: '运行节点',
@@ -232,6 +239,20 @@ const runNode = serverCapability({
   group: 'run',
   where: 'server',
   effect: 'run',
+  // 生成视频要确认，节点名写进确认；always 下不带「较贵、较慢」的说法
+  approval: (a, ctx, { changes, mode }) => {
+    const node = elName(ctx, a.id)
+    const capability = ctx.withDoc((doc) => {
+      const type = doc.get(a.id)?.nodeType
+      return type ? ctx.nodes.latest(type)?.def.capability : undefined
+    })
+    if (mode === 'always') return { reason: `运行 ${node}`, ids: [a.id] }
+    if (capability === 'video.generate')
+      return { reason: `生成视频 ${node}（较贵、较慢）`, ids: [a.id] }
+    if (changes.runCount >= RUN_LIMIT)
+      return { reason: `运行 ${node}：这一轮已经运行了 ${changes.runCount} 次`, ids: [a.id] }
+    return null
+  },
   input: z.object({
     id,
     wait_seconds: z.number().min(0).max(MAX_WAIT_S).default(MAX_WAIT_S),
@@ -685,6 +706,10 @@ const runFlow = serverCapability({
   group: 'run',
   where: 'server',
   effect: 'run',
+  approval: (a, ctx) => ({
+    reason: `${a.scope === 'upstream' ? '运行到' : '运行下游：'}${elName(ctx, a.id)}`,
+    ids: [a.id],
+  }),
   input: z.object({
     id,
     scope: z.enum(['upstream', 'downstream']),
@@ -714,6 +739,10 @@ const runFrame = serverCapability({
   group: 'run',
   where: 'server',
   effect: 'run',
+  approval: (a, ctx) => ({
+    reason: `整组运行 ${elName(ctx, a.frame_id)}${a.video ? '（包括视频）' : ''}`,
+    ids: [a.frame_id],
+  }),
   input: z.object({
     frame_id: id,
     video: z.boolean().default(false).describe('是否包含视频节点（贵且慢）'),
@@ -1027,6 +1056,10 @@ const runStoryboard = serverCapability({
   group: 'run',
   where: 'server',
   effect: (a) => (a.preview_only ? 'read' : 'run'),
+  approval: (a, ctx) => {
+    const what = { image: '分镜图', video: '镜头视频', speech: '配音', sfx: '音效' }[a.role] ?? ''
+    return { reason: `批量生成${elName(ctx, a.id)}的${what}`, ids: [a.id] }
+  },
   input: StoryboardRun,
   run: async (ctx, raw) => {
     const a = StoryboardRun.parse(raw)

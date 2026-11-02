@@ -136,6 +136,11 @@ const applyEdit = serverCapability({
   group: 'run',
   where: 'server',
   effect: (a) => (a.scope === 'text' ? 'edit' : 'run'),
+  // 智能体自己执行修改方案（没经过方案卡片）：要生成就先问，范围写进确认
+  approval: (a) => ({
+    reason: a.scope === 'images' ? '按修改方案生成候选图' : '按修改方案执行全部生成步骤',
+    ids: [],
+  }),
   input: z.object({
     plan_id: id,
     scope: EditScope,

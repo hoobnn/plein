@@ -2,6 +2,8 @@ import type { PleinDoc } from '@plein/doc'
 import type { CastLibraryItem } from './story/cast'
 import type {
   Capability,
+  CapabilityApproval,
+  CapabilityApprovalContext,
   NodeDefinition,
   NodeDescriptor,
   PromptPresetDefinition,
@@ -117,6 +119,16 @@ export interface CapabilityDefinition<
   where: Where
   /** 固定等级，或按这次调用的参数判定 */
   effect: Effect | ((input: z.output<S>, ctx: C) => Effect)
+  /**
+   * 审批说明以及各审批模式下「这次要不要问」：rules 模式下返回 null 表示不需要确认，
+   * always 模式下也以声明为准。未声明时走调度器的通用规则
+   * （auto 不问；always 都问；rules 里破坏性的、插件能力花钱或删东西的问，其它不问）。
+   */
+  approval?: (
+    input: z.output<S>,
+    ctx: C,
+    extra: CapabilityApprovalContext,
+  ) => CapabilityApproval | null
   input: S
   /**
    * 出现在 ⌘K 命令面板里：按当前选区生成输入（返回 null 表示当前选区不适用，不显示）。
