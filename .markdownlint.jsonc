@@ -7,4 +7,7 @@
   "MD033": { "allowed_elements": ["div", "img", "br", "details", "summary", "b"] },
   // README 以居中的图标区开头，标题在其中
   "MD041": { "allow_preamble": true },
+  // 调整方案里每一条都用同一组小节标题（做法 / 理由 / 影响面 / 风险 / 验收），
+  // 它们分属不同的父级标题，不算重复
+  "MD024": { "siblings_only": true },
 }
