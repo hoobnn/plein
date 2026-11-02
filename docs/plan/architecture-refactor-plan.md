@@ -303,7 +303,9 @@ B1：`packages/doc` 内部。B2：`packages/doc`、新增 `packages/domain`、`p
 
 ##### C1 — 改名 + 写明例外（推荐）
 
-- `production.selection` → `production.target`，字段名改掉，读写点跟着改；读取时兼容旧字段名。
+- TypeScript 层把 `production.selection` 改名为 `production.target`（类型 `ProductionTarget`），读写点跟着改。
+- Yjs 里的持久化键名**仍为 `selection`**，不升 schema 版本：改键名要整体替换子 Map，多个客户端并发迁移时会互相淘汰，
+  迁移后的修改可能丢失。键名集中定义成常量并注释原因。
 - 在 `docs/dev/architecture.md:74` 那条规则后面补一句例外说明：制作目标是**共享的业务指针**，
   用户与智能体都要改它，因此留在文档里；画布选中才是运行时状态。
 
@@ -319,18 +321,18 @@ B1：`packages/doc` 内部。B2：`packages/doc`、新增 `packages/domain`、`p
 
 #### 影响面
 
-`packages/doc/src/production.ts`、`packages/doc/src/migrate.ts`、`packages/capabilities/src/production.ts`、
+`packages/doc/src/production.ts`、`packages/capabilities/src/production.ts`、
 `apps/web/src/features/creation-guide/*`、`apps/web/src/features/storyboard/ShotWorkbench.tsx`、
 `docs/dev/architecture.md`。
 
 #### 风险
 
-- **低**。改名要配一条文档迁移，并兼容读取旧字段。
+- **低**。持久化格式不变，不需要文档迁移；用测试钉住 Yjs 键名仍为 `selection`。
 
 #### 验收
 
 - 架构文档里「运行时状态不进文档」那条不再有歧义。
-- 智能体仍能通过 `edit_production` 设置制作目标；含旧字段名的文档打开后目标不丢。
+- 智能体仍能通过 `edit_production` 设置制作目标；已有文档的制作目标原样可读。
 
 ---
 
@@ -827,7 +829,7 @@ pnpm build        # 含首页首屏 gzip 门禁（当前 173.15 KiB / 门禁 300
 
 推送前 `pnpm verify` 跑完整检查。文件数与用例数以命令输出为准，不在文档里手抄。
 
-改动文档数据形状的项（C1 的字段改名）和跨包迁移（B2），额外要跑：
+跨包迁移（B2）和改动文档数据形状的项，额外要跑：
 
 ```bash
 pnpm --filter @plein/desktop test:profile   # 桌面端档案
