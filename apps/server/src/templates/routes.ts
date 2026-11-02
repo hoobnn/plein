@@ -1,19 +1,16 @@
 import { randomBytes } from 'node:crypto'
-import { API, CreateTemplate, type UserTemplate } from '@plein/protocol'
-import { and, desc, eq } from 'drizzle-orm'
+import { API, CreateTemplate } from '@plein/protocol'
 import { Hono } from 'hono'
 import type { AuthEnv } from '../auth'
 import type { DB } from '../storage/db'
-import { templates } from '../storage/schema'
+import { deleteTemplate, insertTemplate, listTemplates } from './store'
 
-type TemplateRow = Omit<typeof templates.$inferSelect, 'owner_id'>
-
-const toTemplate = (r: TemplateRow): UserTemplate => ({
-  id: r.id,
-  title: r.title,
-  createdAt: r.created_at,
-  data: JSON.parse(r.data),
-})
+type TemplateRow = {
+  id: string
+  title: string
+  data: string
+  created_at: number
+}
 
 /** 一个模板的上限：元素数由 schema 限制，这里再限制总大小 */
 const MAX_BYTES = 2 * 1024 * 1024
@@ -24,18 +21,7 @@ export function templateRoutes(db: DB) {
   const forbidden = { error: 'forbidden', message: '只读成员不能保存模板' }
   return new Hono<AuthEnv>()
     .get(API.templates, (c) => {
-      const rows = db
-        .select({
-          id: templates.id,
-          title: templates.title,
-          data: templates.data,
-          created_at: templates.created_at,
-        })
-        .from(templates)
-        .where(eq(templates.owner_id, c.var.principal.id))
-        .orderBy(desc(templates.created_at))
-        .all()
-      return c.json(rows.map(toTemplate))
+      return c.json(listTemplates(db, c.var.principal.id))
     })
     .post(API.templates, async (c) => {
       if (c.var.principal.role === 'viewer') return c.json(forbidden, 403)
@@ -56,17 +42,11 @@ export function templateRoutes(db: DB) {
         data: JSON.stringify(body.data.data),
         created_at: Date.now(),
       }
-      db.insert(templates)
-        .values({ ...row, owner_id: c.var.principal.id })
-        .run()
-      return c.json(toTemplate(row), 201)
+      return c.json(insertTemplate(db, c.var.principal.id, row), 201)
     })
     .delete('/api/templates/:id', (c) => {
       if (c.var.principal.role === 'viewer') return c.json(forbidden, 403)
-      const res = db
-        .delete(templates)
-        .where(and(eq(templates.id, c.req.param('id')), eq(templates.owner_id, c.var.principal.id)))
-        .run()
-      return res.changes ? c.body(null, 204) : c.json(notFound, 404)
+      const deleted = deleteTemplate(db, c.var.principal.id, c.req.param('id'))
+      return deleted ? c.body(null, 204) : c.json(notFound, 404)
     })
 }
