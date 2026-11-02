@@ -184,6 +184,10 @@ test('3D 缓动中立即截图，来源机位与重新打开的画面一致', { 
   await dialog.getByRole('button', { name: '关闭', exact: true }).click()
   await expect(dialog).toHaveCount(0)
   const at = await centerOf(page, stage.id)
+  // 对话框退场动画的全屏 viewport 会再挡几帧指针，等落点真的回到画布再双击
+  await expect
+    .poll(() => page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName, at))
+    .toBe('CANVAS')
   await page.mouse.dblclick(at.x, at.y)
   await expect(canvas).toBeVisible()
   await dialog.locator('.stage-outline .stage-item').filter({ hasText: '35mm' }).click()
@@ -224,6 +228,10 @@ test('3D 用真实手柄移动和旋转人物，不误动机位', { tag: '@core'
   await dialog.getByRole('button', { name: '关闭', exact: true }).click()
   await expect(dialog).toHaveCount(0)
   const at = await centerOf(page, stage.id)
+  // 同上：等退场动画的全屏 viewport 让出指针再双击
+  await expect
+    .poll(() => page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName, at))
+    .toBe('CANVAS')
   await page.mouse.dblclick(at.x, at.y)
   await expect(canvas).toBeVisible()
   expect((await read()).figures).toEqual(rotated.figures)
@@ -241,13 +249,17 @@ test(
         await page.evaluate((id) => window.__plein.engine.doc.get(id)!.params!.scene, stage.id),
       )
     const initial = (await read()).blocks[0]!
+    // 滑杆已换成 ui/Slider（Base UI）：role=slider 命中的是 thumb 上的隐藏输入框，
+    // 拖动几何要按轨道算，起手在 thumb 中心。
     const slider = dialog.getByRole('slider', { name: '宽', exact: true })
-    const rect = (await slider.boundingBox())!
-    const min = Number(await slider.getAttribute('min'))
-    const max = Number(await slider.getAttribute('max'))
-    const thumbX = rect.x + 8 + (rect.width - 16) * ((initial.w - min) / (max - min))
+    const field = dialog.locator('label', {
+      has: page.getByRole('slider', { name: '宽', exact: true }),
+    })
+    const track = field.locator('[data-slot="slider-track"]')
+    const rect = (await track.boundingBox())!
+    const thumb = (await slider.boundingBox())!
     const y = rect.y + rect.height / 2
-    await page.mouse.move(thumbX, y)
+    await page.mouse.move(thumb.x + thumb.width / 2, y)
     await page.mouse.down()
     await page.mouse.move(rect.x + rect.width * 0.35, y, { steps: 4 })
     // 同一手势里停顿超过文档 300ms 归并窗口，仍应按整次拖动撤销。
