@@ -42,10 +42,12 @@
 | `rounded-sm`  | 6   | 标签、角标、24 高的小控件、旧式分段块里的项                      |
 | `rounded-md`  | 8   | 28–36 高的按钮、输入框、菜单项、工具条按钮、Tooltip、≤ 64 缩略图 |
 | `rounded-lg`  | 10  | Nova Select、Segmented、菜单、弹层、工具条、提示条、大缩略图     |
-| `rounded-xl`  | 14  | 卡片、面板、生成器、画布上的节点、Nova 对话框                    |
+| `rounded-xl`  | 14  | 外壳卡片、面板、生成器、Nova 对话框                              |
 | `rounded-2xl` | 18  | 大型卡片和特殊页面外壳；Nova 对话框不套用这一级                  |
 
 嵌套元素仍尽量保持同心，但 Nova 组件的 `lg` 外壳与 `md` 菜单项是固定配方，不为了机械相减而新增数值。
+
+画布 DOM 不跟随上述 Nova 圆角：节点卡片、播放器、Markdown 编辑器和节点编辑器用 `rounded-canvas-card`（16，对应 `canvas-core/src/renderers.ts` 的 `RADIUS`），节点内部图标用 `rounded-canvas-control`（12）。这些令牌与 `canvas-core/src/theme.ts` 的画布语义对应，保证 DOM 与 GPU 卡片外形一致。
 
 ## 字号
 

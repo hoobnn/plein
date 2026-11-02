@@ -145,6 +145,10 @@
   --radius-lg: 10px;
   --radius-xl: 14px;
   --radius-2xl: 18px;
+  /* 画布 DOM 圆角独立于 Nova，与 canvas-core/src/theme.ts 的画布语义及
+     renderers.ts 的 RADIUS = 16 对应；control 保留迁移前 lg = 12。 */
+  --radius-canvas-control: 12px;
+  --radius-canvas-card: 16px;
 
   /* 字号 / 行高：界面正文 13，阅读和输入 14 */
   --text-2xs: 11px;
