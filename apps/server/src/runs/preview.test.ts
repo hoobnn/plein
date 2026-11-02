@@ -13,9 +13,15 @@ import {
   setParams,
   writeRun,
 } from '@plein/doc'
-import type { AssetRef, ProviderRequest } from '@plein/plugin-sdk'
+import {
+  videoReferencePrompt,
+  type AssetRef,
+  type ProviderRequest,
+  type SubmitResult,
+} from '@plein/plugin-sdk'
 import type { JobList, PreparedInput } from '@plein/protocol'
-import { minimaxProvider, mockProvider } from '@plein/providers'
+import { arkProvider, minimaxProvider, mockProvider } from '@plein/providers'
+import { MOCK_WEBM_BASE64 } from '../../../../packages/providers/src/mock/video-fixture'
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import * as Y from 'yjs'
 import type { Server } from '../app'
@@ -1148,6 +1154,117 @@ it('MiniMax 正文直接编号，绑定与 @ 共用 sent，历史 null 残留只
   expect(doc.get(video)?.params?.prompt).toBe('@桌边.png 与 @角色.png')
 })
 
+/**
+ * 不变式：面板实际输入（PreparedInput.prompt）必须等于平台真正收到的提示词。
+ * mock 全量一致；minimax / ark 视频参考模式下 summarize 与 provider 各有一遍
+ * videoReferencePrompt 改写，这条测试锁住两边不偏离。
+ */
+it('面板实际输入的提示词与平台收到的一致（mock 与 minimax / ark 视频参考）', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  server.plugins.configs.update('minimax/api', {
+    enabled: true,
+    secrets: { MINIMAX_API_KEY: 'local-test' },
+  })
+  server.plugins.configs.update('volc/ark', {
+    enabled: true,
+    secrets: { ARK_API_KEY: 'local-test' },
+  })
+  const { id, doc } = await createCanvas(server)
+
+  const received: Array<{ provider: string; prompt: string }> = []
+  // minimax / ark 的真正改写在它们 submit 内部（替换 submit 会跳过这一步），
+  // 所以记录时调用同一个提示词组装函数，得到平台实际发送的那份文案。
+  const platformOf: Record<string, 'minimax' | 'ark' | undefined> = {
+    'minimax/api': 'minimax',
+    'volc/ark': 'ark',
+    'plein/mock': undefined,
+  }
+  const recordPrompt = (provider: string, req: ProviderRequest) => {
+    const raw = (req.input as { prompt?: string }).prompt ?? ''
+    const platform = platformOf[provider]
+    received.push({ provider, prompt: platform ? videoReferencePrompt(raw, platform) : raw })
+  }
+  const fakeVideo = (): SubmitResult => ({
+    state: 'succeeded',
+    outputs: [
+      {
+        type: 'file',
+        kind: 'video',
+        mime: 'video/webm',
+        data: new Uint8Array(Buffer.from(MOCK_WEBM_BASE64, 'base64')),
+      },
+    ],
+  })
+  const mockSubmit = mockProvider.submit
+  vi.spyOn(mockProvider, 'submit').mockImplementation(async (req, ctx) => {
+    recordPrompt('plein/mock', req)
+    return mockSubmit(req, ctx)
+  })
+  vi.spyOn(minimaxProvider, 'submit').mockImplementation(async (req) => {
+    recordPrompt('minimax/api', req)
+    return fakeVideo()
+  })
+  vi.spyOn(arkProvider, 'submit').mockImplementation(async (req) => {
+    recordPrompt('volc/ark', req)
+    return fakeVideo()
+  })
+
+  // 同名卡只建一张，避免多个同名触发消歧阻断
+  card(doc, 'plein/character', '林夏', asset('a'), 0)
+  const runVideo = async (model: string, prompt: string, withVideo: boolean) => {
+    const n = addNode(doc, 'plein/video', {
+      params: { model, mode: 'reference', prompt },
+      y: 400,
+    })
+    if (withVideo)
+      connect(
+        doc,
+        [
+          createElement(doc, { kind: 'video', assetId: asset('v'), x: 0, y: -300, w: 100, h: 100 }),
+          'video',
+        ],
+        [n, 'videos'],
+      )
+    const input = await preview(server, id, n)
+    expect(input.status).toBe('ready')
+    expect(await server.runs.wait(server.runs.start(id, n, 'local'))).toBe('succeeded')
+    await until(() => !server.runs.isRunning(id, n))
+    return input
+  }
+
+  // mock 图片：面板 prompt 与平台收到的一致
+  const imgShot = addNode(doc, 'plein/image', {
+    params: { model: 'plein/mock:image', prompt: '@林夏 回头' },
+    y: 900,
+  })
+  const imgInput = await preview(server, id, imgShot)
+  expect(imgInput.status).toBe('ready')
+  expect(await server.runs.wait(server.runs.start(id, imgShot, 'local'))).toBe('succeeded')
+  await until(() => !server.runs.isRunning(id, imgShot))
+
+  // mock 视频参考：应用 @ 编号后一致
+  const mockVideo = await runVideo('plein/mock:video', '@林夏 走来', false)
+  // minimax / ark 视频参考：含手写旧编号 @video1，summarize 与 provider 双重改写后仍一致
+  const minimaxVideo = await runVideo('minimax/api:MiniMax-H3', '@林夏 走来 @video1', true)
+  const arkVideo = await runVideo('volc/ark:doubao-seedance-2-0-260128', '@林夏 走来 @video1', true)
+
+  const byProvider = (name: string) => received.filter((r) => r.provider === name)
+  expect(byProvider('plein/mock')).toHaveLength(2)
+  expect(byProvider('plein/mock').map((r) => r.prompt)).toEqual([imgInput.prompt, mockVideo.prompt])
+
+  // minimax：@video1 在面板上已改写成 视频1，平台收到的同一份
+  expect(minimaxVideo.prompt).toContain('图片1')
+  expect(minimaxVideo.prompt).toContain('视频1')
+  expect(minimaxVideo.prompt).not.toContain('@video')
+  expect(byProvider('minimax/api')[0]?.prompt).toBe(minimaxVideo.prompt)
+
+  // ark：面板与平台都是 @image1 / @video1 写法
+  expect(arkVideo.prompt).toContain('@image1')
+  expect(arkVideo.prompt).toContain('@video1')
+  expect(byProvider('volc/ark')[0]?.prompt).toBe(arkVideo.prompt)
+}, 60_000)
+
 it('旁路改名后越界的 @林夏#2 按普通 blocked 预览，不自动改写提示词', async () => {
   const { server } = await bootServer()
   mockSettings(server, {})
@@ -1221,7 +1338,7 @@ it('参考图上游生成失败时，提示能定位到失败的上游节点', a
       id: 'r1',
       runId: 'run-2',
       port: 'images',
-      value: { type: 'image', kind: 'image', assetId: asset('c') },
+      value: { type: 'image', assetId: asset('c') },
       at: Date.now(),
     },
   ])
