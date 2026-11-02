@@ -134,7 +134,9 @@ apps/server/src
 - **元素类型注册**：新增节点类型只在 `packages/nodes` 声明；需要专门的打开行为或编辑器时，在前端节点注册表登记（注册表由方案 A2 建立，未建立前沿用现有分发处）。不要新增 `ElementKind`，除非是新的媒体类元素。
 - **能力审批**：能力的副作用等级用 `effect` 声明；不要在 `apps/server/src/agent/tools.ts` 或 `approvals.ts` 里按能力名加特判。
 - **路由顺序**：路径形状互相覆盖的路由要有专门的回归用例，见 `apps/server/src/media-index/route-order.test.ts`。
-- **数据访问**：Drizzle 查询放在存储模块（`store.ts` / `*-store.ts` / `storage/` 目录）；路由文件里不直接写库。
+- **数据访问**：Drizzle 查询放在存储模块（`store.ts` / `*-store.ts` / `storage/` 目录）；路由文件里不直接写库。检查用例见 `apps/server/src/storage/data-access.test.ts`，它扫全部路由文件（`routes.ts` 与 `*-routes.ts`），出现 Drizzle import 或 `db.insert` / `db.update` / `db.delete`（含事务里的 `tx.`）就失败；确需例外时写进该文件的 `ALLOWED` 并写明理由。
+  - 基础设施直连（保留直连，文件头已写明理由）：`apps/server/src/auth/index.ts`（Better Auth 的适配器要接同一个 db 实例与认证表 schema，账号表与业务表共用一份迁移）、`apps/server/src/sync/rooms.ts`（协作房间的增量写入要走预编译语句的热路径，写增量与更新画布时间戳必须同事务）。
+  - 待收项（直连暂不收，下一波整体拆分时一并处理）：`apps/server/src/agent/sessions.ts`、`apps/server/src/projects/package.ts`。
 - **前端依赖**：优先复用已有依赖，已有依赖能表达的组件和行为不自己实现；新增前端依赖前先看 [architecture-refactor-plan.md](docs/plan/architecture-refactor-plan.md) §3.I 的选型表，同一用途不引第二个库；跨包共用的依赖版本写在 `pnpm-workspace.yaml` 的 `catalog:`。
 
 ## 桌面端
