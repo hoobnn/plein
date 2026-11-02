@@ -95,11 +95,15 @@ it('收尾报告并拒绝未完成请求，迟到成功不能越过用例边界'
   expect(await finishPendingRequests()).toEqual([])
 })
 
-it('显式网络失败保留原始异常，不计为未声明请求', async () => {
+it('显式网络失败转成可读提示并保留原始异常，不计为未声明请求', async () => {
   mockFetch(() => {
     throw new TypeError('连接中断')
   })
-  await expect(api.projects()).rejects.toThrow('连接中断')
+  const reason = await api.projects().catch((error: unknown) => error)
+  expect(reason).toBeInstanceOf(TypeError)
+  // 原始异常留在 cause 里，方便排查；给用户看的是能指明下一步的提示。
+  expect((reason as TypeError).cause).toBeInstanceOf(TypeError)
+  expect((reason as TypeError).message).toContain('无法连接服务')
   expect(takeUnhandledRequests()).toEqual([])
   expect(await finishPendingRequests()).toEqual([])
 })

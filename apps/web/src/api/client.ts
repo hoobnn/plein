@@ -86,62 +86,9 @@ import {
   type ReviseEditPlan,
 } from '@plein/protocol'
 import { validateProjectZip } from './projectZip'
+import { ApiError, json, reportUnauthorized, request, send, setUnauthorizedHandler } from './http'
 
-export class ApiError extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: string,
-    message: string,
-    /** 错误响应的完整内容（如 input_changed 带回的新实际输入） */
-    readonly body?: unknown,
-  ) {
-    super(message)
-  }
-}
-
-/** 401 时通知外壳回到登录页 */
-let onUnauthorized: (() => void) | null = null
-export function setUnauthorizedHandler(fn: () => void) {
-  onUnauthorized = fn
-}
-export function reportUnauthorized() {
-  onUnauthorized?.()
-}
-
-/** 发请求并把非 2xx 统一转成 ApiError */
-async function send(path: string, init: RequestInit = {}): Promise<Response> {
-  const res = await fetch(path, { credentials: 'same-origin', ...init })
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as {
-      error?: string
-      message?: string
-      code?: string
-    } | null
-    // 会话读取自身失败由调用方处理，否则会再次读取会话、形成递归刷新。
-    if (res.status === 401 && path !== API.session && !path.startsWith(API.auth))
-      reportUnauthorized()
-    throw new ApiError(
-      res.status,
-      body?.error ?? body?.code ?? 'http_error',
-      body?.message ?? res.statusText,
-      body ?? undefined,
-    )
-  }
-  return res
-}
-
-export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await send(path, init)
-  // 204 / 202 这类没有响应体的应答
-  const body = await res.text()
-  return (body ? JSON.parse(body) : undefined) as T
-}
-
-const json = (method: string, body?: unknown): RequestInit => ({
-  method,
-  headers: { 'content-type': 'application/json' },
-  body: body === undefined ? undefined : JSON.stringify(body),
-})
+export { ApiError, reportUnauthorized, request, send, setUnauthorizedHandler }
 
 export const api = {
   storyboardBatchPreview: (canvasId: string, boardId: string, body: StoryboardBatchRequest) =>

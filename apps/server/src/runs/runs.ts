@@ -23,11 +23,7 @@ import { shotSegmentMapping } from '@plein/capabilities'
 import { aiAnalysisProblem, aiAnalysisUnit } from './ai-analysis'
 import { speechDirection, speechVoice } from '../executors/audio'
 import { modelOptionsProblem } from './model-options'
-import {
-  appendDeliveryRecord,
-  freezeDeliveryOrigins,
-  type DeliveryOrigins,
-} from '../executors/delivery'
+import { appendDeliveryRecord, freezeDeliveryOrigins } from '../executors/delivery'
 import { newId } from '../ids'
 import { createHash } from 'node:crypto'
 import {
@@ -40,17 +36,15 @@ import {
   type NodeResult,
   type NodeRun,
   type PleinDoc,
-  type ResultValue,
   setParams,
   SYSTEM_ORIGIN,
   isSequenceInstance,
   isGenerationOrigin,
-  type GenerationOrigin,
   videoSegmentConflict,
-  type Edge,
   writeRun,
 } from '@plein/doc'
-import { FlowGraph, runDag, type StepOutcome, stableStringify } from '@plein/flow'
+import { FlowGraph, runDag, type StepOutcome } from '@plein/flow'
+import { stableStringify } from '@plein/canonical'
 import {
   executionOf,
   CompositionSourceRef,
@@ -84,11 +78,25 @@ import type {
 } from '@plein/protocol'
 import { PREPARED_INPUT_VERSION } from '@plein/protocol'
 import { sleep } from '../plugins/limiter'
-import { type CallRecord, NodeRunError, type PluginHost, SHUTDOWN, stageOf } from '../plugins/host'
+import { type PluginHost } from '../plugins/host'
+import { type CallRecord, NodeRunError, SHUTDOWN, stageOf } from '../plugins/provider-protocol'
 import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
 import { fillModels } from './models'
 import { type AppliedMentions, applyMentions, mentionEdges } from './mentions'
+import { executionEdges, runGraph, sequenceEdgeAllowed, toPortValue, toResultValue } from './graph'
+
+// 依赖图与冻结参数在各自模块里实现，这里转出去给兄弟模块用
+export { executionEdges, runGraph }
+import {
+  executionOrigin,
+  fingerprint,
+  newSubmission,
+  outputCall,
+  outputEvidence,
+  type OutputEvidence,
+  parseFrozen,
+} from './frozen'
 import { continuationInputs } from './continuation-inputs'
 import { type GroupRow, type JobRow, type JobStatus, JobStore } from './store'
 import {
@@ -134,59 +142,6 @@ function reusableResult(job: JobRow, resultId: string): boolean {
   )
 }
 
-/** 调度用的依赖图：画布上的连线，加上提示词里 @ 引用带来的依赖 */
-function sequenceEdgeAllowed(doc: PleinDoc, edge: Edge) {
-  const target = doc.get(edge.to[0])
-  if (
-    target?.nodeType !== SEQUENCE_TYPE ||
-    (target.nodeVersion ?? 1) < 2 ||
-    target.params?.instanceVersion !== 2
-  )
-    return true
-  if (!['clips', 'dialogue', 'sfx'].includes(edge.to[1])) return true
-  const parsed = sequenceNode.params.safeParse(target.params)
-  if (!parsed.success || !parsed.data.clips.every(isSequenceInstance)) return false
-  const rows = parsed.data.clips
-  if (rows.some((row) => row.segment && row.sound === 'legacy')) return false
-  if (edge.to[1] === 'clips')
-    return rows.some(
-      (row) =>
-        !row.segment &&
-        row.source === edge.from[0] &&
-        row.port === edge.from[1] &&
-        (!row.edgeId || row.edgeId === edge.id),
-    )
-  if (rows.some((row) => row.sound === 'legacy')) return true
-  return rows.some((row) =>
-    edge.to[1] === 'dialogue'
-      ? row.sound !== 'native' && [row.dialogue, ...(row.more ?? [])].includes(edge.from[0])
-      : row.sfx === edge.from[0],
-  )
-}
-export function executionEdges(doc: PleinDoc) {
-  return [...doc.edges()].filter((edge) => sequenceEdgeAllowed(doc, edge))
-}
-export function runGraph(doc: PleinDoc) {
-  return new FlowGraph([...executionEdges(doc), ...mentionEdges(doc)])
-}
-
-function toPortValue(v: ResultValue): PortValue {
-  if (v.type === 'text' || v.type === 'json') return v
-  const out: PortValue = { type: v.type, assetId: v.assetId, kind: v.type, mime: v.mime }
-  if (v.caption) out.caption = v.caption
-  if (v.compositionSource) out.compositionSource = v.compositionSource
-  return out
-}
-
-function toResultValue(v: PortValue): ResultValue {
-  if (v.type === 'text') return { type: 'text', text: v.text }
-  if (v.type === 'json') return { type: 'json', value: v.value }
-  const out: ResultValue = { type: v.type, assetId: v.assetId, mime: v.mime }
-  if (v.caption) out.caption = v.caption
-  if (v.compositionSource) out.compositionSource = v.compositionSource
-  return out
-}
-
 export interface NodeRunsOptions {
   /** 同时运行的任务数上限（各平台另有自己的并发与频率限制） */
   concurrency?: number
@@ -210,174 +165,6 @@ interface ActiveJob {
   quiet?: boolean
   /** 结果一律只进候选历史（用户取消过的任务取回的结果） */
   held?: HeldReason
-}
-
-/** 提交时冻结的参数与输入值（jobs.frozen） */
-interface Frozen {
-  nodeVersion?: number
-  /** Persisted before first execution; never reconstructed from a restored job's local aliases. */
-  executionOrigin?: Pick<GenerationOrigin, 'canvasId' | 'nodeId' | 'runId'>
-  /** Original candidates are durably bound before publication, independently of local result aliases. */
-  outputEvidence?: OutputEvidence
-  params: Record<string, unknown> | undefined
-  inputs: Record<string, PortValue[]>
-  inputHash?: string
-  deliveryOrigins?: DeliveryOrigins
-}
-
-type OutputCall = {
-  inputFingerprint: string
-} & (
-  | { kind: 'provider'; calls: Array<{ key: string; attemptId: string; requestId: string }> }
-  | { kind: 'local'; execution: NonNullable<Frozen['executionOrigin']> }
-)
-interface OutputEvidence {
-  version: 1
-  publications: Array<{
-    callIdentity: string
-    call: OutputCall
-    outputs: Array<{
-      port: string
-      ordinal: number
-      payloadHash: string
-      origin: GenerationOrigin
-    }>
-  }>
-}
-const fingerprint = (value: unknown) =>
-  createHash('sha256').update(stableStringify(value)).digest('hex')
-const proofHash = (value: unknown): value is string =>
-  typeof value === 'string' && /^[0-9a-f]{64}$/.test(value)
-const proofText = (value: unknown): value is string => typeof value === 'string' && value.length > 0
-function outputEvidence(value: unknown): value is OutputEvidence {
-  if (
-    !value ||
-    typeof value !== 'object' ||
-    (value as OutputEvidence).version !== 1 ||
-    !Array.isArray((value as OutputEvidence).publications)
-  )
-    return false
-  return (value as OutputEvidence).publications.every((publication) => {
-    const call = publication?.call
-    return (
-      !!call &&
-      proofHash(call.inputFingerprint) &&
-      proofHash(publication.callIdentity) &&
-      fingerprint(call) === publication.callIdentity &&
-      (call.kind === 'local'
-        ? executionOrigin(call.execution)
-        : call.kind === 'provider' &&
-          Array.isArray(call.calls) &&
-          call.calls.length > 0 &&
-          call.calls.every((c) => c && [c.key, c.attemptId, c.requestId].every(proofText))) &&
-      Array.isArray(publication.outputs) &&
-      publication.outputs.every(
-        (output) =>
-          output &&
-          proofText(output.port) &&
-          Number.isSafeInteger(output.ordinal) &&
-          output.ordinal >= 0 &&
-          proofHash(output.payloadHash) &&
-          isGenerationOrigin(output.origin) &&
-          output.origin.port === output.port,
-      )
-    )
-  })
-}
-function outputCall(
-  row: JobRow | undefined,
-  frozen: Frozen,
-  local: boolean,
-): OutputCall | undefined {
-  const inputFingerprint = fingerprint({
-    nodeVersion: frozen.nodeVersion,
-    params: frozen.params,
-    inputs: frozen.inputs,
-  })
-  try {
-    const calls = Object.entries(JSON.parse(row?.calls || '{}') as Record<string, CallRecord>).sort(
-      ([a], [b]) => a.localeCompare(b),
-    )
-    if (!calls.length)
-      return local && executionOrigin(frozen.executionOrigin)
-        ? { kind: 'local', inputFingerprint, execution: { ...frozen.executionOrigin } }
-        : undefined
-    if (
-      !calls.every(
-        ([, call]) =>
-          call.state === 'done' &&
-          proofText(call.trace?.attemptId) &&
-          proofText(call.trace?.requestId),
-      )
-    )
-      return undefined
-    return {
-      kind: 'provider',
-      inputFingerprint,
-      calls: calls.map(([key, call]) => ({
-        key,
-        attemptId: call.trace!.attemptId,
-        requestId: call.trace!.requestId,
-      })),
-    }
-  } catch {
-    return undefined
-  }
-}
-function newSubmission(
-  before: JobRow | undefined,
-  after: JobRow | undefined,
-  call: OutputCall,
-): boolean {
-  if (call.kind !== 'provider') return false
-  try {
-    const prior = new Set(
-      (JSON.parse(before?.call_history || '[]') as Array<{ id: string }>).map((event) => event.id),
-    )
-    return (
-      JSON.parse(after?.call_history || '[]') as Array<{
-        id: string
-        kind: string
-        callKey: string
-        attemptId?: string
-        requestId?: string
-      }>
-    ).some(
-      (event) =>
-        event.kind === 'submit_started' &&
-        !prior.has(event.id) &&
-        call.calls.some(
-          (c) =>
-            c.key === event.callKey &&
-            c.attemptId === event.attemptId &&
-            c.requestId === event.requestId,
-        ),
-    )
-  } catch {
-    return false
-  }
-}
-
-function executionOrigin(value: unknown): value is NonNullable<Frozen['executionOrigin']> {
-  return (
-    !!value &&
-    typeof value === 'object' &&
-    !Array.isArray(value) &&
-    ['canvasId', 'nodeId', 'runId'].every(
-      (key) =>
-        typeof (value as Record<string, unknown>)[key] === 'string' &&
-        !!(value as Record<string, unknown>)[key],
-    )
-  )
-}
-
-function parseFrozen(raw: string | null | undefined): Frozen | undefined {
-  if (!raw) return undefined
-  try {
-    return JSON.parse(raw) as Frozen
-  } catch {
-    return undefined
-  }
 }
 
 /** 运行前准备好的输入；缓存键、实际输入预览和提交都由它算出 */

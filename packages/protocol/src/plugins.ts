@@ -1,25 +1,15 @@
-import {
-  type ElementTypeDefinition,
-  type ModelInfo,
-  type NodeDescriptor,
-  type PluginManifest,
-  type ProviderDescriptor,
-  type PromptPresetDefinition,
-  type TemplateDefinition,
-} from '@plein/plugin-sdk'
+import type { PluginManifest } from '@plein/plugin-sdk'
 import { z } from 'zod'
 
-export interface PluginInfo {
-  id: string
-  name: string
-  version: string
-  description?: string
-  builtin: boolean
-  status: 'active' | 'error'
-  error?: string
-  contributes: PluginManifest['contributes']
-  permissions: PluginManifest['permissions']
-}
+// 插件目录本身是插件公开 API 的一部分，放在 plugin-sdk；
+// 这里转出去，前后端仍从 @plein/protocol 引入即可。
+export type {
+  Catalog,
+  CatalogModel,
+  PluginInfo,
+  ProviderInfo,
+  RemoteModelsStatus,
+} from '@plein/plugin-sdk'
 
 /**
  * 本机第三方插件（数据目录 plugins/ 下的文件夹）：默认不启用，设置里看过权限后再打开。
@@ -43,57 +33,6 @@ export interface LocalPluginInfo {
 }
 
 export const LocalPluginUpdate = z.object({ enabled: z.boolean() })
-
-/**
- * 目录里的模型条目：内置条目可能带远端状态；远端列表新发现的以通用能力追加。
- * remote-only 模型参数为通用默认，提交是否被平台接受以内置目录收录为准
- */
-export interface CatalogModel extends ModelInfo {
-  /** 相对最近一次远端列表：available 接口返回里有；unlisted 没返回（可能下线或无权限） */
-  remote?: 'available' | 'unlisted'
-  /** 远端列表返回但内置目录没有：按 id 推断的通用能力条目 */
-  remoteOnly?: boolean
-}
-
-/** 远端模型列表的拉取状态，供设置页显示上次刷新时间与失败原因 */
-export interface RemoteModelsStatus {
-  /** 最近一次成功或失败的拉取时间；从未拉取为 null */
-  fetchedAt: number | null
-  /** 24 小时内且密钥未换为 fresh；过期为 stale；从未拉取或密钥已换为 idle */
-  status: 'fresh' | 'stale' | 'idle'
-  /** 最近一次拉取的失败原因；成功拉取后不给 */
-  error?: string
-}
-
-export interface ProviderInfo extends Omit<ProviderDescriptor, 'models'> {
-  models: CatalogModel[]
-  enabled: boolean
-  /** 必填密钥是否都已填写 */
-  configured: boolean
-  /** 平台保存的密钥组数 */
-  credentialCount: number
-  /** 多组密钥时当前组的标签，摘要用；一组或还没选时不给 */
-  activeCredentialLabel?: string
-  /** 远端模型列表状态；实现了拉取的平台才有，目录 models 已按它合并 */
-  remoteModels?: RemoteModelsStatus
-}
-
-/** 已安装插件提供的全部能力，前端据此生成节点菜单、表单和设置页 */
-export interface Catalog {
-  plugins: PluginInfo[]
-  nodes: Array<NodeDescriptor & { executable: boolean }>
-  providers: ProviderInfo[]
-  /** 各模型能力的默认模型（`平台:模型`），新建节点时写进节点；没有可用模型的能力不列出 */
-  defaultModels: Partial<Record<string, string>>
-  templates: Array<TemplateDefinition & { plugin: string }>
-  prompts: Array<PromptPresetDefinition & { plugin: string }>
-  elements: Array<
-    Pick<ElementTypeDefinition, 'type' | 'title' | 'description' | 'defaultSize'> & {
-      dataSchema: Record<string, unknown>
-      plugin: string
-    }
-  >
-}
 
 /**
  * 服务端拉取远端模型列表的信号超时；前端轮询窗口按它推导（留余量），

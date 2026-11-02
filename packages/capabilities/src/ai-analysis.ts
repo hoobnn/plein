@@ -18,7 +18,7 @@ import {
   type AiDraftReference,
   type AiLocalScope,
 } from '@plein/nodes'
-import type { Catalog } from '@plein/protocol'
+import type { Catalog } from '@plein/plugin-sdk'
 import { nodeElementOf as nodeElement } from './story/nodes'
 import { analysisManifest } from './analysis'
 

@@ -27,7 +27,8 @@ import type {
 } from '@plein/protocol'
 import { and, eq } from 'drizzle-orm'
 import { newId } from '../ids'
-import { NodeRunError } from '../plugins/host'
+
+import { NodeRunError } from '../plugins/provider-protocol'
 import type { DB } from '../storage/db'
 import { assets } from '../storage/schema'
 import { type Inspection, type NodeRuns, runGraph } from './runs'

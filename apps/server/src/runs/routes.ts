@@ -20,7 +20,8 @@ import {
 import { Hono } from 'hono'
 import type { AuthEnv } from '../auth'
 import { ownsCanvas } from '../storage/canvases'
-import { NodeRunError } from '../plugins/host'
+
+import { NodeRunError } from '../plugins/provider-protocol'
 import type { DB } from '../storage/db'
 import { ImpactAnalyzer } from './impact'
 import type { NodeRuns } from './runs'

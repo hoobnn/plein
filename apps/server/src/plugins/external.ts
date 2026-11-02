@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
-import { stableStringify } from '@plein/flow'
+import { stableStringify } from '@plein/canonical'
 import {
   type AssetRef,
   Capability,

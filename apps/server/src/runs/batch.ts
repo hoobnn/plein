@@ -1,6 +1,6 @@
 import { type CanvasElement, createDoc, currentResult, type PleinDoc } from '@plein/doc'
 import { createHash } from 'node:crypto'
-import { stableStringify } from '@plein/flow'
+import { stableStringify } from '@plein/canonical'
 import type {
   BatchDependency,
   BatchItem,

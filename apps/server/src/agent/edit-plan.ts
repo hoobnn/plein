@@ -1,7 +1,8 @@
 import { CapabilityError, capabilityFor, clip } from '@plein/capabilities'
 import { type EditEstimate, type EditPlan, EditScope } from '@plein/protocol'
 import { z } from 'zod'
-import { NodeRunError } from '../plugins/host'
+
+import { NodeRunError } from '../plugins/provider-protocol'
 import type { ServerContext } from './tools'
 
 /** 提出修改方案的工具名：会话据此把确认单显示成方案卡片 */

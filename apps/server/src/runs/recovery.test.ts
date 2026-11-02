@@ -15,7 +15,8 @@ import { mockProvider } from '@plein/providers'
 import sharp from 'sharp'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vite-plus/test'
 import type { Server } from '../app'
-import type { CallRecord } from '../plugins/host'
+
+import type { CallRecord } from '../plugins/provider-protocol'
 import {
   addNode,
   bootServer,

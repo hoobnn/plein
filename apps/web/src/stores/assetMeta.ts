@@ -1,5 +1,5 @@
 import type { Asset } from '@plein/protocol'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api/client'
 
 export const ASSET_META_CACHE_LIMIT = 512
@@ -73,8 +73,8 @@ export function useAssetMeta(id: string | undefined): Asset | null {
 
 /** 一组资产的元信息；reload 只重试尚未成功读取的项，保留不可变资产缓存。 */
 export function useAssetMetas(ids: string[], reload = 0) {
-  const requested = new Set(ids.filter(Boolean))
-  const key = JSON.stringify([...requested])
+  const key = JSON.stringify([...new Set(ids.filter(Boolean))])
+  const requested = useMemo(() => new Set<string>(JSON.parse(key) as string[]), [key])
   const retained = useRef({ key: '', assets: new Map<string, Asset>() })
   const [state, setState] = useState<{
     key: string
@@ -94,7 +94,8 @@ export function useAssetMetas(ids: string[], reload = 0) {
       if (asset) assets.set(id, asset)
     }
     retained.current = { key, assets }
-    setState({ key, revision: 0, errors: {} })
+    // revision 单调递增：已知素材集合一变就 +1，调用方据此判断时长等信息是否更新。
+    setState((s) => ({ key, revision: s.revision + 1, errors: {} }))
     for (const id of current) {
       if (assets.has(id)) continue
       loadAssetMeta(id).then(
@@ -121,21 +122,30 @@ export function useAssetMetas(ids: string[], reload = 0) {
       live = false
     }
   }, [key, reload])
-  const assets = state.key === key ? retained.current.assets : new Map<string, Asset>()
-  const get = (id: string | undefined) => {
-    if (!id || !requested.has(id)) return undefined
-    // 异步操作可能持有重试前的 getter；同一列表读最新快照，外部成功重试也补入本地保留。
-    const current = retained.current.key === key ? retained.current.assets : assets
-    const asset = current.get(id) ?? assetMetaNow(id)
-    if (asset) current.set(id, asset)
-    return asset
-  }
-  const errors = Object.entries(state.key === key ? state.errors : {})
-    .filter(([id]) => !get(id))
-    .map(([id, message]) => ({ id, message }))
-  return {
-    get,
-    errors,
-    loading: ids.some((id) => id && !get(id) && !errors.some((error) => error.id === id)),
-  }
+  // 首个 effect 跑完之前还没有这一份快照，用一个稳定的空表占位。
+  const fallback = useMemo(() => new Map<string, Asset>(), [])
+  const assets = state.key === key ? retained.current.assets : fallback
+  const get = useCallback(
+    (id: string | undefined) => {
+      if (!id || !requested.has(id)) return undefined
+      // 异步操作可能持有重试前的 getter；同一列表读最新快照，外部成功重试也补入本地保留。
+      const current = retained.current.key === key ? retained.current.assets : assets
+      const asset = current.get(id) ?? assetMetaNow(id)
+      if (asset) current.set(id, asset)
+      return asset
+    },
+    [requested, key, assets],
+  )
+  const errors = useMemo(
+    () =>
+      Object.entries(state.key === key ? state.errors : {})
+        .filter(([id]) => !get(id))
+        .map(([id, message]) => ({ id, message })),
+    [state.key, state.errors, key, get],
+  )
+  const loading = ids.some((id) => id && !get(id) && !errors.some((error) => error.id === id))
+  return useMemo(
+    () => ({ get, errors, loading, revision: state.revision }),
+    [get, errors, loading, state.revision],
+  )
 }

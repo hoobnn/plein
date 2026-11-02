@@ -4,7 +4,8 @@ import { z } from 'zod'
 import * as Y from 'yjs'
 import { CheckpointError } from '../checkpoints/service'
 import { MediaIndexError } from '../media-index/service'
-import { NodeRunError } from '../plugins/host'
+
+import { NodeRunError } from '../plugins/provider-protocol'
 import type { ServerContext } from './tools'
 
 const cap = capabilityFor<ServerContext>()

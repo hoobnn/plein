@@ -7,13 +7,14 @@ import type {
   PreparedInput,
   RecoveryState,
 } from '@plein/protocol'
+
 import {
   type CallRecord,
   credentialLostOf,
   type FailureStage,
   NodeRunError,
   stageOf,
-} from '../plugins/host'
+} from '../plugins/provider-protocol'
 import type { JobRow, JobStatus } from './store'
 
 /**

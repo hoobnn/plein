@@ -10,7 +10,7 @@ import {
 } from '@plein/nodes'
 import { createHash } from 'node:crypto'
 import type { PleinDoc } from '@plein/doc'
-import { stableStringify } from '@plein/flow'
+import { stableStringify } from '@plein/canonical'
 import { parseModelRef, providerConfigured } from '@plein/plugin-sdk'
 import type { PluginHost } from '../plugins/host'
 

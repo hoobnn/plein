@@ -23,7 +23,8 @@ import { beforeAll, describe, expect, it, vi } from 'vite-plus/test'
 import { z } from 'zod'
 import { startTestServer, tempDir } from '../testing'
 import { credentialFingerprint, ProviderConfigStore } from './config-store'
-import { type CallRecord, type CallStage, NodeRunError, PluginHost, SHUTDOWN } from './host'
+import { type CallRecord, type CallStage, NodeRunError, SHUTDOWN } from './provider-protocol'
+import { PluginHost } from './host'
 import { Limiter } from './limiter'
 import { PluginRegistry } from './registry'
 import { PermissionError, scopedFetch, scopedSecrets } from './sandbox'
@@ -469,7 +470,7 @@ describe('插件宿主', () => {
       s.host.runNode({
         type: 'plein/image',
         version: 1,
-        params: { model: 'plein/mock:image', count: 9 },
+        params: { model: 'plein/mock:image', count: 16 },
         ownerId: 'local',
       }),
     ).rejects.toMatchObject({ code: 'invalid_params' })

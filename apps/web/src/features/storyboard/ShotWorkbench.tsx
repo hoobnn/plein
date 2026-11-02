@@ -71,6 +71,7 @@ import {
   workbenchDraft,
   type WorkbenchDraft,
 } from './shotWorkbenchModel'
+import { useWindowKeyDown } from '../../ui/useWindowKeyDown'
 
 const labels = {
   description: '画面描述',
@@ -403,42 +404,38 @@ function Workbench({
     if (draft) drafts.set(shotId, draft)
     useCanvas.getState().openShotWorkbench({ boardId, shotId: id })
   }
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (
-        event.defaultPrevented ||
-        !event.altKey ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.shiftKey ||
-        child ||
-        batch
-      )
-        return
-      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
-      // 有其他弹窗盖在工作台上时不抢按键（如验收弹窗、生成清单）
-      const layers = document.querySelectorAll<HTMLElement>('[data-plein-modal-layer]')
-      const top = [...layers].reduce<HTMLElement | undefined>(
-        (acc, el) =>
-          !acc || Number(el.dataset.pleinModalLayer) >= Number(acc.dataset.pleinModalLayer)
-            ? el
-            : acc,
-        undefined,
-      )
-      if (top && top !== document.querySelector('[aria-label="镜头工作台"]')) return
-      const target = event.target
-      if (
-        target instanceof Element &&
-        target.closest('input, textarea, select, [contenteditable="true"]')
-      )
-        return
-      // 首/末镜也不让浏览器把 Alt+方向键当历史前进后退
-      event.preventDefault()
-      const next = shots[currentIndex + (event.key === 'ArrowLeft' ? -1 : 1)]
-      if (next) changeShot(next.id)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+  useWindowKeyDown((event) => {
+    if (
+      event.defaultPrevented ||
+      !event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      child ||
+      batch
+    )
+      return
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+    // 有其他弹窗盖在工作台上时不抢按键（如验收弹窗、生成清单）
+    const layers = document.querySelectorAll<HTMLElement>('[data-plein-modal-layer]')
+    const top = [...layers].reduce<HTMLElement | undefined>(
+      (acc, el) =>
+        !acc || Number(el.dataset.pleinModalLayer) >= Number(acc.dataset.pleinModalLayer)
+          ? el
+          : acc,
+      undefined,
+    )
+    if (top && top !== document.querySelector('[aria-label="镜头工作台"]')) return
+    const target = event.target
+    if (
+      target instanceof Element &&
+      target.closest('input, textarea, select, [contenteditable="true"]')
+    )
+      return
+    // 首/末镜也不让浏览器把 Alt+方向键当历史前进后退
+    event.preventDefault()
+    const next = shots[currentIndex + (event.key === 'ArrowLeft' ? -1 : 1)]
+    if (next) changeShot(next.id)
   })
   const original = draft ? (JSON.parse(draft.source) as Record<string, unknown>) : undefined
   const dirty =

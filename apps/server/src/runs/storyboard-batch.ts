@@ -8,7 +8,8 @@ import {
   type ShotSource,
 } from '@plein/capabilities'
 import { createDoc, currentResult, type CanvasElement, type PleinDoc } from '@plein/doc'
-import { FlowGraph, stableStringify, topoLayers } from '@plein/flow'
+import { FlowGraph, topoLayers } from '@plein/flow'
+import { stableStringify } from '@plein/canonical'
 import { STORYBOARD_TYPE } from '@plein/nodes'
 import {
   type BatchDependency,
@@ -19,7 +20,8 @@ import {
   type StoryboardBatchRow,
 } from '@plein/protocol'
 import * as Y from 'yjs'
-import { NodeRunError } from '../plugins/host'
+
+import { NodeRunError } from '../plugins/provider-protocol'
 import { batchSourceKey, type JobExpect } from './batch'
 import { mentionEdges } from './mentions'
 import { type NodeRuns, type VerifiedSequenceMedia, runGraph, executionEdges } from './runs'

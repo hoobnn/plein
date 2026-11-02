@@ -20,7 +20,8 @@ import {
 } from '@plein/nodes'
 import { type NodeDefinition, parseModelRef, type PortValue } from '@plein/plugin-sdk'
 import type { InputIssue, InputRef, InputRefKind } from '@plein/protocol'
-import { NodeRunError } from '../plugins/host'
+
+import { NodeRunError } from '../plugins/provider-protocol'
 
 type Inputs = Record<string, PortValue[]>
 

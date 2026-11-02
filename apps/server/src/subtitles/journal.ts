@@ -12,7 +12,12 @@ import {
 import { join } from 'node:path'
 import type { SubmissionAudit } from '@plein/protocol'
 import { parseModelRef } from '@plein/plugin-sdk'
-import { addCredentialUsage, type CallRecord, type CredentialUsage } from '../plugins/host'
+
+import {
+  addCredentialUsage,
+  type CallRecord,
+  type CredentialUsage,
+} from '../plugins/provider-protocol'
 
 export interface StoredRecognition {
   assetId: string

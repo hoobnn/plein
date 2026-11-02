@@ -98,10 +98,17 @@ export default defineConfig({
         statements: 49,
         functions: 42,
         branches: 42,
-        'packages/flow/src/{graph,key,schedule}.ts': {
+        'packages/flow/src/{graph,schedule}.ts': {
           perFile: true,
           lines: 100,
           statements: 95,
+          functions: 100,
+          branches: 90,
+        },
+        'packages/canonical/src/index.ts': {
+          perFile: true,
+          lines: 100,
+          statements: 100,
           functions: 100,
           branches: 90,
         },

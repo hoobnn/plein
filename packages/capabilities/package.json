@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": "./src/index.ts"
   },
@@ -14,8 +15,7 @@
     "@plein/nodes": "workspace:*",
     "@plein/plugin-sdk": "workspace:*",
     "zod": "4.6.7",
-    "yjs": "^13.6.33",
-    "@plein/protocol": "workspace:*"
+    "yjs": "^13.6.33"
   },
   "devDependencies": {
     "typescript": "^7.0.2"

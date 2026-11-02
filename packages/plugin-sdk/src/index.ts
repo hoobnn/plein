@@ -3,6 +3,7 @@
  * 内置功能（节点、Provider）与第三方插件走同一套注册方式。
  */
 export * from './capability'
+export * from './catalog'
 export * from './contributions'
 export * from './executor'
 export * from './ids'

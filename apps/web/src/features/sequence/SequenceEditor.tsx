@@ -44,6 +44,7 @@ import {
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react'
@@ -358,10 +359,17 @@ function Editor({
   returnToBoard: boolean
 }) {
   // 协作者改了顺序也能看到
-  useDocVersion(engine.doc)
+  const version = useDocVersion(engine.doc)
   const closing = useClosing()
   const catalog = useCatalog((s) => s.catalog)
-  const read = readSequence(engine, id, catalog)
+  const canvasId = useCanvas((s) => s.canvasId)
+  // 读序列要遍历上游图并排序，只有文档或节点目录变了才需要重算：
+  // 面板自己的状态变化（选中、播放头、展开）不该把整条序列重新算一遍。
+  const read = useMemo(
+    () => readSequence(engine, id, catalog),
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- version 变化即文档变化
+    [version, engine, id, catalog, canvasId],
+  )
   const { el, params, dialogue, sfx, music, animatic, inputProblem: upstreamProblem } = read
   const principal = useSession((s) => s.info?.principal)
   const [element] = useState(() => engine.doc.elementMaps.get(id))
@@ -438,13 +446,20 @@ function Editor({
     playhead.pause()
     setPreviewRevision((revision) => revision + 1)
   }
-  const duration = (assetId: string | undefined) => meta(assetId)?.duration
+  // metadata.get 已经是稳定引用，所以 duration 稳定：可以拿它做 memo 的依赖。
+  const duration = useCallback((assetId: string | undefined) => meta(assetId)?.duration, [meta])
   const videoDuration = (assetId: string) => {
     const value = duration(assetId)
     return value !== undefined && Number.isFinite(value) && value > 0 ? value : undefined
   }
+  // 手势身份要对全部行做一次序列化：序列没变、素材时长没读到新值时不必重算。
+  // metadata.revision 一变就说明已知素材集合变了，时长要跟着重算。
+  const interactionKey = useMemo(
+    () => sequenceInteractionKey(read, duration, readonly),
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- metadata.revision 变化即素材时长变化
+    [read, duration, readonly, metadata.revision],
+  )
   const running = el?.run?.status === 'running' || el?.run?.status === 'queued'
-  const canvasId = useCanvas((s) => s.canvasId)
   const active = useCallback(() => {
     const state = useCanvas.getState()
     return (
@@ -941,7 +956,7 @@ function Editor({
   const [packError, setPackError] = useState<string | null>(null)
   const [packNotice, setPackNotice] = useState<string | null>(null)
   const packRequest = useRef<{ controller: AbortController; key: string } | null>(null)
-  const packKey = projectSourceKey(read)
+  const packKey = useMemo(() => projectSourceKey(read), [read])
   const cancelProject = useCallback((silent = false) => {
     const pending = packRequest.current
     packRequest.current = null
@@ -1576,7 +1591,7 @@ function Editor({
           <MediaReloadContext.Provider value={previewRevision}>
             <Timeline
               readOnly={readonly}
-              interactionKey={sequenceInteractionKey(read, duration, readonly)}
+              interactionKey={interactionKey}
               readInteractionKey={() =>
                 sequenceInteractionKey(readSequence(engine, id), duration, !writable())
               }

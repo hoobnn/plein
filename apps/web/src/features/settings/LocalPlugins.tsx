@@ -6,7 +6,7 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api/client'
-import { ApiError, reportUnauthorized } from '../../api/client'
+import { request } from '../../api/http'
 import { queryClient, queryKeys } from '../../api/query'
 import { desktop } from '../../desktop'
 import { useCatalog } from '../../stores/catalog'
@@ -15,24 +15,9 @@ import { Switch } from '../../ui/Switch'
 import { Modal } from '../../ui/Modal'
 import { useCanvas } from '../../stores/canvas'
 
-async function installRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api/plugins/install/${path}`, {
-    credentials: 'same-origin',
-    ...init,
-  })
-  if (!response.ok) {
-    const error = (await response.json().catch(() => null)) as {
-      error?: string
-      message?: string
-    } | null
-    if (response.status === 401) reportUnauthorized()
-    throw new ApiError(
-      response.status,
-      error?.error ?? 'install_failed',
-      error?.message ?? '插件安装请求失败',
-    )
-  }
-  return response.status === 204 ? (undefined as T) : (response.json() as Promise<T>)
+/** 插件安装共用统一请求层；失败文案在调用处按安装阶段细化。 */
+function installRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  return request<T>(`/api/plugins/install/${path}`, init)
 }
 
 /** 状态标签 */

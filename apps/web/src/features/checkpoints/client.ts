@@ -5,30 +5,24 @@ import type {
   CheckpointRestored,
   CreateCheckpoint,
 } from '@plein/protocol'
-import { ApiError } from '../../api/client'
-import { mediaQuery, mediaRequest } from '../media-library/client'
+import { ApiError, json, request } from '../../api/http'
+import { mediaQuery } from '../media-library/client'
 
-const json = (body: unknown): RequestInit => ({
-  method: 'POST',
-  headers: { 'content-type': 'application/json' },
-  body: JSON.stringify(body),
-})
 export const checkpointApi = {
   list: (projectId: string, cursor?: string, signal?: AbortSignal) =>
-    mediaRequest<CheckpointPage>(
-      `/api/projects/${projectId}/checkpoints?${mediaQuery({ cursor })}`,
-      { signal },
-    ),
+    request<CheckpointPage>(`/api/projects/${projectId}/checkpoints?${mediaQuery({ cursor })}`, {
+      signal,
+    }),
   detail: (id: string, signal?: AbortSignal) =>
-    mediaRequest<CheckpointDetail>(`/api/checkpoints/${id}`, { signal }),
+    request<CheckpointDetail>(`/api/checkpoints/${id}`, { signal }),
   create: (canvasId: string, body: CreateCheckpoint, signal?: AbortSignal) =>
-    mediaRequest<CanvasCheckpoint>(`/api/canvases/${canvasId}/checkpoints`, {
-      ...json(body),
+    request<CanvasCheckpoint>(`/api/canvases/${canvasId}/checkpoints`, {
+      ...json('POST', body),
       signal,
     }),
   restore: (id: string) =>
-    mediaRequest<CheckpointRestored>(`/api/checkpoints/${id}/restore`, json({})),
-  remove: (id: string) => mediaRequest<void>(`/api/checkpoints/${id}`, { method: 'DELETE' }),
+    request<CheckpointRestored>(`/api/checkpoints/${id}/restore`, json('POST', {})),
+  remove: (id: string) => request<void>(`/api/checkpoints/${id}`, { method: 'DELETE' }),
 }
 
 function pause(signal: AbortSignal) {

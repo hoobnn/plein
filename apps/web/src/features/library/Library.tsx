@@ -62,6 +62,7 @@ import { listFocusTarget } from './listFocus'
 import { settleSavedDraft } from './savedDraft'
 
 import { createdEditing, draftOf, editorKeyOf, type Draft, type Editing } from './editorDraft'
+import { useWindowKeyDown } from '../../ui/useWindowKeyDown'
 
 const PanoramaDialog = lazy(() => import('../panorama/PanoramaDialog'))
 
@@ -207,8 +208,8 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
     )
   }
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+  useWindowKeyDown(
+    (e) => {
       if (
         !(e.target instanceof Element) ||
         !e.target.closest('[role="dialog"]')?.classList.contains('lib-dialog')
@@ -231,10 +232,9 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
       e.stopPropagation()
       if (editing) back()
       else close()
-    }
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
-  })
+    },
+    { capture: true },
+  )
 
   const q = query.trim().toLowerCase()
   const filtered = !!q || Object.values(tags).some(Boolean)

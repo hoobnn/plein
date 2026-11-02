@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto'
-import { stableStringify } from '@plein/flow'
+import { stableStringify } from '@plein/canonical'
 import { sequenceNode } from '@plein/nodes'
 import { ProviderError } from '@plein/plugin-sdk'
 import { and, desc, eq } from 'drizzle-orm'
 import { z } from 'zod'
-import type { CallRecord } from '../plugins/host'
+
+import type { CallRecord } from '../plugins/provider-protocol'
 import { cacheParams } from '../runs/runs'
 import type { DB } from '../storage/db'
 import { jobs } from '../storage/schema'

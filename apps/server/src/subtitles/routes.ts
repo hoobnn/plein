@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { stableStringify } from '@plein/flow'
+import { stableStringify } from '@plein/canonical'
 import { parseModelRef, ProviderError, type TranscriptSegment } from '@plein/plugin-sdk'
 import {
   API,
@@ -17,7 +17,8 @@ import { Hono } from 'hono'
 import type { AuthEnv } from '../auth'
 import type { AssetStore } from '../assets/store'
 import { credentialFingerprint as fingerprintOf } from '../plugins/config-store'
-import type { CallRecord, PluginHost } from '../plugins/host'
+import type { PluginHost } from '../plugins/host'
+import type { CallRecord } from '../plugins/provider-protocol'
 import type { DB } from '../storage/db'
 import { legacySubtitleRecord } from './legacy'
 import { readRecord, writeRecord } from './journal'

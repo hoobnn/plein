@@ -1,6 +1,7 @@
 import { mockProvider } from '@plein/providers'
 import { afterEach, expect, it, onTestFinished, vi } from 'vite-plus/test'
-import type { CallRecord } from '../plugins/host'
+
+import type { CallRecord } from '../plugins/provider-protocol'
 import { addNode, bootServer, createCanvas, mockSettings, until } from '../testing'
 
 afterEach(() => vi.restoreAllMocks())

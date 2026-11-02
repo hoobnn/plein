@@ -6,12 +6,13 @@ import type {
   SubmissionAudit,
 } from '@plein/protocol'
 import { randomUUID } from 'node:crypto'
+
 import {
   addCredentialUsage,
   type CallJournal,
   type CallRecord,
   type CredentialUsage,
-} from '../plugins/host'
+} from '../plugins/provider-protocol'
 import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm'
 import type { DB } from '../storage/db'
 import { batchItems, impactDecisions, jobGroups, jobs } from '../storage/schema'

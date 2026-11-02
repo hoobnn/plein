@@ -7,38 +7,23 @@ import type {
   MaintenanceSettings,
   MaintenanceStatus,
 } from '@plein/protocol'
-import { ApiError } from '../../api/client'
+import { json, request } from '../../api/http'
 
-async function request<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
-  const init: RequestInit = {
-    method,
-    credentials: 'same-origin',
-    headers: { 'content-type': 'application/json' },
-  }
-  if (body !== undefined) init.body = JSON.stringify(body)
-  const response = await fetch(`/api/maintenance/${path}`, init)
-  const value: unknown = await response.json()
-  if (!response.ok) {
-    const error = value as { error?: string; message?: string }
-    throw new ApiError(
-      response.status,
-      error.error ?? 'http_error',
-      error.message ?? response.statusText,
-    )
-  }
-  return value as T
+/** 维护接口共用统一请求层：会话失效时同样回到登录页。 */
+function maintenanceRequest<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
+  return request<T>(`/api/maintenance/${path}`, json(method, body))
 }
 
 export const maintenanceApi = {
-  status: () => request<MaintenanceStatus>('status'),
-  space: () => request<DataSpace>('space'),
+  status: () => maintenanceRequest<MaintenanceStatus>('status'),
+  space: () => maintenanceRequest<DataSpace>('space'),
   settings: (settings: MaintenanceSettings) =>
-    request<MaintenanceStatus>('settings', 'PUT', settings),
-  backup: () => request<LocalBackup>('backups', 'POST'),
+    maintenanceRequest<MaintenanceStatus>('settings', 'PUT', settings),
+  backup: () => maintenanceRequest<LocalBackup>('backups', 'POST'),
   restoreCopy: (id: string) =>
-    request<BackupRestored>(`backups/${encodeURIComponent(id)}/restore-copy`, 'POST'),
-  preview: () => request<CleanupPreview>('cleanup/preview', 'POST'),
-  cleanup: (token: string) => request<CleanupResult>('cleanup', 'POST', { token }),
+    maintenanceRequest<BackupRestored>(`backups/${encodeURIComponent(id)}/restore-copy`, 'POST'),
+  preview: () => maintenanceRequest<CleanupPreview>('cleanup/preview', 'POST'),
+  cleanup: (token: string) => maintenanceRequest<CleanupResult>('cleanup', 'POST', { token }),
   restoreTrash: (id: string) =>
-    request<{ assets: number }>(`trash/${encodeURIComponent(id)}/restore`, 'POST'),
+    maintenanceRequest<{ assets: number }>(`trash/${encodeURIComponent(id)}/restore`, 'POST'),
 }
