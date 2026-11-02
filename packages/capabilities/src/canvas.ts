@@ -323,7 +323,8 @@ export const deleteElementsCap = defineCapability({
   // 删本轮自己建的不问；删用户已有的要问，范围写进确认（always 模式下同样不问自建的）
   approval: (a, _ctx, { changes }) => {
     const ids = a.ids.filter((i) => !changes.createdThisTurn(i))
-    if (!ids.length) return null
+    // 删本轮自建的东西任何模式都不问（显式豁免，仅此能力使用）
+    if (!ids.length) return { exempt: '本轮新建' }
     return { reason: `删除你已有的 ${ids.length} 个元素`, ids }
   },
   input: z.object({ ids: z.array(id).min(1) }),

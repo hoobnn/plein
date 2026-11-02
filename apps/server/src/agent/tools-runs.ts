@@ -27,14 +27,13 @@ export const runNode = serverCapability({
   group: 'run',
   where: 'server',
   effect: 'run',
-  // 生成视频要确认，节点名写进确认；always 下不带「较贵、较慢」的说法
-  approval: (a, ctx, { changes, mode }) => {
+  // 生成视频要确认，节点名写进确认；一轮跑满要问（always 下声明说不问时回退统一说法）
+  approval: (a, ctx, { changes }) => {
     const node = elName(ctx, a.id)
     const capability = ctx.withDoc((doc) => {
       const type = doc.get(a.id)?.nodeType
       return type ? ctx.nodes.latest(type)?.def.capability : undefined
     })
-    if (mode === 'always') return { reason: `运行 ${node}`, ids: [a.id] }
     if (capability === 'video.generate')
       return { reason: `生成视频 ${node}（较贵、较慢）`, ids: [a.id] }
     if (changes.runCount >= RUN_LIMIT)

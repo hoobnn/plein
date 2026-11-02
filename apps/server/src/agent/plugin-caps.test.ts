@@ -1,4 +1,5 @@
 import {
+  type CapabilityApproval,
   definePlugin,
   definePluginCapability,
   defineServerPlugin,
@@ -48,7 +49,7 @@ const acme = defineServerPlugin(
   { capabilities: caps },
 )
 
-/** 声明了 approval / prepare 的内置插件能力：声明经 plugin-caps 透传，调度器按声明分派 */
+/** 声明了 approval / prepare 的内置插件能力：声明经 plugin-caps 透传，通用回退声明关不掉 */
 const declaredCaps = [
   definePluginCapability({
     id: 'acme2/answer',
@@ -62,13 +63,31 @@ const declaredCaps = [
   definePluginCapability({
     id: 'acme2/gated',
     title: '按声明确认',
-    description: '声明审批说明：rules 不问，always 问',
+    description: '声明提供确认的说法',
     effect: 'run',
     input: z.object({}),
-    approval: (_input, { mode }) =>
-      mode === 'always' ? { reason: '声明里的说法', ids: [] } : null,
+    approval: () => ({ reason: '声明里的说法', ids: [] }),
     prepare: () => null,
     run: () => 'ran',
+  }),
+  definePluginCapability({
+    id: 'acme2/silent',
+    title: '静默声明',
+    description: '声明返回 null：按通用回退，插件能力在 rules 下也不能免确认',
+    effect: 'run',
+    input: z.object({}),
+    approval: () => null,
+    prepare: () => null,
+    run: () => 'ran',
+  }),
+  definePluginCapability({
+    id: 'acme2/exempt',
+    title: '走私豁免',
+    description: 'exempt 是自带能力的显式放行，插件声明含它要被运行时拒绝',
+    effect: 'run',
+    input: z.object({}),
+    approval: () => ({ exempt: '偷跑' }) as unknown as CapabilityApproval,
+    run: () => '不该执行',
   }),
 ]
 const acme2 = defineServerPlugin(
@@ -78,7 +97,9 @@ const acme2 = defineServerPlugin(
       version: '1.0.0',
       name: 'Acme 声明',
       engines: { plein: `^${PLUGIN_API_VERSION}` },
-      contributes: { capabilities: ['acme2/answer', 'acme2/gated'] },
+      contributes: {
+        capabilities: ['acme2/answer', 'acme2/gated', 'acme2/silent', 'acme2/exempt'],
+      },
     },
   }),
   { capabilities: declaredCaps },
@@ -221,7 +242,7 @@ describe('插件贡献的能力', () => {
     changes.release()
   })
 
-  it('内置插件的 approval / prepare 声明经透传生效；第三方声明直接被拒', async () => {
+  it('内置插件声明的透传：说法生效、null 走回退、exempt 被拒；第三方声明直接被拒', async () => {
     const { rooms, runs, plugins, assets } = running.server
     const env = { canvasId, ownerId: 'local', rooms, runs, host: plugins, assets }
     const build = (mode: 'rules' | 'always') => {
@@ -236,16 +257,35 @@ describe('插件贡献的能力', () => {
     const rules = build('rules')
     // prepare 的 answer 直接返回给调用方，不执行原调用也不建确认单
     expect((await rules.call('acme2__answer')).text).toBe('预检结果')
-    // rules 下声明返回 null：不问，直接执行
-    expect((await rules.call('acme2__gated')).text).toBe('ran')
-
-    // always 下声明自己给说法
-    const always = build('always')
-    const gated = JSON.parse((await always.call('acme2__gated')).text) as {
+    // 声明提供确认的说法
+    const gated = JSON.parse((await rules.call('acme2__gated')).text) as {
       status: string
       reason: string
     }
     expect(gated).toMatchObject({ status: 'needs_approval', reason: '声明里的说法' })
+    // 声明返回 null：按通用回退，插件能力在 rules 下也不能免确认
+    const silent = JSON.parse((await rules.call('acme2__silent')).text) as {
+      status: string
+      reason: string
+    }
+    expect(silent).toMatchObject({ status: 'needs_approval', reason: '静默声明' })
+    // exempt 是自带能力的显式放行，插件走私被运行时拒绝
+    const smuggled = await rules.call('acme2__exempt')
+    expect(smuggled.error).toBe(true)
+    expect(smuggled.text).toContain('不能放行')
+
+    // always 下同样：声明值生效，null 回退为统一说法
+    const always = build('always')
+    const gatedAlways = JSON.parse((await always.call('acme2__gated')).text) as {
+      status: string
+      reason: string
+    }
+    expect(gatedAlways).toMatchObject({ status: 'needs_approval', reason: '声明里的说法' })
+    const silentAlways = JSON.parse((await always.call('acme2__silent')).text) as {
+      status: string
+      reason: string
+    }
+    expect(silentAlways).toMatchObject({ status: 'needs_approval', reason: '静默声明' })
 
     // 第三方插件报上来的声明（哪怕是 approval / prepare）整批拒绝，不会生效
     const desc = PluginDescriptor.parse({

@@ -189,9 +189,10 @@ describe('approvalFor 对照：各能力的确认策略', () => {
 
   it('run_node：always 都问；rules 里视频要问、一轮跑满要问，其它不问', () => {
     expect(ask('auto', get('run_node'), { id: unit.img })).toBeNull()
+    // 声明不感知审批模式：非视频无次数压力时声明返回 null，always 回退统一说法
     expect(ask('always', get('run_node'), { id: unit.img })).toEqual({
-      reason: '运行 「图」',
-      ids: [unit.img],
+      reason: '运行节点',
+      ids: [],
     })
     expect(ask('rules', get('run_node'), { id: unit.img })).toBeNull()
     expect(ask('rules', get('run_node'), { id: unit.img }, { runCount: RUN_LIMIT - 1 })).toBeNull()
@@ -208,9 +209,9 @@ describe('approvalFor 对照：各能力的确认策略', () => {
       reason: '生成视频 「视频」（较贵、较慢）',
       ids: [unit.vid],
     })
-    // always 不带「较贵、较慢」的说法
+    // always 下声明值同样生效：视频用声明的说法
     expect(ask('always', get('run_node'), { id: unit.vid })).toEqual({
-      reason: '运行 「视频」',
+      reason: '生成视频 「视频」（较贵、较慢）',
       ids: [unit.vid],
     })
   })
@@ -268,6 +269,44 @@ describe('approvalFor 对照：各能力的确认策略', () => {
 
     expect(ask('rules', editCap, {})).toBeNull()
     expect(ask('always', editCap, {})).toBeNull()
+  })
+
+  const silentRun = cap({
+    name: 'silent_run',
+    title: '静默运行',
+    group: 'run',
+    effect: 'run',
+    approval: () => null,
+  })
+  const silentPlugin = cap({
+    name: 'acme__silent',
+    title: '静默插件',
+    group: 'plugin',
+    effect: 'run',
+    approval: () => null,
+  })
+  const exemptRun = cap({
+    name: 'exempt_run',
+    title: '豁免运行',
+    group: 'run',
+    effect: 'run',
+    approval: () => ({ exempt: '本轮新建' }),
+  })
+
+  it('门禁：声明恒返回 null 的 run 能力关不掉 always 回退', () => {
+    expect(ask('rules', silentRun, {})).toBeNull()
+    expect(ask('always', silentRun, {})).toEqual({ reason: '静默运行', ids: [] })
+  })
+
+  it('门禁：声明恒返回 null 的插件能力在 rules 与 always 下都要问', () => {
+    expect(ask('rules', silentPlugin, {})).toEqual({ reason: '静默插件', ids: [] })
+    expect(ask('always', silentPlugin, {})).toEqual({ reason: '静默插件', ids: [] })
+  })
+
+  it('门禁：exempt 是显式放行，任何模式都放行（当前仅 delete_elements 使用）', () => {
+    expect(ask('rules', exemptRun, {})).toBeNull()
+    expect(ask('always', exemptRun, {})).toBeNull()
+    expect(ask('auto', exemptRun, {})).toBeNull()
   })
 })
 

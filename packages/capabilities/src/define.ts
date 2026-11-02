@@ -4,6 +4,7 @@ import type {
   Capability,
   CapabilityApproval,
   CapabilityApprovalContext,
+  CapabilityExemption,
   CapabilityPrepareContext,
   NodeDefinition,
   NodeDescriptor,
@@ -122,15 +123,15 @@ export interface CapabilityDefinition<
   /** 固定等级，或按这次调用的参数判定 */
   effect: Effect | ((input: z.output<S>, ctx: C) => Effect)
   /**
-   * 审批说明以及各审批模式下「这次要不要问」：rules 模式下返回 null 表示不需要确认，
-   * always 模式下也以声明为准。未声明时走调度器的通用规则
-   * （auto 不问；always 都问；rules 里破坏性的、插件能力花钱或删东西的问，其它不问）。
+   * 确认的说法，以及显式放行（exempt）：返回 { reason, ids } 或 { exempt } = 要确认 / 放行，
+   * 两种审批模式同样生效；返回 null = rules 模式下不需要确认（always 下回退为统一说法）。
+   * 通用回退（always 都问；rules 里破坏性的、插件能力花钱或删东西的问）在调度器，声明关不掉。
    */
   approval?: (
     input: z.output<S>,
     ctx: C,
     extra: CapabilityApprovalContext,
-  ) => CapabilityApproval | null
+  ) => CapabilityApproval | CapabilityExemption | null
   /**
    * 执行前的准备流程（批次计划、输入预检、方案确认）。调度器读到声明后通用分派：
    * answer 直接返回给调用方；否则按 request（或审批模式）建确认单，

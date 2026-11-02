@@ -45,8 +45,8 @@ export interface PluginCapabilityDefinition<S extends z.ZodObject = z.ZodObject>
   effect: CapabilityEffect
   input: S
   /**
-   * 审批说明（只对内置插件开放；第三方插件不能提供能力）：rules 模式下返回 null 表示不问，
-   * always 模式下宿主以声明为准。插件拿不到运行上下文，只能看本次输入与宿主给的改动集。
+   * 确认的说法（只对内置插件开放；第三方插件不能提供能力）。声明只能提供说明，
+   * 不含 exempt 放行：返回 null 时按调度器的通用回退处理，插件能力在 rules 下也不能免确认。
    */
   approval?: (input: z.output<S>, extra: CapabilityApprovalContext) => CapabilityApproval | null
   /**

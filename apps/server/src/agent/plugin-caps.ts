@@ -37,7 +37,19 @@ export function pluginCapabilities(host: PluginHost, builtin: CapabilityRegistry
       effect: def.effect,
       input: def.input,
       // 插件的声明拿不到运行上下文：宿主补上多余参数后透传（只对内置插件开放）
-      ...(approval ? { approval: (input, _ctx, extra) => approval(input, extra) } : {}),
+      // 插件声明只能提供确认的说法：exempt 是自带能力的显式放行，插件走私直接拒绝
+      ...(approval
+        ? {
+            approval: (input, _ctx, extra) => {
+              const said = approval(input, extra)
+              if (said && 'exempt' in said)
+                throw new CapabilityError(
+                  `插件能力 ${def.id} 的审批声明不能放行（exempt 仅限自带能力）`,
+                )
+              return said
+            },
+          }
+        : {}),
       ...(prepare ? { prepare: (input) => prepare(input) } : {}),
       run: async (ctx, input) => {
         ctx.env.execution?.assertOpen()

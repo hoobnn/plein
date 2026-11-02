@@ -21,9 +21,10 @@ export interface ApprovalRequest {
 type Cap = CapabilityDefinition<z.ZodObject, ServerContext>
 
 /**
- * 确认策略（调度层）：
- * - auto：全部直接执行；effect 不是 run / destructive 的直接放行——这两条是通用规则；
- * - 声明了 approval 的能力自己决定各审批模式下要不要问、说明怎么写（含 always）；
+ * 确认策略（调度层，通用回退声明关不掉）：
+ * - auto：全部直接执行；effect 不是 run / destructive 的直接放行；
+ * - 声明了 approval 的能力提供确认的说法（两种模式同样生效），或用 exempt 显式放行；
+ *   返回 null 表示 rules 模式下不问，always 下回退为统一说法，插件能力在 rules 下也不能免确认；
  * - 未声明的：always 都问；rules 里破坏性的、插件能力花钱或删东西的问，其它不问。
  */
 export function approvalFor(
@@ -36,7 +37,14 @@ export function approvalFor(
   if (mode === 'auto') return null
   const effect = typeof cap.effect === 'function' ? cap.effect(input, ctx) : cap.effect
   if (effect !== 'run' && effect !== 'destructive') return null
-  if (cap.approval) return cap.approval(input, ctx, { mode, changes })
+  if (cap.approval) {
+    const declared = cap.approval(input, ctx, { changes })
+    if (declared) return 'exempt' in declared ? null : declared
+    if (mode === 'always') return { reason: cap.title, ids: [] }
+    // 插件能力声明了也关不掉 rules 下的通用回退：宿主不知道它具体做什么
+    if (cap.group === 'plugin') return { reason: cap.title, ids: [] }
+    return null
+  }
   const fallback = { reason: cap.title, ids: [] }
   if (mode === 'always') return fallback
   if (effect === 'destructive') return fallback
