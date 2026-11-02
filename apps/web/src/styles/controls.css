@@ -981,6 +981,10 @@
     background: var(--surface);
     box-shadow: var(--shadow-1);
   }
+  .ui-slide-pill-toggle {
+    border-radius: var(--radius-lg);
+    background: var(--hover);
+  }
   :root[data-theme="dark"] .ui-slide-pill-seg {
     background: var(--surface-3);
   }

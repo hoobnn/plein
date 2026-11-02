@@ -1,4 +1,6 @@
+import { cva } from 'class-variance-authority'
 import type { ReactNode } from 'react'
+import { cn } from './cn'
 import { Icon, type IconName } from './icons'
 import { SlidePill } from './Slide'
 
@@ -10,9 +12,30 @@ export interface SegmentedOption<T extends string> {
   extra?: ReactNode
 }
 
+const itemVariants = cva(
+  'ui-seg-item inline-flex shrink-0 items-center justify-center gap-1 rounded-lg text-sm font-medium whitespace-nowrap transition-colors hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40',
+  {
+    variants: {
+      size: {
+        md: 'h-md min-w-md px-2.5',
+        lg: 'h-lg min-w-lg px-2.5',
+      },
+      iconOnly: {
+        true: 'px-0',
+        false: '',
+      },
+    },
+    compoundVariants: [
+      { size: 'md', iconOnly: true, class: 'w-md' },
+      { size: 'lg', iconOnly: true, class: 'w-lg' },
+    ],
+    defaultVariants: { size: 'md', iconOnly: false },
+  },
+)
+
 /**
- * 分段控件：选中底色在项之间滑动。筛选、范围、主题切换都用它。
- * iconOnly 时只显示图标，文字作为无障碍名称和悬停提示；size="lg" 是 32 高、13 号字，放在面板标题旁。
+ * Nova toggle-group 风格的分段控件：保留 fieldset/button、aria-pressed 和选中底色滑动。
+ * iconOnly 时只显示图标，文字作为无障碍名称和悬停提示；size="lg" 是 36 高，放在面板标题旁。
  */
 export function Segmented<T extends string>({
   label,
@@ -36,9 +59,15 @@ export function Segmented<T extends string>({
     <fieldset
       aria-label={label}
       disabled={disabled}
-      className={`ui-seg ui-slide disabled:cursor-not-allowed disabled:opacity-40 ${size === 'lg' ? 'ui-seg-lg' : ''} ${iconOnly ? 'ui-seg-icon' : ''}`}
+      data-slot="toggle-group"
+      data-size={size}
+      className={cn(
+        'ui-seg ui-slide group/toggle-group m-0 flex w-fit items-center gap-2 rounded-lg bg-transparent p-0 shadow-none disabled:cursor-not-allowed disabled:opacity-40',
+        size === 'lg' && 'ui-seg-lg',
+        iconOnly && 'ui-seg-icon',
+      )}
     >
-      <SlidePill variant="seg" />
+      <SlidePill variant="toggle" />
       {options.map((o) => (
         <button
           key={o.value}
@@ -47,7 +76,8 @@ export function Segmented<T extends string>({
           aria-label={iconOnly ? o.label : undefined}
           title={iconOnly ? o.label : undefined}
           onClick={() => onChange(o.value)}
-          className="ui-seg-item disabled:cursor-not-allowed"
+          data-slot="toggle-group-item"
+          className={itemVariants({ size, iconOnly })}
         >
           {o.icon && <Icon name={o.icon} size={14} />}
           {!iconOnly && o.label}

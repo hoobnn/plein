@@ -18,7 +18,7 @@ const ACTIVE =
 export function SlidePill({
   variant = 'bar',
 }: {
-  variant?: 'bar' | 'seg' | 'tab' | 'accent' | 'menu'
+  variant?: 'bar' | 'seg' | 'toggle' | 'tab' | 'accent' | 'menu'
 }) {
   const ref = useRef<HTMLSpanElement>(null)
   useLayoutEffect(() => {
