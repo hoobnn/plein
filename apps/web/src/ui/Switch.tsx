@@ -24,7 +24,7 @@ export function Switch({
       onCheckedChange={(next) => onChange(next)}
       data-slot="switch"
       className={cn(
-        'ui-switch peer group/switch relative inline-flex h-(--switch-h) w-(--switch-w) shrink-0 items-center rounded-full border border-transparent transition-colors outline-none focus-visible:border-accent focus-visible:ring-3 focus-visible:ring-accent-soft data-checked:bg-primary data-unchecked:bg-surface-3 data-disabled:cursor-not-allowed data-disabled:opacity-40',
+        'peer group/switch relative inline-flex h-(--switch-h) w-(--switch-w) shrink-0 items-center rounded-full border border-transparent transition-colors outline-none focus-visible:border-accent focus-visible:ring-3 focus-visible:ring-accent-soft data-checked:bg-primary data-unchecked:bg-surface-3 data-disabled:cursor-not-allowed data-disabled:opacity-40',
       )}
     >
       <Base.Thumb

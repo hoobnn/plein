@@ -1,6 +1,5 @@
 import { cva } from 'class-variance-authority'
 import type { ReactNode } from 'react'
-import { cn } from './cn'
 import { Icon, type IconName } from './icons'
 import { SlidePill } from './Slide'
 
@@ -13,7 +12,7 @@ export interface SegmentedOption<T extends string> {
 }
 
 const itemVariants = cva(
-  'ui-seg-item inline-flex shrink-0 items-center justify-center gap-1 rounded-lg text-sm font-medium whitespace-nowrap transition-colors hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40',
+  'ui-seg-item inline-flex shrink-0 items-center justify-center gap-1 rounded-lg text-sm font-medium text-ink whitespace-nowrap transition-colors hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40',
   {
     variants: {
       size: {
@@ -61,11 +60,7 @@ export function Segmented<T extends string>({
       disabled={disabled}
       data-slot="toggle-group"
       data-size={size}
-      className={cn(
-        'ui-seg ui-slide group/toggle-group m-0 flex w-fit items-center gap-2 rounded-lg bg-transparent p-0 shadow-none disabled:cursor-not-allowed disabled:opacity-40',
-        size === 'lg' && 'ui-seg-lg',
-        iconOnly && 'ui-seg-icon',
-      )}
+      className="ui-seg ui-slide group/toggle-group m-0 flex w-fit items-center gap-2 rounded-lg bg-transparent p-0 shadow-none disabled:cursor-not-allowed disabled:opacity-40"
     >
       <SlidePill variant="toggle" />
       {options.map((o) => (

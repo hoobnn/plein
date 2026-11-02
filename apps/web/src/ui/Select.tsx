@@ -115,7 +115,7 @@ export function Select({
         aria-label={ariaLabel}
         title={items.find((o) => o.value === value)?.label ?? value}
         className={cn(
-          'ui-select group/select flex w-fit min-w-0 items-center justify-between gap-1.5 rounded-md border border-line bg-transparent py-1 pr-2 pl-2.5 text-left text-sm whitespace-nowrap transition-colors outline-none select-none focus-visible:border-accent focus-visible:ring-3 focus-visible:ring-accent-soft disabled:cursor-not-allowed disabled:opacity-40 aria-invalid:border-danger aria-invalid:ring-3 aria-invalid:ring-danger-soft',
+          'ui-select group/select flex w-fit min-w-0 items-center justify-between gap-1.5 rounded-md border border-line bg-transparent bg-none py-1 pr-2 pl-2.5 text-left text-sm whitespace-nowrap shadow-none transition-colors outline-none select-none focus-visible:border-accent focus-visible:ring-3 focus-visible:ring-accent-soft disabled:cursor-not-allowed disabled:opacity-40 aria-invalid:border-danger aria-invalid:ring-3 aria-invalid:ring-danger-soft',
           sizeClass,
           className,
         )}
