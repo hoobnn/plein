@@ -15,4 +15,5 @@ export * from './provider'
 export * from './rpc'
 
 export * from './video-input'
+export * from './image-input'
 export * from './reference-bindings'

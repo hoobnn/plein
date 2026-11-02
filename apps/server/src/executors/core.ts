@@ -31,6 +31,7 @@ import {
   defineExecutor,
   defineServerPlugin,
   type ExecutorContext,
+  imageModelProblem,
   inputAssets,
   inputText,
   ProviderError,
@@ -120,12 +121,18 @@ const llm = defineExecutor(llmNode, async (ctx) => {
 const image = defineExecutor(imageNode, async (ctx) => {
   const { params, inputs } = ctx
   sayProgress(ctx)
-  const res = await ctx.providers.call('image.generate', pickModel(ctx, '生成图片'), {
+  const model = pickModel(ctx, '生成图片')
+  const references = inputAssets(inputs, 'references')
+  const options = modelOptions(params)
+  const spec = ctx.providers.models('image.generate').find((m) => m.ref === model)
+  const issue = spec && imageModelProblem(spec, { ...params, options }, references.length)
+  if (issue) throw new ProviderError('invalid_input', issue)
+  const res = await ctx.providers.call('image.generate', model, {
     prompt: requireText(joinText(params.prompt, inputText(inputs, 'prompt')), '提示词'),
-    references: inputAssets(inputs, 'references'),
+    references,
     count: params.count,
     resolution: params.resolution || undefined,
-    extra: { ...modelOptions(params), aspectRatio: params.aspectRatio },
+    extra: { ...options, aspectRatio: params.aspectRatio },
   })
   return { images: res.assets.map((a) => ({ type: 'image' as const, ...a })) }
 })

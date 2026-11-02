@@ -11,6 +11,8 @@ import {
   type ProviderUsage,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
+import { imageModelProblem } from '@plein/plugin-sdk'
+import { sizeByArea, tierEdge } from '../size'
 import {
   asJson,
   imageDataUrl,
@@ -257,7 +259,7 @@ const supported: Partial<Record<string, string[]>> = {
   'video.generate': ['wan3.0-video', 'wan3.0-video-prime'],
   'audio.speech': ['qwen3-tts-flash'],
 }
-const IMAGE_ASPECTS = ['21:9', '16:9', '3:2', '4:3', '1:1', '3:4', '2:3', '9:16']
+const IMAGE_ASPECTS = ['auto', '21:9', '16:9', '3:2', '4:3', '1:1', '3:4', '2:3', '9:16']
 // 万相视频的 ratio；auto 即 adaptive，跟随素材或由模型决定
 const VIDEO_ASPECTS = ['auto', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16']
 
@@ -287,12 +289,42 @@ export const bailianProvider = defineProvider({
       id,
       title: id,
       capabilities: ['image.generate' as const],
-      limits: { aspectRatios: IMAGE_ASPECTS, count: { max: 6 }, references: { max: 3 } },
+      limits: {
+        aspectRatios: IMAGE_ASPECTS,
+        resolutions: ['1K', '2K'],
+        count: { max: 6 },
+        references: { max: 3 },
+        image: {
+          referenceForbiddenOptions: { prompt_extend_mode: ['agent'] },
+          resolutionRequiresAspectRatio: true,
+          size: {
+            minPixels: 512 ** 2,
+            maxPixels: 2048 ** 2,
+            minRatio: 1 / 8,
+            maxRatio: 8,
+            auto: true,
+          },
+        },
+      },
       options: z.object({
         negative_prompt: z
           .string()
           .optional()
           .meta({ title: '反向提示词', placeholder: '不希望出现的内容' }),
+        size: z.string().optional().meta({
+          title: '自定义尺寸',
+          placeholder: '如 2048*2048 或 auto',
+          description: '留空用画幅 / 分辨率；填写后优先于画幅和分辨率',
+        }),
+        prompt_extend: z.boolean().optional().meta({ title: '提示词扩写' }),
+        prompt_extend_mode: z
+          .enum(['direct', 'agent'])
+          .optional()
+          .meta({
+            title: '扩写方式',
+            labels: { direct: '直接增强', agent: '智能体增强（仅文生图）' },
+          }),
+        enable_thinking: z.boolean().optional().meta({ title: '思考模式' }),
         watermark: z.boolean().optional().meta({ title: '水印' }),
       }),
     })),
@@ -300,7 +332,26 @@ export const bailianProvider = defineProvider({
       id: 'wan2.7-image-pro',
       title: 'wan2.7-image-pro',
       capabilities: ['image.generate' as const],
-      limits: { aspectRatios: IMAGE_ASPECTS, count: { max: 4 }, references: { max: 9 } },
+      limits: {
+        aspectRatios: IMAGE_ASPECTS,
+        resolutions: ['1K', '2K', '4K'],
+        count: { max: 4 },
+        references: { max: 9 },
+        promptMaxLength: 5000,
+        image: {
+          referenceResolutions: ['1K', '2K'],
+          sequential: { option: 'enable_sequential', maxCount: 12, resolutions: ['1K', '2K'] },
+          size: {
+            minPixels: 768 ** 2,
+            maxPixels: 4096 ** 2,
+            maxPixelsWithReferences: 2048 ** 2,
+            maxPixelsSequential: 2048 ** 2,
+            minRatio: 1 / 8,
+            maxRatio: 8,
+            tiers: ['1K', '2K', '4K'],
+          },
+        },
+      },
       options: z.object({
         negative_prompt: z
           .string()
@@ -311,6 +362,15 @@ export const bailianProvider = defineProvider({
           .optional()
           .meta({ title: '提示词扩写', description: '由模型自动润色、补充提示词' }),
         thinking_mode: z.boolean().optional().meta({ title: '思考模式' }),
+        enable_sequential: z.boolean().optional().meta({
+          title: '组图模式',
+          description: '最多 12 张、最高 2K；张数为最大数量，实际张数由模型决定',
+        }),
+        size: z.string().optional().meta({
+          title: '自定义尺寸',
+          placeholder: '如 3840*2160',
+          description: '留空用画幅 / 分辨率；填写后优先于画幅和分辨率',
+        }),
         watermark: z.boolean().optional().meta({ title: '水印' }),
       }),
     },
@@ -334,6 +394,10 @@ export const bailianProvider = defineProvider({
         videoModes: ['text', 'image', 'frames', 'reference'] as const,
       },
       options: z.object({
+        adaptive_duration: z
+          .boolean()
+          .optional()
+          .meta({ title: '自动时长', description: '由模型在有效范围内选择时长' }),
         prompt_extend: z
           .boolean()
           .optional()
@@ -396,44 +460,108 @@ export const bailianProvider = defineProvider({
       case 'image.generate': {
         const input = req.input as CapabilityInput<'image.generate'>
         if (!input.prompt.trim()) throw new ProviderError('invalid_input', '图片提示词不能为空')
+        const spec = bailianProvider.models.find((m) => m.id === req.model)!
+        const qwen = req.model.startsWith('qwen-image-3.0')
         if ((input.width === undefined) !== (input.height === undefined))
           throw new ProviderError('invalid_input', '图片宽高须一起填写')
-        if (req.model.startsWith('qwen-image-3.0') && (input.references?.length ?? 0) > 3)
-          throw new ProviderError('invalid_input', 'Qwen Image 3.0 最多支持 3 张参考图')
+        const parsed = spec.options?.safeParse(input.extra ?? {})
+        if (parsed && !parsed.success)
+          throw new ProviderError('invalid_input', '百炼图片专属参数无效')
         const extra = Object.fromEntries(
-          Object.entries(input.extra ?? {}).filter(
-            ([k]) =>
-              [
-                'size',
-                'n',
-                'seed',
-                'watermark',
-                'negative_prompt',
-                'prompt_extend',
-                'enable_sequential',
-                'thinking_mode',
-              ].includes(k) &&
-              (!req.model.startsWith('qwen-image-3.0') ||
-                ['size', 'n', 'seed', 'watermark', 'negative_prompt'].includes(k)),
+          Object.entries(input.extra ?? {}).filter(([k]) =>
+            [
+              'size',
+              'n',
+              'seed',
+              'watermark',
+              'negative_prompt',
+              'prompt_extend',
+              ...(qwen
+                ? ['prompt_extend_mode', 'enable_thinking']
+                : ['enable_sequential', 'thinking_mode']),
+            ].includes(k),
           ),
         )
-        const ratios: Record<string, string> = {
-          '16:9': '1664*936',
-          '9:16': '936*1664',
-          '1:1': '1024*1024',
-          '4:3': '1536*1152',
-          '3:4': '1152*1536',
-          '21:9': '1904*816',
-          '3:2': '1536*1024',
-          '2:3': '1024*1536',
-        }
+        const n = input.count ?? extra.n ?? 1
+        const refs = input.references?.length ?? 0
+        if (!qwen && input.prompt.length > 5000)
+          throw new ProviderError('invalid_input', '万相图片提示词最多 5000 字符')
         const aspect =
           typeof input.extra?.aspectRatio === 'string' ? input.extra.aspectRatio : '16:9'
-        if (!extra.size && !input.width && !ratios[aspect])
-          throw new ProviderError('invalid_input', `不支持图片比例：${aspect}`)
-        const size =
-          extra.size ??
-          (input.width && input.height ? `${input.width}*${input.height}` : ratios[aspect])
+        const combination = imageModelProblem(
+          spec,
+          {
+            count: n,
+            resolution: input.resolution,
+            aspectRatio: aspect,
+            options: {
+              ...extra,
+              ...(input.width !== undefined && !extra.size
+                ? { size: `${input.width}*${input.height}` }
+                : {}),
+            },
+          },
+          refs,
+        )
+        if (combination) throw new ProviderError('invalid_input', combination)
+        let size =
+          extra.size || (input.width !== undefined ? `${input.width}*${input.height}` : undefined)
+        if (size === '1K' || size === '2K' || size === '4K') {
+          if (qwen)
+            throw new ProviderError('invalid_input', 'Qwen 原生 size 需要像素尺寸，不接受 K 档位')
+          if (
+            !spec.limits?.resolutions?.includes(size) ||
+            (size === '4K' && (refs || extra.enable_sequential === true))
+          )
+            throw new ProviderError('invalid_input', '万相当前模式不支持该分辨率')
+        } else if (!size && input.resolution) {
+          const edge = tierEdge(input.resolution)
+          if (!edge || !spec.limits?.resolutions?.includes(input.resolution))
+            throw new ProviderError('invalid_input', '所选百炼图片模型不支持该分辨率')
+          if (aspect === 'auto' && !qwen) size = input.resolution
+          else {
+            const { width, height } = sizeByArea(aspect, edge * edge)
+            size = `${width}*${height}`
+          }
+        } else if (!size && aspect !== 'auto') {
+          const ratios: Record<string, string> = {
+            '16:9': '1664*936',
+            '9:16': '936*1664',
+            '1:1': '1024*1024',
+            '4:3': '1536*1152',
+            '3:4': '1152*1536',
+            '21:9': '1904*816',
+            '3:2': '1536*1024',
+            '2:3': '1024*1536',
+          }
+          size = ratios[aspect]
+        }
+        const issue = imageModelProblem(
+          spec,
+          {
+            count: n,
+            resolution: input.resolution,
+            aspectRatio: aspect,
+            options: { ...extra, size },
+          },
+          refs,
+        )
+        if (issue) throw new ProviderError('invalid_input', issue)
+        // DashScope 的智能尺寸通过省略 size 表达；Qwen 不接受 K 字符串。
+        if (
+          extra.size &&
+          size !== 'auto' &&
+          !/^(?:1K|2K|4K|[1-9]\d*[x*][1-9]\d*)$/.test(String(size))
+        )
+          throw new ProviderError('invalid_input', '自定义尺寸格式无效')
+        if (typeof size === 'string') size = size.replace('x', '*')
+        if (size === 'auto') size = undefined
+        const seed = input.seed ?? extra.seed
+        if (
+          seed !== undefined &&
+          (!Number.isInteger(seed) || Number(seed) < 0 || Number(seed) > 2147483647)
+        )
+          throw new ProviderError('invalid_input', '百炼图片 seed 须为 0–2147483647 的整数')
         const content: Json[] = [{ text: input.prompt }]
         for (const ref of input.references ?? []) content.push({ image: await inline(ref, ctx) })
         const data = await request(ctx, generation, {
@@ -443,8 +571,8 @@ export const bailianProvider = defineProvider({
             watermark: false,
             ...extra,
             size,
-            ...(input.count !== undefined ? { n: input.count } : {}),
-            ...(input.seed !== undefined ? { seed: input.seed } : {}),
+            n,
+            ...(seed !== undefined ? { seed } : {}),
             ...(input.negativePrompt ? { negative_prompt: input.negativePrompt } : {}),
           },
         })
@@ -587,27 +715,69 @@ export const bailianProvider = defineProvider({
           if ((input.references ?? []).filter((ref) => ref.kind === kind).length > limit)
             throw new ProviderError('invalid_input', `万相 ${kind} 参考数量超过 ${limit}`)
         }
+        const spec = bailianProvider.models.find((m) => m.id === req.model)!
+        const resolution = input.resolution ?? '720P'
+        const ratio = input.aspectRatio === 'auto' ? 'adaptive' : (input.aspectRatio ?? '16:9')
+        if (!spec.limits?.resolutions?.includes(resolution))
+          throw new ProviderError('invalid_input', '万相不支持该视频分辨率')
+        if (ratio !== 'adaptive' && !spec.limits?.aspectRatios?.includes(ratio))
+          throw new ProviderError('invalid_input', '万相不支持该视频画幅')
+        const parsed = spec.options!.safeParse(input.extra ?? {})
+        if (!parsed.success) throw new ProviderError('invalid_input', '万相视频专属参数无效')
+        const { adaptive_duration, ...extra } = parsed.data
+        const sources = new Map<string, Awaited<ReturnType<Context['files']['read']>>>()
+        const totals = { audio: 0, video: 0 }
+        for (const ref of input.references ?? []) {
+          if (ref.kind !== 'image' && ref.kind !== 'audio' && ref.kind !== 'video')
+            throw new ProviderError('invalid_input', '视频参考素材须为图片、音频或视频')
+          if (ref.kind === 'image') continue
+          const source = await ctx.files.read(ref)
+          sources.set(ref.assetId, source)
+          if (
+            typeof source.duration !== 'number' ||
+            !Number.isFinite(source.duration) ||
+            source.duration <= 0
+          )
+            throw new ProviderError('invalid_input', '万相参考视频 / 音频需要可读取的有效时长')
+          totals[ref.kind] += source.duration
+          if (totals[ref.kind] > 15)
+            throw new ProviderError('invalid_input', '万相参考视频与音频各自总时长不能超过 15 秒')
+        }
+        if (
+          totals.video &&
+          adaptive_duration !== true &&
+          input.duration !== -1 &&
+          totals.video + (input.duration ?? 5) > 30
+        )
+          throw new ProviderError('invalid_input', '万相输入视频加输出总时长不能超过 30 秒')
         const media: Json[] = []
         if (input.firstFrame)
           media.push({ type: 'first_frame', url: await upload(input.firstFrame, req.model, ctx) })
         if (input.lastFrame)
           media.push({ type: 'last_frame', url: await upload(input.lastFrame, req.model, ctx) })
         for (const ref of input.references ?? []) {
-          if (!['image', 'audio', 'video'].includes(ref.kind))
+          if (ref.kind !== 'image' && ref.kind !== 'audio' && ref.kind !== 'video')
             throw new ProviderError('invalid_input', '视频参考素材须为图片、音频或视频')
-          media.push({ type: `reference_${ref.kind}`, url: await upload(ref, req.model, ctx) })
+          media.push({
+            type: `reference_${ref.kind}`,
+            url: await upload(ref, req.model, ctx, sources.get(ref.assetId)),
+          })
         }
         // OSS resolution is mandatory for uploaded assets; use the same scoped fetch.
         const body = {
           model: req.model,
           input: { prompt: input.prompt, ...(media.length ? { media } : {}) },
           parameters: {
-            resolution: input.resolution ?? '720P',
-            ratio: input.aspectRatio === 'auto' ? 'adaptive' : (input.aspectRatio ?? '16:9'),
+            resolution,
+            ratio,
             watermark: false,
-            ...input.extra,
+            ...extra,
             audio: input.audio ?? true,
-            ...(input.duration !== undefined ? { duration: input.duration } : {}),
+            ...(adaptive_duration === true
+              ? { duration: -1 }
+              : input.duration !== undefined
+                ? { duration: input.duration }
+                : {}),
             ...(input.seed !== undefined ? { seed: input.seed } : {}),
           },
         }

@@ -228,6 +228,8 @@ const models: ModelSpec[] = [
       aspectRatios: SEEDREAM_ASPECTS,
       resolutions: ['2K', '3K', '4K'],
       references: { max: 14 },
+      count: { max: 15 },
+      image: { maxTotalImages: 15 },
     },
     options: seedreamOptions,
   },

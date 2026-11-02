@@ -10,6 +10,39 @@
 | 方舟 `volc/ark`                 | Seed 对话、Seedream 图片、Seedance 视频                                                                                              | `ARK_API_KEY`                                                             |
 | 方舟 Agent Plan `volc/ark-plan` | 内置 Agent 对话、Seedream 图片、Seedance 视频、TTS / ASR                                                                             | `ARK_AGENT_PLAN_API_KEY`                                                  |
 
+## 图片和视频参数（2026-11-02 核对）
+
+参数由具体模型声明，界面、服务端实际输入预览及执行前校验使用同一份图片组合限制。普通图片节点不再统一限制为 4 张，按下表收窄；视频「数量」仍为分别提交的任务条数。切换模型会校正不支持的值；修改画幅、参考图或组图模式后出现不兼容的历史参数时，提交前说明原因，用户修改后再运行。
+
+| 图片模型                 | Plein 分辨率选项   | 单次输出 / 参考图         | 限制                                                                                                                            |
+| ------------------------ | ------------------ | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| MiniMax image-01         | 默认、1K、2K       | 1–9 / 1                   | 显式档位按长边换算，宽高均须为 512–2048、8 的倍数；1K 与 21:9 不兼容，只提供默认或 2K，避免把超宽画幅挤成 2:1                   |
+| MiniMax image-01-live    | 默认               | 1–9 / 1                   | 中国区官方文生图和图生图接口均列出；不支持 21:9、自定义宽高和分辨率档位；画风可选漫画、元气、中世纪、水彩，权重 (0,1]，默认 0.8 |
+| Seedream 5.0 Pro / Flash | 默认、1K、1.5K、2K | 1 / 10                    | 不支持组图和 seed；支持智能画幅                                                                                                 |
+| Seedream 5.0 Lite        | 默认、2K、3K、4K   | 1–15 / 14                 | 参考图与输出合计最多 15 张；不支持 seed；目录保留既有下线提示                                                                   |
+| Qwen Image 3.0 / Pro     | 默认、1K、2K       | 1–6 / 3                   | K 档位是 Plein 按总像素换算的快捷选项，实际发送 `宽*高`；总像素 512²–2048²、比例 1:8–8:1；指定档位须选具体比例                  |
+| Wan 2.7 Image Pro        | 默认、1K、2K、4K   | 普通 1–4、组图最多 12 / 9 | 4K 仅无参考图且关闭组图时可选；编辑和组图最高 2K；总像素下限 768²、比例 1:8–8:1                                                 |
+
+图片具体比例选项为 21:9、16:9、3:2、4:3、1:1、3:4、2:3、9:16，各模型再按限制收窄。Seedream 和百炼支持智能画幅；MiniMax 不提供。MiniMax 的「默认」发送原生比例，16:9 为 1280×720、21:9 为 1344×576，并不等于显式 1K 档位。
+
+百炼「更多参数」支持自定义 `宽*高`（也接受 `宽x高`），优先于画幅和分辨率；仍按当前模式校验总像素和比例。Qwen 的 `auto` / 智能画幅且无档位通过省略 `size` 交给模型选择；Wan 的智能画幅配合档位发送原生 `1K/2K/4K`，有参考图时跟随最后一张参考图，无参考图时为正方形。未选档位的具体比例保留原有像素映射，避免旧画布尺寸无故变化。
+
+Qwen 还提供提示词扩写、扩写方式和思考模式；智能体扩写仅文生图可用。Wan 提供组图模式，张数表示最大输出数，实际数量由模型决定。MiniMax 两种图片模型都提供提示词优化和水印，live 另提供画风与权重。`image-01-live` 的国际区文档未列出该模型，本轮没有做国际区云端调用，不能把中国区文档视为国际区账号权限证明。
+
+| 视频模型                 | 分辨率                | 整数秒范围 | 智能时长                                   |
+| ------------------------ | --------------------- | ---------- | ------------------------------------------ |
+| MiniMax H3               | 768P、2K              | 4–15       | 不支持                                     |
+| H3 Highspeed / Lite      | 480P、768P            | 4–15       | 不支持                                     |
+| H3 Max                   | 480P、768P            | 5–15       | 不支持                                     |
+| Seedance 2.5             | 480p、720p、1080p     | 4–30       | 支持                                       |
+| Seedance 2.0             | 480p、720p、1080p、4k | 4–15       | 支持                                       |
+| Seedance 2.0 Fast / Mini | 480p、720p            | 4–15       | 支持                                       |
+| Wan 3.0 / Prime          | 480P、720P、1080P     | 2–30       | 支持，通过更多参数开启，发送 `duration=-1` |
+
+视频比例为智能、21:9、16:9、4:3、1:1、3:4、9:16，模式约束继续适用：H3 文生视频与 Lite 参考模式须具体比例，H3 首尾帧和 Seedance 2.5 首帧 / 首尾帧跟随图片；Seedance 2.5 编辑跟随原视频比例和时长。Wan 参考视频、音频各自总时长最多 15 秒；有视频输入时，已指定的输入加输出总时长不超过 30 秒，本地读取素材时长后在上传前校验。Agent Plan 复用所接入 Seedance 的参数，不支持草稿模式。
+
+本轮官方来源：[MiniMax 文生图](https://platform.minimax.cn/docs/api-reference/image-generation-t2i)、[MiniMax 图生图与 live 画风](https://platform.minimax.cn/docs/api-reference/image-generation-i2i)、[Qwen 图像生成与编辑](https://help.aliyun.com/zh/model-studio/qwen-image-generation-and-editing-api-reference)、[万相 2.7](https://help.aliyun.com/zh/model-studio/wan-image-generation-and-editing-api-reference)、[万相 3.0](https://help.aliyun.com/zh/model-studio/wan3-video-generation-guide)、[Seedream API](https://docs.volcengine.com/docs/ark/image-generation-api?lang=zh)、[Seedance 规格](https://docs.volcengine.com/docs/ark/seedance-2-5?lang=zh)。本轮校验为离线契约、界面参数和服务端测试，不代表账号权限或真实产物已验收。
+
 ## 配置
 
 1. 在设置页填写平台的密钥、地域等信息，点击保存。

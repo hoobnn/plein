@@ -128,7 +128,7 @@ export const imageNode = defineNode({
     aspectRatio: z.enum(ASPECTS).default('16:9').meta({ title: '画幅' }),
     resolution: resolution(),
     options: modelOptions(),
-    count: z.number().int().min(1).max(4).default(1).meta({ title: '张数' }),
+    count: z.number().int().min(1).max(15).default(1).meta({ title: '张数' }),
     usedRefs: usedRefs(),
     requiredRefs: requiredRefs(),
     referenceImagePicks: referenceImagePicks(),

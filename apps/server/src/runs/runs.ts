@@ -1,4 +1,9 @@
-import { boundReferenceTokens, resolveReferenceBindings } from '@plein/plugin-sdk'
+import {
+  imageModelProblem,
+  selectedImageOptions,
+  boundReferenceTokens,
+  resolveReferenceBindings,
+} from '@plein/plugin-sdk'
 import { videoModelProblem, videoReferencePrompt, videoTaskOverrides } from '@plein/plugin-sdk'
 import {
   imageProcessParams,
@@ -2331,6 +2336,11 @@ export class NodeRuns implements BatchHost {
     if (
       (def.capability === 'image.generate' || def.capability === 'video.generate') &&
       effective.resolution &&
+      !(
+        def.capability === 'image.generate' &&
+        limits?.image?.size &&
+        selectedImageOptions(effective).size
+      ) &&
       limits?.resolutions?.length &&
       !limits.resolutions.includes(String(effective.resolution))
     )
@@ -2338,6 +2348,14 @@ export class NodeRuns implements BatchHost {
         code: 'prepare_failed',
         message: `${spec?.title ?? '当前模型'} 不支持分辨率 ${String(effective.resolution)}；请选择 ${limits.resolutions.join('、')}，或使用默认分辨率`,
       })
+    if (def.capability === 'image.generate' && spec) {
+      const issue = imageModelProblem(
+        spec,
+        { ...effective, options: selectedImageOptions(effective) },
+        inputs.references?.length ?? 0,
+      )
+      if (issue) blocked.push({ code: 'prepare_failed', message: issue })
+    }
     if (def.capability === 'audio.speech') {
       const check = speechVoice(String(effective.model ?? ''), voiceOf(effective))
       if (check.problem) blocked.push({ code: 'prepare_failed', message: check.problem })

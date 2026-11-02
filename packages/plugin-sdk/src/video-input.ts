@@ -106,6 +106,10 @@ export function videoTaskOverrides(params: Record<string, unknown>) {
     ['image', 'lastFrame', 'frames'].includes(String(params.mode))
   )
     return { aspectRatio: 'auto' }
+  if (/^aliyun\/bailian:wan3\.0-video(?:-prime)?$/.test(model)) {
+    const extra = (params.options as Record<string, Record<string, unknown>> | undefined)?.[model]
+    return extra?.adaptive_duration === true ? { duration: -1 } : {}
+  }
   // Agent Plan 与按量平台共用 Seedance 模型 ID
   if (!/^volc\/ark(-plan)?:doubao-seedance-2-/.test(model)) return {}
   const extra = (params.options as Record<string, Record<string, unknown>> | undefined)?.[

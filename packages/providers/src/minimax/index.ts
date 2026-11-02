@@ -13,6 +13,7 @@ import {
   type ProviderErrorCode,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
+import { imageModelProblem } from '@plein/plugin-sdk'
 import {
   asJson,
   chatMessages,
@@ -200,6 +201,25 @@ async function clonePreview(value: unknown, ctx: Context) {
   }
 }
 
+const imageOptions = z.object({
+  prompt_optimizer: z.boolean().optional().meta({ title: '提示词优化' }),
+  aigc_watermark: z.boolean().optional().meta({ title: '水印' }),
+})
+const liveImageOptions = imageOptions
+  .extend({
+    style_type: z.enum(['漫画', '元气', '中世纪', '水彩']).optional().meta({ title: '画风' }),
+    style_weight: z
+      .number()
+      .gt(0)
+      .max(1)
+      .optional()
+      .meta({ title: '画风权重', description: '大于 0 且不超过 1，默认 0.8；选择画风后生效' }),
+  })
+  .refine((value) => value.style_weight === undefined || value.style_type !== undefined, {
+    path: ['style_type'],
+    message: '画风权重需要先选择画风',
+  })
+
 export const minimaxProvider = defineProvider({
   id: 'minimax/api',
   title: 'MiniMax',
@@ -228,10 +248,12 @@ export const minimaxProvider = defineProvider({
     {
       id: 'image-01',
       title: 'image-01',
+      options: imageOptions,
       capabilities: ['image.generate' as const],
       limits: {
         aspectRatios: ['21:9', '16:9', '3:2', '4:3', '1:1', '3:4', '2:3', '9:16'],
         resolutions: ['1K', '2K'],
+        image: { resolutionsByAspectRatio: { '21:9': ['2K'] } },
         count: { max: 9 },
         references: { max: 1 },
       },
@@ -239,6 +261,8 @@ export const minimaxProvider = defineProvider({
     {
       id: 'image-01-live',
       title: 'image-01-live',
+      description: '中国区官方支持的画风模型；国际区官方文档未列出，未做国际区云端验收',
+      options: liveImageOptions,
       capabilities: ['image.generate' as const],
       limits: {
         aspectRatios: ['16:9', '3:2', '4:3', '1:1', '3:4', '2:3', '9:16'],
@@ -423,6 +447,23 @@ export const minimaxProvider = defineProvider({
         const n = input.count ?? 1
         if (!Number.isInteger(n) || n < 1 || n > 9)
           throw new ProviderError('invalid_input', 'MiniMax 图片数量须为 1–9')
+        const spec = minimaxProvider.models.find((m) => m.id === req.model)!
+        const issue = imageModelProblem(
+          spec,
+          {
+            ...input,
+            resolution: input.width === undefined ? input.resolution : undefined,
+            aspectRatio: input.width === undefined ? input.extra?.aspectRatio : undefined,
+            options: input.extra,
+          },
+          input.references?.length ?? 0,
+        )
+        if (issue) throw new ProviderError('invalid_input', issue)
+        const parsed = (req.model === 'image-01-live' ? liveImageOptions : imageOptions).safeParse(
+          input.extra ?? {},
+        )
+        if (!parsed.success) throw new ProviderError('invalid_input', 'MiniMax 图片专属参数无效')
+        const options: z.output<typeof liveImageOptions> = parsed.data
         const reference = input.references?.[0]
         // 分辨率档位按长边换算宽高（image-01 宽高 512–2048、8 的倍数），优先于 aspect_ratio
         let { width, height } = input
@@ -432,9 +473,20 @@ export const minimaxProvider = defineProvider({
             throw new ProviderError('invalid_input', '所选 MiniMax 图片模型不支持该分辨率')
           const aspect = input.extra?.aspectRatio
           ;({ width, height } = sizeByLongEdge(typeof aspect === 'string' ? aspect : '1:1', edge))
-          width = Math.max(512, width)
-          height = Math.max(512, height)
         }
+        if ((width === undefined) !== (height === undefined))
+          throw new ProviderError('invalid_input', '图片宽高须一起填写')
+        if (
+          width !== undefined &&
+          (req.model !== 'image-01' ||
+            ![width, height].every(
+              (n) => Number.isInteger(n) && n! >= 512 && n! <= 2048 && n! % 8 === 0,
+            ))
+        )
+          throw new ProviderError(
+            'invalid_input',
+            'image-01 宽高须为 512–2048 且为 8 的倍数；live 不支持自定义尺寸',
+          )
         const result = await request(ctx, '/v1/image_generation', {
           model: req.model,
           prompt: input.prompt,
@@ -444,6 +496,16 @@ export const minimaxProvider = defineProvider({
           width,
           height,
           response_format: 'url',
+          prompt_optimizer: options.prompt_optimizer,
+          aigc_watermark: options.aigc_watermark,
+          ...('style_type' in options && options.style_type
+            ? {
+                style: {
+                  style_type: options.style_type,
+                  style_weight: options.style_weight ?? 0.8,
+                },
+              }
+            : {}),
           subject_reference: reference
             ? [{ type: 'character', image_file: await imageData(ctx, reference, 10) }]
             : undefined,

@@ -1,6 +1,6 @@
 # 平台协议映射
 
-四个内置 Provider 的端点、请求字段层级、素材编码与响应格式。字段契约以官方接口正文为准，改动适配器时同步更新本表；面向使用者的能力与限制见[模型平台接入](../guide/providers.md)。
+五个内置 Provider 入口 的端点、请求字段层级、素材编码与响应格式。字段契约以官方接口正文为准，改动适配器时同步更新本表；面向使用者的能力与限制见[模型平台接入](../guide/providers.md)。
 
 下表是现有实现对应的协议边界。端点路径相同并不代表不同模型的字段、地域和限制相同。
 
@@ -44,3 +44,14 @@ pnpm exec vp test run apps/server/src/plugins/plugins.test.ts
 Agent Plan 语音使用 `openspeech.bytedance.com`，`X-Api-Key` 为套餐专属 Key：TTS `POST /api/v3/plan/tts/unidirectional`，资源 ID `seed-tts-2.0`，复用普通豆包的完整流校验及 WAV 封装；ASR `wss://openspeech.bytedance.com/api/v3/plan/sauc/bigmodel_nostream`，资源 ID `volc.seedasr.sauc.duration`，二进制 gzip 消息，最后音频包使用负序号并等待服务端终包，缺终包不得当作成功。宿主 `ProviderContext.socket` 校验 WSS 和插件域名权限，不跟随重定向，响应有大小与队列上限，取消时关闭连接；旧宿主无该接口时 ASR 明确提示升级。协议见[官方语音接入](https://docs.volcengine.com/docs/ark/agent-plan-personal-voice-model?lang=zh)。
 
 Agent Plan 工具调用保留 `reasoning_content` 和 `encrypted_content`，随 assistant 消息持久化并在同模型的后续请求原样回传；不显示为助手正文，切换模型后不回传旧模型续传字段。参见[官方思考模式](https://docs.volcengine.com/docs/ark/deep-thinking?lang=zh)。
+
+## 2026-11-02 参数契约补齐
+
+- `ModelLimits.image` 声明画幅与档位组合、参考图档位、组图开关对应张数 / 档位、参考图加输出总数、自定义尺寸面积与比例边界；SDK `imageLimits` / `imageModelProblem` 用于界面、服务端预览、执行器及百炼 / MiniMax 适配器。软引用以服务端最终展开的参考图数再校验。
+- 百炼图片 `resolution` 转为 DashScope `parameters.size`，固定画幅用总像素换算，Wan 智能画幅可发送原生档位；Qwen 原生不接收 K 字符串。显式 `size` 优先，`x` 归一为 `*`；Qwen 的自动尺寸用省略字段表达。保留无档位旧画布的固定尺寸映射。
+- Wan 2.7 `enable_sequential` 开启后 `n` 上限为 12，普通模式为 4；参考图或组图不能使用 4K，自定义尺寸也遵守相应总像素上限，避免绕过档位校验。Qwen `n` 为 1–6，新增 `prompt_extend` / `prompt_extend_mode` / `enable_thinking` 显式字段，不再被过滤掉。
+- MiniMax `image-01-live` 已由中国区官方文生图 / 图生图接口确认，保留目录；`style_type/style_weight` 是 Plein 表单字段，发送时转成顶层 `style` 对象。权重须 (0,1]，且须先选画风；不向 live 发送宽高或分辨率，不接受 21:9。国际区可用性未实测。
+- MiniMax `image-01` 不再把 1K 超宽图短边硬补到 512；该组合本地拒绝，界面只提供默认 / 2K。显式宽高须成对、512–2048 且为 8 的倍数。
+- Wan 3.0 的 `adaptive_duration` 为 Plein 表单字段，通过公共视频覆盖逻辑在实际输入中显示 `duration=-1`，适配器只发送原生 `duration`，不透传表单字段。
+
+官方来源和面向使用者的完整参数表见[模型平台参数](../guide/providers.md#图片和视频参数2026-11-02-核对)。

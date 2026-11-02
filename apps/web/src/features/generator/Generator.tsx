@@ -209,6 +209,15 @@ export function GeneratorPanel({
   }
   const pk = promptKey(node)
   const model = selectedModel(catalog, node, params)
+  const ups = upstreams(engine, el.id, catalog)
+  const pure = isPure(node)
+  // 生成前的实际输入：所有要跑的节点都要（插件节点可能没有 capability，
+  // 但服务端照样能准备输入；不取预览，生成按钮就一直是禁用的）
+  const input = useInputPreview(engine, !pure ? canvasId : null, el.id)
+  const imageReferences =
+    !input.stale && !input.loading && !input.error && input.data
+      ? (input.data.inputs.references?.filter((value) => value.type === 'image').length ?? 0)
+      : (ups.get('references')?.length ?? 0)
   const hiddenInstruction =
     node.capability === 'audio.speech' &&
     model?.info.limits?.instruction === false &&
@@ -220,6 +229,7 @@ export function GeneratorPanel({
     fieldsOf(node).filter(([, f]) => f.widget !== 'hidden'),
     model?.info.limits,
     params,
+    imageReferences,
   )
   // 换模型时自动校正了哪些参数
   const [notes, setNotes] = useState<string[]>([])
@@ -256,12 +266,7 @@ export function GeneratorPanel({
     fields.filter(([k, f]) => k !== pk && f.widget !== 'videoMode' && !isMainField(k, f)),
   )
   const modeField = fields.find(([, f]) => f.widget === 'videoMode')
-  const ups = upstreams(engine, el.id, catalog)
   const presets = presetsFor(catalog?.prompts ?? [], node)
-  const pure = isPure(node)
-  // 生成前的实际输入：所有要跑的节点都要（插件节点可能没有 capability，
-  // 但服务端照样能准备输入；不取预览，生成按钮就一直是禁用的）
-  const input = useInputPreview(engine, !pure ? canvasId : null, el.id)
   // 调模型的节点必须等这份实际输入；执行器节点（插件节点等）没有模型能力，
   // 服务端可能备不出实际输入，这时照样能生成，不因为等它把按钮卡住。
   const requiresInput = !pure && !!node.capability
@@ -658,6 +663,7 @@ export function GeneratorPanel({
                       node,
                       next,
                       selectedModel(catalog, node, next)?.info,
+                      imageReferences,
                     )
                     set(modelField[0], v)
                     for (const [k, value] of Object.entries(patch)) set(k, value)

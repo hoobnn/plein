@@ -1,4 +1,7 @@
 import {
+  imageLimits,
+  imageModelProblem,
+  selectedImageOptions,
   videoTaskOverrides,
   videoModelProblem,
   type ModelInfo,
@@ -73,10 +76,24 @@ export function constrainFields(
   fields: Array<[string, FieldSchema]>,
   limits: ModelLimits = NONE,
   params?: Record<string, unknown>,
+  references = 0,
 ): Array<[string, FieldSchema]> {
+  if (node.capability === 'image.generate')
+    limits = imageLimits(
+      limits,
+      { ...params, options: selectedImageOptions(params ?? {}) },
+      references,
+    )
   const ak = aspectKey(node)
   return fields.flatMap(([k, f]): Array<[string, FieldSchema]> => {
     if (f.widget === 'modelOptions') return []
+    if (
+      node.capability === 'image.generate' &&
+      limits.image?.size &&
+      selectedImageOptions(params ?? {}).size &&
+      (k === ak || f.widget === 'resolution')
+    )
+      return []
     if (
       node.capability === 'video.generate' &&
       params &&
@@ -130,13 +147,24 @@ export function adaptToModel(
   node: NodeInfo,
   params: Record<string, unknown>,
   model: SelectedModel['info'] | undefined,
+  references = 0,
 ): { patch: Record<string, unknown>; notes: string[] } {
-  const limits = model?.limits ?? NONE
+  const limits =
+    node.capability === 'image.generate'
+      ? imageLimits(model?.limits, { ...params, options: selectedImageOptions(params) }, references)
+      : (model?.limits ?? NONE)
   const patch: Record<string, unknown> = {}
   const notes: string[] = []
   const name = model?.title ?? '所选模型'
   for (const [k, f] of fieldsOf(node)) {
     const v = params[k] ?? f.default
+    if (
+      node.capability === 'image.generate' &&
+      limits.image?.size &&
+      selectedImageOptions(params).size &&
+      (k === aspectKey(node) || f.widget === 'resolution')
+    )
+      continue
     if (
       k === 'operation' &&
       node.capability === 'image.process' &&
@@ -228,6 +256,14 @@ export function modelProblem(
     }
   }
   if (!model) return null
+  if (node.capability === 'image.generate') {
+    const issue = imageModelProblem(
+      model,
+      { ...params, options: selectedImageOptions(params) },
+      ups.get('references')?.length ?? 0,
+    )
+    if (issue) return issue
+  }
   if (
     node.capability === 'image.process' &&
     !model.limits?.imageOperations?.includes(params.operation as 'upscale' | 'outpaint' | 'cutout')

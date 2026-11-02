@@ -225,6 +225,25 @@ export interface ModelLimits {
   aspectRatios?: string[]
   /** 可选分辨率（平台自己的写法，如 `720p`、`2K`）；不声明时不显示分辨率，用平台默认 */
   resolutions?: string[]
+  /** 图片生成的组合限制；由表单、输入预览、执行器和适配器共同检查。 */
+  image?: {
+    resolutionsByAspectRatio?: Record<string, string[]>
+    referenceResolutions?: string[]
+    referenceForbiddenOptions?: Record<string, unknown[]>
+    resolutionRequiresAspectRatio?: boolean
+    sequential?: { option: string; maxCount: number; resolutions?: string[] }
+    maxTotalImages?: number
+    size?: {
+      minPixels: number
+      maxPixels: number
+      maxPixelsWithReferences?: number
+      maxPixelsSequential?: number
+      minRatio: number
+      maxRatio: number
+      auto?: boolean
+      tiers?: string[]
+    }
+  }
   /** 时长范围（秒，整数）；false 表示时长由模型决定，表单隐藏，宿主不传 */
   duration?: { min: number; max: number } | false
   /** 一次最多生成几张 */
