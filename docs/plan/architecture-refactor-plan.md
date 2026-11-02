@@ -761,7 +761,7 @@ zustand v5 的 `useStore()` 不带 selector 时，**store 里任何字段变化�
 | 1.5 | `production.selection` → `production.target` + 架构文档补例外                                                   | C1              | 已完成 |
 | 1.6 | 路由顺序专门用例                                                                                                | E（短期）       | 已完成 |
 | 1.7 | Nova 基线：`components.json`、令牌对齐、`ui/*` 控件按 Nova 重建、改写设计规范                                   | I5              | 已完成 |
-| 1.8 | 原生 `<select>` / 滑块 / Tooltip 收敛到 Nova 控件，同批加检查                                                   | I1              | 未开始 |
+| 1.8 | 原生 `<select>` / 滑块 / Tooltip 收敛到 Nova 控件，同批加检查                                                   | I1              | 已完成 |
 
 **理由**：全部是低风险、可用现有单测充分回归的改动，先把地基清干净。
 
