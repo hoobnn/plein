@@ -457,7 +457,7 @@ function Review({ viewer }: { viewer: View }) {
                   max={100}
                   value={split}
                   onValueChange={setSplit}
-                  className="absolute right-8 bottom-5 left-8 data-horizontal:w-auto"
+                  className="absolute right-8 bottom-5 left-8 data-[orientation=horizontal]:w-auto"
                 />
               )}
             </>

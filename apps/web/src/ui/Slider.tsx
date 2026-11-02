@@ -40,7 +40,10 @@ export function Slider({
 }) {
   return (
     <Base.Root
-      className={cn('data-horizontal:w-full data-vertical:h-full', className)}
+      className={cn(
+        'data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full',
+        className,
+      )}
       data-slot="slider"
       value={value}
       min={min}
@@ -52,14 +55,14 @@ export function Slider({
       onValueCommitted={onValueCommitted}
       onPointerDown={onPointerDown}
     >
-      <Base.Control className="relative flex w-full touch-none items-center select-none data-disabled:opacity-40 data-vertical:h-full data-vertical:min-h-40 data-vertical:w-auto data-vertical:flex-col">
+      <Base.Control className="relative flex w-full touch-none items-center select-none data-disabled:opacity-40 data-[orientation=vertical]:h-full data-[orientation=vertical]:min-h-40 data-[orientation=vertical]:w-auto data-[orientation=vertical]:flex-col">
         <Base.Track
           data-slot="slider-track"
-          className="relative grow overflow-hidden rounded-full bg-surface-3 select-none data-horizontal:h-1 data-horizontal:w-full data-vertical:h-full data-vertical:w-1"
+          className="relative grow overflow-hidden rounded-full bg-surface-3 select-none data-[orientation=horizontal]:h-1 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1"
         >
           <Base.Indicator
             data-slot="slider-range"
-            className="bg-primary select-none data-horizontal:h-full data-vertical:w-full"
+            className="bg-primary select-none data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full"
           />
         </Base.Track>
         <Base.Thumb
