@@ -1,8 +1,8 @@
 import { VIDEO_MODE_LABELS, VIDEO_MODES, type VideoMode } from '@plein/nodes'
+import { AnimatePresence } from 'motion/react'
 import { useState } from 'react'
 import { Icon, type IconName } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
-import { Presence } from '../../ui/Presence'
 
 const MODES: Record<VideoMode, { icon: IconName; hint: string }> = {
   text: { icon: 'text', hint: '只用提示词，不使用连入的图片' },
@@ -46,7 +46,7 @@ export function ModePicker({
         </span>
         <Icon name="chevronDown" size={14} />
       </button>
-      <Presence>
+      <AnimatePresence>
         {anchor && (
           <Popover anchor={anchor} onClose={() => setAnchor(null)} label="视频生成模式" width={280}>
             <p className="ui-section-title px-2 pt-1 pb-2">视频生成模式</p>
@@ -82,7 +82,7 @@ export function ModePicker({
             </div>
           </Popover>
         )}
-      </Presence>
+      </AnimatePresence>
     </>
   )
 }

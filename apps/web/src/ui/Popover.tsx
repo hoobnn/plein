@@ -1,12 +1,13 @@
 import { Popover as Base } from '@base-ui/react/popover'
+import { m } from 'motion/react'
 import { type ReactNode, useEffect, useLayoutEffect, useRef } from 'react'
-import { useClosing, useExit } from './Presence'
+import { popVariants, useOverlayClosing, useOverlayMotion } from './motion'
 
 /**
  * 锚定在某个按钮上的弹层（Base UI Popover）：渲染到 body（不被面板的滚动裁掉），打开期间跟着锚点移动，
  * 默认优先放在锚点上方，放不下时翻到下方（placement="below" 反过来）；点外面或按 Esc 关闭，
  * 弹层里再开的弹层（如参数面板里的下拉框）算在里面，Esc 只关最上面那层。
- * 从锚点那一侧长出；包在 `<Presence>` 里时关闭也有收起动画。
+ * 从锚点那一侧长出；包在 `<AnimatePresence>` 里时关闭也有收起动画。
  */
 export function Popover({
   anchor,
@@ -30,8 +31,8 @@ export function Popover({
   initialFocus?: boolean
   children: ReactNode
 }) {
-  const exit = useExit()
-  const closing = useClosing()
+  const closing = useOverlayClosing()
+  const motion = useOverlayMotion(popVariants, placement)
   const popup = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     if (scrollKey !== undefined) popup.current?.scrollTo({ top: 0 })
@@ -51,9 +52,14 @@ export function Popover({
   }, [anchor, closing])
   return (
     <Base.Root
-      open={!closing}
+      open
       onOpenChange={(open, details) => {
         if (open) return
+        // AnimatePresence 保留内容期间，Base UI 不再消费第二次关闭请求。
+        if (closing) {
+          details.cancel()
+          return
+        }
         // 锚点不是 Base UI 的 Trigger：点锚点交给锚点自己的 onClick 去切换，否则会先关再被重新打开
         const target = details.event?.target
         if (
@@ -79,7 +85,7 @@ export function Popover({
             data-slot="popover-content"
             initialFocus={initialFocus}
             aria-label={label}
-            {...exit}
+            render={<m.div {...motion} />}
             style={{
               width,
               maxWidth: 'var(--available-width, calc(100vw - 16px))',
@@ -87,7 +93,7 @@ export function Popover({
               // 最低高度不能高过窗口的三成：两侧都放不下时，弹层要留在窗口里，不能溢出屏幕
               maxHeight: 'min(480px, 70vh, max(var(--available-height, 70vh), min(200px, 30vh)))',
             }}
-            className="ui-menu ui-scrollbar pointer-events-auto flex origin-(--transform-origin) flex-col gap-2.5 overflow-y-auto rounded-lg bg-menu p-2.5 text-sm text-ink shadow-3 ring-1 ring-line outline-none"
+            className="ui-menu ui-motion ui-scrollbar pointer-events-auto flex origin-(--transform-origin) flex-col gap-2.5 overflow-y-auto rounded-lg bg-menu p-2.5 text-sm text-ink shadow-3 ring-1 ring-line outline-none"
           >
             {children}
           </Base.Popup>

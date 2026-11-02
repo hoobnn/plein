@@ -483,6 +483,10 @@
     animation: ui-pop-in var(--dur-base) var(--ease-spring);
     transform-origin: var(--pop-origin, top left);
   }
+  /* Presence 迁移到 Motion 的弹层由 m 组件负责进退场，避免 CSS 同时改写 transform。 */
+  .ui-menu.ui-motion {
+    animation: none;
+  }
   /* 弹层（ui/Popover.tsx、添加节点菜单）从锚点那一侧长出：在锚点上方就从下边缘长，反之从上边缘。
      above / below 是手动定位的浮层；top / bottom 是 Base UI 定位器标的方向，
      原点取定位器算出的 --transform-origin：碰撞平移或翻转后仍指向触发按钮 */
