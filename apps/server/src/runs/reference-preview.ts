@@ -182,19 +182,6 @@ export function referencePreview({
   }
   // unsupported 的文案按节点区分：非生成节点是「不送 @ 引用」，文生视频是「不用参考图」。
   const unsentScope: UnsupportedScope = plainMedia ? 'node' : textOnly ? 'text' : 'mode'
-  /** 同一处引用被 mention 路径与 detail 路径各报一次时只留一条：按身份而非显示名关联。 */
-  // detail 可能来自上游文本里的 @ 引用（没有原文区间），一并纳入查找。
-  const upstreamMentions = (inputs.prompt ?? []).flatMap((item) =>
-    item.type === 'text' && item.text.includes('@')
-      ? findMentions(item.text, targets).filter((m) => m.id !== el.id)
-      : [],
-  )
-  const identityOf = (detail: InputRef) => {
-    const hit =
-      mentions.find((m) => m.id === detail.elementId && mentionName(m) === detail.name) ??
-      upstreamMentions.find((m) => m.id === detail.elementId && mentionName(m) === detail.name)
-    return hit ? pickIdentity(hit) : ''
-  }
   const indexOf = (assetId: string, kind: ReferenceMediaKind = 'image') => {
     if (kind !== 'image') {
       const index = finalMedia[kind].findIndex(
@@ -334,7 +321,9 @@ export function referencePreview({
         message: reasonMessage(reason, detail.name, referenceLimit, kind, unsentScope),
         origins: detail.kind === 'character' ? ['mention', 'role'] : ['mention'],
       },
-      identityOf(detail),
+      // 解析阶段已把档案项 / 视角身份写在明细上（上游文本里的引用没有原文区间，只能靠它），
+      // 与 mention 路径的 pickIdentity 同一格式，同一处引用只报一次。
+      detail.pickIdentity ?? '',
     )
   }
 
@@ -384,7 +373,7 @@ export function referencePreview({
           message: reasonMessage('over_limit', detail.name, referenceLimit),
           origins: detail.kind === 'character' ? ['mention', 'role'] : ['mention'],
         },
-        identityOf(detail),
+        detail.pickIdentity ?? '',
       )
     }
   }

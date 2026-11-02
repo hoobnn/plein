@@ -57,6 +57,10 @@ export interface InputRef {
   sent: string[]
   /** available 里有素材没送，或根本没有素材时的原因 */
   reason?: InputRefReason
+  /**
+   * 引用命中的档案项 / 视角身份（不含显示名）：同一张卡的不同档案项 / 视角是不同的引用，
+   * 服务端据此把它们逐条列入「未送入」。上游文本里的引用没有原文区间，只能靠它。旧执行记录没有。 */
+  pickIdentity?: string
 }
 
 /** 实际送进某个输入端口的一个值；图片按送入顺序排列 */

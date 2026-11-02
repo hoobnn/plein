@@ -2172,3 +2172,62 @@ it('不收参考图的节点也给出 sent / unsent：@ 有图的卡明确说明
     content.filter((part) => part.type === 'image').map((part) => part.image?.assetId),
   ).toEqual([asset('b')])
 }, 30_000)
+
+it('上游文本引用同一张卡的不同档案项 / 视角：未送入逐条列出', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  // 角色档案：两个时期都没有图
+  const hero = card(doc, 'plein/character', '林夏', null, 0)
+  setParams(doc, hero, {
+    profile: {
+      periods: [
+        { id: 'p-child', name: '童年', images: [] },
+        { id: 'p-adult', name: '青年', images: [] },
+      ],
+      expressions: [],
+    },
+  })
+  // 场景：两个视角的图都不存在
+  addNode(doc, 'plein/scene', {
+    name: '天台',
+    params: {
+      description: '天台',
+      sceneViews: [
+        { id: 'view-front', name: '正面', images: [asset('a')] },
+        { id: 'view-back', name: '背面', images: [asset('b')] },
+      ],
+    },
+    x: 300,
+  })
+  // 两条上游文本，@ 已被解析阶段改写，预览时找不到原始引用
+  const textProfile = addNode(doc, 'plein/text', {
+    params: { text: '@林夏/童年 和 @林夏/青年' },
+    y: -600,
+  })
+  const textScene = addNode(doc, 'plein/text', {
+    params: { text: '@天台/正面 和 @天台/背面' },
+    x: 400,
+    y: -600,
+  })
+  const image = addNode(doc, 'plein/image', {
+    params: { model: 'plein/mock:image', prompt: '开拍' },
+    y: 400,
+  })
+  connect(doc, [textProfile, 'text'], [image, 'prompt'])
+  connect(doc, [textScene, 'text'], [image, 'prompt'])
+
+  const input = await preview(server, id, image)
+  expect(input.sent).toEqual([])
+  // 身份来自解析阶段写在明细上的档案项 / 视角身份：不再合并成一条
+  expect(input.unsent?.map((item) => item.name)).toEqual([
+    '林夏（童年）',
+    '林夏（青年）',
+    '天台（正面）',
+    '天台（背面）',
+  ])
+  for (const item of input.unsent ?? []) {
+    expect(item.message).toContain(`「${item.name}」`)
+    expect(item.reason).toBe('no_image')
+  }
+}, 30_000)

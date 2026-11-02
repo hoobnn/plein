@@ -280,14 +280,14 @@ export async function applyMentions(
         images: [{ type: 'image', assetId: target.assetId, kind: 'image', source: target.id }],
       })
       refList.push({ name: label(h), elementId: target.id, assetIds: [target.assetId] })
-      const current = detail(target, label(h), priority, [target.assetId])
+      const current = detail(target, label(h), priority, [target.assetId], hitIdentity(h))
       details.push(current)
       imageDetails.push(current)
       detailByHit.set(hitKey(h), current)
       continue
     }
     if ((target.kind === 'video' || target.kind === 'audio') && target.assetId) {
-      const current = detail(target, label(h), priority, [target.assetId])
+      const current = detail(target, label(h), priority, [target.assetId], hitIdentity(h))
       details.push(current)
       mediaDetails.push(current)
       detailByHit.set(hitKey(h), current)
@@ -296,7 +296,13 @@ export async function applyMentions(
     if (target.nodeType === 'plein/effect') {
       const own = await collect(target.id)
       const candidates = (own.references ?? []).filter((value) => value.type === 'video')
-      const current = detail(target, label(h), priority, mediaIds(candidates, 'video'))
+      const current = detail(
+        target,
+        label(h),
+        priority,
+        mediaIds(candidates, 'video'),
+        hitIdentity(h),
+      )
       details.push(current)
       mediaDetails.push(current)
       detailByHit.set(hitKey(h), current)
@@ -384,7 +390,7 @@ export async function applyMentions(
       assetIds: imageIds(images),
     })
     const current = {
-      ...detail(target, label(h), priority, available),
+      ...detail(target, label(h), priority, available, hitIdentity(h)),
       ...(selected !== undefined ? { selected } : {}),
     }
     details.push(current)
@@ -588,7 +594,25 @@ const KINDS: Record<string, InputRefKind> = {
   'plein/style': 'style',
 }
 
-function detail(el: CanvasElement, name: string, priority: number, available: string[]): InputRef {
+/** 引用命中的档案项 / 视角身份（不含显示名）；写在明细上，供预览把同卡不同档案项 / 视角逐条列入未送入 */
+const hitIdentity = (h: Hit) =>
+  [
+    h.pick.period?.id,
+    h.pick.outfit?.id,
+    h.pick.expression?.id,
+    h.pick.voiceState?.id,
+    h.sceneView?.id,
+  ]
+    .map((value) => value ?? '')
+    .join('/')
+
+function detail(
+  el: CanvasElement,
+  name: string,
+  priority: number,
+  available: string[],
+  pickIdentity = '',
+): InputRef {
   const media =
     el.kind === 'video' || el.kind === 'audio'
       ? el.kind
@@ -603,6 +627,7 @@ function detail(el: CanvasElement, name: string, priority: number, available: st
     required: priority >= 0,
     available,
     sent: [],
+    ...(pickIdentity ? { pickIdentity } : {}),
   }
 }
 
