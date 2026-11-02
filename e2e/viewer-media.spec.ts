@@ -161,7 +161,9 @@ test.describe('媒体浏览器冒烟', { tag: '@core' }, () => {
     const viewer = page.getByRole('dialog', { name: '查看「候选图恢复」', exact: true })
     await viewer.getByRole('button', { name: '预览上一个候选', exact: true }).click()
     await expect(viewer.getByRole('alert')).toContainText('图片加载失败')
-    await viewer.getByRole('combobox', { name: '对比候选' }).selectOption('image-1')
+    // 对比下拉已换成 ui/Select（Base UI），点开触发器再点选项；弹层挂在 body 上
+    await viewer.getByRole('combobox', { name: '对比候选' }).click()
+    await page.getByRole('option', { name: /^候选 2/ }).click()
     await expect(viewer.getByRole('alert')).toHaveCount(2)
     await viewer.screenshot({
       path: test.info().outputPath('image-comparison-failed.png'),
@@ -177,7 +179,8 @@ test.describe('媒体浏览器冒烟', { tag: '@core' }, () => {
       )
       .toBe(true)
     await expect(viewer.getByRole('alert')).toHaveCount(1)
-    await viewer.getByRole('combobox', { name: '对比方式' }).selectOption('slider')
+    await viewer.getByRole('combobox', { name: '对比方式' }).click()
+    await page.getByRole('option', { name: '滑杆', exact: true }).click()
     await viewer.getByRole('slider', { name: '图片对比滑杆' }).fill('90')
     for (let i = 0; i < 4; i++)
       await viewer.getByRole('button', { name: '放大图片', exact: true }).click()
@@ -201,14 +204,16 @@ test.describe('媒体浏览器冒烟', { tag: '@core' }, () => {
       )
       .toBe(true)
     await expect(viewer.getByRole('alert')).toHaveCount(0)
-    await viewer.getByRole('combobox', { name: '对比候选' }).selectOption('')
+    await viewer.getByRole('combobox', { name: '对比候选' }).click()
+    await page.getByRole('option', { name: '不对比', exact: true }).click()
     await viewer.getByRole('button', { name: '预览下一个候选', exact: true }).click()
     await expect(viewer.getByRole('img', { name: '候选图恢复', exact: true })).toHaveAttribute(
       'src',
       new RegExp(assets[1]!),
     )
     await expect(viewer.getByRole('alert')).toHaveCount(0)
-    await viewer.getByRole('combobox', { name: '对比候选' }).selectOption('image-2')
+    await viewer.getByRole('combobox', { name: '对比候选' }).click()
+    await page.getByRole('option', { name: /^候选 3/ }).click()
     const duplicate = viewer.getByRole('img', { name: '候选 B', exact: true })
     await expect
       .poll(() =>
