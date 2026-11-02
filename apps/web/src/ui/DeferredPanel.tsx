@@ -61,7 +61,30 @@ export function DeferredPanel<P extends object>({
     setAttempt((current) => current + 1)
   }, [active, failed])
   if (!active && !opened) return null
-  if (failed || !Loaded) return fallback
+  if (failed)
+    return (
+      <>
+        {fallback}
+        <div
+          role="alert"
+          className="ui-menu fixed right-4 bottom-4 z-60 flex items-center gap-3 p-3 text-sm shadow-3"
+        >
+          <span>浮层加载失败</span>
+          <button
+            type="button"
+            className="ui-btn ui-btn-secondary ui-btn-sm"
+            onClick={() => {
+              setLoaded(null)
+              setFailed(false)
+              setAttempt((current) => current + 1)
+            }}
+          >
+            重试
+          </button>
+        </div>
+      </>
+    )
+  if (!Loaded) return fallback
   return (
     <DeferredErrorBoundary key={attempt} onError={() => setFailed(true)}>
       <Loaded {...props} />

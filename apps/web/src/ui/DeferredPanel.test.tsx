@@ -28,7 +28,7 @@ function RetryFixture({ load }: { load: () => Promise<ComponentType> }) {
   )
 }
 
-it('导入失败不进入全局错误页，下次打开重新加载', async () => {
+it('导入失败不进入全局错误页，可点击重试恢复并再次打开', async () => {
   const load = vi
     .fn<() => Promise<ComponentType>>()
     .mockRejectedValueOnce(new Error('模块连接中断'))
@@ -38,10 +38,12 @@ it('导入失败不进入全局错误页，下次打开重新加载', async () =
   expect((await screen.findByRole('status')).textContent).toBe('重要提示')
   await waitFor(() => expect(load).toHaveBeenCalledTimes(1))
   expect(screen.getByRole('heading', { name: '主界面仍可用' })).toBeTruthy()
+  await user.click(await screen.findByRole('button', { name: '重试' }))
+  expect(await screen.findByText('浮层已加载')).toBeTruthy()
+  expect(load).toHaveBeenCalledTimes(2)
   await user.click(screen.getByRole('button', { name: '切换浮层' }))
   await user.click(screen.getByRole('button', { name: '切换浮层' }))
   expect(await screen.findByText('浮层已加载')).toBeTruthy()
-  expect(load).toHaveBeenCalledTimes(2)
 })
 
 function SlowNotice() {
