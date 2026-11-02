@@ -732,6 +732,69 @@ it('原生序列本地导出即使保留识别模型设置，也不冒称即将�
   expect(submit).not.toHaveBeenCalled()
 })
 
+it('首帧与尾帧模式下，@ 已送入的帧图不再误报未送入', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const first = createElement(doc, {
+    kind: 'image',
+    name: '首帧.png',
+    assetId: asset('a'),
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  const last = createElement(doc, {
+    kind: 'image',
+    name: '尾帧.png',
+    assetId: asset('b'),
+    x: 200,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  card(doc, 'plein/character', '林夏', asset('c'), 400)
+  const cases = [
+    {
+      mode: 'image',
+      sources: [first],
+      prompt: '@首帧.png 里的人转身',
+      final: '首帧.png 里的人转身',
+      indices: [[1]],
+    },
+    {
+      mode: 'lastFrame',
+      sources: [last],
+      prompt: '@尾帧.png 作为结束',
+      final: '尾帧.png 作为结束',
+      indices: [[1]],
+    },
+    {
+      mode: 'frames',
+      sources: [first, last],
+      prompt: '从 @首帧.png 过渡到 @尾帧.png，@林夏 走过',
+      final: '从 首帧.png 过渡到 尾帧.png，林夏 走过',
+      indices: [[1], [2], []],
+    },
+  ]
+  for (const item of cases) {
+    const video = addNode(doc, 'plein/video', {
+      params: { model: 'plein/mock:video', mode: item.mode, prompt: item.prompt },
+    })
+    for (const source of item.sources) connect(doc, [source, 'image'], [video, 'images'])
+    const input = await preview(server, id, video)
+    expect(input.status).toBe('ready')
+    expect(input.prompt).toBe(item.final)
+    expect(input.promptReferences?.map((ref) => ref.indices)).toEqual(item.indices)
+    expect(input.unsent?.some((ref) => ['首帧.png', '尾帧.png'].includes(ref.name))).toBe(false)
+    if (item.mode === 'frames')
+      expect(input.unsent).toContainEqual(
+        expect.objectContaining({ name: '林夏', reason: 'unsupported' }),
+      )
+  }
+})
+
 it('仅尾帧在不支持它的平台预览阶段即阻断', async () => {
   const { server } = await bootServer()
   const { id, doc } = await createCanvas(server)

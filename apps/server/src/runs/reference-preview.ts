@@ -188,7 +188,9 @@ export function referencePreview({
     const detail = mention.id
       ? details.find((item) => item.elementId === mention.id && item.name === name)
       : undefined
-    const indices = detail ? indicesOf(detail.sent) : []
+    // 非多模态模式不会追加 @ 参考图，但首帧 / 尾帧本身已经通过连线送入。
+    const framed = detail?.reason === 'unsupported' ? detail.available : []
+    const indices = detail ? indicesOf([...detail.sent, ...framed]) : []
     const reason: InputUnsentReason | undefined = problem
       ? 'mention_ambiguous'
       : indices.length
