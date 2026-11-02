@@ -22,6 +22,7 @@ describe('多模态参考名称', () => {
   function setup(
     options: {
       connected?: boolean
+      model?: string
       inputs?: (sources: string[], assets: string[]) => PreparedInput['inputs']
       refs?: (sources: string[], assets: string[]) => PreparedInput['refs']
       sent?: (sources: string[], assets: string[]) => PreparedInput['sent']
@@ -48,7 +49,11 @@ describe('多模态参考名称', () => {
       y: 0,
       w: 160,
       h: 90,
-      params: { mode: 'reference', prompt: '参考', model: 'minimax/api:MiniMax-H3' },
+      params: {
+        mode: 'reference',
+        prompt: '参考',
+        model: options.model ?? 'minimax/api:MiniMax-H3',
+      },
     })
     const sources: string[] = []
     const assets: string[] = []
@@ -147,6 +152,45 @@ describe('多模态参考名称', () => {
     ])
     expect(screen.getByRole('button', { name: '管理参考 3' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '管理参考 4' })).toBeTruthy()
+  })
+
+  it('图片与方舟长编号移出缩略图裁切区域并完整显示', () => {
+    setup({
+      model: 'volc/ark:doubao-seedance-2-0-260128',
+      sent: (sources, assets) => [
+        {
+          index: 10,
+          token: '图片10',
+          assetId: assets[0]!,
+          elementId: sources[0]!,
+          name: '素材0',
+          origins: ['edge'],
+        },
+        {
+          index: 10,
+          token: '@image' + '10',
+          assetId: assets[1]!,
+          elementId: sources[1]!,
+          name: '素材1',
+          origins: ['edge'],
+        },
+      ],
+    })
+    const tokens = [
+      ...within(screen.getByLabelText('实际送入的参考素材'))
+        .getAllByRole('group')
+        .map((group) => group.querySelector('[data-token]')!),
+    ]
+    expect(tokens.map((token) => token.textContent)).toEqual([
+      '图片10',
+      '@image' + '10',
+      '@video1',
+      '@audio1',
+    ])
+    for (const token of tokens) {
+      expect(token.closest('button')).toBeNull()
+      expect(token.closest('.overflow-hidden')).toBeNull()
+    }
   })
 
   it('@-only 视频和音频保留名称与 @ 来源，并按媒体类型打开查看器', async () => {
