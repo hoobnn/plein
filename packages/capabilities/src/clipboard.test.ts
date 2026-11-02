@@ -1,4 +1,11 @@
-import { createElement, setParam, sequenceInstancesOf } from '@plein/doc'
+import {
+  connect,
+  createElement,
+  deleteElements,
+  inputEdges,
+  setParam,
+  sequenceInstancesOf,
+} from '@plein/doc'
 import { openDoc, node } from '@plein/doc/testing'
 import {
   findMentions,
@@ -226,5 +233,85 @@ describe('画布复制中的引用映射', () => {
     expect(image.params!.referenceImagePicks).toEqual({ [pasted[1]!]: ['asset-b'] })
     expect(doc.get(text)!.params!.referenceImagePicks).toEqual({ z: ['asset-b'] })
     doc.destroy()
+  })
+
+  it('同画布复制资产卡时保留未复制媒体元素的参考入边', () => {
+    const doc = openDoc()
+    const card = createElement(
+      doc,
+      node({
+        id: 'card',
+        nodeType: 'plein/character',
+        ports: {
+          inputs: [{ id: 'references', label: '参考素材', type: 'any', multiple: true }],
+          outputs: [],
+        },
+      }),
+    )
+    for (const kind of ['image', 'video', 'audio'] as const) {
+      const source = createElement(doc, {
+        kind,
+        id: kind,
+        assetId: `${kind}-asset`,
+        x: 0,
+        y: 0,
+        w: 100,
+        h: 80,
+      })
+      connect(doc, [source, kind], [card, 'references'])
+    }
+    const data = JSON.parse(JSON.stringify(referenceClipboard.copy(doc, [card])))
+    expect(data.elements.map((el: { id: string }) => el.id)).toEqual([card])
+    const [pasted] = referenceClipboard.paste(doc, data)
+    expect(inputEdges(doc, pasted!, 'references').map((edge) => edge.from[0])).toEqual([
+      'image',
+      'video',
+      'audio',
+    ])
+    expect(inputEdges(doc, card, 'references')).toHaveLength(3)
+    doc.destroy()
+  })
+
+  it('已复制的内部参考边不重复，跨画布或上游删除后不补外部入边', () => {
+    const doc = openDoc()
+    const image = createElement(doc, {
+      kind: 'image',
+      id: 'image',
+      assetId: 'image-asset',
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 80,
+    })
+    const card = createElement(
+      doc,
+      node({
+        id: 'card',
+        nodeType: 'plein/character',
+        ports: {
+          inputs: [{ id: 'references', label: '参考图', type: 'image', multiple: true }],
+          outputs: [],
+        },
+      }),
+    )
+    connect(doc, [image, 'image'], [card, 'references'])
+    const [pastedImage, pastedCard] = referenceClipboard.paste(
+      doc,
+      referenceClipboard.copy(doc, [image, card]),
+    )
+    const internal = inputEdges(doc, pastedCard!, 'references')
+    expect(internal).toHaveLength(1)
+    expect(internal[0]!.from[0]).toBe(pastedImage)
+
+    const external = JSON.parse(JSON.stringify(referenceClipboard.copy(doc, [card])))
+    const target = openDoc()
+    const [crossCanvas] = referenceClipboard.paste(target, external)
+    expect(inputEdges(target, crossCanvas!, 'references')).toHaveLength(0)
+
+    deleteElements(doc, [image])
+    const [missingSource] = referenceClipboard.paste(doc, external)
+    expect(inputEdges(doc, missingSource!, 'references')).toHaveLength(0)
+    doc.destroy()
+    target.destroy()
   })
 })

@@ -1,6 +1,8 @@
 import {
   type CanvasElement,
   type ClipboardData,
+  type Edge,
+  connect,
   exportElements,
   importElements,
   type ImportOptions,
@@ -17,12 +19,67 @@ import {
   profileOf,
   sortMentionTargets,
   isAiAnalysisType,
+  ASSET_NODE_TYPES,
   AiSceneRequest,
   AiSummaryRequest,
   AiDraftOrigin,
 } from '@plein/nodes'
 
 const KEY = 'plein/mentions'
+const EXTERNAL_EDGES_KEY = 'plein/reference-external-edges'
+const MEDIA_KINDS = new Set(['image', 'video', 'audio'])
+
+function externalReferenceEdges(doc: PleinDoc, data: ClipboardData): Edge[] {
+  const copied = new Set(data.elements.map((el) => el.id))
+  return [...doc.edges()].filter((edge) => {
+    if (copied.has(edge.from[0]) || !copied.has(edge.to[0]) || edge.to[1] !== 'references')
+      return false
+    const source = doc.get(edge.from[0])
+    const target = doc.get(edge.to[0])
+    return (
+      !!source &&
+      MEDIA_KINDS.has(source.kind) &&
+      target?.kind === 'node' &&
+      ASSET_NODE_TYPES.has(target.nodeType ?? '')
+    )
+  })
+}
+
+function readExternalReferenceEdges(value: unknown): Edge[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((edge) => {
+    if (!edge || typeof edge !== 'object') return []
+    const { id, from, to, order } = edge as Partial<Edge>
+    const address = (value: unknown): value is [string, string] =>
+      Array.isArray(value) && value.length === 2 && value.every((part) => typeof part === 'string')
+    if (typeof id !== 'string' || !address(from) || !address(to)) return []
+    return [{ id, from: [...from], to: [...to], ...(typeof order === 'string' ? { order } : {}) }]
+  })
+}
+
+function restoreExternalReferenceEdges(
+  doc: PleinDoc,
+  edges: Edge[],
+  ids: ReadonlyMap<string, string>,
+) {
+  for (const edge of edges) {
+    const target = ids.get(edge.to[0])
+    const source = doc.get(edge.from[0])
+    const targetElement = target ? doc.get(target) : undefined
+    if (
+      !target ||
+      !source ||
+      !MEDIA_KINDS.has(source.kind) ||
+      targetElement?.kind !== 'node' ||
+      !ASSET_NODE_TYPES.has(targetElement.nodeType ?? '') ||
+      edge.to[1] !== 'references' ||
+      ids.has(edge.from[0])
+    )
+      continue
+    const restored = connect(doc, edge.from, [target, edge.to[1]])
+    if (restored && edge.order) doc.edgeMap.set(restored.id, { ...restored, order: edge.order })
+  }
+}
 
 function targets(elements: Iterable<CanvasElement>): MentionTarget[] {
   return [...elements].flatMap((el) => {
@@ -151,9 +208,13 @@ function patch(
 
 export const referenceClipboard = {
   copy(doc: PleinDoc, ids: Iterable<string>): ClipboardData {
+    const exported = exportElements(doc, ids)
     return {
-      ...exportElements(doc, ids),
-      extensions: { [KEY]: targets(doc.elements()).map(({ id, name }) => ({ id, name })) },
+      ...exported,
+      extensions: {
+        [KEY]: targets(doc.elements()).map(({ id, name }) => ({ id, name })),
+        [EXTERNAL_EDGES_KEY]: externalReferenceEdges(doc, exported),
+      },
     }
   },
   paste(doc: PleinDoc, data: ClipboardData, opts: ImportOptions = {}): string[] {
@@ -167,6 +228,7 @@ export const referenceClipboard = {
       raw.every((t) => t && typeof t.id === 'string' && typeof t.name === 'string')
         ? raw.map((t) => ({ id: t.id as string, name: t.name as string }))
         : targets(data.elements)
+    const externalEdges = readExternalReferenceEdges(data.extensions?.[EXTERNAL_EDGES_KEY])
     const roots = importElements(doc, data, {
       ...opts,
       onImport(ids) {
@@ -179,6 +241,7 @@ export const referenceClipboard = {
             patch(doc, imported, (s) => rewrite(s, source, destination, ids), ids)
           }
         }
+        restoreExternalReferenceEdges(doc, externalEdges, ids)
         opts.onImport?.(ids)
       },
     })
