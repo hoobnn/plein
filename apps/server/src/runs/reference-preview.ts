@@ -59,6 +59,11 @@ export function referencePreview({
   referenceMediaLimits?: { video: number; audio: number }
 }): ReferencePreview {
   if (def?.capability !== 'image.generate' && def?.capability !== 'video.generate') return {}
+  const capability = def.capability
+  const isVideo = capability === 'video.generate'
+  const videoMode = isVideo ? String(params.mode ?? 'text') : undefined
+  // 文生视频不送任何图；首尾帧模式的连线图按位置作帧，不是参考图。
+  const textOnly = videoMode === 'text'
   const ports = def.inputs.filter((port) => port.type === 'image').map((port) => port.id)
   const finalImages = ports.flatMap((port) =>
     (inputs[port] ?? []).filter((value) => value.type === 'image'),
@@ -83,12 +88,10 @@ export function referencePreview({
   )
   const sent: InputSentReference[] = []
   // 编号只有一份：这里的 token 就是最终提示词正文里写的那个编号。
-  const style = referenceLabelStyle(
-    def?.capability,
-    parseModelRef(String(params.model ?? ''))?.provider,
-  )
+  const style = referenceLabelStyle(capability, parseModelRef(String(params.model ?? ''))?.provider)
   const numbering = referenceNumbering(style, finalImages)
-  for (const [index, value] of finalImages.entries()) {
+  // 文生视频不送图：连线图不进 sent（预览与实际提交一致），稍后放进 unsent 说明原因。
+  for (const [index, value] of (textOnly ? [] : finalImages).entries()) {
     if (!('assetId' in value)) continue
     const assetId = value.assetId
     const source = 'source' in value ? value.source : undefined
@@ -112,9 +115,12 @@ export function referencePreview({
     }
     const primary = !origins.has('edge') && refs.length ? refs[0] : undefined
     const elementId = primary?.elementId ?? source
+    // 首尾帧按位置标注用途；token 保留平台编号写法，前端有 role 时优先显示用途。
+    const role = frameRole(videoMode, index)
     sent.push({
       index: index + 1,
       token: numbering.label(assetId) ?? referenceLabel(style, index + 1),
+      ...(role ? { role } : {}),
       assetId,
       ...(elementId ? { elementId } : {}),
       name: primary?.name ?? (elementId && doc.get(elementId)?.name) ?? '参考素材',
@@ -336,15 +342,20 @@ export function referencePreview({
           origins: ['edge'],
         })
       } else if (indexOf(assetId) === undefined) {
-        const reason =
-          referenceLimit !== undefined && sent.length >= referenceLimit ? 'over_limit' : 'not_sent'
+        const overLimit = referenceLimit !== undefined && sent.length >= referenceLimit
+        const reason: InputUnsentReason = textOnly
+          ? 'unsupported'
+          : overLimit
+            ? 'over_limit'
+            : 'not_sent'
         addUnsent({
           assetId,
           elementId: source.id,
           name,
           reason,
-          message:
-            reason === 'over_limit'
+          message: textOnly
+            ? reasonMessage('unsupported', name, referenceLimit, 'image', 'text')
+            : reason === 'over_limit'
               ? reasonMessage(reason, name, referenceLimit)
               : `「${name}」已连线，但未送入当前模型`,
           origins: ['edge'],
@@ -443,16 +454,32 @@ function mentionName(mention: ReturnType<typeof findMentions>[number]) {
   return mention.sceneView ? `${label}（${mention.sceneView.name}）` : label
 }
 
+/** 非参考模式的视频按位置用图：第 1 张（首尾帧模式再加第 2 张）有明确用途，不是参考图。 */
+function frameRole(
+  mode: string | undefined,
+  position: number,
+): 'firstFrame' | 'lastFrame' | undefined {
+  if (mode === 'image') return position === 0 ? 'firstFrame' : undefined
+  if (mode === 'lastFrame') return position === 0 ? 'lastFrame' : undefined
+  if (mode === 'frames')
+    return position === 0 ? 'firstFrame' : position === 1 ? 'lastFrame' : undefined
+  return undefined
+}
+
+type UnsupportedScope = 'mode' | 'text'
+
 function reasonMessage(
   reason: InputUnsentReason,
   name: string,
   limit?: number,
   kind: ReferenceMediaKind = 'image',
+  scope: UnsupportedScope = 'mode',
 ) {
   if (reason === 'over_limit')
     return `「${name}」的图片超过模型参考上限${limit === undefined ? '' : ` ${limit} 张`}，未送入`
   if (reason === 'failed') return `「${name}」的参考图生成失败，未送入`
   if (reason === 'unsupported') {
+    if (scope === 'text' && kind === 'image') return `「${name}」文生视频模式不使用参考图`
     if (kind !== 'image') {
       const media = kind === 'video' ? '参考视频' : '参考音频'
       return `「${name}」的${media}在当前模型或模式下不送入`

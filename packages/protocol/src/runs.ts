@@ -117,6 +117,8 @@ export interface InputSentReference {
   kind?: 'image' | 'video' | 'audio'
   /** 最终提示词正文里的编号写法（图片节点「图1」、MiniMax 视频「图片1」、其余「@image1」）。 */
   token: string
+  /** 视频非参考模式下这张图的用途；有它时前端显示「首帧」「尾帧」，不显示平台编号 */
+  role?: 'firstFrame' | 'lastFrame'
   assetId: string
   elementId?: string
   name: string

@@ -79,6 +79,11 @@ function card(doc: PleinDoc, nodeType: string, name: string, image: string | nul
   return id
 }
 
+/** 带名字的图片元素；连线用 */
+function imgEl(doc: PleinDoc, name: string, assetId: string, x: number) {
+  return createElement(doc, { kind: 'image', name, assetId, x, y: 0, w: 100, h: 100 })
+}
+
 /** mock 图片模型临时声明最多收三张参考图 */
 function limitReferences(max: number) {
   const model = mockProvider.models.find((m) => m.id === 'image')!
@@ -1926,3 +1931,83 @@ it('图片生成名称引用按实际多图顺序映射，重复提及不重复�
   expect(disconnected.inputs.references?.map((v) => v.assetId)).toEqual([asset('b')])
   expect(disconnected.prompt).toBe('保留 @生成图片#1 的人物，在 图1 中奔跑，再参考 @生成图片#1')
 })
+
+it('文生视频模式不使用连线参考图：面板不声称送入，说明原因且不阻断，平台确实没收到图', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const video = addNode(doc, 'plein/video', {
+    params: { model: 'plein/mock:video', mode: 'text', prompt: '一个镜头' },
+  })
+  connect(doc, [imgEl(doc, '首.png', asset('a'), 0), 'image'], [video, 'images'])
+  connect(doc, [imgEl(doc, '尾.png', asset('b'), 200), 'image'], [video, 'images'])
+  const input = await preview(server, id, video)
+  // 不阻断：文生视频连图只是没用上，不是错误
+  expect(input.status).toBe('ready')
+  expect(input.blocked).toEqual([])
+  // 预览与实际提交一致：面板不声称送入任何参考图
+  expect(input.sent).toEqual([])
+  expect(input.unsent).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        assetId: asset('a'),
+        name: '首.png',
+        reason: 'unsupported',
+        message: '「首.png」文生视频模式不使用参考图',
+        origins: ['edge'],
+      }),
+      expect.objectContaining({
+        assetId: asset('b'),
+        name: '尾.png',
+        reason: 'unsupported',
+        message: '「尾.png」文生视频模式不使用参考图',
+      }),
+    ]),
+  )
+  // 真实提交：mock 平台的入参里没有任何图
+  const seen: Array<Record<string, unknown>> = []
+  const submit = mockProvider.submit
+  vi.spyOn(mockProvider, 'submit').mockImplementation(async (req, ctx) => {
+    seen.push(req.input as Record<string, unknown>)
+    return submit.call(mockProvider, req, ctx)
+  })
+  const res = await run(server, id, video, input.inputHash)
+  expect(res.status).toBe(202)
+  const { runId } = (await res.json()) as { runId: string }
+  expect(await server.runs.wait(runId)).toBe('succeeded')
+  expect(seen).toHaveLength(1)
+  expect(seen[0]).not.toHaveProperty('firstFrame')
+  expect(seen[0]).not.toHaveProperty('lastFrame')
+  expect(seen[0]).not.toHaveProperty('references')
+  expect(seen[0]!['prompt']).toBe(input.prompt)
+}, 30_000)
+
+it('首尾帧模式标注用途 role，token 保留编号写法；多模态参考模式不打 role', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const first = imgEl(doc, '首.png', asset('a'), 0)
+  const last = imgEl(doc, '尾.png', asset('b'), 200)
+  const cases = [
+    { mode: 'image', ids: [first], assets: [asset('a')], roles: ['firstFrame'] },
+    { mode: 'lastFrame', ids: [last], assets: [asset('b')], roles: ['lastFrame'] },
+    {
+      mode: 'frames',
+      ids: [first, last],
+      assets: [asset('a'), asset('b')],
+      roles: ['firstFrame', 'lastFrame'],
+    },
+    { mode: 'reference', ids: [first, last], assets: [asset('a'), asset('b')], roles: [] },
+  ] as const
+  for (const item of cases) {
+    const video = addNode(doc, 'plein/video', {
+      params: { model: 'plein/mock:video', mode: item.mode, prompt: '开门' },
+    })
+    for (const source of item.ids) connect(doc, [source, 'image'], [video, 'images'])
+    const input = await preview(server, id, video)
+    expect(input.status).toBe('ready')
+    expect(input.sent?.map((ref) => [ref.assetId, ref.role, ref.token])).toEqual(
+      item.assets.map((assetId, index) => [assetId, item.roles[index], `@image${index + 1}`]),
+    )
+  }
+}, 30_000)
