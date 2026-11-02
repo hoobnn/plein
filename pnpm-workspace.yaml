@@ -37,6 +37,11 @@ overrides:
   "@ai-sdk/provider-utils>undici": 7.30.1
   "@electron/get>undici": 7.30.1
   "node-gyp>undici": 6.29.1
+  # HyperFrames engine 固定的 undici 7.25.0 带 high 漏洞，7.30.1 已修复
+  "@hyperframes/engine>undici": 7.30.1
+  # 与 engine 已解析的 puppeteer-core 对齐，移除旧 chromium-bidi 引入的易受攻击 zod 3
+  "@hyperframes/engine>puppeteer": 25.16.0
+  "@hyperframes/producer>puppeteer": 25.16.0
 patchedDependencies:
   pixi.js@8.22.0: patches/pixi.js@8.22.0.patch
 peerDependencyRules:

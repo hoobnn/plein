@@ -15,7 +15,13 @@ import { abortError, motionEnvironment, MotionError, runTool } from './process'
 import { motionRendererIdentity } from './identity'
 import { assertLocalMotionHtml } from './security'
 import { assertMotionSourceDuration } from './timing'
-import { HYPERFRAMES_VERSION, motionRuntimeAssets, type MotionRuntimeAssets } from './runtime'
+import {
+  GSAP_VERSION,
+  FONT_VERSION,
+  HYPERFRAMES_VERSION,
+  motionRuntimeAssets,
+  type MotionRuntimeAssets,
+} from './runtime'
 
 export interface MotionInput {
   assetId: string
@@ -199,8 +205,8 @@ export async function renderMotion(
       {
         producer: HYPERFRAMES_VERSION,
         sdk: HYPERFRAMES_VERSION,
-        gsap: '3.14.2',
-        font: '@fontsource/noto-sans-sc@5.2.8',
+        gsap: GSAP_VERSION,
+        font: `@fontsource/noto-sans-sc@${FONT_VERSION}`,
       },
       null,
       2,

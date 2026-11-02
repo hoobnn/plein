@@ -3,7 +3,9 @@ import { readFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import { MotionError } from './process'
 
-export const HYPERFRAMES_VERSION = '0.8.186'
+export const HYPERFRAMES_VERSION = '0.8.218'
+export const GSAP_VERSION = '3.15.0'
+export const FONT_VERSION = '5.3.1'
 export interface MotionRuntimeAssets {
   gsapPath: string
   /** CSS contains all Chinese unicode-range subsets, with project-relative font URLs. */

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { HYPERFRAMES_VERSION } from './runtime'
+import { GSAP_VERSION, FONT_VERSION, HYPERFRAMES_VERSION } from './runtime'
 
 /** 只发现宿主浏览器，不向worker继承用户HOME或凭据。显式路径优先。 */
 export function motionChromePath(): string | undefined {
@@ -54,8 +54,8 @@ export function motionRendererIdentity(
         templateVersion: MOTION_TEMPLATE_VERSION,
         captionTemplateVersion: CAPTION_TEMPLATE_VERSION,
         hyperframes: HYPERFRAMES_VERSION,
-        gsap: '3.14.2',
-        font: 'noto-sans-sc@5.2.8:400,700',
+        gsap: GSAP_VERSION,
+        font: `noto-sans-sc@${FONT_VERSION}:400,700`,
         ffmpeg: file(tools.ffmpeg),
         ffprobe: file(tools.ffprobe),
         chrome: file(chrome),
