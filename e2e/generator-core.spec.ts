@@ -63,7 +63,10 @@ test(
       await rename('协作角色', '同伴已保存名称')
       await expect(nameField(page)).toHaveValue('我的未提交名称')
       const panel = page.getByTestId('generator')
-      await expect(panel.getByRole('status')).toContainText('同伴已保存名称')
+      // 收窄到名称冲突提示：面板里还有 dnd-kit 的无障碍播报节点（同样 role=status）
+      await expect(panel.getByRole('status').filter({ hasText: '同伴已保存名称' })).toContainText(
+        '同伴已保存名称',
+      )
       // 冲突时失焦不应无意覆盖同伴刚提交的名称。
       await nameField(page).blur()
       await expect.poll(() => savedName(page, id)).toBe('同伴已保存名称')
