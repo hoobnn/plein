@@ -908,6 +908,12 @@ function ReferenceTile({
           )}
           {!v && up && <span className="absolute inset-0 bg-canvas/50" />}
         </button>
+        <span
+          data-token={item.token}
+          className="absolute top-0.5 left-0.5 z-10 rounded bg-black/65 px-1 py-px text-2xs font-medium whitespace-nowrap text-white tabular-nums"
+        >
+          {item.token}
+        </span>
         {(onRemove || onReplace || onLocate || (canRequire && onToggleRequired)) && (
           <button
             type="button"
@@ -921,12 +927,6 @@ function ReferenceTile({
           </button>
         )}
       </div>
-      <span
-        data-token={item.token}
-        className="w-fit rounded bg-surface-2 px-1 py-px text-2xs font-medium whitespace-nowrap text-ink-muted tabular-nums"
-      >
-        {item.token}
-      </span>
       {onReference ? (
         <button
           type="button"
