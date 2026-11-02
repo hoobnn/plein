@@ -1,9 +1,9 @@
 import * as Y from 'yjs'
 import { afterEach, describe, expect, it } from 'vite-plus/test'
-import { createElement, deleteElements, ReadOnlyDocError, updateElement } from './commands'
-import { exportElements, importElements } from './clipboard'
-import { createDoc, type PleinDoc } from './doc'
-import { SCHEMA_VERSION } from './migrate'
+import { createElement, deleteElements, ReadOnlyDocError, updateElement } from '../commands'
+import { exportElements, importElements } from '../clipboard'
+import { createDoc, type PleinDoc } from '../doc'
+import { SCHEMA_VERSION } from '../migrate'
 import {
   confirmProductionContent,
   currentProductionConfirmation,
@@ -18,7 +18,7 @@ import {
   productionGoalSnapshot,
   remapProductionGoalScopes,
 } from './production-goal'
-import { node } from './testing'
+import { node } from '../testing'
 
 const docs: PleinDoc[] = []
 const open = (raw?: Y.Doc) => {

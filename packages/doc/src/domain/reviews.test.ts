@@ -7,12 +7,12 @@ import {
   resultHistory,
   setParam,
   updateElement,
-} from './commands'
-import { duplicateElements } from './clipboard'
-import { ReadOnlyDocError } from './commands'
+} from '../commands'
+import { duplicateElements } from '../clipboard'
+import { ReadOnlyDocError } from '../commands'
 import { creativeReviewTarget, getCreativeReview, recordCreativeReview } from './reviews'
-import { box, node, openDoc } from './testing'
-import { SCHEMA_VERSION } from './migrate'
+import { box, node, openDoc } from '../testing'
+import { SCHEMA_VERSION } from '../migrate'
 
 describe('独立的创作验收元数据', () => {
   it('采用尾帧后主视频与尾帧均生效，分别记录验收且不串用意见', () => {

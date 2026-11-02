@@ -6,10 +6,10 @@ import {
   ReadOnlyDocError,
   setParam,
   updateElement,
-} from './commands'
-import { duplicateElements, exportElements, importElements } from './clipboard'
-import { createDoc } from './doc'
-import { SCHEMA_VERSION } from './migrate'
+} from '../commands'
+import { duplicateElements, exportElements, importElements } from '../clipboard'
+import { createDoc } from '../doc'
+import { SCHEMA_VERSION } from '../migrate'
 import {
   appendProductionDecision,
   confirmProductionContent,
@@ -20,7 +20,7 @@ import {
   readProduction,
   selectProductionTarget,
 } from './production'
-import { node, openDoc } from './testing'
+import { node, openDoc } from '../testing'
 
 const shots = [{ id: 'shot-one', no: 1, description: '递出红信封', dialogue: [] }]
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T

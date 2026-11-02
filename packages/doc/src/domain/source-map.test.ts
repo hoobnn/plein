@@ -7,9 +7,9 @@ import {
   ReadOnlyDocError,
   setParam,
   setText,
-} from './commands'
-import { openDoc, node } from './testing'
-import { createDoc } from './doc'
+} from '../commands'
+import { openDoc, node } from '../testing'
+import { createDoc } from '../doc'
 import {
   addAdaptationProposal,
   addSourceUnit,
@@ -26,8 +26,8 @@ import {
   sourceMapOf,
   sourceSnapshotState,
 } from './source-map'
-import { SCHEMA_VERSION } from './migrate'
-import { exportElements, importElements } from './clipboard'
+import { SCHEMA_VERSION } from '../migrate'
+import { exportElements, importElements } from '../clipboard'
 import {
   confirmProductionContent,
   currentProductionConfirmation,

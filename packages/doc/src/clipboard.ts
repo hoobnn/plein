@@ -1,9 +1,9 @@
 import { createElements, ReadOnlyDocError, topLevel } from './commands'
 import { compareZ, type PleinDoc } from './doc'
-import { copyProduction } from './production'
-import { copySequenceParams, materializeSequenceV1 } from './sequence-instances'
+import { copyProduction } from './domain/production'
+import { copySequenceParams, materializeSequenceV1 } from './domain/sequence-instances'
 import { newId } from './ids'
-import { shotGroupOf, SHOT_GROUP_KEY } from './shotGroup'
+import { shotGroupOf, SHOT_GROUP_KEY } from './domain/shotGroup'
 import { generateNKeysBetween } from 'fractional-indexing'
 import type { CanvasElement, Edge, NewElement } from './types'
 

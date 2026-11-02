@@ -1,6 +1,6 @@
-import { elementMedia, setParam, updateElements } from './commands'
-import type { PleinDoc } from './doc'
-import type { CanvasElement } from './types'
+import { elementMedia, setParam, updateElements } from '../commands'
+import type { PleinDoc } from '../doc'
+import type { CanvasElement } from '../types'
 
 /**
  * 分镜组：一个 Frame 里的图片按顺序编号，能整组排版、拼成一张大图。

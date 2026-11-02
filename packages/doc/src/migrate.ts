@@ -1,11 +1,11 @@
-import { createProductionMap } from './production'
-import { createSourceMap } from './source-map'
-import { createContinuityMap } from './continuity'
+import { createProductionMap } from './domain/production'
+import { createSourceMap } from './domain/source-map'
+import { createContinuityMap } from './domain/continuity'
 import { generateNKeysBetween } from 'fractional-indexing'
 import * as Y from 'yjs'
 import { CONTAINER_KINDS, type Edge } from './types'
 import { migrateStoryboardIdentity } from './migrate-storyboard'
-import { materializeSequenceV1 } from './sequence-instances'
+import { materializeSequenceV1 } from './domain/sequence-instances'
 
 /** 当前文档 schema 版本 */
 export const SCHEMA_VERSION = 11

@@ -1,9 +1,9 @@
 import * as Y from 'yjs'
-import { ReadOnlyDocError } from './commands'
-import type { PleinDoc } from './doc'
-import { newId } from './ids'
+import { ReadOnlyDocError } from '../commands'
+import type { PleinDoc } from '../doc'
+import { newId } from '../ids'
 import type { ProductionActor, ProductionScope } from './production'
-import type { CanvasElement } from './types'
+import type { CanvasElement } from '../types'
 
 export type ProductionRequirement = 'unspecified' | 'required' | 'none'
 export interface ProductionGoal {

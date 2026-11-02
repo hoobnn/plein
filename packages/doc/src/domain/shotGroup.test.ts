@@ -11,8 +11,8 @@ import {
   SHOT_GAP,
   SHOT_PAD,
   shotGroupOf,
-} from './index'
-import { openDoc as open } from './testing'
+} from '../index'
+import { openDoc as open } from '../testing'
 
 function setup() {
   const doc = open()

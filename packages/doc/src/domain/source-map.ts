@@ -1,8 +1,8 @@
 import * as Y from 'yjs'
-import { ReadOnlyDocError, currentResult } from './commands'
-import type { PleinDoc } from './doc'
-import { newId } from './ids'
-import { inputEdges } from './inputs'
+import { ReadOnlyDocError, currentResult } from '../commands'
+import type { PleinDoc } from '../doc'
+import { newId } from '../ids'
+import { inputEdges } from '../inputs'
 
 /** 捕获时的历史出处不随复制改写；binding 才是当前文档中的定位。 */
 export interface SourceOrigin {

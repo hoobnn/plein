@@ -1,16 +1,16 @@
 import * as Y from 'yjs'
 import { afterEach, describe, expect, it } from 'vite-plus/test'
-import { adoptResult, connect, createElement, ReadOnlyDocError, setParam } from './commands'
-import { openDoc, node } from './testing'
-import { createDoc, type PleinDoc } from './doc'
-import { exportElements, importElements } from './clipboard'
+import { adoptResult, connect, createElement, ReadOnlyDocError, setParam } from '../commands'
+import { openDoc, node } from '../testing'
+import { createDoc, type PleinDoc } from '../doc'
+import { exportElements, importElements } from '../clipboard'
 import {
   confirmProductionContent,
   currentProductionConfirmation,
   productionContentSnapshot,
   productionMapOf,
 } from './production'
-import { SCHEMA_VERSION } from './migrate'
+import { SCHEMA_VERSION } from '../migrate'
 import { captureSourceSnapshot } from './source-map'
 import {
   appendShotPlan,

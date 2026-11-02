@@ -1,8 +1,8 @@
 import * as Y from 'yjs'
-import { ReadOnlyDocError } from './commands'
-import type { PleinDoc } from './doc'
-import { newId } from './ids'
-import type { CanvasElement } from './types'
+import { ReadOnlyDocError } from '../commands'
+import type { PleinDoc } from '../doc'
+import { newId } from '../ids'
+import type { CanvasElement } from '../types'
 import {
   continuityContentSnapshot,
   copyContinuity,

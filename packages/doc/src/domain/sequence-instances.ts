@@ -1,8 +1,8 @@
-import type { CanvasElement, Edge } from './types'
-import { compareInputOrder } from './inputs'
+import type { CanvasElement, Edge } from '../types'
+import { compareInputOrder } from '../inputs'
 import { isSequenceInstance, isVideoSegment, type SequenceInstance } from './video-segment'
 import type { VideoSegment } from './video-segment'
-import { sequenceSnapshot } from './sequence-snapshot'
+import { sequenceSnapshot } from '../sequence-snapshot'
 
 /** IDs derive from persisted edge identity, never names, positions or the adopted file. */
 export const legacyClipInstanceId = (sequenceId: string, edgeId: string) =>

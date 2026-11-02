@@ -1,8 +1,8 @@
-import type { ProductionRecord } from './production'
+import type { ProductionRecord } from './domain/production'
 import type { CompositionSourceRef } from '@plein/plugin-sdk/ports'
-import type { CreativeReview } from './review-types'
-import type { DeliveryRecord } from './delivery'
-import type { GenerationOrigin, VideoSegment } from './video-segment'
+import type { CreativeReview } from './domain/review-types'
+import type { DeliveryRecord } from './domain/delivery'
+import type { GenerationOrigin, VideoSegment } from './domain/video-segment'
 
 /** 画布元素类型。工作流节点统一为 `node`，具体节点由 `nodeType` 区分。 */
 export type ElementKind = 'image' | 'video' | 'audio' | 'markdown' | 'node' | 'frame'

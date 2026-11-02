@@ -21,7 +21,7 @@ import {
   fixSequenceInstance,
   isGenerationOrigin,
   type NodeResult,
-} from './index'
+} from '../index'
 
 const segment: VideoSegment = {
   version: 1,

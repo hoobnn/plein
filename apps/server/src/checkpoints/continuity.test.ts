@@ -321,7 +321,7 @@ describe.skipIf(!available)('P06协议的实际相邻两镜三个独立变体', 
             implementationSha256: createHash('sha256')
               .update(
                 readFileSync(
-                  new URL('../../../../packages/doc/src/continuity.ts', import.meta.url),
+                  new URL('../../../../packages/doc/src/domain/continuity.ts', import.meta.url),
                 ),
               )
               .digest('hex'),

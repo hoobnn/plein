@@ -1,5 +1,5 @@
-import { ReadOnlyDocError, updateElement } from './commands'
-import type { PleinDoc } from './doc'
+import { ReadOnlyDocError, updateElement } from '../commands'
+import type { PleinDoc } from '../doc'
 import type { NarrativeScope, VideoSegment } from './video-segment'
 /** 成片交付元数据：绑定已落盘的结果，不进入模型参数或输入哈希。 */
 export interface DeliverySource {

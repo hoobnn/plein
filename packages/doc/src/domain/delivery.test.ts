@@ -1,9 +1,9 @@
 import * as Y from 'yjs'
 import { describe, expect, it } from 'vite-plus/test'
-import { createDoc } from './doc'
-import { createElement, ReadOnlyDocError } from './commands'
+import { createDoc } from '../doc'
+import { createElement, ReadOnlyDocError } from '../commands'
 import { editDelivery, isDeliveryRecord, type DeliveryRecord } from './delivery'
-import { node, openDoc } from './testing'
+import { node, openDoc } from '../testing'
 
 export const delivery: DeliveryRecord = {
   id: 'delivery_r1',

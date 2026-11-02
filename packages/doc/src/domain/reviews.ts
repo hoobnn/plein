@@ -1,6 +1,6 @@
 import * as Y from 'yjs'
-import { currentResult, primaryResult, ReadOnlyDocError } from './commands'
-import type { PleinDoc } from './doc'
+import { currentResult, primaryResult, ReadOnlyDocError } from '../commands'
+import type { PleinDoc } from '../doc'
 import {
   creativeReviewKey,
   isCreativeReview,
@@ -8,7 +8,7 @@ import {
   type CreativeReview,
   type CreativeReviewTarget,
 } from './review-types'
-import type { CanvasElement } from './types'
+import type { CanvasElement } from '../types'
 
 export function creativeReviewTarget(
   el: CanvasElement | undefined,

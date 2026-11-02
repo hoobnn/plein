@@ -1,9 +1,9 @@
 import * as Y from 'yjs'
 import { migrate, SCHEMA_VERSION } from './migrate'
-import { readProduction } from './production'
-import { isCreativeReview } from './review-types'
-import { isDeliveryRecord } from './delivery'
-import { isVideoSegment } from './video-segment'
+import { readProduction } from './domain/production'
+import { isCreativeReview } from './domain/review-types'
+import { isDeliveryRecord } from './domain/delivery'
+import { isVideoSegment } from './domain/video-segment'
 import {
   sequenceSnapshot,
   snapshotTypedDeliveries,
