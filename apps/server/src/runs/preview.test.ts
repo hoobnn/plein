@@ -958,6 +958,54 @@ it('MiniMax 正文直接编号，绑定与 @ 共用 sent，历史 null 残留只
   expect(doc.get(video)?.params?.prompt).toBe('@桌边.png 与 @角色.png')
 })
 
+it('误留空格的断链 @ 进入未送入，正文编号与 sent 一致、引用区间可回读原文', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  createElement(doc, {
+    kind: 'image',
+    name: '角色.png',
+    assetId: asset('a'),
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  createElement(doc, {
+    kind: 'image',
+    name: '参考.png',
+    assetId: asset('b'),
+    x: 200,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  const original = '参考 @ .png 和 @角色.png，再看 @参考.png'
+  const video = addNode(doc, 'plein/video', {
+    params: { model: 'minimax/api:MiniMax-H3', mode: 'reference', prompt: original },
+  })
+  const input = await preview(server, id, video)
+  expect(input.status).toBe('ready')
+  expect(input.sent?.map((item) => [item.index, item.token])).toEqual([
+    [1, '图片1'],
+    [2, '图片2'],
+  ])
+  expect([...new Set(input.prompt!.match(/图片\d+/g))].sort()).toEqual(['图片1', '图片2'])
+  expect(input.prompt).not.toContain('参考对应')
+  expect(input.unsent).toContainEqual(
+    expect.objectContaining({ name: '.png', reason: 'mention_broken' }),
+  )
+  expect(input.promptReferences?.find((item) => item.text === '@ .png')).toMatchObject({
+    name: '.png',
+    indices: [],
+    reason: 'mention_broken',
+  })
+  for (const item of input.promptReferences ?? [])
+    expect(original.slice(item.start, item.end)).toBe(item.text)
+  expect(input.promptReferences?.find((item) => item.text === '@角色.png')?.indices).toEqual([1])
+  expect(doc.get(video)?.params?.prompt).toBe(original)
+})
+
 it('上游文本中的参考编号随素材重排映射，失效身份在预览中阻断', async () => {
   const { server } = await bootServer()
   mockSettings(server, {})

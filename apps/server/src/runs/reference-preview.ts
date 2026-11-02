@@ -31,8 +31,9 @@ import { mentionTargets } from './mentions'
 
 export type ReferencePreview = Pick<PreparedInput, 'sent' | 'unsent' | 'promptReferences'>
 
+// @ 后误留空格、只剩扩展名（例如 `@ .png`）时也要认出断链引用，否则它会悄悄留在最终提示词里。
 const UNKNOWN =
-  /@[^\s@，。,.!！?？:：;；、（）()【】[\]「」"'“”]+(?:[ \t]+·[ \t]*[^\s@，。,.!！?？:：;；、（）()【】[\]「」"'“”]+)*/g
+  /@[ \t]*(?:\.[a-z0-9]+|[^\s@，。,.!！?？:：;；、（）()【】[\]「」"'“”]+(?:[ \t]+·[ \t]*[^\s@，。,.!！?？:：;；、（）()【】[\]「」"'“”]+)*)/gi
 
 /** 从最终实际输入反推面板所需的一份权威数据；预览与生成共用这里的顺序。 */
 export function referencePreview({
@@ -215,7 +216,7 @@ export function referencePreview({
     )
       continue
     const near = broken.find((item) => item.start === start)
-    const name = near?.name ?? match[0].slice(1)
+    const name = near?.name ?? match[0].slice(1).trim()
     const message = near
       ? `提示词里的 @${name} 找不到同名资产，可能已被改名为「${near.candidates.join('」「')}」，请改过来`
       : `提示词里的 @${name} 找不到同名资产，可能已删除或改名，请重新选择`
