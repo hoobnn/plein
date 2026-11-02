@@ -66,24 +66,13 @@ test(
       await page.mouse.up()
       return point
     }
-    const dropPoint = await drag(1, 0)
-
-    // 松手后的落点点击在库的抑制窗口（~50ms）内不会误开预览；
-    // CDP 本地往返毫秒级，第一下点击必然落在窗口内
-    const viewer = page.getByRole('dialog', { name: /查看「/ })
-    await page.mouse.click(dropPoint.x, dropPoint.y)
-    await expect(viewer).toHaveCount(0)
-    await page.waitForTimeout(150)
-    await page.mouse.click(dropPoint.x, dropPoint.y)
-    await expect(viewer).toBeVisible()
-    await page.keyboard.press('Escape')
-    await expect(viewer).toHaveCount(0)
-    // 关看器的 Esc 同时会取消选中关面板：重新选中后再继续
-    await clickElement(page, card.id)
-    await revealGenerator(page)
+    await drag(1, 0)
     await expect
       .poll(() => tileNames(page))
       .toEqual(['参考 1：b.png', '参考 2：a.png', '参考 3：c.png'])
+    // 落点点击抑制在测试末尾用受控时钟验证；此处先重选节点继续
+    await clickElement(page, card.id)
+    await revealGenerator(page)
 
     // Esc 取消：拖起来再按 Esc，顺序不变。
     // 应用层会把 Esc 当作取消选中并关闭面板（与旧原生拖拽一致），重新选中后断言。
@@ -103,5 +92,21 @@ test(
     await expect
       .poll(() => tileNames(page))
       .toEqual(['参考 1：a.png', '参考 2：b.png', '参考 3：c.png'])
+
+    // 拖拽放下后的落点点击抑制：用受控时钟代替「必须赶在 50ms 内点击」的真实时序——
+    // 时钟暂停后窗口只在 clock 推进时关闭，不受调度延迟影响。
+    // 放在本段末尾：安装后 Motion / 画布的 rAF 被接管，之后不再有其他交互。
+    await page.clock.install()
+    // 跳到未来固定时刻并暂停：目标留 400ms 裕量，避免与 install 后已走过的时钟相比“回到过去”
+    await page.clock.pauseAt(Date.now() + 400)
+    const finalDrop = await drag(0, 1)
+    const viewer = page.getByRole('dialog', { name: /查看「/ })
+    // 窗口内（时钟未推进）：落点点击不开预览
+    await page.mouse.click(finalDrop.x, finalDrop.y)
+    await expect(viewer).toHaveCount(0)
+    // 推进越过 50ms 窗口（顺带让挂起的动画帧走完）：点击正常打开预览
+    await page.clock.runFor(200)
+    await page.mouse.click(finalDrop.x, finalDrop.y)
+    await expect(viewer).toBeVisible()
   },
 )
