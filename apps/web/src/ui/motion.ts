@@ -159,12 +159,15 @@ export const fadeVariants: Variants = {
 }
 
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)'
+const canMatchMedia = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function'
 const subscribeReducedMotion = (notify: () => void) => {
+  if (!canMatchMedia()) return () => {}
   const query = window.matchMedia(REDUCED_MOTION_QUERY)
   query.addEventListener('change', notify)
   return () => query.removeEventListener('change', notify)
 }
-const readReducedMotion = () => window.matchMedia(REDUCED_MOTION_QUERY).matches
+const readReducedMotion = () =>
+  canMatchMedia() ? window.matchMedia(REDUCED_MOTION_QUERY).matches : false
 
 /** Motion 自己只缓存首次读取值；关闭时必须使用最新的系统偏好。 */
 function useLatestReducedMotion() {
@@ -173,14 +176,9 @@ function useLatestReducedMotion() {
   return reducedMotion === 'never' ? false : reducedMotion === 'always' || system
 }
 
-/** 减少动态效果时绕过保留队列，关闭即卸载；其余情况交给 Motion 等待 exit。 */
+/** 组件树始终稳定；减少动态效果只改变 m 的 exit，不在两种父组件之间切换。 */
 export function AnimatePresence(props: AnimatePresenceProps & { children?: ReactNode }) {
-  const reduced = useLatestReducedMotion()
-  return createElement(
-    LazyMotion,
-    null,
-    reduced ? props.children : createElement(MotionAnimate, props),
-  )
+  return createElement(LazyMotion, null, createElement(MotionAnimate, props))
 }
 
 /** AnimatePresence 的关闭态同时用于停用 Esc、点外面和锚点观察。 */
@@ -191,10 +189,11 @@ export function useOverlayClosing() {
 /** 浮层统一的变体声明与关闭态标记；数值只来自本文件的变体。 */
 export function useOverlayMotion(variants: Variants, custom?: PopCustom) {
   const closing = useOverlayClosing()
+  const reduced = useLatestReducedMotion()
   return {
     initial: 'initial',
     animate: 'visible',
-    exit: 'exit',
+    exit: reduced ? { opacity: 0, transition: { duration: 0 } } : 'exit',
     'data-plein-exiting': closing ? '' : undefined,
     variants,
     custom,

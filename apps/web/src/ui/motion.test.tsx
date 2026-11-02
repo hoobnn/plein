@@ -2,7 +2,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { m, MotionConfig } from 'motion/react'
-import { expect, it } from 'vite-plus/test'
+import { expect, it, vi } from 'vite-plus/test'
 import { mockMatchMedia } from '../testing/browser'
 import { act, renderApp, screen, waitFor } from '../testing/render'
 import { AnimatePresence, fadeVariants, useOverlayMotion } from './motion'
@@ -19,16 +19,49 @@ it('减少动态效果时零时长退场并卸载', async () => {
   const { rerender } = renderApp(<Overlay open />, { dialogs: false })
   await screen.findByTestId('overlay')
   rerender(<Overlay open={false} />)
-  expect(screen.queryByTestId('overlay')).toBeNull()
+  await waitFor(() => expect(screen.queryByTestId('overlay')).toBeNull())
 })
 
-it('运行中开启减少动态效果后关闭会同步卸载', async () => {
+it('运行中开启减少动态效果后关闭会零时长卸载', async () => {
   const media = mockMatchMedia(() => false)
   const { rerender } = renderApp(<Overlay open />, { dialogs: false })
   await screen.findByTestId('overlay')
   act(() => media.set('(prefers-reduced-motion: reduce)', true))
   rerender(<Overlay open={false} />)
-  expect(screen.queryByTestId('overlay')).toBeNull()
+  await waitFor(() => expect(screen.queryByTestId('overlay')).toBeNull())
+})
+
+function DraftDialog() {
+  return (
+    <m.form role="dialog" aria-label="草稿对话框" {...useOverlayMotion(fadeVariants)}>
+      <input aria-label="未提交内容" defaultValue="" />
+    </m.form>
+  )
+}
+
+it('切换减少动态效果不重挂载对话框或丢失草稿', async () => {
+  const media = mockMatchMedia(() => false)
+  const { user, rerender } = renderApp(
+    <AnimatePresence>
+      <DraftDialog />
+    </AnimatePresence>,
+    { dialogs: false },
+  )
+  const input = await screen.findByRole<HTMLInputElement>('textbox', { name: '未提交内容' })
+  await user.type(input, '尚未提交的草稿')
+  act(() => media.set('(prefers-reduced-motion: reduce)', true))
+  expect(screen.getByRole('textbox', { name: '未提交内容' })).toBe(input)
+  expect(input.value).toBe('尚未提交的草稿')
+  rerender(<AnimatePresence>{null}</AnimatePresence>)
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+})
+
+it('没有 matchMedia 时按正常动态效果运行且不报错', async () => {
+  vi.stubGlobal('matchMedia', undefined)
+  const { rerender } = renderApp(<Overlay open />, { dialogs: false })
+  await screen.findByTestId('overlay')
+  rerender(<Overlay open={false} />)
+  await waitFor(() => expect(screen.queryByTestId('overlay')).toBeNull())
 })
 
 it('正常动态效果保留退场并用关闭态屏蔽指针', async () => {
