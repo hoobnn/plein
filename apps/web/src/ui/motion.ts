@@ -6,7 +6,7 @@ import {
   type Variants,
 } from 'motion/react'
 import { createElement, type ReactNode, useContext, useSyncExternalStore } from 'react'
-import { LazyMotion } from './LazyMotion'
+import { LazyMotion, MotionFeatureFailure } from './LazyMotion'
 
 /**
  * 与 tokens.css 一一对应：spring = cubic-bezier(0.22, 1, 0.36, 1)，
@@ -181,13 +181,15 @@ export function useOverlayClosing() {
 export function useOverlayMotion(variants: Variants, custom?: PopSide) {
   const closing = useOverlayClosing()
   const reduced = useLatestReducedMotion()
+  const featureFailed = useContext(MotionFeatureFailure)
   return {
-    initial: 'initial',
-    animate: 'visible',
+    initial: featureFailed ? false : 'initial',
+    animate: featureFailed ? { opacity: 1 } : 'visible',
     // 无 exit 时 AnimatePresence 不保留退场队列，等价于零时长且同步清理。
-    exit: reduced ? undefined : 'exit',
+    exit: reduced || featureFailed ? undefined : 'exit',
     'data-plein-exiting': closing ? '' : undefined,
-    variants,
-    custom,
+    'data-motion-feature-failed': featureFailed ? '' : undefined,
+    variants: featureFailed ? undefined : variants,
+    custom: featureFailed ? undefined : custom,
   } as const
 }

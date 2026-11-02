@@ -60,6 +60,20 @@ test('弹层结束进场与再次打开后保持可见', async ({ page }) => {
   await page.keyboard.press('Escape')
 })
 
+test('Motion 特性 chunk 失败时设置仍可见可操作', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.route('**/*motion-features*', (route) => route.abort())
+  await page.goto('/')
+  await page.getByRole('button', { name: '设置', exact: true }).click()
+  const settings = page.getByRole('dialog', { name: '设置', exact: true })
+  await expect(settings).toBeVisible()
+  await expect(settings).toHaveCSS('opacity', '1')
+  await settings.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(settings).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
 test('冷启动不被 Motion 阻塞，延后浮层与首页提示正常进场', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   await page.route('**/*motion*', (route) => route.abort())
