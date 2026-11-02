@@ -772,7 +772,7 @@ zustand v5 的 `useStore()` 不带 selector 时，**store 里任何字段变化�
 | 2.1 | 能力增加审批说明与执行前流程声明，调度器与审批去掉按名特判                            | D               | 已完成 |
 | 2.2 | 10 个直连文件分类，路由里的写操作收进存储模块                                         | F               | 已完成 |
 | 2.3 | `sessions.ts` / `tools.ts` / `package.ts` 拆分；复评 `runs.ts` / `host.ts`            | G（服务端部分） | 进行中 |
-| 2.4 | 前端节点注册表、`RendererRegistry` 支持 nodeType、编辑器表驱动、删 `catalog.elements` | A2、A3          | 未开始 |
+| 2.4 | 前端节点注册表、`RendererRegistry` 支持 nodeType、编辑器表驱动、删 `catalog.elements` | A2、A3          | 已完成 |
 | 2.5 | 侧栏换 react-resizable-panels、参考图排序换 dnd-kit                                   | I2              | 未开始 |
 | 2.6 | 引入 Motion，`Presence` 换 `AnimatePresence`，改写动效规范                            | I6              | 未开始 |
 
