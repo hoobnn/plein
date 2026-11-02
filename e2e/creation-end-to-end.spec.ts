@@ -403,6 +403,20 @@ test('首页仅加载轻量闭包，进入画布后才加载编辑器并正常�
   expect(home.has('src/pages/Editor.tsx')).toBe(false)
   expect(home.has('src/features/stage/StagePanel.tsx')).toBe(false)
   expect([...home].some((key) => /node_modules\/(?:jassub|pixi\.js)\//.test(key))).toBe(false)
+  // 首屏渲染后的空闲预取是预期行为（见 apps/web/scripts/check-home-bundle.mjs）：
+  // 这些浮层的动态 import 及其静态依赖不算越界，初始闭包的预算与排除项不受影响。
+  for (const entry of [
+    'src/features/onboarding/Welcome.tsx',
+    'src/pages/HomeToast.tsx',
+    'src/pages/HomePackageDialogs.tsx',
+    'src/features/settings/SettingsHost.tsx',
+    'src/ui/DialogView.tsx',
+    'src/shell/DesktopSavedToast.tsx',
+    // 浮层挂载后 LazyMotion 动态加载的 Motion 特性模块
+    'src/ui/motion-features.ts',
+  ])
+    visit(entry)
+  const allowed = new Set([...home].map((key) => manifest[key]!.file))
   // Match implementation diagnostics, not CodeMirror theme packages or dynamic import names.
   for (const marker of [
     'CodeMirror plugin crashed',
@@ -423,7 +437,7 @@ test('首页仅加载轻量闭包，进入画布后才加载编辑器并正常�
   await expect(page.getByRole('button', { name: '新建项目', exact: true })).toBeVisible()
   await page.waitForLoadState('networkidle')
   expect(requested.has(manifest['src/pages/Home.tsx']!.file)).toBe(true)
-  expect([...requested].filter((file) => !files.has(file))).toEqual([])
+  expect([...requested].filter((file) => !allowed.has(file))).toEqual([])
   expect(await page.evaluate(() => !!window.__plein)).toBe(false)
   await page.getByRole('button', { name: '新建项目', exact: true }).click()
   await expect(page).toHaveURL(/#\/c\//)
