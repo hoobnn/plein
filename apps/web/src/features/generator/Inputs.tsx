@@ -11,6 +11,8 @@ import {
   type ResultValue,
 } from '@plein/doc'
 import type { PreparedInput } from '@plein/protocol'
+import { DndContext, type DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
+import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { filterReferenceCandidates, referenceCandidates } from './referenceCandidates'
 import { referenceMedia, type SubmittedMedia } from './submittedMedia'
 import { bindReferenceName, referenceName, replaceReferenceName } from './referenceNames'
@@ -58,12 +60,15 @@ export function Inputs({
   toolbar?: React.ReactNode
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
+  // 拖拽换序：拖动过程中不写文档，只在放下时调用一次 move（单个撤销分组）；Esc 取消由 DndContext 处理。
+  // 预览按钮本身就是拖把手（与旧的原生 draggable 一致），distance 门槛保证点击预览不受影响；
+  // 拖拽/取消后同一次按压的落点点击由库抑制（激活期间在 document 捕获阶段拦截 click，结束 50ms 后移除）。
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
   const [target, setTarget] = useState<{ port: InputPort; edgeId?: string } | null>(null)
   const [replacing, setReplacing] = useState<{ port: InputPort; edgeId: string } | null>(null)
   const [addAnchor, setAddAnchor] = useState<HTMLButtonElement | null>(null)
   const [canvasAnchor, setCanvasAnchor] = useState<HTMLButtonElement | null>(null)
   const [canvasQuery, setCanvasQuery] = useState('')
-  const [dragged, setDragged] = useState<string | null>(null)
   const media = node.inputs.filter((p) => p.type !== 'text')
   const texts = node.inputs.filter((p) => p.type === 'text').flatMap((p) => ups.get(p.id) ?? [])
   const locate = (u: Upstream) => {
@@ -142,6 +147,13 @@ export function Inputs({
     reorderInputs(engine.doc, [el.id, port.id], ids)
     engine.doc.undo.stopCapturing()
   }
+  const onDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return
+    const activeId = String(active.id)
+    // 只在 active 所在端口内换序；跨端口的落下由 move 里的校验拦下
+    const port = media.find((p) => (ups.get(p.id) ?? []).some((u) => u.edgeId === activeId))
+    if (port) move(port, activeId, String(over.id))
+  }
   const previewUpstream = (up: Upstream) => {
     const v = up.value
     if (v && (v.type === 'image' || v.type === 'video' || v.type === 'audio'))
@@ -153,6 +165,7 @@ export function Inputs({
 
   const submitted = prepared && !preparing ? referenceMedia(prepared, el.params, ups) : null
   const sentTiles = new Map<string, React.ReactNode>()
+  const sentIds = new Map<string, string>()
   const unusedTiles: React.ReactNode[] = []
   const insertToken = (name: string) => {
     const current = engine.doc.get(el.id)
@@ -203,6 +216,9 @@ export function Inputs({
 
   let n = 0
   const tiles: React.ReactNode[] = []
+  /** 与 tiles 同序：排序容器需要的 edgeId 列表 */
+  const tileIds: string[] = []
+  const unusedIds: string[] = []
   const adds: React.ReactNode[] = []
   for (const port of media) {
     const list = ups.get(port.id) ?? []
@@ -245,12 +261,6 @@ export function Inputs({
           onReplace={() => setReplacing({ port, edgeId: u.edgeId })}
           onUpload={() => pick(port, u.edgeId)}
           draggable={!!port.multiple}
-          onDragStart={() => setDragged(u.edgeId)}
-          onDragEnd={() => setDragged(null)}
-          onDrop={() => {
-            if (dragged) move(port, dragged, u.edgeId)
-            setDragged(null)
-          }}
           onMove={(delta) => {
             const ids = list.map((item) => item.edgeId)
             const j = i + delta
@@ -266,8 +276,14 @@ export function Inputs({
         />
       )
       tiles.push(tile)
-      if (sent) sentTiles.set(mediaKey(sent), tile)
-      else if (prepared && !preparing) unusedTiles.push(tile)
+      tileIds.push(u.edgeId)
+      if (sent) {
+        sentTiles.set(mediaKey(sent), tile)
+        sentIds.set(mediaKey(sent), u.edgeId)
+      } else if (prepared && !preparing) {
+        unusedTiles.push(tile)
+        unusedIds.push(u.edgeId)
+      }
     }
     if (port.multiple || list.length === 0)
       adds.push(
@@ -289,248 +305,269 @@ export function Inputs({
 
   const candidates = filterReferenceCandidates(referenceCandidates(engine, el, media), canvasQuery)
 
+  // 主行可排序的 edgeId：有确认结果时按送入顺序（无瓦片的占位不参与排序），否则按连线顺序
+  const sortableIds = submitted
+    ? submitted.flatMap((item) => {
+        const id = sentIds.get(mediaKey(item))
+        return id ? [id] : []
+      })
+    : tileIds
+
   if (!tiles.length && !adds.length && !texts.length && !trailing && !toolbar) return null
   return (
-    <div className="plein-generator-inputs flex flex-col gap-1 px-4 pt-2">
-      <div className="plein-generator-input-tools flex flex-wrap items-center gap-2 pr-9">
-        {adds.length > 0 && (
-          <>
-            <button
-              type="button"
-              className="ui-btn ui-btn-sm ui-btn-secondary"
-              aria-label="上传参考"
-              aria-expanded={!!addAnchor}
-              onClick={(e) => {
-                setCanvasAnchor(null)
-                setAddAnchor(addAnchor ? null : e.currentTarget)
-              }}
-            >
-              <Icon name="plus" size={14} />
-              上传
-            </button>
-            <AnimatePresence>
-              {addAnchor && (
-                <Popover
-                  anchor={addAnchor}
-                  onClose={() => setAddAnchor(null)}
-                  label="上传参考"
-                  width={220}
-                >
-                  <div className="flex flex-col items-stretch gap-1">{adds}</div>
-                </Popover>
-              )}
-            </AnimatePresence>
-            <button
-              type="button"
-              className="ui-btn ui-btn-sm ui-btn-secondary"
-              aria-label="画布参考"
-              aria-expanded={!!canvasAnchor}
-              onClick={(e) => {
-                setAddAnchor(null)
-                setCanvasQuery('')
-                setCanvasAnchor(canvasAnchor ? null : e.currentTarget)
-              }}
-            >
-              <Icon name="board" size={14} />
-              画布参考
-            </button>
-            <AnimatePresence>
-              {canvasAnchor && (
-                <Popover
-                  anchor={canvasAnchor}
-                  onClose={() => setCanvasAnchor(null)}
-                  label="画布参考"
-                  width={340}
-                >
-                  <input
-                    className="ui-input mb-2 w-full"
-                    aria-label="搜索画布参考"
-                    placeholder="搜索画布素材"
-                    value={canvasQuery}
-                    onChange={(e) => setCanvasQuery(e.target.value)}
-                  />
-                  <div
-                    role="listbox"
-                    aria-label="可用画布素材"
-                    className="ui-scrollbar max-h-64 overflow-y-auto"
+    // 拖拽换序的上下文：主行与未送入折叠区共用，放下才写文档，Esc 取消不写
+    // 拖拽换序的上下文：主行与未送入折叠区共用，放下才写文档，Esc 取消不写
+    <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+      <div className="plein-generator-inputs flex flex-col gap-1 px-4 pt-2">
+        <div className="plein-generator-input-tools flex flex-wrap items-center gap-2 pr-9">
+          {adds.length > 0 && (
+            <>
+              <button
+                type="button"
+                className="ui-btn ui-btn-sm ui-btn-secondary"
+                aria-label="上传参考"
+                aria-expanded={!!addAnchor}
+                onClick={(e) => {
+                  setCanvasAnchor(null)
+                  setAddAnchor(addAnchor ? null : e.currentTarget)
+                }}
+              >
+                <Icon name="plus" size={14} />
+                上传
+              </button>
+              <AnimatePresence>
+                {addAnchor && (
+                  <Popover
+                    anchor={addAnchor}
+                    onClose={() => setAddAnchor(null)}
+                    label="上传参考"
+                    width={220}
                   >
-                    {candidates.map((c) => (
-                      <button
-                        key={`${c.sourceId}/${c.outputId}/${c.portId}`}
-                        type="button"
-                        role="option"
-                        aria-selected={false}
-                        className="ui-menu-item w-full"
-                        onClick={() => {
-                          if (
-                            !media.find((p) => p.id === c.portId)?.multiple &&
-                            inputEdges(engine.doc, el.id, c.portId).length
-                          ) {
-                            useCanvas.getState().notify('该输入已接入参考，请重新选择')
-                            return
-                          }
-                          engine.doc.undo.stopCapturing()
-                          const edge = connect(
-                            engine.doc,
-                            [c.sourceId, c.outputId],
-                            [el.id, c.portId],
-                          )
-                          engine.doc.undo.stopCapturing()
-                          if (edge) setCanvasAnchor(null)
-                          else useCanvas.getState().notify('无法添加该参考，请重新选择')
-                        }}
-                      >
-                        <Icon
-                          name={
-                            c.outputType === 'video'
-                              ? 'video'
-                              : c.outputType === 'audio'
-                                ? 'audio'
-                                : 'image'
-                          }
-                          size={16}
-                        />
-                        <span className="min-w-0 flex-1 text-left">
-                          <span className="block truncate">{c.sourceName}</span>
-                          <span className="ui-menu-desc">{c.portLabel}</span>
-                        </span>
-                      </button>
-                    ))}
-                    {!candidates.length && (
-                      <p className="px-2 py-3 text-xs text-ink-subtle">没有匹配的可用素材</p>
-                    )}
-                  </div>
-                </Popover>
-              )}
-            </AnimatePresence>
-          </>
+                    <div className="flex flex-col items-stretch gap-1">{adds}</div>
+                  </Popover>
+                )}
+              </AnimatePresence>
+              <button
+                type="button"
+                className="ui-btn ui-btn-sm ui-btn-secondary"
+                aria-label="画布参考"
+                aria-expanded={!!canvasAnchor}
+                onClick={(e) => {
+                  setAddAnchor(null)
+                  setCanvasQuery('')
+                  setCanvasAnchor(canvasAnchor ? null : e.currentTarget)
+                }}
+              >
+                <Icon name="board" size={14} />
+                画布参考
+              </button>
+              <AnimatePresence>
+                {canvasAnchor && (
+                  <Popover
+                    anchor={canvasAnchor}
+                    onClose={() => setCanvasAnchor(null)}
+                    label="画布参考"
+                    width={340}
+                  >
+                    <input
+                      className="ui-input mb-2 w-full"
+                      aria-label="搜索画布参考"
+                      placeholder="搜索画布素材"
+                      value={canvasQuery}
+                      onChange={(e) => setCanvasQuery(e.target.value)}
+                    />
+                    <div
+                      role="listbox"
+                      aria-label="可用画布素材"
+                      className="ui-scrollbar max-h-64 overflow-y-auto"
+                    >
+                      {candidates.map((c) => (
+                        <button
+                          key={`${c.sourceId}/${c.outputId}/${c.portId}`}
+                          type="button"
+                          role="option"
+                          aria-selected={false}
+                          className="ui-menu-item w-full"
+                          onClick={() => {
+                            if (
+                              !media.find((p) => p.id === c.portId)?.multiple &&
+                              inputEdges(engine.doc, el.id, c.portId).length
+                            ) {
+                              useCanvas.getState().notify('该输入已接入参考，请重新选择')
+                              return
+                            }
+                            engine.doc.undo.stopCapturing()
+                            const edge = connect(
+                              engine.doc,
+                              [c.sourceId, c.outputId],
+                              [el.id, c.portId],
+                            )
+                            engine.doc.undo.stopCapturing()
+                            if (edge) setCanvasAnchor(null)
+                            else useCanvas.getState().notify('无法添加该参考，请重新选择')
+                          }}
+                        >
+                          <Icon
+                            name={
+                              c.outputType === 'video'
+                                ? 'video'
+                                : c.outputType === 'audio'
+                                  ? 'audio'
+                                  : 'image'
+                            }
+                            size={16}
+                          />
+                          <span className="min-w-0 flex-1 text-left">
+                            <span className="block truncate">{c.sourceName}</span>
+                            <span className="ui-menu-desc">{c.portLabel}</span>
+                          </span>
+                        </button>
+                      ))}
+                      {!candidates.length && (
+                        <p className="px-2 py-3 text-xs text-ink-subtle">没有匹配的可用素材</p>
+                      )}
+                    </div>
+                  </Popover>
+                )}
+              </AnimatePresence>
+            </>
+          )}
+          <RoleReferencePicker engine={engine} nodeId={el.id} data={prepared} />
+          {toolbar}
+          {trailing && (
+            // 结果操作可能排到面板外：让它能换行，别把最后一个按钮裁掉
+            <div
+              role="toolbar"
+              aria-label="结果操作"
+              className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-0.5"
+            >
+              {trailing}
+            </div>
+          )}
+        </div>
+        {preparing && (
+          <p role="status" className="text-2xs text-ink-subtle">
+            {preparationError ? '输入确认失败，请在实际输入处重试' : '正在确认参考素材…'}
+          </p>
         )}
-        <RoleReferencePicker engine={engine} nodeId={el.id} data={prepared} />
-        {toolbar}
-        {trailing && (
-          // 结果操作可能排到面板外：让它能换行，别把最后一个按钮裁掉
+        {/* 主行可排序的 edgeId：有确认结果时按送入顺序（无瓦片的占位不参与排序），否则按连线顺序 */}
+        <SortableContext items={sortableIds} strategy={horizontalListSortingStrategy}>
           <div
-            role="toolbar"
-            aria-label="结果操作"
-            className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-0.5"
+            data-testid="submitted-references"
+            aria-label="实际送入的参考素材"
+            aria-busy={preparing}
+            className="ui-scrollbar flex items-start gap-2 overflow-x-auto pt-1.5 pb-0.5"
           >
-            {trailing}
+            {submitted
+              ? submitted.map(
+                  (item) =>
+                    sentTiles.get(mediaKey(item)) ?? (
+                      <SubmittedTile
+                        key={`${item.port}:${item.token}`}
+                        engine={engine}
+                        el={el}
+                        item={item}
+                        data={prepared!}
+                        onReference={
+                          mode === 'reference' && !preparing
+                            ? () => insertToken(referenceName(engine.doc, item))
+                            : undefined
+                        }
+                      />
+                    ),
+                )
+              : tiles}
+          </div>
+        </SortableContext>
+        {unusedTiles.length > 0 && (
+          <details className="text-2xs text-ink-subtle" open={submitted?.length === 0}>
+            <summary className="cursor-pointer py-1">
+              未送入的连线素材 · {unusedTiles.length}
+            </summary>
+            <SortableContext items={unusedIds} strategy={horizontalListSortingStrategy}>
+              <div className="ui-scrollbar flex gap-2 overflow-x-auto py-1">{unusedTiles}</div>
+            </SortableContext>
+          </details>
+        )}
+        {replacing && (
+          <div className="flex items-center gap-2 rounded-lg bg-surface-2 p-2">
+            <Select
+              aria-label="替换参考素材"
+              className="ui-input min-w-0 flex-1"
+              value=""
+              options={[
+                { value: '', label: '从当前画布选择素材…', disabled: true },
+                ...[...engine.doc.elements()].flatMap((source) =>
+                  source.id === el.id
+                    ? []
+                    : (elementPorts(source)?.outputs ?? [])
+                        .filter((p) => p.type === replacing.port.type || p.type === 'any')
+                        .map((p) => ({
+                          value: JSON.stringify([source.id, p.id]),
+                          label: `${source.name ?? source.id} · ${p.label}`,
+                        })),
+                ),
+              ]}
+              onChange={(selected) => {
+                const [id, portId] = JSON.parse(selected) as [string, string]
+                const previous = engine.doc.getEdge(replacing.edgeId)
+                engine.doc.undo.stopCapturing()
+                const ok = replaceInput(engine.doc, replacing.edgeId, [id, portId])
+                const value = upstreams(engine, el.id, null)
+                  .get(replacing.port.id)
+                  ?.find((up) => up.edgeId === replacing.edgeId)?.value
+                if (
+                  ok &&
+                  previous &&
+                  value &&
+                  (value.type === 'image' || value.type === 'video' || value.type === 'audio')
+                )
+                  replaceReferenceName(engine.doc, el.id, previous.from[0], {
+                    type: value.type,
+                    source: id,
+                    assetId: value.assetId,
+                  })
+                engine.doc.undo.stopCapturing()
+                if (!ok) useCanvas.getState().notify('无法替换：素材重复或类型不匹配')
+                setReplacing(null)
+              }}
+            />
+            <button
+              type="button"
+              className="ui-btn ui-btn-quiet"
+              onClick={() => setReplacing(null)}
+            >
+              取消
+            </button>
           </div>
         )}
+        {texts.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 text-xs text-ink-subtle">
+            上游文本
+            {texts.map((u) => (
+              <TextChip
+                key={u.edgeId}
+                up={u}
+                onLocate={() => locate(u)}
+                onRemove={() => disconnect(u)}
+              />
+            ))}
+          </div>
+        )}
+        <input
+          ref={fileRef}
+          type="file"
+          hidden
+          multiple={target?.port.multiple && !target.edgeId}
+          accept={target ? `${target.port.type}/*` : undefined}
+          onChange={(e) => {
+            const files = [...(e.target.files ?? [])]
+            e.target.value = ''
+            void upload(files)
+          }}
+        />
       </div>
-      {preparing && (
-        <p role="status" className="text-2xs text-ink-subtle">
-          {preparationError ? '输入确认失败，请在实际输入处重试' : '正在确认参考素材…'}
-        </p>
-      )}
-      {submitted?.length || (!submitted && tiles.length) ? (
-        <div
-          data-testid="submitted-references"
-          aria-label="实际送入的参考素材"
-          aria-busy={preparing}
-          className="ui-scrollbar flex items-start gap-2 overflow-x-auto pt-1.5 pb-0.5"
-        >
-          {submitted
-            ? submitted.map(
-                (item) =>
-                  sentTiles.get(mediaKey(item)) ?? (
-                    <SubmittedTile
-                      key={`${item.port}:${item.token}`}
-                      engine={engine}
-                      el={el}
-                      item={item}
-                      data={prepared!}
-                      onReference={
-                        mode === 'reference' && !preparing
-                          ? () => insertToken(referenceName(engine.doc, item))
-                          : undefined
-                      }
-                    />
-                  ),
-              )
-            : tiles}
-        </div>
-      ) : null}
-      {unusedTiles.length > 0 && (
-        <details className="text-2xs text-ink-subtle" open={submitted?.length === 0}>
-          <summary className="cursor-pointer py-1">未送入的连线素材 · {unusedTiles.length}</summary>
-          <div className="ui-scrollbar flex gap-2 overflow-x-auto py-1">{unusedTiles}</div>
-        </details>
-      )}
-      {replacing && (
-        <div className="flex items-center gap-2 rounded-lg bg-surface-2 p-2">
-          <Select
-            aria-label="替换参考素材"
-            className="ui-input min-w-0 flex-1"
-            value=""
-            options={[
-              { value: '', label: '从当前画布选择素材…', disabled: true },
-              ...[...engine.doc.elements()].flatMap((source) =>
-                source.id === el.id
-                  ? []
-                  : (elementPorts(source)?.outputs ?? [])
-                      .filter((p) => p.type === replacing.port.type || p.type === 'any')
-                      .map((p) => ({
-                        value: JSON.stringify([source.id, p.id]),
-                        label: `${source.name ?? source.id} · ${p.label}`,
-                      })),
-              ),
-            ]}
-            onChange={(selected) => {
-              const [id, portId] = JSON.parse(selected) as [string, string]
-              const previous = engine.doc.getEdge(replacing.edgeId)
-              engine.doc.undo.stopCapturing()
-              const ok = replaceInput(engine.doc, replacing.edgeId, [id, portId])
-              const value = upstreams(engine, el.id, null)
-                .get(replacing.port.id)
-                ?.find((up) => up.edgeId === replacing.edgeId)?.value
-              if (
-                ok &&
-                previous &&
-                value &&
-                (value.type === 'image' || value.type === 'video' || value.type === 'audio')
-              )
-                replaceReferenceName(engine.doc, el.id, previous.from[0], {
-                  type: value.type,
-                  source: id,
-                  assetId: value.assetId,
-                })
-              engine.doc.undo.stopCapturing()
-              if (!ok) useCanvas.getState().notify('无法替换：素材重复或类型不匹配')
-              setReplacing(null)
-            }}
-          />
-          <button type="button" className="ui-btn ui-btn-quiet" onClick={() => setReplacing(null)}>
-            取消
-          </button>
-        </div>
-      )}
-      {texts.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 text-xs text-ink-subtle">
-          上游文本
-          {texts.map((u) => (
-            <TextChip
-              key={u.edgeId}
-              up={u}
-              onLocate={() => locate(u)}
-              onRemove={() => disconnect(u)}
-            />
-          ))}
-        </div>
-      )}
-      <input
-        ref={fileRef}
-        type="file"
-        hidden
-        multiple={target?.port.multiple && !target.edgeId}
-        accept={target ? `${target.port.type}/*` : undefined}
-        onChange={(e) => {
-          const files = [...(e.target.files ?? [])]
-          e.target.value = ''
-          void upload(files)
-        }}
-      />
-    </div>
+    </DndContext>
   )
 }
 
@@ -541,7 +578,7 @@ function preview(v: ResultValue | undefined) {
   return null
 }
 
-/** 参考素材保持紧凑；点击预览，低频管理操作放入独立菜单，拖动与键盘排序仍可直接使用。 */
+/** 参考素材保持紧凑；点击预览，低频管理操作放入独立菜单；多连端口的瓦片可拖拽换序（dnd-kit）。 */
 function RefTile({
   index,
   unused = false,
@@ -553,9 +590,6 @@ function RefTile({
   onReplace,
   onUpload,
   draggable,
-  onDragStart,
-  onDragEnd,
-  onDrop,
   onMove,
   canPrevious,
   canNext,
@@ -570,15 +604,16 @@ function RefTile({
   onPreview(): void
   onReplace(): void
   onUpload(): void
+  /** 是否可拖：仅 multiple 端口；禁用时排序监听不接上 */
   draggable: boolean
-  onDragStart(): void
-  onDragEnd(): void
-  onDrop(): void
   onMove(delta: number): void
   canPrevious: boolean
   canNext: boolean
   onReference?(): void
 }) {
+  // 不透传 attributes：键盘排序走 Alt+方向键与管理菜单，不走 dnd-kit 的 Enter/Space（避免劫持预览）
+  const { listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
+    useSortable({ id: up.edgeId, disabled: !draggable })
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null)
   const act = (action: () => void) => {
     setAnchor(null)
@@ -596,27 +631,24 @@ function RefTile({
         : `「${name}」还没有结果，点击定位来源`
   return (
     <div
+      ref={setNodeRef}
       role="group"
       aria-label={unused ? `未送入：${name}` : `参考 ${index}：${name}`}
       data-asset-id={v && 'assetId' in v ? v.assetId : undefined}
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => {
-        e.preventDefault()
-        onDrop()
+      style={{
+        transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
+        transition,
+        zIndex: isDragging ? 1 : undefined,
       }}
       className="relative flex flex-none items-center gap-1 text-2xs text-ink-subtle"
     >
       <button
         type="button"
+        ref={setActivatorNodeRef}
+        {...(draggable ? listeners : {})}
         onClick={onPreview}
         aria-label={previewLabel}
         title={previewLabel}
-        draggable={draggable}
-        onDragStart={(e) => {
-          e.dataTransfer.setData('application/x-plein-input', up.edgeId)
-          onDragStart()
-        }}
-        onDragEnd={onDragEnd}
         onKeyDown={(e) => {
           if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
             e.preventDefault()
