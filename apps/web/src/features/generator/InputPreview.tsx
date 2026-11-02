@@ -1,6 +1,6 @@
 import { Tooltip } from '@base-ui/react/tooltip'
 import type { Engine } from '@plein/canvas-core'
-import { type CanvasElement, setParam } from '@plein/doc'
+import { type CanvasElement } from '@plein/doc'
 import type { InputIssue, PreparedInput } from '@plein/protocol'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../../api/client'
@@ -161,8 +161,6 @@ function previewSummary(p: PreparedInput) {
  * 引用可设为必需：必需参考先占名额，缺图或放不下时不提交。
  */
 export function InputPreview({
-  engine,
-  el,
   node,
   data,
   loading,
@@ -208,19 +206,6 @@ export function InputPreview({
       </div>
     ) : null
   const fields = new Map(fieldsOf(node))
-  const canRequire = fields.has('requiredRefs')
-  const required = Array.isArray(el.params?.requiredRefs)
-    ? (el.params.requiredRefs as string[])
-    : []
-  const toggleRequired = (id: string) =>
-    setParam(
-      engine.doc,
-      el.id,
-      'requiredRefs',
-      required.includes(id) ? required.filter((x) => x !== id) : [...required, id],
-    )
-  // 必需参考是节点参数，留在「有效参数」里；参考素材本身看顶部的参考素材区。
-  const requiredRefs = data.refs.filter((ref) => ref.required)
   const params = Object.entries(data.params).filter(
     ([k, v]) => k !== 'model' && v !== '' && v !== undefined && typeof v !== 'object',
   )
@@ -283,37 +268,17 @@ export function InputPreview({
                     复制
                   </button>
                 </h4>
-                <p className="ui-scrollbar max-h-40 overflow-y-auto rounded-md bg-surface-2 px-2.5 py-2 whitespace-pre-wrap text-ink [overflow-wrap:anywhere]">
+                <p
+                  data-testid="final-prompt"
+                  className="ui-scrollbar max-h-40 overflow-y-auto rounded-md bg-surface-2 px-2.5 py-2 whitespace-pre-wrap text-ink [overflow-wrap:anywhere]"
+                >
                   {data.prompt}
                 </p>
               </section>
             )}
-            {(params.length > 0 || data.voice || requiredRefs.length > 0) && (
+            {(params.length > 0 || data.voice) && (
               <section className="flex flex-wrap items-center gap-1.5">
                 <h4 className="ui-section-title mr-1">有效参数</h4>
-                {requiredRefs.map((ref) => (
-                  <span key={ref.elementId} className="flex items-center gap-1">
-                    <span className="ui-chip h-auto max-w-full min-h-[var(--h-xs)] py-0.5">
-                      <span className="truncate">{ref.name}</span>
-                    </span>
-                    {canRequire && (
-                      <button
-                        type="button"
-                        onClick={() => toggleRequired(ref.elementId)}
-                        aria-pressed={ref.required}
-                        title={
-                          ref.required
-                            ? '必需参考：缺图或放不下时不提交。点击改为可选'
-                            : '设为必需参考：优先送入，缺图或放不下时不提交'
-                        }
-                        className={`ui-btn ui-btn-xs ${ref.required ? 'ui-btn-secondary text-accent' : 'ui-btn-quiet text-ink-subtle'}`}
-                      >
-                        <Icon name="star" size={12} />
-                        {ref.required ? '必需' : '可选'}
-                      </button>
-                    )}
-                  </span>
-                ))}
                 {data.voice && (
                   <span className="ui-chip h-auto max-w-full min-h-[var(--h-xs)] py-0.5">
                     <span className="ui-scrollbar min-w-0 max-h-24 overflow-y-auto whitespace-pre-wrap break-all">

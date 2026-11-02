@@ -65,8 +65,7 @@ it('同一场景的多个视角分别显示，缺图视角保留阻断说明', a
     // 视角清单不再在这里重复列出：送入的看顶部参考素材区，缺图的看「未送入」。
     expect(screen.getByRole('button', { name: /实际输入/ }).textContent).toContain('1 张参考图')
     expect(screen.getByRole('alert').textContent).toContain('空机位）没有参考图')
-    // 必需参考是节点参数，留在「有效参数」里。
-    expect(screen.getByText('教室（空机位）')).toBeTruthy()
+    // 视角清单不再在这里重复列出：缺图的视角在顶部「未送入」里说明原因。
     unmount()
   } finally {
     doc.destroy()

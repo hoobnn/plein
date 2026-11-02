@@ -27,7 +27,7 @@ import { useRef, useState } from 'react'
 import { assetUrls } from '../../api/client'
 import { importFiles } from '../../canvas/import'
 import { beginImport } from '../../canvas/importProgress'
-import { upstreams, type NodeInfo, type Upstream } from '../../canvas/nodes'
+import { fieldsOf, upstreams, type NodeInfo, type Upstream } from '../../canvas/nodes'
 import { useCanvas } from '../../stores/canvas'
 import { Icon } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
@@ -239,6 +239,18 @@ export function Inputs({
         },
       ]
     })
+  // 必需参考是引用的一项设置，跟着参考素材走：送入的在素材上改，没送入的在「未送入」里改。
+  const canRequire = !!node.paramsSchema && fieldsOf(node).some(([key]) => key === 'requiredRefs')
+  const requiredRefs = Array.isArray(el.params?.requiredRefs)
+    ? (el.params.requiredRefs as string[])
+    : []
+  const toggleRequired = (id: string) =>
+    setParam(
+      engine.doc,
+      el.id,
+      'requiredRefs',
+      requiredRefs.includes(id) ? requiredRefs.filter((x) => x !== id) : [...requiredRefs, id],
+    )
   const authoritative = Array.isArray(prepared?.sent)
   const sentItems = authoritative ? prepared!.sent! : fallbackSent()
   const unsentItems: InputUnsentReference[] = prepared?.unsent ?? []
@@ -279,6 +291,11 @@ export function Inputs({
                 engine.doc.undo.stopCapturing()
               }
             : undefined
+        }
+        canRequire={canRequire && !!item.elementId}
+        required={!!item.elementId && requiredRefs.includes(item.elementId)}
+        onToggleRequired={
+          canRequire && item.elementId ? () => toggleRequired(item.elementId!) : undefined
         }
         canPrevious={!!up && !!port && (ups.get(port.id) ?? [])[0]?.edgeId !== up.edgeId}
         canNext={!!up && !!port && (ups.get(port.id) ?? []).at(-1)?.edgeId !== up.edgeId}
@@ -491,6 +508,22 @@ export function Inputs({
                       定位到画布
                     </button>
                   )}
+                  {canRequire && item.elementId && (
+                    <button
+                      type="button"
+                      className="ui-btn ui-btn-xs ui-btn-quiet ml-1"
+                      aria-pressed={requiredRefs.includes(item.elementId)}
+                      title={
+                        requiredRefs.includes(item.elementId)
+                          ? '必需参考：缺图或放不下时不提交。点击改为可选'
+                          : '设为必需参考：优先送入，缺图或放不下时不提交'
+                      }
+                      onClick={() => toggleRequired(item.elementId!)}
+                    >
+                      <Icon name="star" size={12} />
+                      {requiredRefs.includes(item.elementId) ? '必需' : '可选'}
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -609,6 +642,9 @@ function ReferenceTile({
   onMove,
   canPrevious,
   canNext,
+  canRequire,
+  required,
+  onToggleRequired,
   onReference,
 }: {
   item: InputSentReference
@@ -624,6 +660,9 @@ function ReferenceTile({
   onMove?(delta: number): void
   canPrevious: boolean
   canNext: boolean
+  canRequire: boolean
+  required: boolean
+  onToggleRequired?(): void
   onReference?(): void
 }) {
   // 不透传 attributes：键盘排序走 Alt+方向键与管理菜单，不走 dnd-kit 的 Enter/Space（避免劫持预览）
@@ -689,12 +728,15 @@ function ReferenceTile({
               />
             </span>
           )}
-          <span className="absolute top-0.5 left-0.5 rounded bg-black/65 px-1 py-px text-2xs font-medium text-white tabular-nums">
+          <span
+            data-token={item.token}
+            className="absolute top-0.5 left-0.5 rounded bg-black/65 px-1 py-px text-2xs font-medium text-white tabular-nums"
+          >
             {item.token}
           </span>
           {!v && up && <span className="absolute inset-0 bg-canvas/50" />}
         </button>
-        {(onRemove || onReplace || onLocate) && (
+        {(onRemove || onReplace || onLocate || (canRequire && onToggleRequired)) && (
           <button
             type="button"
             onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
@@ -784,6 +826,17 @@ function ReferenceTile({
               >
                 <Icon name="upload" size={14} />
                 上传替换
+              </button>
+            )}
+            {onToggleRequired && (
+              <button
+                type="button"
+                className="ui-menu-item"
+                aria-label={required ? '取消必需参考' : '设为必需参考'}
+                onClick={() => act(onToggleRequired)}
+              >
+                <Icon name="star" size={14} />
+                {required ? '取消必需参考' : '设为必需参考'}
               </button>
             )}
             {onLocate && (

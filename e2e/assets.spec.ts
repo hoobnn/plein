@@ -83,12 +83,11 @@ test('角色卡上传参考图，@ 引用后换参考图，镜头图标为过期
   // 候选里选中角色卡
   await page.keyboard.press('Enter')
   await page.keyboard.type('站在天台边')
-  // 生成前看实际输入：角色卡的参考图会送进去，可以设为必需参考
-  const preview = page.getByTestId('input-preview')
-  await preview.getByRole('button', { name: /实际输入/ }).click()
-  await expect(preview).toContainText('角色 · 角色')
-  await expect(preview).toContainText('送入 1 张')
-  await preview.getByRole('button', { name: '可选' }).click()
+  // 生成前看参考素材：角色卡的参考图会送进去，可以设为必需参考
+  const tile = page.getByTestId('submitted-references').getByRole('group', { name: '参考 1：角色' })
+  await expect(tile).toBeVisible()
+  await tile.getByRole('button', { name: '管理参考 1' }).click()
+  await page.getByRole('button', { name: '设为必需参考' }).click()
   expect(
     await page.evaluate((id) => window.__plein.engine.doc.get(id)?.params?.requiredRefs, node.id),
   ).toEqual([card.id])
