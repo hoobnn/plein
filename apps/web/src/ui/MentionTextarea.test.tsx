@@ -73,3 +73,38 @@ it('长文件名在编号徽标后显示去扩展名的淡色名称，原文占�
   // 名称和徽标都叠在原文占位上，不额外撑开标记宽度。
   expect(mark.querySelector('.plein-mention-tags')).toBeTruthy()
 })
+
+it('跨行引用按第一行占位宽度设置名称层，宽度不再退化成 0', () => {
+  mockResizeObserver()
+  const file = 'wrap-reference-name.png'
+  const text = `@${file}`
+  renderApp(
+    <MentionTextarea
+      aria-label="提示词"
+      value={text}
+      targets={[{ id: 'card', name: file }]}
+      references={{
+        bindings: {},
+        items: [],
+        numbers: [
+          {
+            start: 0,
+            end: file.length + 1,
+            text,
+            name: file,
+            id: 'card',
+            labels: ['图片1'],
+          },
+        ],
+      }}
+      onChange={() => {}}
+    />,
+  )
+  const mark = document.querySelector('[data-testid="mention-highlights"] mark')!
+  const raw = mark.querySelector('.plein-mention-raw')!
+  vi.spyOn(raw, 'getClientRects').mockReturnValue([
+    { width: 180, left: 0, right: 180, top: 0, bottom: 20 },
+  ] as unknown as DOMRectList)
+  fireEvent.scroll(screen.getByRole<HTMLTextAreaElement>('textbox', { name: '提示词' }))
+  expect(mark.querySelector<HTMLElement>('.plein-mention-tags')?.style.width).toBe('180px')
+})

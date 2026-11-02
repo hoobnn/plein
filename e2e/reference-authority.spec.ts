@@ -19,12 +19,15 @@ import {
  */
 
 let dir = ''
+/** 足够长、会跨行的参考文件名：编辑器里徽标后的名称要在第一行余量内截断显示。 */
+const longName = `wrap-${'reference-name-'.repeat(14)}.png`
 
 test.beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), 'plein-e2e-reference-authority-'))
   const ff = (...args: string[]) =>
     execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args])
   ff('-f', 'lavfi', '-i', 'color=c=red:s=64x48', '-frames:v', '1', join(dir, 'a.png'))
+  ff('-f', 'lavfi', '-i', 'color=c=blue:s=64x48', '-frames:v', '1', join(dir, longName))
 })
 
 test.afterAll(() => rmSync(dir, { recursive: true, force: true }))
@@ -150,4 +153,52 @@ test('短名称 @ 的编号徽标完整可读，悬停能读到名称', { tag: '
   await page.mouse.move(badgeBox.x + badgeBox.width / 2, badgeBox.y + badgeBox.height / 2)
   // 名称放在实际接收鼠标事件的 textarea 上，悬停徽标即可看到。
   await expect(dialog.getByRole('textbox', { name: '提示词' })).toHaveAttribute('title', /叶 · 图1/)
+})
+
+test('跨行的长引用在第一行显示截断的名称', { tag: '@core' }, async ({ page }) => {
+  await newProject(page)
+  await addNode(page, '角色')
+  const card = await byName(page, '角色')
+  await revealGenerator(page)
+  await uploadReference(page, card.id, longName)
+
+  await addNode(page, '生成图片', { x: 1200, y: 450 })
+  const target = await nodeByType(page, 'plein/image')
+  await clickElement(page, target.id)
+  await revealGenerator(page)
+  const prompt = page.getByTestId('generator').getByRole('textbox', { name: '提示词' })
+  await prompt.click()
+  await prompt.fill(`@${longName}`)
+  await page.getByRole('option').first().click()
+  expect(await prompt.inputValue()).toContain(longName)
+
+  const mark = page.getByTestId('mention-highlights').locator('mark').first()
+  const name = mark.locator('.plein-mention-name')
+  await expect(name).toBeVisible()
+  // 跨行引用的第一行仍有可见名称；名称比可用宽度长时用省略号。
+  const metrics = await name.evaluate((el) => {
+    const rect = el.getBoundingClientRect()
+    return {
+      width: rect.width,
+      clientWidth: el.clientWidth,
+      scrollWidth: el.scrollWidth,
+      text: el.textContent,
+    }
+  })
+  expect(metrics.width).toBeGreaterThan(0)
+  expect(metrics.text).not.toContain('.png')
+  expect(metrics.scrollWidth).toBeGreaterThan(metrics.clientWidth)
+  expect(await mark.evaluate((el) => el.getClientRects().length)).toBeGreaterThan(1)
+  // 徽标与名称的叠加层绝对定位，不参与正文排版，光标和选区位置不会跟着挪。
+  expect(
+    await mark.locator('.plein-mention-tags').evaluate((el) => getComputedStyle(el).position),
+  ).toBe('absolute')
+  // 叠加层不改 textarea 的值和选区。
+  await prompt.evaluate((el) => (el as HTMLTextAreaElement).setSelectionRange(2, 5))
+  expect(
+    await prompt.evaluate((el) => {
+      const input = el as HTMLTextAreaElement
+      return [input.selectionStart, input.selectionEnd]
+    }),
+  ).toEqual([2, 5])
 })

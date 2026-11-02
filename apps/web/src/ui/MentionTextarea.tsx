@@ -37,6 +37,19 @@ export function MentionTextarea({
   const layer = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   useImperativeHandle(ref, () => input.current!)
+  /**
+   * 引用跨行时，绝对定位容器的 100% 宽度会变成 0；按原文第一行的实际宽度显式设置，
+   * 让徽标后的名称至少在第一行余量里显示并按需省略。只改叠加层，不影响 textarea 排版。
+   */
+  const fitTags = useCallback(() => {
+    const body = content.current
+    if (!body) return
+    for (const tags of body.querySelectorAll<HTMLElement>('.plein-mention-tags')) {
+      const raw = tags.parentElement?.querySelector<HTMLElement>('.plein-mention-raw')
+      const first = raw?.getClientRects()[0]
+      tags.style.width = first ? `${first.width}px` : ''
+    }
+  }, [])
   const sync = useCallback(() => {
     const ta = input.current
     const box = layer.current
@@ -61,8 +74,10 @@ export function MentionTextarea({
     box.style.left = `${ta.offsetLeft + ta.clientLeft}px`
     box.style.top = `${ta.offsetTop + ta.clientTop}px`
     body.style.transform = `translate(${-ta.scrollLeft}px, ${-ta.scrollTop}px)`
-  }, [])
+    fitTags()
+  }, [fitTags])
   useLayoutEffect(sync)
+  useLayoutEffect(fitTags)
   useLayoutEffect(() => {
     const observer = new ResizeObserver(sync)
     if (input.current) observer.observe(input.current)
