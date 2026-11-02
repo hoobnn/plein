@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { Presence } from './Presence'
+import { AnimatePresence } from 'motion/react'
 import { LoadingPanel } from './LoadingPanel'
 
 /**
@@ -156,11 +156,11 @@ export function createDialogHost(
           </div>
         )}
         {req && !DialogView && <LoadingPanel label="正在打开对话框…" />}
-        <Presence>
+        <AnimatePresence>
           {req && DialogView && (
             <DialogView key={req.id} req={req} isCurrent={isCurrent} onFinish={finish} />
           )}
-        </Presence>
+        </AnimatePresence>
       </>
     )
   }

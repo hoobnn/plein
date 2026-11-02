@@ -1,7 +1,8 @@
 import { Dialog } from '@base-ui/react/dialog'
+import { m } from 'motion/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DialogRequest } from './Dialog'
-import { useClosing, useExit } from './Presence'
+import { dialogVariants, fadeVariants, useOverlayClosing, useOverlayMotion } from './motion'
 
 export function DialogView({
   req,
@@ -17,7 +18,7 @@ export function DialogView({
   const inputRef = useRef<HTMLInputElement>(null)
   const confirmRef = useRef<HTMLButtonElement>(null)
   const alternateRef = useRef<HTMLButtonElement>(null)
-  const closing = useClosing()
+  const closing = useOverlayClosing()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const busyRef = useRef(false)
@@ -69,23 +70,27 @@ export function DialogView({
     }
   }
   const danger = req.kind === 'confirm' && req.options.danger
-  const exit = useExit()
+  const popupMotion = useOverlayMotion(dialogVariants)
+  const backdropMotion = useOverlayMotion(fadeVariants)
 
   return (
     <Dialog.Root
-      open={!closing}
+      open
       onOpenChange={(open, details) => {
+        if (closing) {
+          details.cancel()
+          return
+        }
         if (!open && details.reason !== 'escape-key') finish(null)
       }}
     >
       <Dialog.Portal>
         <Dialog.Backdrop
-          {...exit}
-          className="ui-dialog-scrim fixed inset-0 z-60 bg-scrim supports-backdrop-filter:backdrop-blur-xs"
+          render={<m.div {...backdropMotion} />}
+          className="ui-dialog-scrim ui-motion fixed inset-0 z-60 bg-scrim supports-backdrop-filter:backdrop-blur-xs"
         />
         <Dialog.Viewport className="app-dialog-viewport fixed inset-0 z-60 flex items-center justify-center p-4 sm:p-6">
           <Dialog.Popup
-            {...exit}
             aria-label={options.title}
             initialFocus={
               req.kind === 'prompt'
@@ -98,14 +103,15 @@ export function DialogView({
                     confirmRef.current
             }
             render={
-              <form
+              <m.form
+                {...popupMotion}
                 onSubmit={(e) => {
                   e.preventDefault()
                   void confirm()
                 }}
               />
             }
-            className="ui-dialog ui-scrollbar relative flex max-h-full w-full max-w-sm flex-col gap-4 overflow-y-auto rounded-xl bg-menu p-4 text-sm text-ink ring-1 ring-line outline-none [&>*]:shrink-0"
+            className="ui-dialog ui-motion ui-scrollbar relative flex max-h-full w-full max-w-sm flex-col gap-4 overflow-y-auto rounded-xl bg-menu p-4 text-sm text-ink ring-1 ring-line outline-none [&>*]:shrink-0"
           >
             <div className="flex flex-col gap-2">
               <h2 className="text-base leading-none font-medium break-words">{options.title}</h2>

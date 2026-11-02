@@ -1,15 +1,16 @@
 import { Dialog } from '@base-ui/react/dialog'
+import { m } from 'motion/react'
 import { type ReactNode, useEffect, useRef } from 'react'
 import { cn } from './cn'
 import { Icon } from './icons'
-import { useClosing, useExit } from './Presence'
+import { dialogVariants, fadeVariants, useOverlayClosing, useOverlayMotion } from './motion'
 import { claimMenuEscape, hasMenuEscapeLayer, isMenuEscape } from './menuEscape'
 
 /**
  * 盖住整个窗口的面板（设置、生成历史、分镜表、序列、快捷键），基于 Base UI Dialog：
  * 遮罩淡入、面板弹出，点遮罩关闭；打开时焦点移进面板并圈在里面，关闭后还给原来的元素，背后页面不滚动。
  * Esc 关闭最上面的一层（面板里的下拉、弹层先关）；要先关面板里其他子层的面板，在捕获阶段自己拦下 Esc。
- * 打开处包一层 `<Presence>`，关闭时遮罩淡出、面板收起。
+ * 打开处包一层 `<AnimatePresence>`，关闭时遮罩淡出、面板收起。
  */
 export function Modal({
   label,
@@ -38,8 +39,9 @@ export function Modal({
   className?: string
   children: ReactNode
 }) {
-  const exit = useExit()
-  const closing = useClosing()
+  const closing = useOverlayClosing()
+  const popupMotion = useOverlayMotion(dialogVariants)
+  const backdropMotion = useOverlayMotion(fadeVariants)
   const popup = useRef<HTMLDivElement>(null)
   const escapeOwners = useRef(new WeakMap<Event, HTMLElement>())
   useEffect(() => {
@@ -66,8 +68,12 @@ export function Modal({
   }, [])
   return (
     <Dialog.Root
-      open={!closing}
+      open
       onOpenChange={(open, details) => {
+        if (closing) {
+          details.cancel()
+          return
+        }
         const event = details.event
         // 内层若在 Base UI 请求关闭前 preventDefault，约定为已处理本次 Esc，父弹窗保留。
         // 内层自己关闭时应直接调用 onClose；只需阻止浏览器默认行为的处理器不能借此请求父层关闭。
@@ -97,8 +103,8 @@ export function Modal({
     >
       <Dialog.Portal>
         <Dialog.Backdrop
-          {...exit}
-          className={`ui-dialog-scrim pointer-events-auto fixed inset-0 bg-scrim supports-backdrop-filter:backdrop-blur-xs ${top ? 'z-50' : 'z-40'}`}
+          render={<m.div {...backdropMotion} />}
+          className={`ui-dialog-scrim ui-motion pointer-events-auto fixed inset-0 bg-scrim supports-backdrop-filter:backdrop-blur-xs ${top ? 'z-50' : 'z-40'}`}
         />
         <Dialog.Viewport
           data-fullscreen={fullScreen || undefined}
@@ -108,6 +114,7 @@ export function Modal({
         >
           <Dialog.Popup
             ref={popup}
+            render={<m.div {...popupMotion} />}
             data-plein-modal-layer={closing ? undefined : top ? 50 : 40}
             data-fullscreen={fullScreen || undefined}
             aria-label={label}
@@ -127,9 +134,8 @@ export function Modal({
             }}
             initialFocus={initialFocus}
             data-plein-active={isolateKeys ? '' : undefined}
-            {...exit}
             className={cn(
-              'ui-dialog relative flex max-h-full w-full flex-col overflow-hidden bg-menu text-sm text-ink ring-1 ring-line outline-none',
+              'ui-dialog ui-motion relative flex max-h-full w-full flex-col overflow-hidden bg-menu text-sm text-ink ring-1 ring-line outline-none',
               fullScreen ? 'rounded-none bg-surface' : 'rounded-xl',
               className,
             )}

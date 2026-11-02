@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
+import { AnimatePresence } from 'motion/react'
 import { useState } from 'react'
 import { expect, it } from 'vite-plus/test'
 import { fireEvent, renderApp, screen, waitFor } from '../testing/render'
 import { Modal, ModalHeader } from './Modal'
-import { Presence } from './Presence'
 import { Select } from './Select'
 import { MenuSelect } from './MenuSelect'
 
@@ -16,7 +16,7 @@ function Panels() {
       <button type="button" onClick={() => setOpen(true)}>
         打开
       </button>
-      <Presence>
+      <AnimatePresence>
         {open && (
           <Modal label="编辑器" onClose={() => setOpen(false)} isolateKeys>
             <ModalHeader title="编辑器" onClose={() => setOpen(false)} />
@@ -45,14 +45,14 @@ function Panels() {
             </button>
           </Modal>
         )}
-      </Presence>
-      <Presence>
+      </AnimatePresence>
+      <AnimatePresence>
         {top && (
           <Modal label="设置" top isolateKeys onClose={() => setTop(false)}>
             <ModalHeader title="设置" onClose={() => setTop(false)} />
           </Modal>
         )}
-      </Presence>
+      </AnimatePresence>
     </>
   )
 }
@@ -93,7 +93,7 @@ it('内层编辑器消费 Escape 取消草稿后，下一次普通 Escape 才关
     const [open, setOpen] = useState(true)
     const [draft, setDraft] = useState('原名称')
     return (
-      <Presence>
+      <AnimatePresence>
         {open && (
           <Modal label="改名面板" onClose={() => setOpen(false)}>
             <input
@@ -109,7 +109,7 @@ it('内层编辑器消费 Escape 取消草稿后，下一次普通 Escape 才关
             />
           </Modal>
         )}
-      </Presence>
+      </AnimatePresence>
     )
   }
   const { user } = renderApp(<Editor />)

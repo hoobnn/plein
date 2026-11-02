@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react'
-import { useClosing } from './Presence'
+import { useOverlayClosing } from './motion'
 
 /**
  * 点外面、按 Esc 时关闭的浮层；`wheel` 为真时在外面滚动也关闭（画布上的菜单，滚轮会移动画布）。
- * 返回挂到浮层根节点上的 ref。在 `<Presence>` 里收起途中不再响应。
+ * 返回挂到浮层根节点上的 ref。在 `<AnimatePresence>` 里收起途中不再响应。
  */
 export function useDismiss<T extends HTMLElement = HTMLDivElement>(
   onClose: () => void,
@@ -12,7 +12,7 @@ export function useDismiss<T extends HTMLElement = HTMLDivElement>(
   const ref = useRef<T>(null)
   const latest = useRef(onClose)
   latest.current = onClose
-  const closing = useClosing()
+  const closing = useOverlayClosing()
   useEffect(() => {
     if (!active || closing) return
     const outside = (e: Event) => {
