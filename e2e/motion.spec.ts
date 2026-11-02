@@ -44,6 +44,36 @@ test('Popover 碰撞翻转后按实际 side 进退场', async ({ page }) => {
   expect(JSON.stringify(keyframes)).toContain('translateY(-2px)')
 })
 
+test('冷启动不被 Motion 阻塞，延后浮层与首页提示正常进场', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page.route('**/*motion*', (route) => route.abort())
+  await page.goto('/')
+  await expect(page.locator('.home-bar')).toBeVisible()
+  await expect(page.getByRole('button', { name: '新建项目', exact: true }).first()).toBeVisible()
+  await page.unroute('**/*motion*')
+
+  await newProject(page)
+  await page.getByRole('button', { name: '整理画布', exact: true }).click()
+  await page.locator('.app-brand').click()
+  await expect(page.getByRole('status').filter({ hasText: '画布已经很整齐了' })).toBeVisible()
+
+  await page.getByRole('button', { name: '设置', exact: true }).click()
+  const settings = page.getByRole('dialog', { name: '设置', exact: true })
+  await expect(settings).toBeVisible()
+  expect(await settings.evaluate((element) => element.getAnimations().length)).toBeGreaterThan(0)
+  await page.keyboard.press('Escape')
+
+  const card = page.getByRole('listitem').filter({ hasText: '未命名项目' })
+  await card.hover()
+  await card.getByRole('button', { name: '删除', exact: true }).click()
+  const confirmation = page.getByRole('dialog', { name: /删除项目/ })
+  await expect(confirmation).toBeVisible()
+  expect(await confirmation.evaluate((element) => element.getAnimations().length)).toBeGreaterThan(
+    0,
+  )
+  await confirmation.getByRole('button', { name: '取消', exact: true }).click()
+})
+
 test('Motion 浮层不叠加旧 CSS 进场动画', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   await newProject(page)
