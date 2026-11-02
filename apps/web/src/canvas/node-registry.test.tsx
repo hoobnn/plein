@@ -5,6 +5,7 @@ import {
   ANIMATIC_TYPE,
   AI_SCENE_TYPE,
   corePlugin,
+  MOTION_TYPE,
   SEQUENCE_TYPE,
   SHOT_ANALYSIS_TYPE,
   STAGE_TYPE,
@@ -21,6 +22,7 @@ import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { mockFetch } from '../testing/fetch'
 import { act, fireEvent, renderApp, resetStoreAfterEach, screen, waitFor } from '../testing/render'
+import { activateNode } from './node-registry'
 
 resetStoreAfterEach(useCatalog)
 
@@ -110,6 +112,75 @@ function withImageResult(nodeType: string) {
   })
   return { doc, id }
 }
+
+describe('双击节点的打开行为（activateNode）', () => {
+  /** 放一个节点并模拟双击；rAF 是未登记节点聚焦生成器的延迟 */
+  async function activate(nodeType: string) {
+    const doc = openDoc()
+    docs.push(doc)
+    const id = createElement(doc, {
+      kind: 'node',
+      nodeType,
+      x: 0,
+      y: 0,
+      w: 200,
+      h: 120,
+      params: {},
+      ports: { inputs: [], outputs: [] },
+    })
+    activateNode(doc.get(id)!)
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+    return id
+  }
+
+  it('分镜、序列、节奏样片、3D 构图、动态合成各自进专属编辑器', async () => {
+    const spies = {
+      openStoryboard: vi.fn(),
+      openSequence: vi.fn(),
+      openStage: vi.fn(),
+      openMotion: vi.fn(),
+    }
+    useCanvas.setState(spies)
+    await activate(STORYBOARD_TYPE)
+    await activate(SEQUENCE_TYPE)
+    await activate(ANIMATIC_TYPE)
+    await activate(STAGE_TYPE)
+    await activate(MOTION_TYPE)
+    expect(spies.openStoryboard).toHaveBeenCalledTimes(1)
+    expect(spies.openSequence).toHaveBeenCalledTimes(2)
+    expect(spies.openStage).toHaveBeenCalledTimes(1)
+    expect(spies.openMotion).toHaveBeenCalledTimes(1)
+  })
+
+  it('未登记的节点聚焦生成器', async () => {
+    const listener = vi.fn()
+    window.addEventListener('plein:focus-generator', listener)
+    try {
+      const id = await activate('plein/image')
+      expect((listener.mock.calls[0]![0] as CustomEvent).detail).toBe(id)
+    } finally {
+      window.removeEventListener('plein:focus-generator', listener)
+    }
+  })
+
+  it('非节点元素不分发', async () => {
+    const listener = vi.fn()
+    const openStoryboard = vi.fn()
+    useCanvas.setState({ openStoryboard })
+    window.addEventListener('plein:focus-generator', listener)
+    try {
+      const doc = openDoc()
+      docs.push(doc)
+      const id = createElement(doc, { kind: 'image', assetId: 'a', x: 0, y: 0, w: 100, h: 80 })
+      activateNode(doc.get(id)!)
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+      expect(listener).not.toHaveBeenCalled()
+      expect(openStoryboard).not.toHaveBeenCalled()
+    } finally {
+      window.removeEventListener('plein:focus-generator', listener)
+    }
+  })
+})
 
 describe('Generator 编辑器按节点类型分发（对照：改前改后一致）', () => {
   it.each([

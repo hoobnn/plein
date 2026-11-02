@@ -8,13 +8,6 @@ import {
   type PleinDoc,
   SCHEMA_VERSION,
 } from '@plein/doc'
-import {
-  ANIMATIC_TYPE,
-  MOTION_TYPE,
-  SEQUENCE_TYPE,
-  STAGE_TYPE,
-  STORYBOARD_TYPE,
-} from '@plein/nodes'
 import { useEffect, useRef } from 'react'
 import { WebsocketProvider } from 'y-websocket'
 import * as Y from 'yjs'
@@ -30,6 +23,7 @@ import { importFiles, importText, revealImports } from './import'
 import { beginImport } from './importProgress'
 import { importLocation, watchImportView } from './importView'
 import { openLocalCache, watchCacheWrites } from './localCache'
+import { activateNode, rendererRegistry } from './node-registry'
 import { abortGroupRuns } from '../features/runs/groupRuns'
 import { watchStale } from '../features/runs/stale'
 import { NodeCards } from './nodeCards'
@@ -106,6 +100,7 @@ export function CanvasView({
         },
         assetUrl,
         theme: canvasTheme(useTheme.getState().name),
+        renderers: rendererRegistry(),
         onInteractionInterrupted: () => {
           if (!disposed) notify('节点或连线已更新，本次操作已取消')
         },
@@ -130,18 +125,10 @@ export function CanvasView({
               applyPresetToNode(engine, useCatalog.getState().catalog, id, preset),
             thumbUrl: (id) => localAssets?.get(id) ?? assetUrls.variant(id, 'thumb-256'),
           })
-          // 双击节点：聚焦生成器的提示词（面板在选中后的下一帧才挂载）
+          // 双击节点：进专属编辑器（分镜、序列等），其余聚焦生成器的提示词
           const offActivate = engine.onActivate((id) => {
             const el = engine.scene.get(id)
-            if (el?.kind !== 'node') return
-            if (el.nodeType === STORYBOARD_TYPE) return useCanvas.getState().openStoryboard(id)
-            if (el.nodeType === SEQUENCE_TYPE || el.nodeType === ANIMATIC_TYPE)
-              return useCanvas.getState().openSequence(id)
-            if (el.nodeType === STAGE_TYPE) return useCanvas.getState().openStage(id)
-            if (el.nodeType === MOTION_TYPE) return useCanvas.getState().openMotion(id)
-            requestAnimationFrame(() =>
-              window.dispatchEvent(new CustomEvent('plein:focus-generator', { detail: id })),
-            )
+            if (el) activateNode(el)
           })
           const offStale = canvasId ? watchStale(engine, canvasId) : () => {}
           const offAspect = canvasId ? watchVideoAspect(engine, videoRatio) : () => {}
