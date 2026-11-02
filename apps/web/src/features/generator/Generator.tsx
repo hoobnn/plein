@@ -1,18 +1,6 @@
 import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement, primaryResult, setParam } from '@plein/doc'
-import {
-  ASSET_NODE_TYPES,
-  ANIMATIC_TYPE,
-  firstPlaceholder,
-  presetsFor,
-  SEQUENCE_TYPE,
-  STAGE_TYPE,
-  stageSnapshotsOf,
-  STORYBOARD_TYPE,
-  SHOT_ANALYSIS_TYPE,
-  type VideoMode,
-} from '@plein/nodes'
-import { isAiAnalysisType } from '@plein/nodes'
+import { ASSET_NODE_TYPES, firstPlaceholder, presetsFor, type VideoMode } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useEngineVersion, useFollow } from '../../canvas/hooks'
@@ -29,13 +17,12 @@ import {
   upstreams,
   validate,
 } from '../../canvas/nodes'
+import { nodeRegistration } from '../../canvas/node-registry'
 import { cancelNode, runNode } from '../runs/run'
 import { cancelRequestKey, useCancelRequests } from '../runs/cancelRequests'
 import { runRequestKey, useRunRequests } from '../runs/runRequests'
-import { shotsOf } from '../storyboard/model'
 import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
-import { Icon } from '../../ui/icons'
 import { withShortcut } from '../../ui/keys'
 import { mediaOf } from '../../canvas/grid'
 import { ResultActions } from '../../shell/ResultBar'
@@ -47,7 +34,6 @@ import { ContinuedFrom } from './ContinuedFrom'
 import { MaskField } from './MaskField'
 import { Inputs } from './Inputs'
 import { LibrarySave } from './LibrarySave'
-import { ProfileSummary } from './ProfileSummary'
 import { ModelPicker } from './ModelPicker'
 import { ModePicker } from './ModePicker'
 import { SpeechInstruction } from './SpeechInstruction'
@@ -58,18 +44,14 @@ import { NameField } from './NameField'
 import { PromptBox } from './PromptBox'
 import { runBlockReason, runDisabled as runDisabledState } from './runBlock'
 import { PromptTools } from './PromptTools'
-import { AiAnalysisEntry } from '../ai-shot-analysis/AiAnalysisEditor'
 import { RecipeLibrary } from './RecipeLibrary'
 import { CharacterImageArchiveButton } from '../library/ArchiveCharacterImage'
 import { saveElementName } from '../../canvas/rename'
+import { Icon } from '../../ui/icons'
 
 /** 生成节点需要提示词和输入预览；只有入口的节点使用紧凑面板。 */
 const EDITOR_W = 840
 const EDITOR_H = 440
-const STAGE_EDITOR_W = 420
-const STAGE_EDITOR_H = 180
-const ANALYSIS_ENTRY_W = 560
-const ANALYSIS_ENTRY_H = 96
 const ASSET_EDITOR_W = 720
 const INLINE_EDITOR_W = 640
 const MIN_EDITOR_H = 180
@@ -87,32 +69,23 @@ function GeneratorHost({ engine }: { engine: Engine }) {
   const el = ids.length === 1 ? engine.scene.get(ids[0]!) : undefined
   const node = el?.kind === 'node' ? findNode(catalog, el.nodeType) : undefined
   if (!el || !node) return null
+  const registered = nodeRegistration(node.type)?.editor
   if (el.locked || engine.doc.readOnly)
-    return isAiAnalysisType(node.type) ? <AiAnalysisEntry engine={engine} el={el} /> : null
-  const size = isAiAnalysisType(node.type)
-    ? { width: ANALYSIS_ENTRY_W, height: ANALYSIS_ENTRY_H }
-    : node.type === STAGE_TYPE
-      ? { width: STAGE_EDITOR_W, height: STAGE_EDITOR_H }
-      : {
-          width: ASSET_NODE_TYPES.has(node.type)
-            ? ASSET_EDITOR_W
-            : isPure(node)
-              ? INLINE_EDITOR_W
-              : EDITOR_W,
-          height: EDITOR_H,
-        }
+    return registered?.lockedEntry ? registered.lockedEntry({ engine, el }) : null
+  // 特殊节点的尺寸在注册表里登记；其余按形态取（资产卡宽、纯文本窄、默认标准宽）
+  const size = registered?.size ?? {
+    width: ASSET_NODE_TYPES.has(node.type)
+      ? ASSET_EDITOR_W
+      : isPure(node)
+        ? INLINE_EDITOR_W
+        : EDITOR_W,
+    height: EDITOR_H,
+  }
+  const content = registered?.content
   return (
     <NodeBelow engine={engine} nodeId={el.id} title={el.name ?? node.title} size={size}>
-      {isAiAnalysisType(node.type) ? (
-        <div className="p-4">
-          <button
-            type="button"
-            className="ui-btn ui-btn-secondary w-full"
-            onClick={() => useCanvas.getState().openAiAnalysis({ kind: 'node', nodeId: el.id })}
-          >
-            查看 AI 分析与预检
-          </button>
-        </div>
+      {content ? (
+        content({ engine, el })
       ) : (
         <GeneratorPanel key={el.id} engine={engine} el={el} node={node} catalog={catalog} />
       )}
@@ -211,6 +184,8 @@ export function GeneratorPanel({
   const model = selectedModel(catalog, node, params)
   const ups = upstreams(engine, el.id, catalog)
   const pure = isPure(node)
+  // 节点专属的编辑入口（编辑分镜表、打开 3D 构图等）在注册表里登记
+  const entry = nodeRegistration(node.type)?.editor?.panel
   // 生成前的实际输入：所有要跑的节点都要（插件节点可能没有 capability，
   // 但服务端照样能准备输入；不取预览，生成按钮就一直是禁用的）
   const input = useInputPreview(engine, !pure ? canvasId : null, el.id)
@@ -500,60 +475,9 @@ export function GeneratorPanel({
           />
         )}
         <ContinuedFrom engine={engine} el={el} />
-        {node.type === SHOT_ANALYSIS_TYPE && (
-          <div className="px-4 pt-4">
-            <button
-              type="button"
-              className="ui-btn ui-btn-secondary w-full"
-              onClick={() => useCanvas.getState().openShotAnalysis(el.id)}
-            >
-              打开拉片清单
-            </button>
-          </div>
-        )}
+        {entry?.({ engine, el, canvasId, ups })}
         {node.capability === 'image.edit' && (
           <MaskField engine={engine} el={el} source={ups.get('image')?.[0]} />
-        )}
-        {node.type === 'plein/character' && canvasId && <ProfileSummary engine={engine} el={el} />}
-        {node.type === STORYBOARD_TYPE && (
-          <div className="px-4 pt-4">
-            <button
-              type="button"
-              onClick={() => useCanvas.getState().openStoryboard(el.id)}
-              className="ui-btn ui-btn-secondary w-full"
-            >
-              编辑分镜表（{shotsOf(el).length} 个镜头）
-            </button>
-          </div>
-        )}
-        {(node.type === SEQUENCE_TYPE || node.type === ANIMATIC_TYPE) && (
-          <div className="px-4 pt-4">
-            <button
-              type="button"
-              onClick={() => useCanvas.getState().openSequence(el.id)}
-              className="ui-btn ui-btn-secondary w-full"
-            >
-              {node.type === ANIMATIC_TYPE
-                ? '编辑节奏样片'
-                : `编辑序列（${ups.get('clips')?.length ?? 0} 段镜头）`}
-            </button>
-          </div>
-        )}
-        {node.type === STAGE_TYPE && (
-          <div className="flex flex-col gap-2 px-4 pt-4">
-            <button
-              type="button"
-              onClick={() => useCanvas.getState().openStage(el.id)}
-              className="ui-btn ui-btn-secondary w-full"
-            >
-              打开 3D 构图
-            </button>
-            <p className="ui-help">
-              {stageSnapshotsOf(el.params).length
-                ? `已截 ${stageSnapshotsOf(el.params).length} 张，下游用当前采用的那张；改场景后要重新截图才会更新`
-                : '摆好人物和机位后截图，把「构图」连到图片节点的参考图'}
-            </p>
-          </div>
         )}
         {pk && pure && (
           <div className="px-4 pt-3 pr-12 text-xs font-medium text-ink-subtle">正文</div>

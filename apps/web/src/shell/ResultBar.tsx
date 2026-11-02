@@ -1,6 +1,6 @@
 import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement, primaryResult, elementMedia, videoAssetOf } from '@plein/doc'
-import { presetsFor, SHOT_ANALYSIS_TYPE, STAGE_TYPE } from '@plein/nodes'
+import { presetsFor } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { useState } from 'react'
 import { mediaOf, splitGrid } from '../canvas/grid'
@@ -9,6 +9,7 @@ import { canvasBottomSpace, fitFloatingPanel } from '../canvas/floatingPanel'
 import { beginImport } from '../canvas/importProgress'
 import { importLocation, watchImportView } from '../canvas/importView'
 import { revealImports } from '../canvas/import'
+import { nodeRegistration, resultOf } from '../canvas/node-registry'
 import {
   continueNodeFor,
   continueShot,
@@ -88,7 +89,12 @@ function ResultBarHost({ engine }: { engine: Engine }) {
       }
     : null
   const asset = el && (el.kind !== 'node' || el.locked) ? elementMedia(el) : null
-  const analysis = el?.nodeType === SHOT_ANALYSIS_TYPE && (engine.doc.readOnly || el.locked)
+  // 锁定 / 只读的节点没有生成器：登记了面板入口的（拉片清单）在结果条上给一个入口
+  const analysisEntry =
+    el?.kind === 'node' ? nodeRegistration(el.nodeType)?.result?.lockedEntry : undefined
+  const analysis = !!analysisEntry && (engine.doc.readOnly || !!el?.locked)
+  // 登记为空间参考的结果（构图截图）不提供再加工入口
+  const { reference } = resultOf(el)
   const place = () => {
     const rect = el && engine.scene.rect(el.id)
     if (!rect) return null
@@ -149,15 +155,7 @@ function ResultBarHost({ engine }: { engine: Engine }) {
           重命名
         </button>
       )}
-      {analysis && (
-        <button
-          type="button"
-          className="ui-btn ui-btn-secondary"
-          onClick={() => useCanvas.getState().openShotAnalysis(el.id)}
-        >
-          查看拉片清单
-        </button>
-      )}
+      {analysis && analysisEntry && analysisEntry(el)}
       {engine.doc.readOnly ? (
         <SourceRestoreButton engine={engine} element={el} className="ui-bar-btn" />
       ) : (
@@ -173,7 +171,7 @@ function ResultBarHost({ engine }: { engine: Engine }) {
           />
         )
       )}
-      {!engine.doc.readOnly && asset && canvasId && el.nodeType !== STAGE_TYPE && (
+      {!engine.doc.readOnly && asset && canvasId && !reference && (
         // key 跟着素材走：换选一个素材时把已读的元信息和打开的表单一起丢掉
         <MediaTools
           key={`${el.id}:${asset.assetId}`}
@@ -215,8 +213,8 @@ export function ResultActions({
   const { pending } = continuation
   const busy = !!pending
   const [masking, setMasking] = useState(false)
-  // 构图截图是空间参考，不应把灰模当作普通成图去重绘、切宫格或直接生成视频。
-  const stage = el.kind === 'node' && el.nodeType === STAGE_TYPE
+  // 构图截图是空间参考，不应把灰模当作普通成图去重绘、切宫格或直接生成视频
+  const { reference: stage } = resultOf(el)
   const editNode = media.kind === 'image' && !stage ? regionEditNode(catalog) : undefined
   const [at, setAt] = useState('')
   const { notify, view } = useCanvas.getState()

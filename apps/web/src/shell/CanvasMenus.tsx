@@ -3,6 +3,7 @@ import { isEditableTarget, type CanvasMenuEvent, type Engine } from '@plein/canv
 import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { applyCast, castLibrary, castOf, describeCast } from '../canvas/cast'
 import { findNode, type NodeInfo } from '../canvas/nodes'
+import { nodeRegistration } from '../canvas/node-registry'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { shortcut } from '../ui/keys'
@@ -365,6 +366,8 @@ function ContextMenu({
   const single = ids.length === 1 ? engine.scene.get(ids[0]!) : undefined
   const node: NodeInfo | undefined =
     single?.kind === 'node' ? findNode(catalog, single.nodeType) : undefined
+  // 右键菜单的专属条目（场景准备等）在注册表里登记
+  const menuEntry = single?.kind === 'node' ? nodeRegistration(single.nodeType)?.menu : undefined
   // 角色与场景抽取这类节点：结果按固定 Markdown 输出时，可以一键落成设定卡
   const cast = single?.kind === 'node' ? castOf(engine, single.id) : []
   let items: ReactNode
@@ -456,11 +459,8 @@ function ContextMenu({
             <Sep />
           </>
         )}
-        {single?.nodeType === 'plein/scene' && (
-          <Item
-            label="场景准备"
-            onClick={act(() => useCanvas.getState().openScenePrep(single.id))}
-          />
+        {single && menuEntry && (
+          <Item label={menuEntry.label} onClick={act(() => menuEntry.onClick(single.id))} />
         )}
         <Item
           label="复制一份"
