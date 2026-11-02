@@ -23,6 +23,7 @@ import { useCanvas } from '../stores/canvas'
 import { Icon } from '../ui/icons'
 import { Popover } from '../ui/Popover'
 import { Presence } from '../ui/Presence'
+import { Select } from '../ui/Select'
 import { audioSplitPlan } from './audioSegments'
 import { useMediaDeriver } from './mediaRequests'
 import { useCreationTools } from './media-tools/useCreationTools'
@@ -460,22 +461,23 @@ export function MediaTools({
                 )}
                 {form === 'split' && (
                   <>
-                    <label className="ui-field">
+                    <div className="ui-field">
                       <span className="ui-label">分段方式</span>
-                      <select
+                      <Select
                         aria-label="分段方式"
                         className="ui-input"
                         value={values.splitMode ?? 'even'}
-                        onChange={(e) => {
-                          set('splitMode', e.target.value)
+                        options={[
+                          { value: 'even', label: '等分' },
+                          { value: 'cuts', label: '自定义切点' },
+                          { value: 'ranges', label: '自定义区间' },
+                        ]}
+                        onChange={(value) => {
+                          set('splitMode', value)
                           set('intervals', '')
                         }}
-                      >
-                        <option value="even">等分</option>
-                        <option value="cuts">自定义切点</option>
-                        <option value="ranges">自定义区间</option>
-                      </select>
-                    </label>
+                      />
+                    </div>
                     {list.length === 1 && first.kind === 'audio' && (
                       <TranscriptionSplitPlan
                         engine={engine}

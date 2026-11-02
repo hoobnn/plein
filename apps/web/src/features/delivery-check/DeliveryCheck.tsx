@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api/client'
 import { useCanvas } from '../../stores/canvas'
 import { useSession } from '../../stores/session'
+import { Select } from '../../ui/Select'
 import { cancelNode, runNode } from '../runs/run'
 import {
   createDeliveryCheck,
@@ -148,29 +149,29 @@ export function DeliveryCheck({
         免费本地处理，不调用模型，不修改人工交付确认。视频可解码、音轨存在均不代表创作内容可用。
       </p>
       {boards.length > 1 && (
-        <label className="ui-field">
+        <div className="ui-field">
           <span className="ui-label">检查哪份分镜目标</span>
-          <select
+          <Select
             aria-label="技术检查分镜目标"
             className="ui-input"
             value={boardId ?? ''}
-            onChange={(event) => {
+            options={[
+              { value: '', label: '请选择精确目标' },
+              ...boards.map((board) => ({
+                value: board.id,
+                label: `${board.name ?? '分镜'} · ${board.id.slice(-8)}`,
+              })),
+            ]}
+            onChange={(value) => {
               epoch.current++
               setPending(false)
               busyRef.current = false
-              setBoardId(event.target.value || undefined)
+              setBoardId(value || undefined)
               setSelected(undefined)
               setError('')
             }}
-          >
-            <option value="">请选择精确目标</option>
-            {boards.map((board) => (
-              <option key={board.id} value={board.id}>
-                {board.name ?? '分镜'} · {board.id.slice(-8)}
-              </option>
-            ))}
-          </select>
-        </label>
+          />
+        </div>
       )}
       <p className="break-all text-2xs">
         固定输出 {record.assetId.slice(0, 12)} · {record.resultId}
@@ -217,23 +218,22 @@ export function DeliveryCheck({
         </p>
       ))}
       {entries.length > 0 && (
-        <label className="ui-field">
+        <div className="ui-field">
           <span className="ui-label">技术报告版本</span>
-          <select
+          <Select
             aria-label="技术报告版本"
             className="ui-input"
             value={shown?.result.id ?? selected ?? ''}
-            onChange={(event) => setSelected(event.target.value)}
-          >
-            {selected && !shown && <option value={selected}>原报告已移除</option>}
-            {entries.map((entry) => (
-              <option key={`${entry.node.id}:${entry.result.id}`} value={entry.result.id}>
-                {new Date(entry.report.at).toLocaleString()} · {states[entry.report.status]} ·{' '}
-                {entry.result.id.slice(-8)}
-              </option>
-            ))}
-          </select>
-        </label>
+            options={[
+              ...(selected && !shown ? [{ value: selected, label: '原报告已移除' }] : []),
+              ...entries.map((entry) => ({
+                value: entry.result.id,
+                label: `${new Date(entry.report.at).toLocaleString()} · ${states[entry.report.status]} · ${entry.result.id.slice(-8)}`,
+              })),
+            ]}
+            onChange={setSelected}
+          />
+        </div>
       )}
       {shown ? (
         <div className="space-y-2" data-testid="delivery-check-report">

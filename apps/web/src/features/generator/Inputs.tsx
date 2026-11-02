@@ -24,6 +24,7 @@ import { useCanvas } from '../../stores/canvas'
 import { Icon } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
 import { Presence } from '../../ui/Presence'
+import { Select } from '../../ui/Select'
 
 type InputPort = NodeInfo['inputs'][number]
 
@@ -458,12 +459,25 @@ export function Inputs({
       )}
       {replacing && (
         <div className="flex items-center gap-2 rounded-lg bg-surface-2 p-2">
-          <select
+          <Select
             aria-label="替换参考素材"
             className="ui-input min-w-0 flex-1"
             value=""
-            onChange={(e) => {
-              const [id, portId] = JSON.parse(e.target.value) as [string, string]
+            options={[
+              { value: '', label: '从当前画布选择素材…', disabled: true },
+              ...[...engine.doc.elements()].flatMap((source) =>
+                source.id === el.id
+                  ? []
+                  : (elementPorts(source)?.outputs ?? [])
+                      .filter((p) => p.type === replacing.port.type || p.type === 'any')
+                      .map((p) => ({
+                        value: JSON.stringify([source.id, p.id]),
+                        label: `${source.name ?? source.id} · ${p.label}`,
+                      })),
+              ),
+            ]}
+            onChange={(selected) => {
+              const [id, portId] = JSON.parse(selected) as [string, string]
               const previous = engine.doc.getEdge(replacing.edgeId)
               engine.doc.undo.stopCapturing()
               const ok = replaceInput(engine.doc, replacing.edgeId, [id, portId])
@@ -485,25 +499,7 @@ export function Inputs({
               if (!ok) useCanvas.getState().notify('无法替换：素材重复或类型不匹配')
               setReplacing(null)
             }}
-          >
-            <option value="" disabled>
-              从当前画布选择素材…
-            </option>
-            {[...engine.doc.elements()].flatMap((source) =>
-              source.id === el.id
-                ? []
-                : (elementPorts(source)?.outputs ?? [])
-                    .filter((p) => p.type === replacing.port.type || p.type === 'any')
-                    .map((p) => (
-                      <option
-                        key={`${source.id}/${p.id}`}
-                        value={JSON.stringify([source.id, p.id])}
-                      >
-                        {source.name ?? source.id} · {p.label}
-                      </option>
-                    )),
-            )}
-          </select>
+          />
           <button type="button" className="ui-btn ui-btn-quiet" onClick={() => setReplacing(null)}>
             取消
           </button>

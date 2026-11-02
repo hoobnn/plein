@@ -6,6 +6,7 @@ import { useCatalog } from '../stores/catalog'
 import { outlineTitle } from '../canvas/outline'
 import { Icon } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
+import { Select } from '../ui/Select'
 import { Slider } from '../ui/Slider'
 import { useClosing } from '../ui/Presence'
 import { CreativeReviewForm } from '../features/storyboard/CreativeReviewForm'
@@ -304,34 +305,32 @@ function Review({ viewer }: { viewer: View }) {
             </button>
             {candidates.some((r) => r.value.type === 'image' && r.id !== selected) && (
               <>
-                <select
+                <Select
                   aria-label="对比候选"
                   className="ui-input"
                   value={compare}
-                  onChange={(e) => {
-                    setCompare(e.target.value)
+                  options={[
+                    { value: '', label: '不对比' },
+                    ...candidates
+                      .filter((r) => r.value.type === 'image' && r.id !== selected)
+                      .map((r) => ({ value: r.id, label: label(r) })),
+                  ]}
+                  onChange={(value) => {
+                    setCompare(value)
                     setComparisonNotice(null)
                   }}
-                >
-                  <option value="">不对比</option>
-                  {candidates
-                    .filter((r) => r.value.type === 'image' && r.id !== selected)
-                    .map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {label(r)}
-                      </option>
-                    ))}
-                </select>
+                />
                 {otherId && (
-                  <select
+                  <Select
                     aria-label="对比方式"
                     className="ui-input"
                     value={comparison}
-                    onChange={(e) => setComparison(e.target.value as 'side' | 'slider')}
-                  >
-                    <option value="side">并排</option>
-                    <option value="slider">滑杆</option>
-                  </select>
+                    options={[
+                      { value: 'side', label: '并排' },
+                      { value: 'slider', label: '滑杆' },
+                    ]}
+                    onChange={(value) => setComparison(value as 'side' | 'slider')}
+                  />
                 )}
               </>
             )}

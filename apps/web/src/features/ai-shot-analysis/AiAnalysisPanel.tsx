@@ -16,6 +16,7 @@ import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
 import { useSession } from '../../stores/session'
 import { Modal, ModalHeader } from '../../ui/Modal'
+import { Select } from '../../ui/Select'
 import { analysisManifest } from '../shot-analysis/model'
 import type { AiAnalysisTarget } from './AiAnalysisEditor'
 import {
@@ -320,26 +321,26 @@ export function AiAnalysisPanel({
             </div>
             {target.kind === 'local' && (
               <div className="space-y-3">
-                <label className="block text-sm">
+                <div className="block text-sm">
                   逐镜视觉模型
-                  <select
+                  <Select
                     className="ui-input ml-2"
                     aria-label="逐镜视觉模型"
                     value={model}
                     disabled={readonly || busy}
-                    onChange={(event) => {
+                    options={[
+                      { value: '', label: '请明确选择模型' },
+                      ...aiModels(catalog, true).map((item) => ({
+                        value: item.ref,
+                        label: item.title,
+                      })),
+                    ]}
+                    onChange={(value) => {
                       invalidate()
-                      setModel(event.target.value)
+                      setModel(value)
                     }}
-                  >
-                    <option value="">请明确选择模型</option>
-                    {aiModels(catalog, true).map((item) => (
-                      <option key={item.ref} value={item.ref}>
-                        {item.title}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                  />
+                </div>
                 <label className="block text-sm">
                   分析重点
                   <textarea
@@ -470,23 +471,23 @@ export function AiAnalysisPanel({
               </div>
             )
           })}
-          <label className="block text-sm">
+          <div className="block text-sm">
             独立归纳模型
-            <select
+            <Select
               className="ui-input ml-2"
               aria-label="独立归纳模型"
               value={summaryModel}
               disabled={readonly || busy}
-              onChange={(event) => setSummaryModel(event.target.value)}
-            >
-              <option value="">请明确选择模型</option>
-              {aiModels(catalog, false).map((item) => (
-                <option key={item.ref} value={item.ref}>
-                  {item.title}
-                </option>
-              ))}
-            </select>
-          </label>
+              options={[
+                { value: '', label: '请明确选择模型' },
+                ...aiModels(catalog, false).map((item) => ({
+                  value: item.ref,
+                  label: item.title,
+                })),
+              ]}
+              onChange={setSummaryModel}
+            />
+          </div>
           <p className="ui-help">
             归纳仅读取所选 {chosen.length}{' '}
             份文字草稿；没有选择的镜头与整片声音/运动均未知。请另建归纳计划并独立确认。

@@ -11,6 +11,7 @@ import {
 } from '@plein/doc'
 import { useState } from 'react'
 import { useSession } from '../../stores/session'
+import { Select } from '../../ui/Select'
 import type { GuideFacts } from './facts'
 import { ProductionGoalSummary, requirementLabels } from './ProductionGoalSummary'
 import { goalScopeOf } from './productionGoalScope'
@@ -74,42 +75,36 @@ export function ProductionGoalEditor({
           </button>
         ) : (
           <>
-            <label className="ui-field">
+            <div className="ui-field">
               <span className="ui-label">目标画幅</span>
-              <select
+              <Select
                 aria-label="目标画幅"
                 className="ui-input"
                 disabled={!writable}
                 value={draft.aspectRatio ?? ''}
-                onChange={(e) =>
+                options={[{ value: '', label: '未约定' }, { value: '9:16' }, { value: '16:9' }]}
+                onChange={(value) =>
                   patch({
-                    aspectRatio: (e.target.value as ProductionGoal['aspectRatio']) || undefined,
+                    aspectRatio: (value as ProductionGoal['aspectRatio']) || undefined,
                   })
                 }
-              >
-                <option value="">未约定</option>
-                <option>9:16</option>
-                <option>16:9</option>
-              </select>
-            </label>
-            <label className="ui-field">
+              />
+            </div>
+            <div className="ui-field">
               <span className="ui-label">目标分辨率</span>
-              <select
+              <Select
                 aria-label="目标分辨率"
                 className="ui-input"
                 disabled={!writable}
                 value={draft.resolution ?? ''}
-                onChange={(e) =>
+                options={[{ value: '', label: '未约定' }, { value: '720p' }, { value: '1080p' }]}
+                onChange={(value) =>
                   patch({
-                    resolution: (e.target.value as ProductionGoal['resolution']) || undefined,
+                    resolution: (value as ProductionGoal['resolution']) || undefined,
                   })
                 }
-              >
-                <option value="">未约定</option>
-                <option>720p</option>
-                <option>1080p</option>
-              </select>
-            </label>
+              />
+            </div>
             <div className="grid grid-cols-2 gap-2">
               {(['min', 'max'] as const).map((key) => (
                 <label className="ui-field" key={key}>
@@ -132,20 +127,21 @@ export function ProductionGoalEditor({
             </div>
             <div className="grid grid-cols-2 gap-2">
               {Object.entries(requirementLabels).map(([key, label]) => (
-                <label className="ui-field" key={key}>
+                <div className="ui-field" key={key}>
                   <span className="ui-label">{label}要求</span>
-                  <select
+                  <Select
                     aria-label={`目标${label}要求`}
                     className="ui-input"
                     disabled={!writable}
                     value={draft[key as keyof typeof requirementLabels]}
-                    onChange={(e) => patch({ [key]: e.target.value as ProductionRequirement })}
-                  >
-                    <option value="unspecified">未约定</option>
-                    <option value="required">需要</option>
-                    <option value="none">不需要</option>
-                  </select>
-                </label>
+                    options={[
+                      { value: 'unspecified', label: '未约定' },
+                      { value: 'required', label: '需要' },
+                      { value: 'none', label: '不需要' },
+                    ]}
+                    onChange={(value) => patch({ [key]: value as ProductionRequirement })}
+                  />
+                </div>
               ))}
             </div>
             <label>

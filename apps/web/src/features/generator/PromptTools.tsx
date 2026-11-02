@@ -8,6 +8,7 @@ import { useCanvas } from '../../stores/canvas'
 import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
 import { Presence } from '../../ui/Presence'
+import { Select } from '../../ui/Select'
 
 type Mode = 'optimize' | 'translate'
 const NO_CHAT = '没有可用的对话模型：在设置的「模型平台」里启用支持对话的平台'
@@ -165,16 +166,17 @@ export function PromptTools({
               onClose={close}
             >
               {draft.mode === 'optimize' && (
-                <select
+                <Select
                   aria-label="优化方式"
                   className="ui-input"
                   value={detail}
                   disabled={draft.busy}
-                  onChange={(e) => setDetail(e.target.value as 'refine' | 'expand')}
-                >
-                  <option value="refine">保留原意精修</option>
-                  <option value="expand">扩展细节</option>
-                </select>
+                  options={[
+                    { value: 'refine', label: '保留原意精修' },
+                    { value: 'expand', label: '扩展细节' },
+                  ]}
+                  onChange={(value) => setDetail(value as 'refine' | 'expand')}
+                />
               )}
               {!draft.busy && (
                 <button

@@ -12,6 +12,7 @@ import { shotsOf } from '@plein/capabilities'
 import { planVersion } from '@plein/nodes'
 import { useState } from 'react'
 import { useSession } from '../../stores/session'
+import { Select } from '../../ui/Select'
 import type { GuideFacts } from './facts'
 
 /** 正式记录仅由当前界面的明确操作产生，操作人始终读取当前 session。 */
@@ -122,22 +123,21 @@ export function ProductionDetails({
           <p className="text-ink-subtle">
             记录模型、风格等选择及修订理由；保存不会修改模型或发起生成。
           </p>
-          <label className="ui-field">
+          <div className="ui-field">
             <span className="ui-label">决策类型</span>
-            <select
+            <Select
               aria-label="决策类型"
               className="ui-input"
               disabled={!writable}
               value={category}
-              onChange={(event) =>
-                setCategory(event.target.value as ProductionDecision['category'])
-              }
-            >
-              <option value="style">风格</option>
-              <option value="model">模型</option>
-              <option value="other">其他</option>
-            </select>
-          </label>
+              options={[
+                { value: 'style', label: '风格' },
+                { value: 'model', label: '模型' },
+                { value: 'other', label: '其他' },
+              ]}
+              onChange={(value) => setCategory(value as ProductionDecision['category'])}
+            />
+          </div>
           <label className="ui-field">
             <span className="ui-label">决策对象</span>
             <input

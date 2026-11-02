@@ -111,10 +111,8 @@ describe('多模态参考名称', () => {
     })
     await f.user.click(screen.getByTitle('管理参考 1：素材0'))
     await f.user.click(screen.getByRole('button', { name: '替换参考 1' }))
-    await f.user.selectOptions(
-      screen.getByRole('combobox', { name: '替换参考素材' }),
-      JSON.stringify([replacement, 'image']),
-    )
+    await f.user.click(screen.getByRole('combobox', { name: '替换参考素材' }))
+    await f.user.click(screen.getByRole('option', { name: /新版产品\.png/ }))
     await waitFor(() => expect(doc.get(f.id)?.params?.prompt).toBe('参考 @新版产品.png '))
     expect(inputEdges(doc, f.id, 'images')[0]!.from[0]).toBe(replacement)
   })
@@ -183,10 +181,8 @@ describe('参考预览与上传竞态', () => {
     expect(screen.getByRole('group', { name: '参考 1：右景' })).toBeTruthy()
     await f.user.click(screen.getByRole('button', { name: '管理参考 1' }))
     await f.user.click(screen.getByRole('button', { name: '替换参考 1' }))
-    await f.user.selectOptions(
-      screen.getByRole('combobox', { name: '替换参考素材' }),
-      JSON.stringify([f.sources[2], 'image']),
-    )
+    await f.user.click(screen.getByRole('combobox', { name: '替换参考素材' }))
+    await f.user.click(screen.getByRole('option', { name: /替代参考/ }))
     act(() => f.doc.flush())
     expect(inputEdges(f.doc, f.target, 'references').map((e) => e.from[0])).toEqual([
       f.sources[2],

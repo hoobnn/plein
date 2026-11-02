@@ -14,6 +14,15 @@ import { act, fireEvent, renderApp, screen } from '../testing/render'
 import { Viewer } from './Viewer'
 import { shellFixture } from './testing'
 
+async function choose(
+  user: ReturnType<typeof renderApp>['user'],
+  name: string,
+  option: string | RegExp,
+) {
+  await user.click(screen.getByRole('combobox', { name }))
+  await user.click(screen.getByRole('option', { name: option }))
+}
+
 function setup(kind: 'image' | 'video' | 'audio' | 'text' = 'image', count = 4) {
   const f = shellFixture()
   const id = f.add(kind === 'audio' ? 'speech' : kind === 'text' ? 'llm' : kind, '审片素材')
@@ -71,8 +80,8 @@ it.each(['ctrlKey', 'metaKey', 'altKey', 'shiftKey', 'isComposing', 'keyCode'] a
 it('控件内方向键不浏览、按钮 Enter 不采用，审片区 Enter 明确采用', async () => {
   const f = setup()
   fireEvent.keyDown(f.group(), { key: 'ArrowRight' })
-  await f.user.selectOptions(screen.getByRole('combobox', { name: '对比候选' }), f.results[2]!.id)
-  await f.user.selectOptions(screen.getByRole('combobox', { name: '对比方式' }), 'slider')
+  await choose(f.user, '对比候选', '候选 3')
+  await choose(f.user, '对比方式', '滑杆')
   fireEvent.keyDown(screen.getByRole('slider'), { key: 'ArrowRight' })
   expect(f.image().getAttribute('src')).toContain(`${f.id}-asset-1`)
   const zoom = screen.getByRole('button', { name: '放大图片' })
@@ -160,10 +169,7 @@ it.each(['removed', 'type', 'self', 'replace', 'stable'] as const)(
   async (mode) => {
     const f = setup()
     const index = mode === 'stable' ? 2 : 1
-    await f.user.selectOptions(
-      screen.getByRole('combobox', { name: '对比候选' }),
-      f.results[index]!.id,
-    )
+    await choose(f.user, '对比候选', `候选 ${index + 1}`)
     if (mode === 'removed') f.update(f.results.filter((_, i) => i !== 1))
     if (mode === 'type')
       f.update(
@@ -176,7 +182,7 @@ it.each(['removed', 'type', 'self', 'replace', 'stable'] as const)(
         `${f.id}-asset-3`,
       )
     } else if (mode === 'stable') {
-      await f.user.selectOptions(screen.getByRole('combobox', { name: '对比方式' }), 'slider')
+      await choose(f.user, '对比方式', '滑杆')
       fireEvent.change(screen.getByRole('slider'), { target: { value: '70' } })
       for (const key of ['ArrowRight', 'ArrowLeft']) fireEvent.keyDown(f.group(), { key })
       expect((screen.getByRole('slider') as HTMLInputElement).value).toBe('70')
@@ -185,9 +191,7 @@ it.each(['removed', 'type', 'self', 'replace', 'stable'] as const)(
       )
     } else {
       expect(screen.queryByRole('img', { name: '候选 B' })).toBeNull()
-      expect((screen.getByRole('combobox', { name: '对比候选' }) as HTMLSelectElement).value).toBe(
-        '',
-      )
+      expect(screen.getByRole('combobox', { name: '对比候选' }).textContent).toBe('不对比')
       expect(screen.getByRole('status').textContent).toContain('已退出对比')
     }
     expect(f.doc.get(f.id)!.adopted).toBe(f.results[0]!.id)
@@ -211,7 +215,7 @@ it('独立图片与唯一候选的方向键保留视图，移除后可找回剩�
 })
 it('图片失败两侧独立重试、忽略旧事件且恢复键盘操作焦点', async () => {
   const f = setup()
-  await f.user.selectOptions(screen.getByRole('combobox', { name: '对比候选' }), f.results[1]!.id)
+  await choose(f.user, '对比候选', '候选 2')
   const a = screen.getByRole('img', { name: '候选 A' })
   const b = screen.getByRole('img', { name: '候选 B' })
   fireEvent.error(a)
@@ -364,10 +368,10 @@ it('浏览及对比不采用，明确采用更新文档且可撤销', async () =
   const f = setupReview()
   await f.user.click(screen.getByRole('button', { name: '预览下一个候选' }))
   expect(f.doc.get(f.id)?.adopted).toBe(f.original)
-  await f.user.selectOptions(screen.getByRole('combobox', { name: '对比候选' }), f.original!)
+  await choose(f.user, '对比候选', /^候选 1/)
   expect(screen.getByRole('img', { name: '候选 A' })).toBeTruthy()
   expect(screen.getByRole('img', { name: '候选 B' })).toBeTruthy()
-  await f.user.selectOptions(screen.getByRole('combobox', { name: '对比方式' }), 'slider')
+  await choose(f.user, '对比方式', '滑杆')
   fireEvent.change(screen.getByRole('slider', { name: '图片对比滑杆' }), {
     target: { value: '70' },
   })
