@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api/client'
 import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 import { Select } from '../../ui/Select'
 import { useAgent } from './store'
 
@@ -40,7 +40,7 @@ export function AgentSkillsButton({
         <Icon name="sparkle" size={12} />
         技能
       </button>
-      <Presence>
+      <AnimatePresence>
         {open && (
           <Modal
             label="技能与画布能力"
@@ -67,7 +67,7 @@ export function AgentSkillsButton({
             </div>
           </Modal>
         )}
-      </Presence>
+      </AnimatePresence>
     </>
   )
 }

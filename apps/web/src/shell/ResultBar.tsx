@@ -29,7 +29,7 @@ import { type NoticeAction, useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { Icon } from '../ui/icons'
 import { Popover } from '../ui/Popover'
-import { Presence } from '../ui/Presence'
+import { AnimatePresence } from '../ui/motion'
 import { SourceRestoreButton } from '../features/motion/SourceRestoreButton'
 import { resultActionMedia, type ResultActionMedia } from './resultActionMedia'
 import { LibraryAdd } from '../features/library/LibraryAdd'
@@ -418,7 +418,7 @@ export function ResultActions({
         <Icon name="expand" size={14} />
       </button>
 
-      <Presence>
+      <AnimatePresence>
         {open?.kind === 'presets' && imageNode && (
           <Popover anchor={open.anchor} onClose={() => setOpen(null)} label="预设" width={280}>
             <div className="ui-menu-label">以这张图为参考新建</div>
@@ -440,8 +440,8 @@ export function ResultActions({
             ))}
           </Popover>
         )}
-      </Presence>
-      <Presence>
+      </AnimatePresence>
+      <AnimatePresence>
         {masking && (
           <MaskEditor
             assetId={media.assetId}
@@ -454,8 +454,8 @@ export function ResultActions({
             }}
           />
         )}
-      </Presence>
-      <Presence>
+      </AnimatePresence>
+      <AnimatePresence>
         {open?.kind === 'continue' && (
           <Popover anchor={open.anchor} onClose={() => setOpen(null)} label="续镜" width={260}>
             <div className="ui-menu-label">取一帧作下一个镜头的首帧</div>
@@ -493,8 +493,8 @@ export function ResultActions({
             </form>
           </Popover>
         )}
-      </Presence>
-      <Presence>
+      </AnimatePresence>
+      <AnimatePresence>
         {open?.kind === 'grid' && (
           <Popover anchor={open.anchor} onClose={() => setOpen(null)} label="宫格切分" width={200}>
             {GRIDS.map((g) => (
@@ -512,7 +512,7 @@ export function ResultActions({
             ))}
           </Popover>
         )}
-      </Presence>
+      </AnimatePresence>
     </>
   )
 }

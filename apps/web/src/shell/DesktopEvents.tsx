@@ -3,7 +3,7 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import { desktop } from '../desktop'
 import { navigate } from '../router'
 import { switchMode, useCanvas } from '../stores/canvas'
-import { Presence } from '../ui/Presence'
+import { AnimatePresence } from '../ui/motion'
 import { Toast } from '../ui/Toast'
 
 const DesktopUpdates = lazy(() =>
@@ -54,7 +54,7 @@ export function DesktopEvents() {
       <Suspense fallback={null}>
         <DesktopUpdates />
       </Suspense>
-      <Presence>
+      <AnimatePresence>
         {saved ? (
           <Toast
             action={
@@ -75,7 +75,7 @@ export function DesktopEvents() {
             {saved.state === 'completed' ? `已保存「${saved.name}」` : `「${saved.name}」保存失败`}
           </Toast>
         ) : null}
-      </Presence>
+      </AnimatePresence>
     </>
   )
 }

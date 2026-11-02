@@ -19,7 +19,7 @@ import { dialogOpen } from '../../ui/Dialog'
 import { Icon } from '../../ui/icons'
 import { ModalHeader } from '../../ui/Modal'
 import { hasMenuEscapeLayer, isMenuEscape } from '../../ui/menuEscape'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 import { Segmented } from '../../ui/Segmented'
 import { Select } from '../../ui/Select'
 import { SlideSwap } from '../../ui/Slide'
@@ -64,12 +64,12 @@ const hasOfficial = (kind: LibraryKind) => OFFICIAL_LIBRARY.some((o) => o.kind =
 export function LibraryPanel() {
   const open = useLibrary((s) => s.open)
   return (
-    <Presence>
+    <AnimatePresence>
       {open && (
         // 弹窗外壳各页签共用：切到「音色」时只换内容，不重新弹出
         <LibraryModal>{open === 'voice' ? <VoicePanel /> : <Panel kind={open} />}</LibraryModal>
       )}
-    </Presence>
+    </AnimatePresence>
   )
 }
 

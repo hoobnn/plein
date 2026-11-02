@@ -19,7 +19,7 @@ import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
 import { Select } from '../../ui/Select'
 import { StoryboardSync } from './StoryboardSync'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 import { EmptyState } from '../../ui/EmptyState'
 import { StoryboardReview } from './StoryboardReview'
 import { BatchChecklist } from './BatchChecklist'
@@ -77,7 +77,7 @@ export function StoryboardEditor() {
   const id = useCanvas((s) => s.storyboard)
   const close = () => useCanvas.getState().openStoryboard(null)
   return (
-    <Presence>
+    <AnimatePresence>
       {engine && id && engine.doc.get(id) && (
         <StoryboardDataGuard
           key={`${engine.doc.ydoc.guid}:${id}`}
@@ -88,7 +88,7 @@ export function StoryboardEditor() {
           <Editor engine={engine} id={id} onClose={close} />
         </StoryboardDataGuard>
       )}
-    </Presence>
+    </AnimatePresence>
   )
 }
 
@@ -1021,7 +1021,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           }}
         />
       )}
-      <Presence>
+      <AnimatePresence>
         {stateShot && canvasId && (
           <ShotStatePanel
             key={stateShot}
@@ -1042,7 +1042,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             onClose={() => setControlShot(null)}
           />
         )}
-      </Presence>
+      </AnimatePresence>
     </Modal>
   )
 }

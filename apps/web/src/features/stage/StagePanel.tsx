@@ -22,7 +22,7 @@ import { importFiles, revealImports } from '../../canvas/import'
 import { useCanvas } from '../../stores/canvas'
 import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
-import { useClosing } from '../../ui/Presence'
+import { useOverlayClosing } from '../../ui/motion'
 import { Segmented } from '../../ui/Segmented'
 import { Slider } from '../../ui/Slider'
 import { saveSnapshot } from './snapshot'
@@ -49,7 +49,7 @@ export function StagePanel({
 }) {
   useDocVersion(engine.doc)
   const notify = useCanvas((s) => s.notify)
-  const closing = useClosing()
+  const closing = useOverlayClosing()
   const [time, setTime] = useState(0)
   const [playing, setPlaying] = useState(false)
   const timeRef = useRef(time)

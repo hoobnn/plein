@@ -67,7 +67,7 @@ it('项目改名组字结束的 Esc 229 不丢弃输入，普通取消不写入'
   for (const composing of [{ keyCode: 229 }, { isComposing: true }]) {
     fireEvent.keyDown(input, { key: 'Escape', ...composing })
     expect(screen.getByRole('dialog', { name: '重命名项目' })).toBe(dialog)
-    expect(dialog.hasAttribute('data-closing')).toBe(false)
+    expect(dialog.hasAttribute('data-plein-exiting')).toBe(false)
     expect(input.value).toBe('中文组字中的项目名称')
   }
   await user.keyboard('{Escape}')

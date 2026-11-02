@@ -10,7 +10,8 @@ import { shortcut } from '../ui/keys'
 import { useDismiss } from '../ui/useDismiss'
 import { AddMenu } from './AddMenu'
 import { runFlowFrom, runFrame, runNode } from '../features/runs/run'
-import { Presence, useClosing, useExit } from '../ui/Presence'
+import { m } from 'motion/react'
+import { AnimatePresence, scaleVariants, useOverlayClosing, useOverlayMotion } from '../ui/motion'
 import { saveAsTemplate } from '../features/templates/actions'
 import { requestElementRename } from '../canvas/rename'
 import { dialogOpen } from '../ui/Dialog'
@@ -82,15 +83,15 @@ export function CanvasMenus({ canImport }: { canImport: boolean }) {
     window.addEventListener('keydown', rename)
     return () => window.removeEventListener('keydown', rename)
   }, [engine])
-  if (!engine || !menu) return <Presence>{null}</Presence>
+  if (!engine || !menu) return <AnimatePresence>{null}</AnimatePresence>
   if (menu.kind === 'context')
     return (
-      <Presence>
+      <AnimatePresence>
         <ContextMenu engine={engine} menu={menu} canImport={canImport} onClose={close} />
-      </Presence>
+      </AnimatePresence>
     )
   return (
-    <Presence>
+    <AnimatePresence>
       <NodePicker
         key={`${menu.client.x},${menu.client.y}`}
         engine={engine}
@@ -98,7 +99,7 @@ export function CanvasMenus({ canImport }: { canImport: boolean }) {
         canImport={canImport}
         onClose={close}
       />
-    </Presence>
+    </AnimatePresence>
   )
 }
 
@@ -332,8 +333,8 @@ function ContextMenu({
   useEngineVersion(engine)
   const readOnly = engine.doc.readOnly
   const ref = useDismiss(onClose, { wheel: true })
-  const exit = useExit()
-  const closing = useClosing()
+  const closing = useOverlayClosing()
+  const motion = useOverlayMotion(scaleVariants)
   const position = useMenuPosition(ref, menu.client, 220)
   useEffect(() => {
     if (closing) {
@@ -512,7 +513,7 @@ function ContextMenu({
     )
   }
   return (
-    <div
+    <m.div
       ref={ref}
       role="menu"
       tabIndex={-1}
@@ -534,7 +535,7 @@ function ContextMenu({
               : (current + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
         items[next]?.focus()
       }}
-      {...exit}
+      {...motion}
       style={{
         ...position,
         width: 220,
@@ -543,9 +544,9 @@ function ContextMenu({
         overflowY: menu.target === null ? 'visible' : 'auto',
         overscrollBehavior: 'contain',
       }}
-      className="ui-menu pointer-events-auto fixed z-35"
+      className="ui-menu ui-motion pointer-events-auto fixed z-35"
     >
       {items}
-    </div>
+    </m.div>
   )
 }

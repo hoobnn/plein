@@ -7,7 +7,7 @@ import { ApiError, api, assetUrls } from '../../api/client'
 import { useCanvas } from '../../stores/canvas'
 import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 import { Select } from '../../ui/Select'
 import {
   type CharacterArchiveSource,
@@ -93,7 +93,7 @@ function CharacterImageArchiveAction({
         <Icon name="library" size={14} />
         {preparing ? '读取角色…' : '归档到角色'}
       </button>
-      <Presence>
+      <AnimatePresence>
         {item && (
           <ArchiveDialog
             source={source}
@@ -102,7 +102,7 @@ function CharacterImageArchiveAction({
             onClose={() => setItem(null)}
           />
         )}
-      </Presence>
+      </AnimatePresence>
     </>
   )
 }

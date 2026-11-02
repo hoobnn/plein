@@ -6,6 +6,7 @@ import type {
   AgentTurnSummary,
 } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
+import { m } from 'motion/react'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { api } from '../../api/client'
@@ -25,7 +26,7 @@ import { shortTime } from '../../ui/format'
 import { Icon } from '../../ui/icons'
 import { Mascot } from '../../ui/Mascot'
 import { Popover } from '../../ui/Popover'
-import { Presence, useExit } from '../../ui/Presence'
+import { AnimatePresence, agentPanelVariants, useOverlayMotion } from '../../ui/motion'
 import { Select } from '../../ui/Select'
 import { BatchPlanDetails } from '../storyboard/BatchPlanDetails'
 
@@ -217,9 +218,9 @@ export function AgentDock() {
   if (!ready || route.name === 'demo') return null
   return (
     <>
-      <Presence>
+      <AnimatePresence>
         {open && <AgentPanel canvasId={canvasId} onClose={close} bottom={mascotBottom + 76} />}
-      </Presence>
+      </AnimatePresence>
       {route.name !== 'home' && (
         <button
           ref={trigger}
@@ -297,10 +298,10 @@ function AgentPanel({
       ? `我是小满，正在用${customModel ? '当前所选模型' : currentAgent?.model ? ` ${currentAgent.model} ` : '内置模型'}帮你操作这块画布。说说想做什么：`
       : `我是小满，会用你电脑上的 ${cliName} 来操作这块画布。说说想做什么：`
   const worker = current === 'builtin' ? '小满' : cliName
-  const exit = useExit()
+  const motion = useOverlayMotion(agentPanelVariants)
 
   return (
-    <aside
+    <m.aside
       aria-label="助手"
       onKeyDown={(e) => {
         if (e.defaultPrevented || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return
@@ -310,9 +311,9 @@ function AgentPanel({
           onClose()
         }
       }}
-      {...exit}
+      {...motion}
       style={{ bottom }}
-      className="plein-agent-panel ui-float pointer-events-auto fixed top-(--chrome-top) right-(--chrome-inset) z-40 flex w-100 flex-col overflow-hidden rounded-xl max-sm:inset-x-(--chrome-inset) max-sm:w-auto"
+      className="plein-agent-panel ui-motion ui-float pointer-events-auto fixed top-(--chrome-top) right-(--chrome-inset) z-40 flex w-100 flex-col overflow-hidden rounded-xl max-sm:inset-x-(--chrome-inset) max-sm:w-auto"
     >
       <header className="flex h-12 flex-none items-center gap-1 border-b border-line pr-2 pl-4">
         <h2 className="mr-1 text-sm font-semibold">小满</h2>
@@ -479,7 +480,7 @@ function AgentPanel({
           <Composer key={canvasId} canvasId={canvasId} running={running} />
         </>
       )}
-    </aside>
+    </m.aside>
   )
 }
 
@@ -521,7 +522,7 @@ function SessionMenu() {
       >
         <Icon name="history" />
       </button>
-      <Presence>
+      <AnimatePresence>
         {anchor && (
           <Popover
             anchor={anchor}
@@ -573,7 +574,7 @@ function SessionMenu() {
             </div>
           </Popover>
         )}
-      </Presence>
+      </AnimatePresence>
     </>
   )
 }

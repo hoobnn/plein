@@ -1,5 +1,5 @@
 import { VIDEO_MODE_LABELS, VIDEO_MODES, type VideoMode } from '@plein/nodes'
-import { AnimatePresence } from 'motion/react'
+import { AnimatePresence } from '../../ui/motion'
 import { useState } from 'react'
 import { Icon, type IconName } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'

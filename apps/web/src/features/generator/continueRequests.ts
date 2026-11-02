@@ -73,7 +73,7 @@ export function useContinueRequest(key: string) {
       (document.activeElement === previous ||
         (!previous.isConnected && document.activeElement === document.body)) &&
       !document.querySelector(
-        '[role="dialog"]:not([data-closing]), [role="alertdialog"]:not([data-closing])',
+        '[role="dialog"]:not([data-plein-exiting]), [role="alertdialog"]:not([data-plein-exiting])',
       )
     )
       trigger.current?.focus()

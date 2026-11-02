@@ -1,9 +1,10 @@
 import type { ArrangeResult, Engine } from '@plein/canvas-core'
+import { m } from 'motion/react'
 import { useEffect, useState } from 'react'
 import { useEngineVersion, useFollow } from '../canvas/hooks'
 import { canvasBottomSpace } from '../canvas/floatingPanel'
 import { useCanvas } from '../stores/canvas'
-import { Presence, useExit } from '../ui/Presence'
+import { AnimatePresence, popUpVariants, useOverlayMotion } from '../ui/motion'
 
 /** 整理后多久自动收起（视为保留） */
 const AUTO_HIDE_MS = 10_000
@@ -49,7 +50,7 @@ function ArrangeToastHost({ engine }: { engine: Engine }) {
   }, [arranged, setArranged, hovered, focused, engine.doc.readOnly])
 
   return (
-    <Presence>
+    <AnimatePresence>
       {arranged && !arranged.stale() && (
         <div
           ref={ref}
@@ -69,7 +70,7 @@ function ArrangeToastHost({ engine }: { engine: Engine }) {
           />
         </div>
       )}
-    </Presence>
+    </AnimatePresence>
   )
 }
 
@@ -83,10 +84,10 @@ function Bar({
   onDone(): void
 }) {
   return (
-    <div
+    <m.div
       role="status"
-      {...useExit()}
-      className="ui-bar ui-bar-sm ui-pop ui-pop-up pointer-events-auto h-auto min-h-10 gap-3 pr-1.5 pl-4"
+      {...useOverlayMotion(popUpVariants)}
+      className="ui-bar ui-bar-sm ui-pop ui-pop-up ui-motion pointer-events-auto h-auto min-h-10 gap-3 pr-1.5 pl-4"
     >
       {/* 与带操作的提示条共用 40 高、28 按钮、12 间距；文字折行时自然增高 */}
       <span className="min-w-0">
@@ -108,6 +109,6 @@ function Bar({
           保留
         </button>
       </div>
-    </div>
+    </m.div>
   )
 }

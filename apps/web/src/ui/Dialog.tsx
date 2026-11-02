@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { AnimatePresence } from 'motion/react'
+import { AnimatePresence } from './motion'
 import { LoadingPanel } from './LoadingPanel'
 
 /**

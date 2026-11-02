@@ -297,7 +297,7 @@ export function GeneratorPanel({
       // 迟到的编辑请求不能把焦点从后来打开的面板抢回背景画布。
       if (
         document.querySelector(
-          '[role="dialog"]:not([data-closing]), [role="alertdialog"]:not([data-closing])',
+          '[role="dialog"]:not([data-plein-exiting]), [role="alertdialog"]:not([data-plein-exiting])',
         )
       )
         return
@@ -309,7 +309,7 @@ export function GeneratorPanel({
   function focusPrompt() {
     if (
       document.querySelector(
-        '[role="dialog"]:not([data-closing]), [role="alertdialog"]:not([data-closing])',
+        '[role="dialog"]:not([data-plein-exiting]), [role="alertdialog"]:not([data-plein-exiting])',
       )
     )
       return

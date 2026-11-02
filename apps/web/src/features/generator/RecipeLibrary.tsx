@@ -8,7 +8,7 @@ import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
 import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 import {
   applyRecipe,
   recipeGuides,
@@ -132,7 +132,7 @@ export function RecipeLibrary({
           创作配方
         </button>
       </div>
-      <Presence>
+      <AnimatePresence>
         {opened && (
           <Modal label="创作配方" onClose={close} isolateKeys className="max-w-4xl">
             <ModalHeader title="创作配方" onClose={close} />
@@ -228,7 +228,7 @@ export function RecipeLibrary({
             </div>
           </Modal>
         )}
-      </Presence>
+      </AnimatePresence>
     </>
   )
 }

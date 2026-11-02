@@ -28,7 +28,7 @@ resetStoreAfterEach(useSession)
 resetStoreAfterEach(useTheme)
 
 function resetAppState() {
-  mockMatchMedia((query) => query === '(prefers-reduced-motion: reduce)')
+  mockMatchMedia((query) => query.startsWith('(prefers-reduced-motion'))
   for (const reset of resets) reset()
   useTheme.getState().setPref(useTheme.getInitialState().pref)
   setRoute({ name: 'home' })

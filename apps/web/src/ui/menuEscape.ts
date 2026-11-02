@@ -9,6 +9,6 @@ export const isMenuEscape = (event: Event) => owned.has(event)
 export const hasMenuEscapeLayer = () =>
   [
     ...document.querySelectorAll(
-      '.ui-menu:not([data-closed]), .ui-menu[data-closing], [role="combobox"][aria-expanded="true"]:not([data-plein-inline-list])',
+      '.ui-menu:not([data-closed]), .ui-menu[data-plein-exiting], [role="combobox"][aria-expanded="true"]:not([data-plein-inline-list])',
     ),
   ].some((element) => !element.closest('[aria-hidden="true"], [inert]'))

@@ -17,7 +17,7 @@ import { ThemeToggle } from '../ui/ThemeToggle'
 import { EmptyState } from '../ui/EmptyState'
 import { zoomView } from '../ui/viewTransition'
 import { Welcome } from '../features/onboarding/Welcome'
-import { Presence } from '../ui/Presence'
+import { AnimatePresence } from '../ui/motion'
 import { Toast } from '../ui/Toast'
 import { useCanvas } from '../stores/canvas'
 import { useMediaLibrary } from '../features/media-library/store'
@@ -395,14 +395,14 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
       </main>
       <Welcome />
       {/* 画布页留下的提示（如画布已在别处删除，跳回首页时） */}
-      <Presence>{notice && <Toast>{notice}</Toast>}</Presence>
+      <AnimatePresence>{notice && <Toast>{notice}</Toast>}</AnimatePresence>
       <Suspense fallback={<p role="status">正在打开项目包…</p>}>
-        <Presence>
+        <AnimatePresence>
           {exporting && (
             <ExportPackageDialog project={exporting} onClose={() => setExporting(null)} />
           )}
-        </Presence>
-        <Presence>
+        </AnimatePresence>
+        <AnimatePresence>
           {importing && (
             <ImportPackageDialog
               file={importing}
@@ -414,7 +414,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
               }}
             />
           )}
-        </Presence>
+        </AnimatePresence>
       </Suspense>
     </div>
   )

@@ -3,13 +3,14 @@ import type {
   DesktopUpdatePreferences,
   DesktopUpdateState,
 } from '@plein/protocol'
+import { m } from 'motion/react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { desktop } from '../desktop'
 import { bytes, duration, relativeTime, shortTime } from '../ui/format'
 import { Icon, type IconName } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
-import { Presence, useExit } from '../ui/Presence'
+import { AnimatePresence, popUpVariants, useOverlayMotion } from '../ui/motion'
 import { Select, type SelectOption } from '../ui/Select'
 import { Switch } from '../ui/Switch'
 import { renderReleaseNotes } from './releaseNotes'
@@ -108,12 +109,12 @@ export function DesktopUpdates() {
   const key = `${state?.release?.version}:${state?.phase}`
   return (
     <>
-      <Presence>
+      <AnimatePresence>
         {notice && !open && dismissed !== key && (
           <UpdateNotice state={state} onDismiss={() => setDismissed(key)} />
         )}
-      </Presence>
-      <Presence>
+      </AnimatePresence>
+      <AnimatePresence>
         {open && (
           <Modal
             label="应用更新"
@@ -128,7 +129,7 @@ export function DesktopUpdates() {
             </div>
           </Modal>
         )}
-      </Presence>
+      </AnimatePresence>
     </>
   )
 }
@@ -490,9 +491,9 @@ function DownloadProgress({
 function UpdateNotice({ state, onDismiss }: { state: DesktopUpdateState; onDismiss(): void }) {
   const status = statusOf(state)
   return (
-    <aside
-      {...useExit()}
-      className="ui-pop ui-pop-up fixed right-4 bottom-4 z-30 flex w-80 max-w-[calc(100%-2rem)] flex-col gap-3 rounded-xl border border-line bg-surface p-4 shadow-3"
+    <m.aside
+      {...useOverlayMotion(popUpVariants)}
+      className="ui-pop ui-pop-up ui-motion fixed right-4 bottom-4 z-30 flex w-80 max-w-[calc(100%-2rem)] flex-col gap-3 rounded-xl border border-line bg-surface p-4 shadow-3"
       aria-label="应用更新提醒"
     >
       <div className="flex items-start gap-2">
@@ -526,6 +527,6 @@ function UpdateNotice({ state, onDismiss }: { state: DesktopUpdateState; onDismi
             ? '查看并重试'
             : '查看更新'}
       </button>
-    </aside>
+    </m.aside>
   )
 }

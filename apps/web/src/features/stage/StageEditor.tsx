@@ -1,7 +1,7 @@
 import { STAGE_TYPE } from '@plein/nodes'
 import { lazy, Suspense, useCallback, useEffect, useRef, useSyncExternalStore } from 'react'
 import { useCanvas } from '../../stores/canvas'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 
 // three.js 只在打开构图时加载，画布页面不背这份体积
 const StagePanel = lazy(() => import('./StagePanel').then((m) => ({ default: m.StagePanel })))
@@ -30,7 +30,7 @@ export function StageEditor() {
   }, [engine, id, target])
   const close = () => useCanvas.getState().openStage(null)
   return (
-    <Presence>
+    <AnimatePresence>
       {engine && id && target && (
         <Suspense fallback={null}>
           <StagePanel
@@ -41,6 +41,6 @@ export function StageEditor() {
           />
         </Suspense>
       )}
-    </Presence>
+    </AnimatePresence>
   )
 }

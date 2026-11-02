@@ -2,7 +2,7 @@
 import { sequenceNode } from '@plein/nodes'
 import { expect, it, vi } from 'vite-plus/test'
 import { act, renderApp, screen } from '../../testing/render'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 import { SequencePreview } from './SequencePreview'
 import { Playhead } from './playhead'
 
@@ -42,7 +42,7 @@ it('读取失败提供恢复入口，重试保留播放位置，关闭时立即�
       playhead={playhead}
     />
   )
-  const { user, rerender } = renderApp(<Presence>{preview}</Presence>)
+  const { user, rerender } = renderApp(<AnimatePresence>{preview}</AnimatePresence>)
   const engine = engines.at(-1)!
   act(() => engine.issues(2))
   expect(screen.getByRole('alert').textContent).toContain('预览素材读取失败')
@@ -52,7 +52,7 @@ it('读取失败提供恢复入口，重试保留播放位置，关闭时立即�
   expect(playhead.t).toBe(0.7)
   await user.click(screen.getByRole('button', { name: '播放' }))
   expect(playhead.playing).toBe(true)
-  rerender(<Presence>{null}</Presence>)
+  rerender(<AnimatePresence>{null}</AnimatePresence>)
   expect(playhead.playing).toBe(false)
   expect(engine.dispose).toHaveBeenCalledOnce()
 })

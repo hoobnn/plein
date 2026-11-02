@@ -9,7 +9,7 @@ import { EmptyState } from '../../ui/EmptyState'
 import { fullTime } from '../../ui/format'
 import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 import { checkpointApi, saveSynchronizedCheckpoint } from './client'
 import { CheckpointPreview } from './CheckpointPreview'
 import { mergeCheckpointPage } from './pagination'
@@ -18,7 +18,7 @@ import { useCheckpoints } from './store'
 export function CheckpointsPanel() {
   const open = useCheckpoints((s) => s.open)
   return (
-    <Presence>
+    <AnimatePresence>
       {open && (
         <Panel
           key={`${open.projectId}/${open.canvasId ?? ''}`}
@@ -26,7 +26,7 @@ export function CheckpointsPanel() {
           canvasId={open.canvasId}
         />
       )}
-    </Presence>
+    </AnimatePresence>
   )
 }
 

@@ -15,7 +15,7 @@ import { deriveNode } from '../../canvas/presets'
 import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
 import { Select } from '../../ui/Select'
-import { useClosing } from '../../ui/Presence'
+import { useOverlayClosing } from '../../ui/motion'
 import { transcriptionSourceMatches, transcriptionSplitPlan } from '../audioSegments'
 
 interface Candidate {
@@ -58,7 +58,7 @@ export function TranscriptionSplitPlan({
 }) {
   useDocVersion(engine.doc)
   const canvasId = useCanvas((state) => state.canvasId)
-  const closing = useClosing()
+  const closing = useOverlayClosing()
   const live = useRef({ binding: '', closing })
   const maps = useRef(new WeakMap<object, number>())
   const mapCounter = useRef(0)

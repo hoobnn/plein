@@ -30,7 +30,7 @@ export function useMediaDeriver(engine: Engine, targets: MediaTarget[]) {
       (document.activeElement === previous ||
         (!previous.isConnected && document.activeElement === document.body)) &&
       !document.querySelector(
-        '[role="dialog"]:not([data-closing]), [role="alertdialog"]:not([data-closing])',
+        '[role="dialog"]:not([data-plein-exiting]), [role="alertdialog"]:not([data-plein-exiting])',
       )
     )
       trigger.current?.focus()

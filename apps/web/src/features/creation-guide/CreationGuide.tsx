@@ -7,7 +7,7 @@ import { useCanvas } from '../../stores/canvas'
 import { Icon } from '../../ui/icons'
 import { Select } from '../../ui/Select'
 import { Modal } from '../../ui/Modal'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 import { useStale } from '../runs/stale'
 import { openAnimatic } from '../sequence/animatic'
 import {
@@ -558,7 +558,7 @@ function Guide({
     return (
       <>
         {entry}
-        <Presence>
+        <AnimatePresence>
           {modalOpen && (
             <Modal
               label="创作下一步"
@@ -569,7 +569,7 @@ function Guide({
               {panel}
             </Modal>
           )}
-        </Presence>
+        </AnimatePresence>
       </>
     )
   return (

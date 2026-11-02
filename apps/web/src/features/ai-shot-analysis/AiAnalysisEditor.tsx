@@ -3,7 +3,7 @@ import type { Engine } from '@plein/canvas-core'
 import type { CanvasElement } from '@plein/doc'
 import { useCanvas } from '../../stores/canvas'
 import { useFollow } from '../../canvas/hooks'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 
 export type AiAnalysisTarget =
   | { kind: 'local'; nodeId: string; resultId: string }
@@ -15,7 +15,7 @@ export function AiAnalysisEditor() {
   const engine = useCanvas((state) => state.engine)
   const target = useCanvas((state) => state.aiAnalysis)
   return (
-    <Presence>
+    <AnimatePresence>
       {engine && target && (
         <Suspense fallback={null}>
           <Panel
@@ -26,7 +26,7 @@ export function AiAnalysisEditor() {
           />
         </Suspense>
       )}
-    </Presence>
+    </AnimatePresence>
   )
 }
 export function AiAnalysisEntry({ engine, el }: { engine: Engine; el: CanvasElement }) {

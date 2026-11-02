@@ -6,7 +6,7 @@ import { api, assetUrls } from '../../api/client'
 import type { CanvasMedia } from './canvas'
 import { Icon } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 import { LibraryThumbnail, ReferenceVideo } from './LibraryMedia'
 import { uploadBatch, type UploadNotice } from './uploadBatch'
 
@@ -107,7 +107,7 @@ export function CanvasPick({
         <Icon name="board" size={compact ? 12 : 16} />
         从画布选
       </button>
-      <Presence>
+      <AnimatePresence>
         {anchor && (
           <Popover
             anchor={anchor}
@@ -158,7 +158,7 @@ export function CanvasPick({
             </div>
           </Popover>
         )}
-      </Presence>
+      </AnimatePresence>
     </>
   )
 }

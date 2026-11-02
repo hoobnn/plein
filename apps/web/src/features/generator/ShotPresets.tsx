@@ -19,7 +19,7 @@ import { freeSpotRight } from '../../canvas/presets'
 import { useCanvas } from '../../stores/canvas'
 import { Icon } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 import { Segmented } from '../../ui/Segmented'
 
 const LABELS: Record<ShotSlot, string> = {
@@ -170,7 +170,7 @@ export function ShotPresets({
           {c}
         </p>
       ))}
-      <Presence>
+      <AnimatePresence>
         {open && current && (
           <Popover
             anchor={open.anchor}
@@ -243,7 +243,7 @@ export function ShotPresets({
             )}
           </Popover>
         )}
-      </Presence>
+      </AnimatePresence>
     </div>
   )
 }

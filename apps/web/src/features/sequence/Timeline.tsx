@@ -12,7 +12,7 @@ import {
 } from 'react'
 import { Icon, type IconName } from '../../ui/icons'
 import { assetUrls } from '../../api/client'
-import { useClosing } from '../../ui/Presence'
+import { useOverlayClosing } from '../../ui/motion'
 import { Slider } from '../../ui/Slider'
 import { Filmstrip, Waveform } from './media'
 import { clock, type Playhead } from './playhead'
@@ -66,7 +66,7 @@ const round2 = (n: number) => Math.round(n * 100) / 100
 /** 统一处理时间线手势的指针归属、取消和浮层退场清理。 */
 function usePointerGesture() {
   const cancelGesture = useRef<(() => void) | null>(null)
-  const closing = useClosing()
+  const closing = useOverlayClosing()
   useLayoutEffect(() => {
     if (closing) cancelGesture.current?.()
     return () => cancelGesture.current?.()

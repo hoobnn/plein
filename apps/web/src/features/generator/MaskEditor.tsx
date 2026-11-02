@@ -8,7 +8,7 @@ import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
 import { Segmented } from '../../ui/Segmented'
 import { Slider } from '../../ui/Slider'
-import { useClosing } from '../../ui/Presence'
+import { useOverlayClosing } from '../../ui/motion'
 
 const TOOLS = [
   { value: 'rect', label: '框选', icon: 'rectSelect' },
@@ -66,7 +66,7 @@ export function MaskEditor({
   onSave(mask: EditMask): void
 }) {
   const notify = useCanvas((s) => s.notify)
-  const closing = useClosing()
+  const closing = useOverlayClosing()
   const alive = useRef(false)
   const saveRequest = useRef<AbortController | null>(null)
   const cancelSave = () => saveRequest.current?.abort()

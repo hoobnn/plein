@@ -12,7 +12,7 @@ import {
 import { useLibrary } from './store'
 import { Icon, type IconName } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 import { useCanvas } from '../../stores/canvas'
 
 export const KIND_ICONS: Record<LibraryKind, IconName> = {
@@ -99,7 +99,7 @@ function LibraryAddMenu({ media, variant }: LibraryAddProps) {
         {variant === 'bar' && '存入资产库'}
         <Icon name="chevronDown" size={12} />
       </button>
-      <Presence>
+      <AnimatePresence>
         {opened && (
           <Popover
             anchor={opened.anchor}
@@ -138,7 +138,7 @@ function LibraryAddMenu({ media, variant }: LibraryAddProps) {
             })}
           </Popover>
         )}
-      </Presence>
+      </AnimatePresence>
     </>
   )
 }

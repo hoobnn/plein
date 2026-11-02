@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { assetUrls } from '../../api/client'
 import { Icon } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 
 /** 显式选择按资产 id 保存，重排角色参考图后也不会换成另一张；空数组表示只带文字。 */
 export function RoleReferencePicker({
@@ -47,7 +47,7 @@ export function RoleReferencePicker({
         <Icon name="image" size={14} />
         角色参考
       </button>
-      <Presence>
+      <AnimatePresence>
         {anchor && (
           <Popover anchor={anchor} onClose={() => setAnchor(null)} label="角色参考图" width={380}>
             <p className="mb-3 text-xs text-ink-subtle">
@@ -112,7 +112,7 @@ export function RoleReferencePicker({
             </div>
           </Popover>
         )}
-      </Presence>
+      </AnimatePresence>
     </>
   )
 }

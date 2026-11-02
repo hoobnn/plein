@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import type { NodeInfo } from '../../canvas/nodes'
 import { Icon } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 import { ProviderIcon } from '../../ui/ProviderIcon'
 import { SlidePill, SlideSwap } from '../../ui/Slide'
 import { useSession } from '../../stores/session'
@@ -162,7 +162,7 @@ export function ModelPicker({
         {current?.deprecated && deprecatedTag(current.description)}
         <Icon name="chevronDown" size={14} />
       </button>
-      <Presence>
+      <AnimatePresence>
         {anchor && (
           <Popover anchor={anchor} onClose={() => setAnchor(null)} label="选择模型" width={460}>
             <input
@@ -234,7 +234,7 @@ export function ModelPicker({
             )}
           </Popover>
         )}
-      </Presence>
+      </AnimatePresence>
     </>
   )
 }

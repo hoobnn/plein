@@ -16,7 +16,7 @@ const SequenceEditor = lazy(() =>
   import('../features/sequence/SequenceEditor').then((m) => ({ default: m.SequenceEditor })),
 )
 
-/** 面板第一次打开才加载；之后保留宿主，让面板自己的 Presence 完成退场。 */
+/** 面板第一次打开才加载；之后保留宿主，让面板自己的 AnimatePresence 完成退场。 */
 function DeferredPanel({
   active,
   label,

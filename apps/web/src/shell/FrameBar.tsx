@@ -12,7 +12,7 @@ import { groupCancelRequestKey, useCancelRequests } from '../features/runs/cance
 import { Icon } from '../ui/icons'
 import { withShortcut } from '../ui/keys'
 import { Popover } from '../ui/Popover'
-import { Presence } from '../ui/Presence'
+import { AnimatePresence } from '../ui/motion'
 import { cancelGroup, runFrame } from '../features/runs/run'
 import { saveAsTemplate } from '../features/templates/actions'
 import { requestElementRename } from '../canvas/rename'
@@ -184,14 +184,14 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
           </button>
         </>
       )}
-      <Presence>
+      <AnimatePresence>
         {shotsAt && (
           <Popover anchor={shotsAt} onClose={() => setShotsAt(null)} label="分镜组" width={320}>
             <ShotGroupPanel engine={engine} frameId={el.id} onClose={() => setShotsAt(null)} />
           </Popover>
         )}
-      </Presence>
-      <Presence>
+      </AnimatePresence>
+      <AnimatePresence>
         {palette && (
           <Popover anchor={palette} onClose={() => setPalette(null)} label="Frame 颜色" width={196}>
             <div className="grid grid-cols-5 gap-1.5 p-2">
@@ -215,7 +215,7 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
             </div>
           </Popover>
         )}
-      </Presence>
+      </AnimatePresence>
     </div>
   )
 }

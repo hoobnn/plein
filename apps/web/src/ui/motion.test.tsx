@@ -1,24 +1,24 @@
 // @vitest-environment happy-dom
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { AnimatePresence, m } from 'motion/react'
+import { m } from 'motion/react'
 import { expect, it } from 'vite-plus/test'
-import { renderApp, screen, waitFor } from '../testing/render'
-import { fadeVariants, useOverlayMotion } from './motion'
+import { renderApp, screen } from '../testing/render'
+import { AnimatePresence, fadeVariants, useOverlayMotion } from './motion'
+
+function OverlayContent() {
+  return <m.div data-testid="overlay" {...useOverlayMotion(fadeVariants)} />
+}
 
 function Overlay({ open }: { open: boolean }) {
-  return (
-    <AnimatePresence>
-      {open && <m.div data-testid="overlay" {...useOverlayMotion(fadeVariants)} />}
-    </AnimatePresence>
-  )
+  return <AnimatePresence>{open && <OverlayContent />}</AnimatePresence>
 }
 
 it('减少动态效果时零时长退场并卸载', async () => {
   const { rerender } = renderApp(<Overlay open />, { dialogs: false })
   await screen.findByTestId('overlay')
   rerender(<Overlay open={false} />)
-  await waitFor(() => expect(screen.queryByTestId('overlay')).toBeNull())
+  expect(screen.queryByTestId('overlay')).toBeNull()
 })
 
 it('LazyMotion strict 下禁止直接使用 motion 组件', () => {

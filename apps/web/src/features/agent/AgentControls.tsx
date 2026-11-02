@@ -5,7 +5,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { api } from '../../api/client'
 import { Icon } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 import { Select } from '../../ui/Select'
 import { useAgent } from './store'
 
@@ -169,7 +169,7 @@ export function AgentControls({
           )}
         </div>
       )}
-      <Presence>
+      <AnimatePresence>
         {anchor && (
           <Popover anchor={anchor} onClose={() => setAnchor(null)} label="上下文管理" width={320}>
             <ContextDetails
@@ -183,7 +183,7 @@ export function AgentControls({
             />
           </Popover>
         )}
-      </Presence>
+      </AnimatePresence>
     </div>
   )
 }

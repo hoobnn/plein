@@ -48,7 +48,7 @@ import { type SyncStatus, switchMode, useCanvas } from '../stores/canvas'
 import { useSidebar } from '../stores/sidebar'
 import { useTemplates } from '../features/templates/store'
 import { navigate } from '../router'
-import { Presence } from '../ui/Presence'
+import { AnimatePresence } from '../ui/motion'
 import { zoomView } from '../ui/viewTransition'
 import { Toast } from '../ui/Toast'
 import { useShallow } from 'zustand/react/shallow'
@@ -230,7 +230,7 @@ export function Editor({
         />
       </header>
       {mode === 'flow' && <EmptyHint hidden={!roomForHint} rightPanel={!!rightPanelWidth} />}
-      <Presence>
+      <AnimatePresence>
         {(importing || notice) && (
           <Toast
             action={
@@ -252,7 +252,7 @@ export function Editor({
             {importing ? `正在导入 ${importing.done}/${importing.total}…` : notice}
           </Toast>
         )}
-      </Presence>
+      </AnimatePresence>
       {mode === 'flow' && (
         <>
           <Generator />

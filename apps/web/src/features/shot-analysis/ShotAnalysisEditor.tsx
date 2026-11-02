@@ -1,6 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { useCanvas } from '../../stores/canvas'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 
 const Panel = lazy(() =>
   import('./ShotAnalysisPanel').then((module) => ({ default: module.ShotAnalysisPanel })),
@@ -10,7 +10,7 @@ export function ShotAnalysisEditor() {
   const engine = useCanvas((state) => state.engine)
   const id = useCanvas((state) => state.shotAnalysis)
   return (
-    <Presence>
+    <AnimatePresence>
       {engine && id && (
         <Suspense fallback={null}>
           <Panel
@@ -21,6 +21,6 @@ export function ShotAnalysisEditor() {
           />
         </Suspense>
       )}
-    </Presence>
+    </AnimatePresence>
   )
 }

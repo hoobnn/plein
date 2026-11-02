@@ -53,7 +53,7 @@ import { Modal, ModalHeader } from '../../ui/Modal'
 import { Segmented } from '../../ui/Segmented'
 import { Select } from '../../ui/Select'
 import { SequencePreview } from './SequencePreview'
-import { Presence, useClosing } from '../../ui/Presence'
+import { AnimatePresence, useOverlayClosing } from '../../ui/motion'
 import { EmptyState } from '../../ui/EmptyState'
 import { Playhead } from './playhead'
 import { Timeline, type TrackItem, type TrimPatch } from './Timeline'
@@ -205,7 +205,7 @@ export function SequenceEditor() {
       state.openStoryboard(target.boardId)
   }
   return (
-    <Presence>
+    <AnimatePresence>
       {engine && id && engine.doc.get(id) && (
         <GuardedEditor
           key={id}
@@ -215,7 +215,7 @@ export function SequenceEditor() {
           returnToBoard={returnTarget?.sequenceId === id}
         />
       )}
-    </Presence>
+    </AnimatePresence>
   )
 }
 
@@ -342,7 +342,7 @@ function Editor({
 }) {
   // 协作者改了顺序也能看到
   const version = useDocVersion(engine.doc)
-  const closing = useClosing()
+  const closing = useOverlayClosing()
   const catalog = useCatalog((s) => s.catalog)
   const canvasId = useCanvas((s) => s.canvasId)
   // 读序列要遍历上游图并排序，只有文档或节点目录变了才需要重算：

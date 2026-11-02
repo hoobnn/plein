@@ -25,7 +25,7 @@ import { EmptyState } from '../../ui/EmptyState'
 import { bytes, fullTime } from '../../ui/format'
 import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
-import { Presence, useClosing } from '../../ui/Presence'
+import { AnimatePresence, useOverlayClosing } from '../../ui/motion'
 import { Select } from '../../ui/Select'
 import { useLibrary } from '../library/store'
 import { mediaApi } from './client'
@@ -56,9 +56,9 @@ export function MediaLibraryPanel() {
     useMediaLibrary.getState().locate(null)
   }, [target, engine, canvasId, sync])
   return (
-    <Presence>
+    <AnimatePresence>
       {open && <Panel key={open.projectId ?? 'all'} projectId={open.projectId} />}
-    </Presence>
+    </AnimatePresence>
   )
 }
 
@@ -454,11 +454,11 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
         </div>
       </Modal>
       {sourcePicker.picker}
-      <Presence>
+      <AnimatePresence>
         {preview && (
           <MediaPreview key={preview.id} asset={preview} onClose={() => setPreview(null)} />
         )}
-      </Presence>
+      </AnimatePresence>
     </>
   )
 }
@@ -802,7 +802,7 @@ function MediaImage({
 function MediaPlayer({ asset, className }: { asset: MediaLibraryItem; className: string }) {
   const [failed, setFailed] = useState(false)
   const ref = useRef<HTMLMediaElement | null>(null)
-  const closing = useClosing()
+  const closing = useOverlayClosing()
   useLayoutEffect(() => {
     const media = ref.current
     if (closing) media?.pause()

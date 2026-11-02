@@ -9,7 +9,7 @@ import { useCatalog } from '../../stores/catalog'
 import { useCanvas } from '../../stores/canvas'
 import { Icon, type IconName } from '../../ui/icons'
 import { Modal } from '../../ui/Modal'
-import { useClosing } from '../../ui/Presence'
+import { useOverlayClosing } from '../../ui/motion'
 import { SlideSwap } from '../../ui/Slide'
 import { ProviderRow } from '../settings/ProviderSettings'
 
@@ -25,7 +25,7 @@ export function WelcomeDialog({ onClose }: { onClose(): void }) {
   const [error, setError] = useState<string | null>(null)
   const pending = useRef(false)
   const active = useRef(true)
-  const closing = useClosing()
+  const closing = useOverlayClosing()
   useEffect(() => {
     active.current = !closing
     return () => {

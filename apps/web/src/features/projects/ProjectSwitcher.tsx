@@ -14,7 +14,7 @@ import { useCanvas } from '../../stores/canvas'
 import { confirmDialog, promptDialog } from '../../ui/Dialog'
 import { Icon } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 import { forgetLocalCache } from '../../canvas/localCache'
 import { ProjectTitle } from './ProjectTitle'
 
@@ -190,7 +190,7 @@ export function ProjectSwitcher({ canvas }: { canvas: Canvas }) {
         <span className="truncate">{canvas.title}</span>
         <Icon name="chevronDown" size={14} />
       </button>
-      <Presence>
+      <AnimatePresence>
         {anchor && (
           <Popover anchor={anchor} onClose={close} label="画布" width={240} placement="below">
             <div className="ui-menu-label">画布</div>
@@ -270,7 +270,7 @@ export function ProjectSwitcher({ canvas }: { canvas: Canvas }) {
             </button>
           </Popover>
         )}
-      </Presence>
+      </AnimatePresence>
     </>
   )
 }

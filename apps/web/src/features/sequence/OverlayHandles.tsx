@@ -1,6 +1,6 @@
 import type { ComposeOverlay } from '@plein/plugin-sdk'
 import { useEffect, useRef, useSyncExternalStore } from 'react'
-import { useClosing } from '../../ui/Presence'
+import { useOverlayClosing } from '../../ui/motion'
 import type { Playhead } from './playhead'
 export type OverlayGeometry = Pick<ComposeOverlay, 'x' | 'y' | 'width' | 'height'>
 export function OverlayHandles({
@@ -20,7 +20,7 @@ export function OverlayHandles({
   onDraft(value: { id: string; patch: OverlayGeometry } | null): void
   onCommit(id: string, patch: OverlayGeometry): void
 }) {
-  const closing = useClosing()
+  const closing = useOverlayClosing()
   const activeKey = useSyncExternalStore(playhead.subscribe, () =>
     overlays
       .filter(

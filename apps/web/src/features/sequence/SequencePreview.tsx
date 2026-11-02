@@ -15,7 +15,7 @@ import type { Playhead } from './playhead'
 import { previewScene } from './scene'
 import { SubtitleLayer, type SubtitleMode } from './SubtitleLayer'
 import { Transport } from './Transport'
-import { useClosing } from '../../ui/Presence'
+import { useOverlayClosing } from '../../ui/motion'
 
 /**
  * 序列预览：不导出，直接在浏览器里按时间线播放。
@@ -52,7 +52,7 @@ export function SequencePreview({
   const [subMode, setSubMode] = useState<SubtitleMode>('loading')
   const [subtitleAttempt, setSubtitleAttempt] = useState(0)
   const [failed, setFailed] = useState(0)
-  const closing = useClosing()
+  const closing = useOverlayClosing()
   const size = sequenceSize(params)
   const cues = params.subtitles ? timeline.clips.flatMap((c) => c.cues) : []
   const { total } = timeline

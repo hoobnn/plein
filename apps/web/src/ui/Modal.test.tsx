@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { AnimatePresence } from 'motion/react'
+import { AnimatePresence } from './motion'
 import { useState } from 'react'
 import { expect, it } from 'vite-plus/test'
 import { fireEvent, renderApp, screen, waitFor } from '../testing/render'

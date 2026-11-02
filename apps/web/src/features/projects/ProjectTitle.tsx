@@ -3,7 +3,7 @@ import type { UseQueryResult } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 
 /** 项目名称始终说明读取状态；错误时可重试，缓存名称仍可用于改名。 */
 export function ProjectTitle({
@@ -75,7 +75,7 @@ export function ProjectTitle({
           {query.data?.title ?? (error ? '项目未加载' : '读取项目…')}
         </span>
       </button>
-      <Presence>
+      <AnimatePresence>
         {anchor && (
           <Popover
             anchor={anchor}
@@ -125,7 +125,7 @@ export function ProjectTitle({
             </div>
           </Popover>
         )}
-      </Presence>
+      </AnimatePresence>
     </>
   )
 }

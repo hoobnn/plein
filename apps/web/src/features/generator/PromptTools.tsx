@@ -7,7 +7,7 @@ import { mentionTargets, type NodeInfo } from '../../canvas/nodes'
 import { useCanvas } from '../../stores/canvas'
 import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 import { Select } from '../../ui/Select'
 
 type Mode = 'optimize' | 'translate'
@@ -158,7 +158,7 @@ export function PromptTools({
           <Icon name="languages" />
         </button>
       </div>
-      <Presence>
+      <AnimatePresence>
         {draft && (
           <Modal label="提示词建议" onClose={close} top isolateKeys className="max-w-5xl">
             <ModalHeader
@@ -227,7 +227,7 @@ export function PromptTools({
             </p>
           </Modal>
         )}
-      </Presence>
+      </AnimatePresence>
     </>
   )
 }

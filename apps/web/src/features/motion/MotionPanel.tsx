@@ -34,7 +34,7 @@ import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
 import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
-import { useClosing } from '../../ui/Presence'
+import { useOverlayClosing } from '../../ui/motion'
 import { Select } from '../../ui/Select'
 import { cancelNode, runNode } from '../runs/run'
 import { runRequestKey, useRunRequests } from '../runs/runRequests'
@@ -127,7 +127,7 @@ function Editor({
   onClose(): void
   params: MotionParams
 }) {
-  const closing = useClosing()
+  const closing = useOverlayClosing()
   const readOnly = engine.doc.readOnly
   const locked = readOnly || closing
   const target = useRef(engine.doc.elementMaps.get(id))

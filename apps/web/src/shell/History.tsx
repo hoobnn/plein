@@ -14,7 +14,7 @@ import { Icon, type IconName } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
 import { Segmented } from '../ui/Segmented'
 import { Slider } from '../ui/Slider'
-import { Presence, useClosing } from '../ui/Presence'
+import { AnimatePresence, useOverlayClosing } from '../ui/motion'
 import { EmptyState } from '../ui/EmptyState'
 
 type MediaType = 'image' | 'video' | 'audio'
@@ -53,12 +53,12 @@ function thumbOf(e: HistoryEntry, size: number) {
 export function History() {
   const engine = useCanvas((s) => s.engine)
   const open = useCanvas((s) => s.history)
-  return <Presence>{engine && open && <HistoryPanel engine={engine} />}</Presence>
+  return <AnimatePresence>{engine && open && <HistoryPanel engine={engine} />}</AnimatePresence>
 }
 
 function HistoryPanel({ engine }: { engine: Engine }) {
   const { toggleHistory: toggle } = useCanvas.getState()
-  const closing = useClosing()
+  const closing = useOverlayClosing()
   const downloads = useBatchDownload(engine, !closing)
   const doc = engine.doc
   const version = useDocVersion(doc)

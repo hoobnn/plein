@@ -6,7 +6,7 @@ import { useCanvas } from '../../stores/canvas'
 import { EmptyState } from '../../ui/EmptyState'
 import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 import { saveCardToLibrary } from '../library/canvas'
 import { useLibrary } from '../library/store'
 import {
@@ -21,7 +21,7 @@ export function ScenePrep() {
   const engine = useCanvas((s) => s.engine)
   const sceneId = useCanvas((s) => s.scenePrep)
   return (
-    <Presence>
+    <AnimatePresence>
       {engine && sceneId && (
         <ScenePrepContent
           key={`${engine.doc.ydoc.guid}:${sceneId}`}
@@ -29,7 +29,7 @@ export function ScenePrep() {
           sceneId={sceneId}
         />
       )}
-    </Presence>
+    </AnimatePresence>
   )
 }
 

@@ -22,7 +22,7 @@ import { loadAssetMeta } from '../stores/assetMeta'
 import { useCanvas } from '../stores/canvas'
 import { Icon } from '../ui/icons'
 import { Popover } from '../ui/Popover'
-import { Presence } from '../ui/Presence'
+import { AnimatePresence } from '../ui/motion'
 import { Select } from '../ui/Select'
 import { audioSplitPlan } from './audioSegments'
 import { useMediaDeriver } from './mediaRequests'
@@ -365,7 +365,7 @@ export function MediaTools({
         </button>
       )}
       {creation.overlay}
-      <Presence>
+      <AnimatePresence>
         {advanced && list.length === 1 && first.kind === 'video' && (
           <AdvancedVideo
             key={`${first.elId}:${first.assetId}:${advanced}`}
@@ -375,8 +375,8 @@ export function MediaTools({
             onClose={() => setAdvanced(null)}
           />
         )}
-      </Presence>
-      <Presence>
+      </AnimatePresence>
+      <AnimatePresence>
         {open && (
           <Popover
             anchor={anchorEl}
@@ -773,7 +773,7 @@ export function MediaTools({
             )}
           </Popover>
         )}
-      </Presence>
+      </AnimatePresence>
     </>
   )
 }

@@ -2,7 +2,7 @@ import type { CompositionSourceRef } from '@plein/plugin-sdk'
 import type { Asset } from '@plein/protocol'
 import { useEffect, useRef, useState } from 'react'
 import { Modal, ModalHeader } from '../../ui/Modal'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 import { Select } from '../../ui/Select'
 import { loadMediaCompositionSources, type MediaCompositionSource } from './composition'
 
@@ -64,9 +64,9 @@ export function useCompositionSourcePicker(scope: unknown, enabled: boolean, con
   return {
     resolve,
     picker: (
-      <Presence>
+      <AnimatePresence>
         {choice && <Picker key={choice.id} choice={choice} disabled={!enabled} />}
-      </Presence>
+      </AnimatePresence>
     ),
   }
 }

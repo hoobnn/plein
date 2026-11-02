@@ -16,7 +16,7 @@ import {
 import type { PreparedInput, Catalog } from '@plein/protocol'
 import { useLayoutEffect, useRef, useState } from 'react'
 import { Modal, ModalHeader } from '../../ui/Modal'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 import { assetUrls } from '../../api/client'
 import { Icon } from '../../ui/icons'
 import { composingKey } from './composingKey'
@@ -413,7 +413,7 @@ export function PromptBox({
           <Icon name="expand" size={14} />
         </button>
       )}
-      <Presence>
+      <AnimatePresence>
         {expanded && (
           <Modal
             label="编辑提示词"
@@ -442,7 +442,7 @@ export function PromptBox({
             </div>
           </Modal>
         )}
-      </Presence>
+      </AnimatePresence>
       {(mentions.length > 0 || missing.length > 0) && (
         <div className="plein-prompt-references flex items-center gap-2 px-4 pb-1 text-xs text-ink-subtle">
           <span className="shrink-0 whitespace-nowrap">引用</span>

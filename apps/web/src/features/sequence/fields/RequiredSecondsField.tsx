@@ -1,5 +1,5 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react'
-import { useClosing } from '../../../ui/Presence'
+import { useOverlayClosing } from '../../../ui/motion'
 
 /** 必填秒数保留逐字草稿，回车／失焦后校验；不把清空过程当作 0。 */
 export function RequiredSecondsField({
@@ -19,7 +19,7 @@ export function RequiredSecondsField({
   const [error, setError] = useState<string | null>(null)
   const pending = useRef<string | null>(null)
   const errorId = useId()
-  const closing = useClosing()
+  const closing = useOverlayClosing()
   useLayoutEffect(() => {
     pending.current = null
     setDraft(null)

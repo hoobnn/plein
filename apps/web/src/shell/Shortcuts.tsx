@@ -3,7 +3,7 @@ import { Fragment, useEffect } from 'react'
 import { useCanvas } from '../stores/canvas'
 import { MOD, shortcut as k } from '../ui/keys'
 import { Modal, ModalHeader } from '../ui/Modal'
-import { Presence } from '../ui/Presence'
+import { AnimatePresence } from '../ui/motion'
 
 /** 一种按法：同时按下的几个键；一项操作可以有几种按法 */
 type Combo = string[]
@@ -79,7 +79,7 @@ export function Shortcuts() {
   }, [toggle])
   const close = () => toggle(false)
   return (
-    <Presence>
+    <AnimatePresence>
       {open && (
         <Modal label="快捷键" onClose={close} align="bottom" className="max-w-220">
           <ModalHeader title="快捷键" onClose={close} divider={false} />
@@ -115,6 +115,6 @@ export function Shortcuts() {
           </div>
         </Modal>
       )}
-    </Presence>
+    </AnimatePresence>
   )
 }

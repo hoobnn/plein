@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { useClosing } from '../../../ui/Presence'
+import { useOverlayClosing } from '../../../ui/motion'
 import { Slider } from '../../../ui/Slider'
 import { Field } from './SettingsFields'
 
@@ -17,7 +17,7 @@ export function Volume(props: {
   const cancelled = useRef<number | null>(null)
   const change = useRef(props.onChange)
   change.current = props.onChange
-  const closing = useClosing()
+  const closing = useOverlayClosing()
   const finish = useCallback((save: boolean) => {
     const value = pending.current
     if (!save && pointer.current !== null) cancelled.current = pointer.current

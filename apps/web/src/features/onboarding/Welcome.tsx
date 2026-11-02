@@ -3,7 +3,7 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useCatalog } from '../../stores/catalog'
 import { LoadingPanel } from '../../ui/LoadingPanel'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 
 const WelcomeDialog = lazy(() =>
   import('./WelcomeDialog').then((m) => ({ default: m.WelcomeDialog })),
@@ -53,7 +53,7 @@ export function Welcome() {
   }
   return (
     <Suspense fallback={open ? <LoadingPanel label="正在打开首次使用引导…" /> : null}>
-      <Presence>{open && catalog && <WelcomeDialog onClose={close} />}</Presence>
+      <AnimatePresence>{open && catalog && <WelcomeDialog onClose={close} />}</AnimatePresence>
     </Suspense>
   )
 }

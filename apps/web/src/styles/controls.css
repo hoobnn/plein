@@ -1146,21 +1146,18 @@
 }
 
 /*
- * 退场（ui/Presence.tsx）：浮层关闭时先标上 data-closing，播完收起动画再卸载。
- * Base UI 自己管理挂载的弹层（下拉、菜单）收起时标 data-ending-style，同样播这段动画，
- * Base UI 会等它播完再卸载。
- * 不分层、带 :root 提高优先级，盖过各浮层自己的进场动画；收起途中不再响应指针。
+ * Motion 浮层在退场期间标 data-plein-exiting；Base UI 自己管理挂载的弹层
+ * （下拉、菜单）标 data-ending-style，并由 Base UI 等 CSS 动画播完再卸载。
+ * 两种浮层在收起途中都不再响应指针。
  */
-:where([data-closing], .ui-menu[data-ending-style], .ui-dialog[data-ending-style]),
-:where([data-closing], .ui-menu[data-ending-style], .ui-dialog[data-ending-style]) * {
+:where([data-plein-exiting], .ui-menu[data-ending-style], .ui-dialog[data-ending-style]),
+:where([data-plein-exiting], .ui-menu[data-ending-style], .ui-dialog[data-ending-style]) * {
   pointer-events: none;
 }
-:root [data-closing],
 :root .ui-menu[data-ending-style],
 :root .ui-dialog[data-ending-style] {
   animation: ui-pop-out var(--dur-exit) var(--ease-exit) forwards;
 }
-:root .ui-dialog-scrim[data-closing],
 :root .ui-dialog-scrim[data-ending-style] {
   animation: ui-fade-out var(--dur-exit) var(--ease-standard) forwards;
 }

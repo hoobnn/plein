@@ -1,7 +1,7 @@
 import { MOTION_TYPE } from '@plein/nodes'
 import { lazy, Suspense, useCallback, useEffect, useRef, useSyncExternalStore } from 'react'
 import { useCanvas } from '../../stores/canvas'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 
 // SDK 与编辑器只随动态合成面板加载。
 const MotionPanel = lazy(() => import('./MotionPanel').then((m) => ({ default: m.MotionPanel })))
@@ -27,7 +27,7 @@ export function MotionEditor() {
     }
   }, [engine, id, target])
   return (
-    <Presence>
+    <AnimatePresence>
       {engine && id && target && (
         <Suspense fallback={null}>
           <MotionPanel
@@ -38,6 +38,6 @@ export function MotionEditor() {
           />
         </Suspense>
       )}
-    </Presence>
+    </AnimatePresence>
   )
 }

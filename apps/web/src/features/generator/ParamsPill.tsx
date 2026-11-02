@@ -3,7 +3,7 @@ import { parseAspect } from '@plein/doc'
 import { aspectLabel, type FieldSchema } from '../../canvas/nodes'
 import { Icon } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 import { type ObjectSchema, SchemaForm } from '../../ui/SchemaForm'
 import { Slider } from '../../ui/Slider'
 import { AspectGlyph, AutoAspectGlyph } from './AspectGlyph'
@@ -93,7 +93,7 @@ export function ParamsPill({
         )}
         <Icon name="chevronDown" size={14} />
       </button>
-      <Presence>
+      <AnimatePresence>
         {anchor && (
           <Popover anchor={anchor} onClose={() => setAnchor(null)} label="参数" width={392}>
             <div className="flex flex-col gap-4 p-(--panel-pad)">
@@ -161,7 +161,7 @@ export function ParamsPill({
             </div>
           </Popover>
         )}
-      </Presence>
+      </AnimatePresence>
     </>
   )
 }

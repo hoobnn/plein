@@ -1,5 +1,6 @@
 import type { ClipboardData, NewElement } from '@plein/doc'
 import type { Engine, PortRef } from '@plein/canvas-core'
+import { m } from 'motion/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { dramaNotice, placeDramaTemplate } from '../canvas/drama'
 import { api } from '../api/client'
@@ -16,7 +17,7 @@ import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { useTemplates } from '../features/templates/store'
 import { Icon, type IconName } from '../ui/icons'
-import { useExit } from '../ui/Presence'
+import { popVariants, useOverlayMotion } from '../ui/motion'
 import { confirmDialog } from '../ui/Dialog'
 
 const NODE_ICONS: Record<string, IconName> = {
@@ -148,7 +149,7 @@ export function AddMenu({
   side = 'below',
   autoFocus = true,
 }: AddMenuProps) {
-  const exit = useExit()
+  const motion = useOverlayMotion(popVariants, side)
   const nodes = useCatalog((s) => s.catalog?.nodes)
   const catalog = useCatalog((s) => s.catalog)
   const canvasId = useCanvas((s) => s.canvasId)
@@ -320,13 +321,13 @@ export function AddMenu({
 
   let lastSection = ''
   return (
-    <div
+    <m.div
       role="dialog"
       aria-label="添加节点"
       style={style}
       data-side={side}
-      {...exit}
-      className={`plein-add-menu pointer-events-auto flex flex-col ${className}`}
+      {...motion}
+      className={`plein-add-menu ui-motion pointer-events-auto flex flex-col ${className}`}
     >
       <label className="plein-add-search">
         <Icon name="search" />
@@ -403,7 +404,7 @@ export function AddMenu({
           )
         })}
       </div>
-    </div>
+    </m.div>
   )
 }
 

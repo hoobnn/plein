@@ -3,7 +3,7 @@ import type { UseQueryResult } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 
 /** 元数据读取失败不挡住画布，项目相关操作在信息恢复后继续。 */
 export function CanvasInfo({ query }: { query: UseQueryResult<Canvas> }) {
@@ -63,7 +63,7 @@ export function CanvasInfo({ query }: { query: UseQueryResult<Canvas> }) {
         )}
         <span>{error ? (query.data ? '信息未更新' : '信息未加载') : '读取信息…'}</span>
       </button>
-      <Presence>
+      <AnimatePresence>
         {anchor && (
           <Popover
             anchor={anchor}
@@ -99,7 +99,7 @@ export function CanvasInfo({ query }: { query: UseQueryResult<Canvas> }) {
             </div>
           </Popover>
         )}
-      </Presence>
+      </AnimatePresence>
     </>
   )
 }

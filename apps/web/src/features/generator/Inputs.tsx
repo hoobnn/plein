@@ -23,7 +23,7 @@ import { upstreams, type NodeInfo, type Upstream } from '../../canvas/nodes'
 import { useCanvas } from '../../stores/canvas'
 import { Icon } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 import { Select } from '../../ui/Select'
 
 type InputPort = NodeInfo['inputs'][number]
@@ -308,7 +308,7 @@ export function Inputs({
               <Icon name="plus" size={14} />
               上传
             </button>
-            <Presence>
+            <AnimatePresence>
               {addAnchor && (
                 <Popover
                   anchor={addAnchor}
@@ -319,7 +319,7 @@ export function Inputs({
                   <div className="flex flex-col items-stretch gap-1">{adds}</div>
                 </Popover>
               )}
-            </Presence>
+            </AnimatePresence>
             <button
               type="button"
               className="ui-btn ui-btn-sm ui-btn-secondary"
@@ -334,7 +334,7 @@ export function Inputs({
               <Icon name="board" size={14} />
               画布参考
             </button>
-            <Presence>
+            <AnimatePresence>
               {canvasAnchor && (
                 <Popover
                   anchor={canvasAnchor}
@@ -402,7 +402,7 @@ export function Inputs({
                   </div>
                 </Popover>
               )}
-            </Presence>
+            </AnimatePresence>
           </>
         )}
         <RoleReferencePicker engine={engine} nodeId={el.id} data={prepared} />
@@ -660,7 +660,7 @@ function RefTile({
         ) : (
           <span>{caption}</span>
         ))}
-      <Presence>
+      <AnimatePresence>
         {anchor && (
           <Popover
             anchor={anchor}
@@ -731,7 +731,7 @@ function RefTile({
             </button>
           </Popover>
         )}
-      </Presence>
+      </AnimatePresence>
     </div>
   )
 }

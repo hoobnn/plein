@@ -10,7 +10,7 @@ import { useCanvas } from '../../stores/canvas'
 import { mockFetch } from '../../testing/fetch'
 import { act, fireEvent, renderApp, screen, waitFor, within } from '../../testing/render'
 import { useEffect, useState } from 'react'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 
 import { ExportPackageDialog, ImportPackageDialog } from './ProjectPackage'
 
@@ -69,7 +69,7 @@ const callsOf = (fetch: ReturnType<typeof mockFetch>, method: string, path: stri
 
 const file = (name = '包.plein') => new File(['bytes'], name)
 
-/** 与首页同构的宿主：Presence 包裹，关闭时真正卸载；换文件时重用同一实例 */
+/** 与首页同构的宿主：AnimatePresence 包裹，关闭时真正卸载；换文件时重用同一实例 */
 function ImportHost({
   file,
   onImported,
@@ -85,7 +85,7 @@ function ImportHost({
     setOpen(true)
   }, [file])
   return (
-    <Presence>
+    <AnimatePresence>
       {open && (
         <ImportPackageDialog
           key={file.name}
@@ -97,7 +97,7 @@ function ImportHost({
           onImported={onImported}
         />
       )}
-    </Presence>
+    </AnimatePresence>
   )
 }
 

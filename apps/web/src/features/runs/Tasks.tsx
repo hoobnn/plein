@@ -3,6 +3,7 @@ import { adoptResult, type PleinDoc } from '@plein/doc'
 import { STORYBOARD_TYPE } from '@plein/nodes'
 import type { Catalog, GroupInfo, JobInfo, JobList, RecoverJobOptions } from '@plein/protocol'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { m } from 'motion/react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { api } from '../../api/client'
 import { queryKeys } from '../../api/query'
@@ -31,7 +32,7 @@ import {
 import { useRecoveryRequests } from './recoveryRequests'
 import { recoveryEvidence } from './recoveryEvidence'
 import { cancelRequestKey, groupCancelRequestKey, useCancelRequests } from './cancelRequests'
-import { Presence, useExit } from '../../ui/Presence'
+import { AnimatePresence, popRightVariants, useOverlayMotion } from '../../ui/motion'
 import { EmptyState } from '../../ui/EmptyState'
 import { useAgent } from '../agent/store'
 import { locateTaskTarget } from './taskNavigation'
@@ -204,7 +205,7 @@ export function Tasks() {
   const locate = locateTaskTarget
 
   return (
-    <Presence>
+    <AnimatePresence>
       {open && (
         <Panel
           aria-label="任务"
@@ -214,7 +215,7 @@ export function Tasks() {
               e.stopPropagation()
             }
           }}
-          className="ui-float ui-pop ui-pop-right pointer-events-auto absolute inset-y-16 right-3 z-30 flex w-90 flex-col rounded-xl max-sm:left-3 max-sm:w-auto"
+          className="ui-float ui-pop ui-pop-right ui-motion pointer-events-auto absolute inset-y-16 right-3 z-30 flex w-90 flex-col rounded-xl max-sm:left-3 max-sm:w-auto"
         >
           <header className="flex h-12 flex-none items-center gap-2 border-b border-line pr-2 pl-4">
             <h2 className="text-sm font-semibold">任务</h2>
@@ -341,13 +342,13 @@ export function Tasks() {
           </div>
         </Panel>
       )}
-    </Presence>
+    </AnimatePresence>
   )
 }
 
 /** 面板外框：从右侧滑入，关闭时收回 */
-function Panel(props: React.ComponentProps<'aside'>) {
-  return <aside {...props} {...useExit()} />
+function Panel(props: React.ComponentProps<typeof m.aside>) {
+  return <m.aside {...props} {...useOverlayMotion(popRightVariants)} />
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

@@ -10,7 +10,7 @@ import { EmptyState } from '../../ui/EmptyState'
 import { relativeTime } from '../../ui/format'
 import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 import { StoryboardSync } from '../storyboard/StoryboardSync'
 import { refreshStale } from './stale'
 import { groupRunSignal } from './groupRuns'
@@ -68,7 +68,7 @@ export function ImpactPanel() {
   const engine = useCanvas((s) => s.engine)
   const canvasId = useCanvas((s) => s.canvasId)
   return (
-    <Presence>
+    <AnimatePresence>
       {open && engine && canvasId && (
         <Panel
           key={canvasId}
@@ -77,7 +77,7 @@ export function ImpactPanel() {
           onClose={() => useCanvas.getState().toggleImpact(false)}
         />
       )}
-    </Presence>
+    </AnimatePresence>
   )
 }
 

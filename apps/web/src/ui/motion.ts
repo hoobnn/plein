@@ -1,4 +1,11 @@
-import { useIsPresent, useReducedMotion, type Variants } from 'motion/react'
+import {
+  AnimatePresence as MotionAnimate,
+  type AnimatePresenceProps,
+  useIsPresent,
+  useReducedMotion,
+  type Variants,
+} from 'motion/react'
+import { createElement, type ReactNode } from 'react'
 
 /**
  * 与 tokens.css 一一对应：spring = cubic-bezier(0.22, 1, 0.36, 1)，
@@ -21,7 +28,7 @@ export const popVariants: Variants = {
     opacity: 0,
     y: side === 'above' ? 4 : -4,
     scale: 0.97,
-    transformOrigin: 'var(--transform-origin, center)',
+    transformOrigin: 'var(--transform-origin, var(--pop-origin, top left))',
   }),
   visible: {
     opacity: 1,
@@ -33,9 +40,70 @@ export const popVariants: Variants = {
     opacity: 0,
     y: side === 'above' ? 2 : -2,
     scale: 0.98,
-    pointerEvents: 'none',
     transition: { duration: duration.exit, ease: ease.exit },
   }),
+}
+
+/** 默认弹出：--pop-from scale(0.97)，--pop-to scale(0.98)，原点左上。 */
+export const scaleVariants: Variants = {
+  initial: { opacity: 0, scale: 0.97, transformOrigin: 'top left' },
+  visible: {
+    opacity: 1,
+    scale: 1,
+    transition: { duration: duration.base, ease: ease.spring },
+  },
+  exit: {
+    opacity: 0,
+    scale: 0.98,
+    transition: { duration: duration.exit, ease: ease.exit },
+  },
+}
+
+/** .ui-pop-up：从下方 8px 进入、向下方 6px 收回。 */
+export const popUpVariants: Variants = {
+  initial: { opacity: 0, y: 8 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: duration.base, ease: ease.spring },
+  },
+  exit: {
+    opacity: 0,
+    y: 6,
+    transition: { duration: duration.exit, ease: ease.exit },
+  },
+}
+
+/** .ui-pop-right：从右侧 12px 进入、向右侧 8px 收回，原点右中。 */
+export const popRightVariants: Variants = {
+  initial: { opacity: 0, x: 12, transformOrigin: 'right center' },
+  visible: {
+    opacity: 1,
+    x: 0,
+    transition: { duration: duration.base, ease: ease.spring },
+  },
+  exit: {
+    opacity: 0,
+    x: 8,
+    transition: { duration: duration.exit, ease: ease.exit },
+  },
+}
+
+/** .plein-agent-panel：8px + 97% 慢速进入，4px + 98% 退出，原点右下。 */
+export const agentPanelVariants: Variants = {
+  initial: { opacity: 0, y: 8, scale: 0.97, transformOrigin: 'bottom right' },
+  visible: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: { duration: duration.slow, ease: ease.spring },
+  },
+  exit: {
+    opacity: 0,
+    y: 4,
+    scale: 0.98,
+    transition: { duration: duration.exit, ease: ease.exit },
+  },
 }
 
 /** 提示条：--pop-from translateY(-6px)，--pop-to translateY(-4px)。 */
@@ -49,7 +117,6 @@ export const toastVariants: Variants = {
   exit: {
     opacity: 0,
     y: -4,
-    pointerEvents: 'none',
     transition: { duration: duration.exit, ease: ease.exit },
   },
 }
@@ -67,7 +134,6 @@ export const dialogVariants: Variants = {
     opacity: 0,
     y: 3,
     scale: 0.99,
-    pointerEvents: 'none',
     transition: { duration: duration.exit, ease: ease.exit },
   },
 }
@@ -78,9 +144,14 @@ export const fadeVariants: Variants = {
   visible: { opacity: 1, transition: { duration: duration.base, ease: ease.standard } },
   exit: {
     opacity: 0,
-    pointerEvents: 'none',
     transition: { duration: duration.exit, ease: ease.standard },
   },
+}
+
+/** 减少动态效果时绕过保留队列，关闭即卸载；其余情况交给 Motion 等待 exit。 */
+export function AnimatePresence(props: AnimatePresenceProps & { children?: ReactNode }) {
+  const reduced = useReducedMotion()
+  return reduced ? props.children : createElement(MotionAnimate, props)
 }
 
 /** AnimatePresence 的关闭态同时用于停用 Esc、点外面和锚点观察。 */
@@ -88,15 +159,15 @@ export function useOverlayClosing() {
   return !useIsPresent()
 }
 
-/** 减少动态效果时以零时长完成退场，不让透明度过渡拖住卸载。 */
+/** 浮层统一的变体声明与关闭态标记；数值只来自本文件的变体。 */
 export function useOverlayMotion(variants: Variants, custom?: PopSide) {
-  const reduced = useReducedMotion()
+  const closing = useOverlayClosing()
   return {
     initial: 'initial',
     animate: 'visible',
     exit: 'exit',
+    'data-plein-exiting': closing ? '' : undefined,
     variants,
     custom,
-    transition: reduced ? { duration: 0 } : undefined,
   } as const
 }

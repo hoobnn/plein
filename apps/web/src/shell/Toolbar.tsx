@@ -6,7 +6,7 @@ import { useCanvas } from '../stores/canvas'
 import { Icon, type IconName } from '../ui/icons'
 import { shortcut } from '../ui/keys'
 import { Popover } from '../ui/Popover'
-import { Presence } from '../ui/Presence'
+import { AnimatePresence } from '../ui/motion'
 import { useDismiss } from '../ui/useDismiss'
 import { AddMenu } from './AddMenu'
 import { Minimap } from './Minimap'
@@ -86,7 +86,7 @@ function NodeMenu({ engine, canImport }: { engine: Engine; canImport: boolean })
       >
         <Icon name="plus" size={20} />
       </button>
-      <Presence>
+      <AnimatePresence>
         {open && !readOnly && (
           <AddMenu
             side="above"
@@ -101,7 +101,7 @@ function NodeMenu({ engine, canImport }: { engine: Engine; canImport: boolean })
             style={{ width: 240, maxHeight: 'min(440px, calc(100vh - 120px))' }}
           />
         )}
-      </Presence>
+      </AnimatePresence>
     </div>
   )
 }
@@ -246,7 +246,7 @@ function ZoomMenu({ engine, zoom }: { engine: Engine; zoom: number }) {
       >
         {percentage}%
       </Button>
-      <Presence>
+      <AnimatePresence>
         {anchor && (
           <Popover anchor={anchor} onClose={close} label="缩放" width={200}>
             <label className="ui-input mb-1 flex items-center gap-1">
@@ -297,7 +297,7 @@ function ZoomMenu({ engine, zoom }: { engine: Engine; zoom: number }) {
             ))}
           </Popover>
         )}
-      </Presence>
+      </AnimatePresence>
     </>
   )
 }
@@ -372,7 +372,7 @@ export function ViewControls() {
         </Button>
         <ZoomMenu engine={engine} zoom={zoom} />
       </div>
-      <Presence>
+      <AnimatePresence>
         {legend && (
           <Popover anchor={legend} onClose={() => setLegend(null)} label="连线说明" width={280}>
             <div className="space-y-3 p-3 text-xs">
@@ -407,7 +407,7 @@ export function ViewControls() {
             </div>
           </Popover>
         )}
-      </Presence>
+      </AnimatePresence>
     </div>
   )
 }

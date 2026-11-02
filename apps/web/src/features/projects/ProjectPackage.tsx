@@ -7,11 +7,12 @@ import {
   type ProjectImportResult,
 } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
+import { m } from 'motion/react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { api, ApiError } from '../../api/client'
 import { invalidateProjects } from '../../api/query'
 import { useCanvas } from '../../stores/canvas'
-import { useClosing, useExit } from '../../ui/Presence'
+import { dialogVariants, fadeVariants, useOverlayClosing, useOverlayMotion } from '../../ui/motion'
 import { bytes } from '../../ui/format'
 import { Switch } from '../../ui/Switch'
 
@@ -33,24 +34,28 @@ function PackageDialog({
   actions: ReactNode
   dismissible?: boolean
 }) {
-  const closing = useClosing()
-  const exit = useExit()
+  const closing = useOverlayClosing()
+  const popupMotion = useOverlayMotion(dialogVariants)
+  const backdropMotion = useOverlayMotion(fadeVariants)
   return (
     <Dialog.Root
-      open={!closing}
+      open
       onOpenChange={(open, details) => {
         if (open) return
-        if (!dismissible) details.cancel()
+        if (closing || !dismissible) details.cancel()
         else onClose()
       }}
     >
       <Dialog.Portal>
-        <Dialog.Backdrop {...exit} className="ui-dialog-scrim fixed inset-0 z-60 bg-scrim" />
+        <Dialog.Backdrop
+          render={<m.div {...backdropMotion} />}
+          className="ui-dialog-scrim ui-motion fixed inset-0 z-60 bg-scrim"
+        />
         <Dialog.Viewport className="app-dialog-viewport fixed inset-0 z-60 flex items-center justify-center p-6">
           <Dialog.Popup
-            {...exit}
+            render={<m.div {...popupMotion} />}
             aria-label={title}
-            className="ui-dialog ui-dialog-pad relative flex max-h-full w-full max-w-120 flex-col gap-5 rounded-2xl bg-surface shadow-4 outline-none"
+            className="ui-dialog ui-motion ui-dialog-pad relative flex max-h-full w-full max-w-120 flex-col gap-5 rounded-2xl bg-surface shadow-4 outline-none"
           >
             <h2 className="text-lg font-semibold">{title}</h2>
             {/* 正文区与内边距同宽负边距，长内容在对话框内滚动；窄屏 20、桌面 24 跟随 .ui-dialog-pad */}
@@ -230,7 +235,7 @@ export function ImportPackageDialog({
   const current = useRef<ImportAttempt | null>(null)
   const latestFile = useRef(file)
   latestFile.current = file
-  const closing = useClosing()
+  const closing = useOverlayClosing()
   const state: ImportState = stored.file === file ? stored : { step: 'checking' }
 
   useEffect(() => {

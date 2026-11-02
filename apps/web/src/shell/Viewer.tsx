@@ -8,7 +8,7 @@ import { Icon } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
 import { Select } from '../ui/Select'
 import { Slider } from '../ui/Slider'
-import { useClosing } from '../ui/Presence'
+import { useOverlayClosing } from '../ui/motion'
 import { CreativeReviewForm } from '../features/storyboard/CreativeReviewForm'
 import { useStale } from '../features/runs/stale'
 import { currentReviewCandidates, isCurrentReview, runReviewAction } from './reviewActions'
@@ -529,7 +529,7 @@ function ReviewMedia({
   const ref = useRef<HTMLMediaElement | null>(null)
   const current = useRef(attempt)
   current.current = attempt
-  const closing = useClosing()
+  const closing = useOverlayClosing()
   useEffect(() => {
     const media = ref.current
     // StrictMode 会保留 DOM 并重放 effect，清理后需要恢复来源。

@@ -7,7 +7,7 @@ import { upstreams, type Upstream } from '../../canvas/nodes'
 import { useCatalog } from '../../stores/catalog'
 import { useCanvas } from '../../stores/canvas'
 import { Icon } from '../../ui/icons'
-import { Presence } from '../../ui/Presence'
+import { AnimatePresence } from '../../ui/motion'
 import { MaskEditor } from './MaskEditor'
 
 function revision(mask: EditMask | null) {
@@ -118,7 +118,7 @@ export function MaskField({
           {mask ? '重画区域' : '画区域'}
         </button>
       )}
-      <Presence>
+      <AnimatePresence>
         {editing && !conflict && assetId && (
           <MaskEditor
             key={assetId}
@@ -144,7 +144,7 @@ export function MaskField({
             }}
           />
         )}
-      </Presence>
+      </AnimatePresence>
     </div>
   )
 }

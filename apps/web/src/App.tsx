@@ -11,7 +11,7 @@ import { useCanvas } from './stores/canvas'
 import { useLibrary } from './features/library/store'
 import { useRoute } from './router'
 import { useSession } from './stores/session'
-import { Presence } from './ui/Presence'
+import { AnimatePresence } from './ui/motion'
 import { Mascot } from './ui/Mascot'
 import { useMediaLibrary } from './features/media-library/store'
 import { useCheckpoints } from './features/checkpoints/store'
@@ -142,11 +142,11 @@ export function App() {
       <Suspense fallback={null}>{ready && checkpointsOpen && <CheckpointsPanel />}</Suspense>
       <Suspense fallback={null}>
         {(ready || route.name === 'demo') && (
-          <Presence>
+          <AnimatePresence>
             {settings !== false && (
               <SettingsDialog initial={settings} onClose={() => setSettings(false)} />
             )}
-          </Presence>
+          </AnimatePresence>
         )}
       </Suspense>
       <DialogHost active={ready || route.name === 'demo'} />

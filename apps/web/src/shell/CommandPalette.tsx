@@ -12,7 +12,7 @@ import { Icon, type IconName } from '../ui/icons'
 import { shortcut } from '../ui/keys'
 import { Mascot } from '../ui/Mascot'
 import { Modal } from '../ui/Modal'
-import { Presence } from '../ui/Presence'
+import { AnimatePresence } from '../ui/motion'
 
 const ICONS: Record<string, IconName> = {
   duplicate_elements: 'copy',
@@ -53,7 +53,9 @@ export function CommandPalette({ canvasId }: { canvasId: string | null }) {
     return () => window.removeEventListener('keydown', key)
   }, [])
   return (
-    <Presence>{open && <Palette canvasId={canvasId} onClose={() => setOpen(false)} />}</Presence>
+    <AnimatePresence>
+      {open && <Palette canvasId={canvasId} onClose={() => setOpen(false)} />}
+    </AnimatePresence>
   )
 }
 
