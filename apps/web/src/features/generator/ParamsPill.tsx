@@ -5,6 +5,7 @@ import { Icon } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
 import { Presence } from '../../ui/Presence'
 import { type ObjectSchema, SchemaForm } from '../../ui/SchemaForm'
+import { Slider } from '../../ui/Slider'
 import { AspectGlyph, AutoAspectGlyph } from './AspectGlyph'
 
 /** 所选模型自带的参数，和通用参数一起放进「更多参数」 */
@@ -286,14 +287,13 @@ function ParamControl({
         </fieldset>
       ) : (
         <div className="flex items-center gap-3">
-          <input
-            type="range"
+          <Slider
             aria-label={label}
             min={min}
             max={max}
             step={1}
             value={n}
-            onChange={(e) => onChange(Number(e.target.value))}
+            onValueChange={onChange}
             className="flex-1"
           />
           <span className="ui-chip w-14 justify-center tabular-nums">

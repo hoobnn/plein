@@ -24,6 +24,7 @@ import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
 import { useClosing } from '../../ui/Presence'
 import { Segmented } from '../../ui/Segmented'
+import { Slider } from '../../ui/Slider'
 import { saveSnapshot } from './snapshot'
 import { stageRecordsOf } from './records'
 import { applyStageHistory, canStageHistory, writeStageEdit } from './history'
@@ -910,16 +911,15 @@ export function StagePanel({
               </span>
             </div>
             <div className="flex items-center gap-3">
-              <input
+              <Slider
                 aria-label="预演时间"
-                type="range"
                 className="min-w-0 flex-1"
                 min={0}
                 max={duration}
                 step={0.01}
                 value={time}
                 disabled={closing}
-                onChange={(event) => seek(event.currentTarget.valueAsNumber)}
+                onValueChange={seek}
               />
               <span
                 role="timer"

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Slider } from '../../ui/Slider'
 
 export function PoseControl({
   label,
@@ -28,15 +29,14 @@ export function PoseControl({
     <label className="ui-field">
       <span className="ui-label">{label}</span>
       <div className="flex items-center gap-3">
-        <input
-          type="range"
+        <Slider
           aria-label={`${label}滑块`}
           min={min}
           max={max}
           value={value}
           disabled={disabled}
           className="min-w-0 flex-1"
-          onChange={(event) => onChange(Number(event.target.value))}
+          onValueChange={onChange}
         />
         <input
           type="number"

@@ -7,6 +7,7 @@ import { useCanvas } from '../../stores/canvas'
 import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
 import { Segmented } from '../../ui/Segmented'
+import { Slider } from '../../ui/Slider'
 import { useClosing } from '../../ui/Presence'
 
 const TOOLS = [
@@ -331,16 +332,16 @@ export function MaskEditor({
       >
         <Segmented label="工具" options={TOOLS} value={tool} onChange={setTool} disabled={frozen} />
         {tool !== 'rect' && (
+          // oxlint-disable-next-line jsx-a11y/label-has-associated-control -- Base UI Thumb 内渲染真实 range input
           <label className="flex items-center gap-2 text-xs text-ink-subtle">
             笔刷
-            <input
-              type="range"
+            <Slider
               aria-label="笔刷大小"
               disabled={frozen}
               min={8}
               max={160}
               value={brush}
-              onChange={(e) => setBrush(Number(e.target.value))}
+              onValueChange={setBrush}
               className="w-24"
             />
           </label>

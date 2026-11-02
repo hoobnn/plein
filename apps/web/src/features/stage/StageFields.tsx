@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Slider as SliderControl } from '../../ui/Slider'
 
 export function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -21,14 +22,13 @@ export function Slider(props: {
 }) {
   return (
     <Field label={props.label}>
-      <input
-        type="range"
+      <SliderControl
         aria-label={props.label}
         min={props.min}
         max={props.max}
         step={props.step}
         value={props.value}
-        onChange={(e) => props.onChange(Number(e.target.value))}
+        onValueChange={props.onChange}
       />
       <span className="stage-value tabular-nums">
         {props.value}

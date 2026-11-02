@@ -13,6 +13,7 @@ import {
 import { Icon, type IconName } from '../../ui/icons'
 import { assetUrls } from '../../api/client'
 import { useClosing } from '../../ui/Presence'
+import { Slider } from '../../ui/Slider'
 import { Filmstrip, Waveform } from './media'
 import { clock, type Playhead } from './playhead'
 
@@ -339,15 +340,14 @@ export function Timeline({
           >
             <Icon name="zoomOut" size={14} />
           </button>
-          <input
-            type="range"
+          <Slider
             aria-label="缩放"
             className="seq-zoom"
             min={0}
             max={Math.log(zoomMax)}
             step={0.01}
             value={Math.log(zoom)}
-            onChange={(e) => zoomAt(Math.exp(Number(e.target.value)))}
+            onValueChange={(value) => zoomAt(Math.exp(value))}
           />
           <button
             type="button"

@@ -220,7 +220,7 @@
   align-items: center;
   gap: 8px;
 }
-.stage-field-control input[type="range"] {
+.stage-field-control [data-slot="slider"] {
   min-width: 0;
   flex: 1;
 }

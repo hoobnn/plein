@@ -24,13 +24,13 @@ export function Slider({
   value: number
   min?: number
   max?: number
-  step?: number
+  step?: number | 'any'
   largeStep?: number
   onValueChange?: (value: number) => void
   onValueCommitted?: (value: number) => void
   disabled?: boolean
   className?: string
-  'aria-label': string
+  'aria-label'?: string
   'aria-describedby'?: string
   'aria-valuetext'?: string
   onPointerDown?: PointerEventHandler<HTMLDivElement>
@@ -45,7 +45,7 @@ export function Slider({
       value={value}
       min={min}
       max={max}
-      step={step}
+      step={step === 'any' ? Number.EPSILON : step}
       largeStep={largeStep}
       disabled={disabled}
       onValueChange={onValueChange}

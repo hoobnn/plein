@@ -884,8 +884,8 @@ it('文本框 Space 保留文本输入，缩放 range 的 Arrow Home End 不控�
   expect(zoom.type).toBe('range')
   act(() => zoom.focus())
   for (const key of ['ArrowLeft', 'ArrowRight', 'Home', 'End']) {
-    // DOM 层验证事件仍可交给原生range，不声称happy-dom实现浏览器滑杆步进。
-    expect(fireEvent.keyDown(zoom, { key })).toBe(true)
+    // Base UI 在滑块内消费按键；全局播放头快捷键不能同时响应。
+    expect(fireEvent.keyDown(zoom, { key })).toBe(false)
     expect(time.textContent).toBe('0:01.0 / 0:01.8')
     expect(screen.getByRole('button', { name: '暂停' })).toBeTruthy()
   }

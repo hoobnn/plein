@@ -696,16 +696,9 @@
   text-align: right;
   color: var(--ink-subtle);
 }
-/* 音量滑轨：左段按 --fill 填成正文色 */
 .seq-range {
   min-width: 0;
   flex: 1;
-}
-.seq-range::-webkit-slider-runnable-track {
-  background: linear-gradient(to right, var(--ink-muted) var(--fill), var(--surface-3) var(--fill));
-}
-.seq-range::-moz-range-track {
-  background: linear-gradient(to right, var(--ink-muted) var(--fill), var(--surface-3) var(--fill));
 }
 
 /* 小窗口在编辑区内纵向滚动，预览与时间线不再被固定轨道挤成零高度。 */

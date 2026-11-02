@@ -108,49 +108,6 @@ input[type="radio"]:disabled {
   cursor: default;
 }
 
-input[type="range"] {
-  appearance: none;
-  height: 16px;
-  margin: 0;
-  background: transparent;
-  cursor: pointer;
-}
-input[type="range"]::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 2px;
-  background: var(--surface-3);
-}
-input[type="range"]::-webkit-slider-thumb {
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  margin-top: -5px;
-  border-radius: 50%;
-  background: #ffffff;
-  box-shadow:
-    0 0 0 1px rgb(0 0 0 / 0.12),
-    0 1px 3px rgb(0 0 0 / 0.25);
-  transition: transform var(--dur-fast) var(--ease-spring);
-}
-input[type="range"]:hover::-webkit-slider-thumb {
-  transform: scale(1.12);
-}
-input[type="range"]::-moz-range-track {
-  height: 4px;
-  border-radius: 2px;
-  background: var(--surface-3);
-}
-input[type="range"]::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border: 0;
-  border-radius: 50%;
-  background: #ffffff;
-  box-shadow:
-    0 0 0 1px rgb(0 0 0 / 0.12),
-    0 1px 3px rgb(0 0 0 / 0.25);
-}
-
 ::selection {
   background: var(--accent-soft);
 }

@@ -13,6 +13,7 @@ import { shortTime } from '../ui/format'
 import { Icon, type IconName } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
 import { Segmented } from '../ui/Segmented'
+import { Slider } from '../ui/Slider'
 import { Presence, useClosing } from '../ui/Presence'
 import { EmptyState } from '../ui/EmptyState'
 
@@ -207,16 +208,16 @@ function HistoryPanel({ engine }: { engine: Engine }) {
           </span>
         }
       >
+        {/* oxlint-disable-next-line jsx-a11y/label-has-associated-control -- Base UI Thumb 内渲染真实 range input */}
         <label className="flex items-center gap-2 text-ink-subtle" title="缩略图大小">
           <Icon name="board" size={14} />
-          <input
-            type="range"
+          <Slider
             aria-label="缩略图大小"
             min={SIZE_MIN}
             max={SIZE_MAX}
             step={8}
             value={size}
-            onChange={(e) => setSize(Number(e.target.value))}
+            onValueChange={setSize}
             className="w-28"
           />
         </label>

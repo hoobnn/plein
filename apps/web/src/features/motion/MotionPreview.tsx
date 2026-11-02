@@ -1,6 +1,7 @@
 import { type MotionParams, motionSize } from '@plein/nodes'
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../../ui/icons'
+import { Slider } from '../../ui/Slider'
 import {
   createMotionPreview,
   releaseMotionPreview,
@@ -185,16 +186,14 @@ export function MotionPreview({
         >
           <Icon name={playing ? 'pause' : 'play'} />
         </button>
-        <input
-          type="range"
+        <Slider
           aria-label="预览时间"
           min={0}
           max={Math.max(0, params.duration - 1 / 30)}
           step={1 / 30}
           value={Math.min(time, Math.max(0, params.duration - 1 / 30))}
           disabled={state !== 'ready' || !active}
-          onChange={(event) => {
-            const at = Number(event.target.value)
+          onValueChange={(at) => {
             playback.current = { time: at, playing: false }
             setTime(at)
             setPlaying(false)

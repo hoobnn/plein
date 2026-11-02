@@ -6,6 +6,7 @@ import { useCatalog } from '../stores/catalog'
 import { outlineTitle } from '../canvas/outline'
 import { Icon } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
+import { Slider } from '../ui/Slider'
 import { useClosing } from '../ui/Presence'
 import { CreativeReviewForm } from '../features/storyboard/CreativeReviewForm'
 import { useStale } from '../features/runs/stale'
@@ -451,14 +452,13 @@ function Review({ viewer }: { viewer: View }) {
                 )}
               </div>
               {otherId && comparison === 'slider' && (
-                <input
+                <Slider
                   aria-label="图片对比滑杆"
-                  type="range"
-                  min="0"
-                  max="100"
+                  min={0}
+                  max={100}
                   value={split}
-                  onChange={(e) => setSplit(Number(e.target.value))}
-                  className="absolute right-8 bottom-5 left-8"
+                  onValueChange={setSplit}
+                  className="absolute right-8 bottom-5 left-8 data-horizontal:w-auto"
                 />
               )}
             </>

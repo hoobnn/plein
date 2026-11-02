@@ -1,12 +1,6 @@
-import {
-  type CSSProperties,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useClosing } from '../../../ui/Presence'
+import { Slider } from '../../../ui/Slider'
 import { Field } from './SettingsFields'
 
 /** 音量：0–200%，松手时写入；滑轨左段按音量填色 */
@@ -59,27 +53,22 @@ export function Volume(props: {
   return (
     <Field label={props.label}>
       <span className="seq-volume">
-        <input
-          type="range"
+        <Slider
           aria-label={props.aria ?? props.label}
           min={0}
           max={2}
           step={0.05}
           className="seq-range"
-          style={{ '--fill': `${(v / 2) * 100}%` } as CSSProperties}
           value={v}
           onPointerDown={(e) => {
             if (e.button !== 0 || closing) return
             cancelled.current = null
             pointer.current = e.pointerId
           }}
-          onChange={(e) => {
-            if (cancelled.current !== null || closing) {
-              e.currentTarget.value = String(props.value)
-              return
-            }
-            pending.current = Number(e.currentTarget.value)
-            setDraft(pending.current)
+          onValueChange={(value) => {
+            if (cancelled.current !== null || closing) return
+            pending.current = value
+            setDraft(value)
           }}
           onKeyDown={() => {
             cancelled.current = null

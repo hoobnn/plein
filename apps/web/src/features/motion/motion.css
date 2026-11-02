@@ -134,10 +134,9 @@
   gap: 12px;
   flex: none;
 }
-.motion-transport input[type="range"] {
+.motion-transport [data-slot="slider"] {
   min-width: 0;
   flex: 1;
-  accent-color: var(--accent);
 }
 .motion-transport output {
   font-size: var(--text-xs);

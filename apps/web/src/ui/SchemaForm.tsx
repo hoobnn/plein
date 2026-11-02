@@ -7,6 +7,7 @@ import { useId, useRef, useState } from 'react'
 import { voiceOf } from '@plein/nodes'
 import { clampNumber, type NumberDraft, resolveNumberDraft } from './numberDraft'
 import { Select } from './Select'
+import { Slider } from './Slider'
 import { enumField } from './enumField'
 import { VoicePicker } from './VoicePicker'
 
@@ -318,16 +319,15 @@ function NumberControl({
   return (
     <div className="flex flex-col gap-(--field-gap)">
       <div className="flex items-center gap-3">
-        <input
-          type="range"
+        <Slider
           aria-label={f.title}
           aria-describedby={describedBy}
           className="min-w-0 flex-1"
           min={f.minimum}
           max={f.maximum}
           step="any"
-          value={shown ?? f.minimum}
-          onChange={(e) => choose(Number(e.target.value))}
+          value={shown ?? f.minimum!}
+          onValueChange={choose}
           onKeyDown={(e) => {
             const direction = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }[e.key]
             if (!direction) return
