@@ -1,9 +1,64 @@
 import { createElement } from '@plein/doc'
 import { box, openDoc } from '@plein/doc/testing'
-import { type Container, Graphics, type GraphicsContext, Texture, TextureSource } from 'pixi.js'
+import { Container, Graphics, type GraphicsContext, Texture, TextureSource } from 'pixi.js'
 import { describe, expect, it, vi } from 'vite-plus/test'
-import { RendererRegistry } from './renderers'
+import { type ElementRenderer, type ElementView, RendererRegistry } from './renderers'
 import { TexturePool } from './textures'
+
+/** 按名字可辨认的哑渲染器：不画内容，只用来断言查找命中了谁 */
+const stub: ElementRenderer = () => {
+  const display = new Container()
+  return { display, update: () => {}, destroy: () => {} }
+}
+
+const expectStub = (view: ElementView) => {
+  expect(view.previewStatus).toBeUndefined()
+  expect(view.setDetail).toBeUndefined()
+  view.destroy()
+}
+
+describe('renderer lookup: nodeType 优先，未命中落回 kind，都没有时用占位卡片', () => {
+  it('nodeType 命中时用 nodeType 渲染器', () => {
+    const doc = openDoc()
+    const id = createElement(doc, box({ kind: 'node', nodeType: 'plein/custom' }))
+    const registry = new RendererRegistry()
+    registry.registerNodeType('plein/custom', stub)
+    expectStub(registry.create(doc.get(id)!, {}))
+    doc.destroy()
+  })
+
+  it('nodeType 未命中时落回 kind 渲染器', () => {
+    const doc = openDoc()
+    const id = createElement(doc, box({ kind: 'node', nodeType: 'plein/other' }))
+    const registry = new RendererRegistry(false)
+    const byKind = vi.fn(stub)
+    registry.register('node', byKind)
+    expectStub(registry.create(doc.get(id)!, {}))
+    expect(byKind).toHaveBeenCalledOnce()
+    doc.destroy()
+  })
+
+  it('kind 也没有时用占位卡片（与现状一致）', () => {
+    const doc = openDoc()
+    const id = createElement(doc, box({ kind: 'node', nodeType: 'plein/other' }))
+    const view = new RendererRegistry(false).create(doc.get(id)!, {})
+    // 占位卡片：无预览、无细节档位；media / node 渲染器都有 previewStatus
+    expect(view.previewStatus).toBeUndefined()
+    view.destroy()
+    doc.destroy()
+  })
+
+  it('nodeType 层只作用于 node 元素，media 元素不受影响', () => {
+    const doc = openDoc()
+    const id = createElement(doc, box({ kind: 'image', assetId: 'a' }))
+    const registry = new RendererRegistry()
+    registry.registerNodeType('plein/custom', stub)
+    const view = registry.create(doc.get(id)!, { assetUrl: () => undefined })
+    expect(view.previewStatus).not.toBeUndefined()
+    view.destroy()
+    doc.destroy()
+  })
+})
 
 async function flush() {
   for (let i = 0; i < 20; i++) await Promise.resolve()

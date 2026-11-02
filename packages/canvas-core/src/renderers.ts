@@ -389,9 +389,11 @@ const DEFAULT_RENDERERS: Record<ElementKind, ElementRenderer> = {
   frame: frameRenderer,
 }
 
-/** 按元素类型注册渲染器；未注册的类型用占位卡片 */
+/** 按元素类型注册渲染器；可再按节点类型覆盖，未注册的类型用占位卡片 */
 export class RendererRegistry {
   private map = new Map<ElementKind, ElementRenderer>()
+  /** nodeType 层：特殊节点的专属画法，只在注册了对应条目时生效 */
+  private nodeTypes = new Map<string, ElementRenderer>()
 
   constructor(defaults = true) {
     if (defaults) {
@@ -407,7 +409,14 @@ export class RendererRegistry {
     this.map.set(kind, renderer)
   }
 
+  /** 按 nodeType 覆盖 kind 渲染器；查找时先 nodeType 后 kind */
+  registerNodeType(nodeType: string, renderer: ElementRenderer) {
+    this.nodeTypes.set(nodeType, renderer)
+  }
+
   create(el: CanvasElement, ctx: RenderContext): ElementView {
-    return (this.map.get(el.kind) ?? cardRenderer)(el, ctx)
+    const nodeType = el.kind === 'node' ? el.nodeType : undefined
+    const renderer = (nodeType ? this.nodeTypes.get(nodeType) : undefined) ?? this.map.get(el.kind)
+    return (renderer ?? cardRenderer)(el, ctx)
   }
 }
