@@ -320,6 +320,58 @@ describe('重名不静默', () => {
     expect(r.refs).toEqual([])
   })
 
+  it('混着有效引用：有效的照常编号，越界的原文保留', async () => {
+    const doc = createDoc(undefined, { schedule: () => {} })
+    character(doc, '林夏', { description: '主角，短发' }, 0)
+    const wang = character(doc, '小王', { description: '配角' }, 200)
+    const photo = createElement(doc, {
+      kind: 'image',
+      name: '定妆照',
+      assetId: 'a'.repeat(64),
+      x: 400,
+      y: 0,
+      w: 10,
+      h: 10,
+    })
+    connect(doc, [photo, 'image'], [wang, 'references'])
+    const n = node(doc, 'plein/image', { prompt: '@林夏#2 和 @小王 回头' })
+    const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))
+    expect(r.blocked).toEqual([
+      { code: 'prepare_failed', message: '「@林夏#2」不存在，画布上「林夏」只有 @林夏' },
+    ])
+    // 越界的 @林夏#2 原文保留（不吞掉 @ 和序号），同句有效的 @小王 照常编号并送图
+    expect(r.params.prompt).toBe('@林夏#2 和 小王（图1） 回头')
+    expect(r.refs).toEqual([{ name: '小王', elementId: wang, assetIds: ['a'.repeat(64)] }])
+  })
+
+  it('文生视频（非参考模式）：消歧失败的引用原文保留，不吞掉 @', async () => {
+    const doc = createDoc(undefined, { schedule: () => {} })
+    character(doc, '林夏', { description: '主角，短发' }, 0)
+    const n = node(doc, 'plein/video', { model: 'plein/mock:video', prompt: '@林夏#2 回头' })
+    const r = await applyMentions(doc, doc.get(n)!, videoNode, {}, collect(doc))
+    expect(r.blocked).toEqual([
+      { code: 'prepare_failed', message: '「@林夏#2」不存在，画布上「林夏」只有 @林夏' },
+    ])
+    expect(r.params.prompt).toBe('@林夏#2 回头')
+    expect(r.refs).toEqual([])
+  })
+
+  it('首帧模式（非参考）：越界引用原文保留，同句有效引用照常处理', async () => {
+    const doc = createDoc(undefined, { schedule: () => {} })
+    character(doc, '林夏', { description: '主角，短发' }, 0)
+    character(doc, '小王', { description: '配角' }, 200)
+    const n = node(doc, 'plein/video', {
+      model: 'plein/mock:video',
+      mode: 'image',
+      prompt: '@林夏#2 和 @小王 开门',
+    })
+    const r = await applyMentions(doc, doc.get(n)!, videoNode, {}, collect(doc))
+    expect(r.blocked).toEqual([
+      { code: 'prepare_failed', message: '「@林夏#2」不存在，画布上「林夏」只有 @林夏' },
+    ])
+    expect(r.params.prompt).toBe('@林夏#2 和 小王 开门')
+  })
+
   it('写了 #序号就按序号取，不追加任一同名角色设定', async () => {
     const doc = createDoc(undefined, { schedule: () => {} })
     const a = character(doc, '林夏', { description: '主角，短发' }, 0)

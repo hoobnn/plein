@@ -223,11 +223,12 @@ export async function applyMentions(
         const list = deferred.get(source) ?? []
         list.push({ mention: m, ...(h ? { hit: h } : {}) })
         deferred.set(source, list)
-      } else {
+      } else if (h) {
         // 非参考模式沿用原行为：只去掉 @，保留参考用途原文，不插入平台编号。
-        text += `${value.slice(last, m.start)}${h?.sceneView ? `${m.name}（${h.sceneView.name}）` : pickLabel(m.name, m.pick ?? {})}`
+        text += `${value.slice(last, m.start)}${h.sceneView ? `${m.name}（${h.sceneView.name}）` : pickLabel(m.name, m.pick ?? {})}`
         last = m.end
       }
+      // 消歧失败的引用（h 为空）不改写：原文（含 @ 与 #序号）保留在最终提示词里。
       if (h) hit.set(hitKey(h), h)
       if (m.profileMiss)
         notices.push({
@@ -532,8 +533,9 @@ function rewriteReferenceMentions(
       // 资产卡写成「名字（编号）」；原文紧挨着已经写了同一个名字时只补编号，避免「叶舒叶舒」。
       const suffix = tokens.length ? `（${tokens.join('、')}）` : ''
       const repeated = !!hit && text.slice(0, mention.start).endsWith(name)
+      // 消歧失败的引用不猜对象：原文原样保留，同一句里的有效引用照常编号。
       const replacement = !hit
-        ? name
+        ? text.slice(mention.start, mention.end)
         : hit.el.kind === 'image' || hit.el.kind === 'video' || hit.el.kind === 'audio'
           ? tokens.join('、') || name
           : repeated

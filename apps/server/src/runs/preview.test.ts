@@ -1299,6 +1299,64 @@ it('旁路改名后越界的 @林夏#2 按普通 blocked 预览，不自动改�
   expect(recovered.prompt).toContain('回头')
 })
 
+it('消歧失败与有效引用混排、非参考模式视频：原文保留，有效引用照常处理', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  card(doc, 'plein/character', '林夏', null, 0)
+  card(doc, 'plein/character', '小王', asset('b'), 300)
+
+  // 图片节点混排：有效的 @小王 照常编号，越界的 @林夏#2 原文保留在最终提示词里
+  const shot = addNode(doc, 'plein/image', {
+    params: { model: 'plein/mock:image', prompt: '@林夏#2 和 @小王 回头' },
+    y: 400,
+  })
+  const mixed = await preview(server, id, shot)
+  expect(mixed.status).toBe('blocked')
+  expect(mixed.prompt).toBe('@林夏#2 和 小王（图1） 回头')
+  expect(mixed.blocked).toContainEqual({
+    code: 'prepare_failed',
+    message: '「@林夏#2」不存在，画布上「林夏」只有 @林夏',
+  })
+  expect(mixed.sent?.map((item) => item.assetId)).toEqual([asset('b')])
+
+  // 文生视频：@林夏#2 原文保留，不被吞成裸名字
+  const textVideo = addNode(doc, 'plein/video', {
+    params: { model: 'plein/mock:video', prompt: '@林夏#2 回头' },
+    y: 700,
+  })
+  const text = await preview(server, id, textVideo)
+  expect(text.status).toBe('blocked')
+  expect(text.prompt).toBe('@林夏#2 回头')
+  expect(text.blocked).toContainEqual({
+    code: 'prepare_failed',
+    message: '「@林夏#2」不存在，画布上「林夏」只有 @林夏',
+  })
+
+  // 首帧模式：帧图照常送入，越界引用原文保留，同句有效引用按非参考模式处理
+  const frameEl = createElement(doc, {
+    kind: 'image',
+    assetId: asset('c'),
+    x: 600,
+    y: -300,
+    w: 100,
+    h: 100,
+  })
+  const frameVideo = addNode(doc, 'plein/video', {
+    params: { model: 'plein/mock:video', mode: 'image', prompt: '@林夏#2 和 @小王 开门' },
+    y: 1000,
+  })
+  connect(doc, [frameEl, 'image'], [frameVideo, 'images'])
+  const frame = await preview(server, id, frameVideo)
+  expect(frame.status).toBe('blocked')
+  expect(frame.prompt).toBe('@林夏#2 和 小王 开门')
+  expect(frame.sent?.map((item) => item.assetId)).toEqual([asset('c')])
+  expect(frame.blocked).toContainEqual({
+    code: 'prepare_failed',
+    message: '「@林夏#2」不存在，画布上「林夏」只有 @林夏',
+  })
+})
+
 it('参考图上游生成失败时，提示能定位到失败的上游节点', async () => {
   const { server } = await bootServer()
   mockSettings(server, {})
