@@ -5,13 +5,13 @@ import { useAgent } from './features/agent/store'
 import { DesktopEvents } from './shell/DesktopEvents'
 import { useUpdate } from './shell/desktopUpdateState'
 import type { Section } from './features/settings/Settings'
+import { DeferredPanel } from './ui/DeferredPanel'
 import { DialogHost } from './ui/Dialog'
 import { TooltipHost } from './ui/Tooltip'
 import { useCanvas } from './stores/canvas'
 import { useLibrary } from './features/library/store'
 import { useRoute } from './router'
 import { useSession } from './stores/session'
-import { AnimatePresence } from './ui/motion'
 import { Mascot } from './ui/Mascot'
 import { useMediaLibrary } from './features/media-library/store'
 import { useCheckpoints } from './features/checkpoints/store'
@@ -28,8 +28,8 @@ const AgentDock = lazy(() =>
 const LibraryPanel = lazy(() =>
   import('./features/library/Library').then((m) => ({ default: m.LibraryPanel })),
 )
-const SettingsDialog = lazy(() =>
-  import('./features/settings/Settings').then((m) => ({ default: m.SettingsDialog })),
+const SettingsHost = lazy(() =>
+  import('./features/settings/SettingsHost').then((m) => ({ default: m.SettingsHost })),
 )
 const MediaLibraryPanel = lazy(() =>
   import('./features/media-library/MediaLibrary').then((m) => ({ default: m.MediaLibraryPanel })),
@@ -59,6 +59,7 @@ export function App() {
   const unauthenticated = useSession(
     (s) => s.status === 'ready' && !!s.info?.authRequired && !s.info.principal,
   )
+  const settingsOpen = (ready || route.name === 'demo') && settings !== false
   useEffect(() => {
     if (!unauthenticated) return
     setSettings(false)
@@ -140,15 +141,13 @@ export function App() {
       <Suspense fallback={null}>{ready && libraryOpen && <LibraryPanel />}</Suspense>
       <Suspense fallback={null}>{ready && mediaOpen && <MediaLibraryPanel />}</Suspense>
       <Suspense fallback={null}>{ready && checkpointsOpen && <CheckpointsPanel />}</Suspense>
-      <Suspense fallback={null}>
-        {(ready || route.name === 'demo') && (
-          <AnimatePresence>
-            {settings !== false && (
-              <SettingsDialog initial={settings} onClose={() => setSettings(false)} />
-            )}
-          </AnimatePresence>
-        )}
-      </Suspense>
+      <DeferredPanel active={settingsOpen}>
+        <SettingsHost
+          open={settingsOpen}
+          initial={settings === false ? undefined : settings}
+          onClose={() => setSettings(false)}
+        />
+      </DeferredPanel>
       <DialogHost active={ready || route.name === 'demo'} />
       {(ready || route.name === 'demo') && <TooltipHost />}
       <DesktopEvents />

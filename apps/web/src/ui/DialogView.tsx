@@ -2,7 +2,29 @@ import { Dialog } from '@base-ui/react/dialog'
 import { m } from 'motion/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DialogRequest } from './Dialog'
-import { dialogVariants, fadeVariants, useOverlayClosing, useOverlayMotion } from './motion'
+import {
+  AnimatePresence,
+  dialogVariants,
+  fadeVariants,
+  useOverlayClosing,
+  useOverlayMotion,
+} from './motion'
+
+export function DialogPresence({
+  req,
+  isCurrent,
+  onFinish,
+}: {
+  req: DialogRequest | null
+  isCurrent(id: number): boolean
+  onFinish(id: number, value: boolean | string | null): void
+}) {
+  return (
+    <AnimatePresence>
+      {req && <DialogView key={req.id} req={req} isCurrent={isCurrent} onFinish={onFinish} />}
+    </AnimatePresence>
+  )
+}
 
 export function DialogView({
   req,

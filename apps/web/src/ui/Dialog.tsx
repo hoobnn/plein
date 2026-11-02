@@ -1,5 +1,4 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { AnimatePresence } from './motion'
 import { LoadingPanel } from './LoadingPanel'
 
 /**
@@ -93,14 +92,14 @@ export function promptDialog(options: PromptOptions): Promise<string | null> {
 
 /** 加载失败取消当前操作；下一次请求重新加载，不缓存失败的 Promise。 */
 export function createDialogHost(
-  load: () => Promise<Pick<typeof import('./DialogView'), 'DialogView'>>,
+  load: () => Promise<Pick<typeof import('./DialogView'), 'DialogPresence'>>,
 ) {
-  type View = (typeof import('./DialogView'))['DialogView']
+  type View = (typeof import('./DialogView'))['DialogPresence']
   let ready: View | null = null
   let pending: Promise<View> | null = null
   const openView = () => {
     pending ??= load().then(
-      (module) => (ready = module.DialogView),
+      (module) => (ready = module.DialogPresence),
       (error: unknown) => {
         pending = null
         throw error
@@ -109,7 +108,7 @@ export function createDialogHost(
     return pending
   }
   return function DialogHost({ active = true }: { active?: boolean } = {}) {
-    const [DialogView, setView] = useState(() => ready)
+    const [DialogPresence, setView] = useState(() => ready)
     const [error, setError] = useState<Error | null>(null)
     const req = useSyncExternalStore(
       (l) => {
@@ -125,7 +124,7 @@ export function createDialogHost(
     useEffect(() => {
       if (!active || !req) return
       setError(null)
-      if (DialogView) return
+      if (DialogPresence) return
       let live = true
       openView().then(
         (view) => {
@@ -139,7 +138,7 @@ export function createDialogHost(
       return () => {
         live = false
       }
-    }, [active, req, DialogView])
+    }, [active, req, DialogPresence])
     if (!active) return null
     return (
       <>
@@ -155,12 +154,8 @@ export function createDialogHost(
             </button>
           </div>
         )}
-        {req && !DialogView && <LoadingPanel label="正在打开对话框…" />}
-        <AnimatePresence>
-          {req && DialogView && (
-            <DialogView key={req.id} req={req} isCurrent={isCurrent} onFinish={finish} />
-          )}
-        </AnimatePresence>
+        {req && !DialogPresence && <LoadingPanel label="正在打开对话框…" />}
+        {DialogPresence && <DialogPresence req={req} isCurrent={isCurrent} onFinish={finish} />}
       </>
     )
   }

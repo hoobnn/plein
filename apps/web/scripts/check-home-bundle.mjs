@@ -22,12 +22,25 @@ const featureEntry = Object.values(manifest).find(
 )
 if (featureEntry && files.includes(featureEntry.file))
   throw new Error('Motion domAnimation features must stay out of the Home initial chunks')
+// MotionConfig 可以留在首屏；这些字符串只来自 m、VisualElement、WAAPI 与关键帧运行时。
+const motionRuntimeMarkers = [
+  'motionComponentSymbol',
+  'motion-pop-id',
+  'transformPerspective',
+  'animateVisualElement',
+  'keyframeResolver',
+]
+for (const file of files) {
+  const source = readFileSync(join(dist, file), 'utf8')
+  const marker = motionRuntimeMarkers.find((candidate) => source.includes(candidate))
+  if (marker) throw new Error(`Home initial chunk ${file} contains Motion runtime (${marker})`)
+}
 const bytes = files.reduce(
   (sum, file) => sum + gzipSync(readFileSync(join(dist, file))).byteLength,
   0,
 )
-const limit = 300 * 1024
+const limit = 180 * 1024
 console.log(
-  `Home initial JS gzip: ${(bytes / 1024).toFixed(2)} KiB (${files.length} chunks; budget 300 KiB)`,
+  `Home initial JS gzip: ${(bytes / 1024).toFixed(2)} KiB (${files.length} chunks; budget 180 KiB)`,
 )
 if (bytes > limit) throw new Error('Home initial JS exceeds its 300 KiB budget')

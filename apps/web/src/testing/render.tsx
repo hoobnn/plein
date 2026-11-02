@@ -1,4 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query'
+import { MotionConfig } from 'motion/react'
 import { act, cleanup, render, type RenderOptions } from '@testing-library/react/pure'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement, ReactNode } from 'react'
@@ -10,6 +11,7 @@ import { useCanvas } from '../stores/canvas'
 import { useSession } from '../stores/session'
 import { useTheme } from '../stores/theme'
 import { DialogHost } from '../ui/Dialog'
+import { LazyMotion } from '../ui/LazyMotion'
 import { MotionProvider } from '../ui/MotionProvider'
 import { mockMatchMedia } from './browser'
 import { finishPendingRequests, mockFetch, takeUnhandledRequests } from './fetch'
@@ -95,25 +97,45 @@ interface AppRenderOptions extends Omit<RenderOptions, 'wrapper'> {
   dialogs?: boolean
   wrapper?: RenderOptions['wrapper']
   userOptions?: Parameters<typeof userEvent.setup>[0]
+  /** 仅根部代码分割测试开启；普通组件测试使用同步 LazyMotion，避免重复等待。 */
+  deferredMotion?: boolean
 }
 
 /** 只在带 happy-dom 文件头的组件测试中导入；纯逻辑单测不加载这些依赖。 */
 export function renderApp(
   ui: ReactElement,
-  { route, dialogs = true, wrapper: Wrapper, userOptions, ...options }: AppRenderOptions = {},
+  {
+    route,
+    dialogs = true,
+    wrapper: Wrapper,
+    userOptions,
+    deferredMotion,
+    ...options
+  }: AppRenderOptions = {},
 ) {
   if (route) act(() => setRoute(route))
   const user = userEvent.setup({
     ...(vi.isFakeTimers() ? { advanceTimers: vi.advanceTimersByTimeAsync } : {}),
     ...userOptions,
   })
-  const providers = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>
-      <MotionProvider>
+  const providers = ({ children }: { children: ReactNode }) => {
+    const content = (
+      <>
         {Wrapper ? <Wrapper>{children}</Wrapper> : children}
         {dialogs && <DialogHost />}
-      </MotionProvider>
-    </QueryClientProvider>
-  )
+      </>
+    )
+    return (
+      <QueryClientProvider client={queryClient}>
+        {deferredMotion ? (
+          <MotionProvider>{content}</MotionProvider>
+        ) : (
+          <LazyMotion>
+            <MotionConfig reducedMotion="user">{content}</MotionConfig>
+          </LazyMotion>
+        )}
+      </QueryClientProvider>
+    )
+  }
   return { ...render(ui, { ...options, wrapper: providers }), user, queryClient }
 }

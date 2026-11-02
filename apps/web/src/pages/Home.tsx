@@ -9,6 +9,7 @@ import { forgetLocalCache } from '../canvas/localCache'
 import { useLibrary } from '../features/library/store'
 import { useSession } from '../stores/session'
 import { Brand, isPlainClick } from '../ui/Brand'
+import { DeferredPanel } from '../ui/DeferredPanel'
 import { confirmDialog } from '../ui/Dialog'
 import { fullTime, relativeTime } from '../ui/format'
 import { Icon, type IconName } from '../ui/icons'
@@ -16,9 +17,6 @@ import { InlineTitle } from '../ui/InlineTitle'
 import { ThemeToggle } from '../ui/ThemeToggle'
 import { EmptyState } from '../ui/EmptyState'
 import { zoomView } from '../ui/viewTransition'
-import { Welcome } from '../features/onboarding/Welcome'
-import { AnimatePresence } from '../ui/motion'
-import { Toast } from '../ui/Toast'
 import { useCanvas } from '../stores/canvas'
 import { useMediaLibrary } from '../features/media-library/store'
 import { useCheckpoints } from '../features/checkpoints/store'
@@ -26,11 +24,12 @@ import { HomeAgentTrigger } from '../features/agent/HomeAgentTrigger'
 import { useAgent } from '../features/agent/store'
 import { preloadEditor } from './EditorLoader'
 
-const ExportPackageDialog = lazy(() =>
-  import('../features/projects/ProjectPackage').then((m) => ({ default: m.ExportPackageDialog })),
+const Welcome = lazy(() =>
+  import('../features/onboarding/Welcome').then((m) => ({ default: m.Welcome })),
 )
-const ImportPackageDialog = lazy(() =>
-  import('../features/projects/ProjectPackage').then((m) => ({ default: m.ImportPackageDialog })),
+const HomeToast = lazy(() => import('./HomeToast').then((m) => ({ default: m.HomeToast })))
+const HomePackageDialogs = lazy(() =>
+  import('./HomePackageDialogs').then((m) => ({ default: m.HomePackageDialogs })),
 )
 
 /** 快速开始：新建项目并在它的第一张画布上放好对应节点、打开生成器 */
@@ -393,29 +392,29 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
           )}
         </section>
       </main>
-      <Welcome />
-      {/* 画布页留下的提示（如画布已在别处删除，跳回首页时） */}
-      <AnimatePresence>{notice && <Toast>{notice}</Toast>}</AnimatePresence>
-      <Suspense fallback={<p role="status">正在打开项目包…</p>}>
-        <AnimatePresence>
-          {exporting && (
-            <ExportPackageDialog project={exporting} onClose={() => setExporting(null)} />
-          )}
-        </AnimatePresence>
-        <AnimatePresence>
-          {importing && (
-            <ImportPackageDialog
-              file={importing}
-              onClose={() => setImporting(null)}
-              onImported={(r) => {
-                setImporting(null)
-                void invalidateProjects()
-                if (r.canvasId) navigate({ name: 'canvas', id: r.canvasId })
-              }}
-            />
-          )}
-        </AnimatePresence>
+      <Suspense fallback={null}>
+        <Welcome />
       </Suspense>
+      {/* 画布页留下的提示（如画布已在别处删除，跳回首页时） */}
+      <DeferredPanel active={!!notice}>
+        <HomeToast notice={notice} />
+      </DeferredPanel>
+      <DeferredPanel
+        active={!!exporting || !!importing}
+        fallback={exporting || importing ? <p role="status">正在打开项目包…</p> : null}
+      >
+        <HomePackageDialogs
+          exporting={exporting}
+          importing={importing}
+          onCloseExport={() => setExporting(null)}
+          onCloseImport={() => setImporting(null)}
+          onImported={(r) => {
+            setImporting(null)
+            void invalidateProjects()
+            if (r.canvasId) navigate({ name: 'canvas', id: r.canvasId })
+          }}
+        />
+      </DeferredPanel>
     </div>
   )
 }

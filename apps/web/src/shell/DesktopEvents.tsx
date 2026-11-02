@@ -3,11 +3,13 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import { desktop } from '../desktop'
 import { navigate } from '../router'
 import { switchMode, useCanvas } from '../stores/canvas'
-import { AnimatePresence } from '../ui/motion'
-import { Toast } from '../ui/Toast'
+import { DeferredPanel } from '../ui/DeferredPanel'
 
 const DesktopUpdates = lazy(() =>
   import('./DesktopUpdates').then((m) => ({ default: m.DesktopUpdates })),
+)
+const DesktopSavedToast = lazy(() =>
+  import('./DesktopSavedToast').then((m) => ({ default: m.DesktopSavedToast })),
 )
 
 /** 等画布和节点都加载好再定位，最多等这么久 */
@@ -48,34 +50,19 @@ export function DesktopEvents() {
   }, [saved])
   if (!desktop) return null
 
-  const path = saved?.savePath
   return (
     <>
       <Suspense fallback={null}>
         <DesktopUpdates />
       </Suspense>
-      <AnimatePresence>
-        {saved ? (
-          <Toast
-            action={
-              path && (
-                <button
-                  type="button"
-                  className="ui-btn ui-btn-quiet ui-btn-sm"
-                  onClick={() => {
-                    void desktop?.showSavedFile(path)
-                    setSaved(null)
-                  }}
-                >
-                  {desktop.platform === 'darwin' ? '在访达中显示' : '在文件夹中显示'}
-                </button>
-              )
-            }
-          >
-            {saved.state === 'completed' ? `已保存「${saved.name}」` : `「${saved.name}」保存失败`}
-          </Toast>
-        ) : null}
-      </AnimatePresence>
+      <DeferredPanel active={!!saved}>
+        <DesktopSavedToast
+          saved={saved}
+          showLabel={desktop.platform === 'darwin' ? '在访达中显示' : '在文件夹中显示'}
+          onShow={(path) => void desktop?.showSavedFile(path)}
+          onClose={() => setSaved(null)}
+        />
+      </DeferredPanel>
     </>
   )
 }

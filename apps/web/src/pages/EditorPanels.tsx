@@ -1,6 +1,7 @@
-import { lazy, type ReactNode, Suspense, useState } from 'react'
+import { lazy } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useCanvas } from '../stores/canvas'
+import { DeferredPanel } from '../ui/DeferredPanel'
 import { LoadingPanel } from '../ui/LoadingPanel'
 
 const StoryboardEditor = lazy(() =>
@@ -16,23 +17,6 @@ const SequenceEditor = lazy(() =>
   import('../features/sequence/SequenceEditor').then((m) => ({ default: m.SequenceEditor })),
 )
 
-/** 面板第一次打开才加载；之后保留宿主，让面板自己的 AnimatePresence 完成退场。 */
-function DeferredPanel({
-  active,
-  label,
-  children,
-}: {
-  active: boolean
-  label: string
-  children: ReactNode
-}) {
-  const [opened, setOpened] = useState(active)
-  if (active && !opened) setOpened(true)
-  return active || opened ? (
-    <Suspense fallback={active ? <LoadingPanel label={label} /> : null}>{children}</Suspense>
-  ) : null
-}
-
 export function EditorPanels() {
   const { storyboard, scenePrep, shotWorkbench, sequence } = useCanvas(
     useShallow((s) => ({
@@ -44,16 +28,28 @@ export function EditorPanels() {
   )
   return (
     <>
-      <DeferredPanel active={storyboard} label="正在打开分镜表…">
+      <DeferredPanel
+        active={storyboard}
+        fallback={storyboard ? <LoadingPanel label="正在打开分镜表…" /> : null}
+      >
         <StoryboardEditor />
       </DeferredPanel>
-      <DeferredPanel active={scenePrep} label="正在打开场景准备…">
+      <DeferredPanel
+        active={scenePrep}
+        fallback={scenePrep ? <LoadingPanel label="正在打开场景准备…" /> : null}
+      >
         <ScenePrep />
       </DeferredPanel>
-      <DeferredPanel active={shotWorkbench} label="正在打开镜头工作台…">
+      <DeferredPanel
+        active={shotWorkbench}
+        fallback={shotWorkbench ? <LoadingPanel label="正在打开镜头工作台…" /> : null}
+      >
         <ShotWorkbench />
       </DeferredPanel>
-      <DeferredPanel active={sequence} label="正在打开序列…">
+      <DeferredPanel
+        active={sequence}
+        fallback={sequence ? <LoadingPanel label="正在打开序列…" /> : null}
+      >
         <SequenceEditor />
       </DeferredPanel>
     </>
