@@ -33,7 +33,7 @@ import { type StageMode, type StageTool, StageView } from './view'
 import { downloadBlenderStage } from './blender'
 import { BlockInspector, CameraInspector, FigureInspector } from './StageInspectors'
 import { AddBlock, OutlineGroup, OutlineItem } from './StageOutline'
-import { continuousGroup, FIGURE_COLORS, uid } from './stage.utils'
+import { continuousGroup, FIGURE_COLORS, isSliderGestureTarget, uid } from './stage.utils'
 
 const CAMERA_ID = 'camera'
 
@@ -554,9 +554,7 @@ export function StagePanel({
         onPointerDownCapture={(event) => {
           engine.doc.undo.stopCapturing()
           rangeGesture.current =
-            event.button === 0 &&
-            event.target instanceof HTMLInputElement &&
-            event.target.type === 'range'
+            event.button === 0 && isSliderGestureTarget(event.target)
               ? { pointerId: event.pointerId }
               : null
         }}
