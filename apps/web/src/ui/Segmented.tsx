@@ -17,8 +17,8 @@ const itemVariants = cva(
   {
     variants: {
       size: {
-        md: 'h-md min-w-md px-2.5',
-        lg: 'h-lg min-w-lg px-2.5',
+        md: 'h-md min-w-8 px-2.5',
+        lg: 'h-lg min-w-9 px-2.5',
       },
       iconOnly: {
         true: 'px-0',
@@ -26,8 +26,8 @@ const itemVariants = cva(
       },
     },
     compoundVariants: [
-      { size: 'md', iconOnly: true, class: 'w-md' },
-      { size: 'lg', iconOnly: true, class: 'w-lg' },
+      { size: 'md', iconOnly: true, class: 'w-8' },
+      { size: 'lg', iconOnly: true, class: 'w-9' },
     ],
     defaultVariants: { size: 'md', iconOnly: false },
   },
