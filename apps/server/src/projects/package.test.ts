@@ -567,6 +567,42 @@ describe('项目包导入', () => {
     expect(el.run?.progress).toBeUndefined()
   })
 
+  it('项目包重映射元素 id 时同步选图键和名称绑定键', () => {
+    const ydoc = createDoc(undefined, { schedule: () => {} })
+    const oldRole = 'role_old'
+    const newRole = 'role_new'
+    const otherRole = 'role_keep'
+    const nameKey = (id: string) => `referenceNameBinding:${encodeURIComponent('林夏')}:${id}`
+    const n = addNode(ydoc, 'plein/image', {
+      params: {
+        requiredRefs: [oldRole, otherRole],
+        referenceImagePicks: { [oldRole]: ['asset-b'], [otherRole]: ['asset-c'] },
+        [nameKey(oldRole)]: { type: 'image', assetId: 'asset-b', source: oldRole },
+        [nameKey(otherRole)]: { type: 'image', assetId: 'asset-c', source: otherRole },
+      },
+    })
+    const out = remapDoc(Y.encodeStateAsUpdate(ydoc.ydoc), new Map([[oldRole, newRole]]))
+    const back = createDoc(undefined, { schedule: () => {} })
+    Y.applyUpdate(back.ydoc, out)
+    const params = back.get(n)!.params!
+    expect(params.requiredRefs).toEqual([newRole, otherRole])
+    expect(params.referenceImagePicks).toEqual({
+      [newRole]: ['asset-b'],
+      [otherRole]: ['asset-c'],
+    })
+    expect(params).not.toHaveProperty(nameKey(oldRole))
+    expect(params).toHaveProperty(nameKey(newRole), {
+      type: 'image',
+      assetId: 'asset-b',
+      source: newRole,
+    })
+    expect(params).toHaveProperty(nameKey(otherRole), {
+      type: 'image',
+      assetId: 'asset-c',
+      source: otherRole,
+    })
+  })
+
   it('写入失败时整个回滚，不留下半个项目', async () => {
     const s = await seed()
     const data = await download(s.server, s.projectId)

@@ -27,6 +27,7 @@ const source = () => {
       params: {
         prompt: '@林夏#002/少年 走来',
         requiredRefs: ['z'],
+        referenceImagePicks: { z: ['asset-b'] },
         clips: [{ source: 'a', in: 1, out: 4 }],
         assetBindings: { 林夏: { elementId: 'z' } },
         shots: [{ prompt: '@林夏#1 微笑' }],
@@ -214,6 +215,16 @@ describe('画布复制中的引用映射', () => {
     const pasted = referenceClipboard.paste(doc, referenceClipboard.copy(doc, ['a', 'z', text]))
     expect(resolved(doc, doc.get(text)!.params!.prompt as string)).toBe('z')
     expect(resolved(doc, doc.get(pasted[2]!)!.params!.prompt as string)).toBe(pasted[1])
+    doc.destroy()
+  })
+
+  it('同画布复制后副本的选图配置指向副本角色', () => {
+    const { doc, text } = source()
+    const pasted = referenceClipboard.paste(doc, referenceClipboard.copy(doc, ['a', 'z', text]))
+    const image = doc.get(pasted[2]!)!
+    expect(image.params!.requiredRefs).toEqual([pasted[1]])
+    expect(image.params!.referenceImagePicks).toEqual({ [pasted[1]!]: ['asset-b'] })
+    expect(doc.get(text)!.params!.referenceImagePicks).toEqual({ z: ['asset-b'] })
     doc.destroy()
   })
 })

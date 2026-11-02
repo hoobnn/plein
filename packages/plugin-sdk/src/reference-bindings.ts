@@ -7,6 +7,53 @@ export interface ReferenceIdentity {
 }
 export type ReferenceBindings = Record<string, ReferenceIdentity>
 
+/** 复制或导入时，重映射引用参数里保存的元素 id；未纳入映射的外部依赖保持原样。 */
+export function remapReferenceParams(
+  params: Record<string, unknown>,
+  ids: ReadonlyMap<string, string>,
+): Record<string, unknown> {
+  let next = params
+  const change = (key: string, value: unknown) => {
+    if (next === params) next = { ...params }
+    next[key] = value
+  }
+  const ref = (value: unknown) => (typeof value === 'string' ? (ids.get(value) ?? value) : value)
+
+  const required = params.requiredRefs
+  if (Array.isArray(required)) {
+    const requiredRefs = required.map(ref)
+    if (requiredRefs.some((value, index) => value !== required[index]))
+      change('requiredRefs', requiredRefs)
+  }
+
+  const picks = params.referenceImagePicks
+  if (picks && typeof picks === 'object' && !Array.isArray(picks)) {
+    let changed = false
+    const entries = Object.entries(picks).map(([key, value]) => {
+      const mapped = ids.get(key)
+      if (mapped !== undefined && mapped !== key) changed = true
+      return [mapped ?? key, value] as const
+    })
+    if (changed) change('referenceImagePicks', Object.fromEntries(entries))
+  }
+
+  for (const [key, value] of Object.entries(params)) {
+    if (!key.startsWith('referenceNameBinding:')) continue
+    const separator = key.lastIndexOf(':')
+    if (separator < 'referenceNameBinding:'.length) continue
+    const source = key.slice(separator + 1)
+    const mapped = ids.get(source)
+    if (mapped === undefined || mapped === source) continue
+    if (next === params) next = { ...params }
+    delete next[key]
+    next[`${key.slice(0, separator + 1)}${mapped}`] =
+      value && typeof value === 'object' && !Array.isArray(value) && value.source === source
+        ? { ...value, source: mapped }
+        : value
+  }
+  return next
+}
+
 /** 兼容旧编号绑定；名称引用绑定来源，迭代时使用该来源当前的结果。 */
 export function referenceBindings(value: unknown): ReferenceBindings {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}

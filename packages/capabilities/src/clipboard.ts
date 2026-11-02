@@ -9,6 +9,7 @@ import {
   setText,
   isVideoSegment,
 } from '@plein/doc'
+import { remapReferenceParams } from '@plein/plugin-sdk'
 import {
   findMentions,
   mentionName,
@@ -102,8 +103,7 @@ function remapParams(params: Record<string, unknown>, ids: ReadonlyMap<string, s
       ]),
     )
   }
-  const next = bindings(params) as Record<string, unknown>
-  if (Array.isArray(next.requiredRefs)) next.requiredRefs = next.requiredRefs.map(ref)
+  const next = remapReferenceParams(bindings(params) as Record<string, unknown>, ids)
   if (Array.isArray(next.clips))
     next.clips = next.clips.map((clip) => {
       if (!clip || typeof clip !== 'object') return clip

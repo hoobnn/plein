@@ -14,6 +14,7 @@ import {
   type NodeResult,
   type NodeRun,
 } from '@plein/doc'
+import { remapReferenceParams } from '@plein/plugin-sdk'
 import {
   isAiAnalysisType,
   DELIVERY_CHECK_TYPE,
@@ -111,6 +112,14 @@ export function remapDoc(data: Uint8Array, map: ReadonlyMap<string, string>): Ui
               continue
             const next = remapValue(v, map)
             if (next !== v) params.set(k, next)
+          }
+          const current = params.toJSON() as Record<string, unknown>
+          const remapped = remapReferenceParams(current, map)
+          if (remapped !== current) {
+            for (const key of Object.keys(current))
+              if (!Object.hasOwn(remapped, key)) params.delete(key)
+            for (const [key, value] of Object.entries(remapped))
+              if (!Object.hasOwn(current, key) || current[key] !== value) params.set(key, value)
           }
         }
         const results = m.get('results')
