@@ -11,6 +11,7 @@ import { useSession } from '../stores/session'
 import { Brand, isPlainClick } from '../ui/Brand'
 import { DeferredPanel } from '../ui/DeferredPanel'
 import { confirmDialog } from '../ui/Dialog'
+import { prefetchIdle } from '../ui/idle'
 import { fullTime, relativeTime } from '../ui/format'
 import { Icon, type IconName } from '../ui/icons'
 import { InlineTitle } from '../ui/InlineTitle'
@@ -87,6 +88,15 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
       active.current = false
     }
   }, [])
+  useEffect(
+    () =>
+      prefetchIdle([
+        () => import('../features/onboarding/Welcome'),
+        () => import('./HomeToast'),
+        () => import('./HomePackageDialogs'),
+      ]),
+    [],
+  )
   const [scrolled, setScrolled] = useState(false)
   const [exporting, setExporting] = useState<Project | null>(null)
   const [importing, setImporting] = useState<File | null>(null)

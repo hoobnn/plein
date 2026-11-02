@@ -6,6 +6,7 @@ import {
   type Variants,
 } from 'motion/react'
 import { createElement, type ReactNode, useContext, useSyncExternalStore } from 'react'
+import { LazyMotion } from './LazyMotion'
 
 /**
  * 与 tokens.css 一一对应：spring = cubic-bezier(0.22, 1, 0.36, 1)，
@@ -175,7 +176,11 @@ function useLatestReducedMotion() {
 /** 减少动态效果时绕过保留队列，关闭即卸载；其余情况交给 Motion 等待 exit。 */
 export function AnimatePresence(props: AnimatePresenceProps & { children?: ReactNode }) {
   const reduced = useLatestReducedMotion()
-  return reduced ? props.children : createElement(MotionAnimate, props)
+  return createElement(
+    LazyMotion,
+    null,
+    reduced ? props.children : createElement(MotionAnimate, props),
+  )
 }
 
 /** AnimatePresence 的关闭态同时用于停用 Esc、点外面和锚点观察。 */

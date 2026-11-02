@@ -4,6 +4,7 @@ import { desktop } from '../desktop'
 import { navigate } from '../router'
 import { switchMode, useCanvas } from '../stores/canvas'
 import { DeferredPanel } from '../ui/DeferredPanel'
+import { prefetchIdle } from '../ui/idle'
 
 const DesktopUpdates = lazy(() =>
   import('./DesktopUpdates').then((m) => ({ default: m.DesktopUpdates })),
@@ -43,6 +44,7 @@ export function DesktopEvents() {
       }),
     [],
   )
+  useEffect(() => prefetchIdle([() => import('./DesktopSavedToast')]), [])
   useEffect(() => {
     if (!saved) return
     const t = setTimeout(() => setSaved(null), 6000)

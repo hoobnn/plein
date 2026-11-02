@@ -1,17 +1,9 @@
 import { MotionConfig } from 'motion/react'
-import { lazy, type ReactNode, Suspense } from 'react'
+import { type ReactNode, useEffect } from 'react'
+import { prefetchIdle } from './idle'
 
-const LazyMotion = lazy(() =>
-  import('./LazyMotion').then((module) => ({ default: module.LazyMotion })),
-)
-
-/** reducedMotion 配置留在根部；LazyMotion 与动画实现延后加载，不阻塞打开请求。 */
+/** App 立即渲染；浮层运行时只在空闲时预取，不包住应用的加载过程。 */
 export function MotionProvider({ children }: { children: ReactNode }) {
-  return (
-    <MotionConfig reducedMotion="user">
-      <Suspense fallback={null}>
-        <LazyMotion>{children}</LazyMotion>
-      </Suspense>
-    </MotionConfig>
-  )
+  useEffect(() => prefetchIdle([() => import('./motion')]), [])
+  return <MotionConfig reducedMotion="user">{children}</MotionConfig>
 }

@@ -7,6 +7,7 @@ import { useUpdate } from './shell/desktopUpdateState'
 import type { Section } from './features/settings/Settings'
 import { DeferredPanel } from './ui/DeferredPanel'
 import { DialogHost } from './ui/Dialog'
+import { prefetchIdle } from './ui/idle'
 import { TooltipHost } from './ui/Tooltip'
 import { useCanvas } from './stores/canvas'
 import { useLibrary } from './features/library/store'
@@ -60,6 +61,14 @@ export function App() {
     (s) => s.status === 'ready' && !!s.info?.authRequired && !s.info.principal,
   )
   const settingsOpen = (ready || route.name === 'demo') && settings !== false
+  useEffect(
+    () =>
+      prefetchIdle([
+        () => import('./features/settings/SettingsHost'),
+        () => import('./ui/DialogView'),
+      ]),
+    [],
+  )
   useEffect(() => {
     if (!unauthenticated) return
     setSettings(false)

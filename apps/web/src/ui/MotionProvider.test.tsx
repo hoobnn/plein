@@ -25,7 +25,7 @@ function Fixture() {
 
 it('LazyMotion 与浮层延后加载时保留打开请求并正常进退场', async () => {
   const { user } = renderApp(<Fixture />, { deferredMotion: true })
-  const toggle = await screen.findByRole('button', { name: '切换提示' })
+  const toggle = screen.getByRole('button', { name: '切换提示' })
   await user.click(toggle)
   expect((await screen.findByRole('status')).textContent).toBe('已保存')
   await user.click(toggle)
