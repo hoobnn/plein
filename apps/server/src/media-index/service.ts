@@ -10,6 +10,7 @@ import type * as Y from 'yjs'
 import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
 import { canvasState, documentReferences, readDocument, stringReferences } from './references'
+import { MediaIndexStore } from './store'
 
 const INDEX_VERSION = 4
 type SqlRow = Record<string, unknown>
@@ -47,8 +48,6 @@ const json = (value: string | null | undefined): unknown => {
     return null
   }
 }
-const literalLike = (text: string) =>
-  `%${text.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`
 
 export function createMediaIndex(deps: { db: DB; rooms: Rooms }) {
   return new MediaIndex(deps.db, deps.rooms)
@@ -71,14 +70,8 @@ export class MediaIndex {
     readonly rooms: Rooms,
   ) {}
 
-  private rows<T>(sql: string, ...args: unknown[]) {
-    return this.db.$client.prepare(sql).all(...args) as T[]
-  }
-  private one<T>(sql: string, ...args: unknown[]) {
-    return this.db.$client.prepare(sql).get(...args) as T | undefined
-  }
-  private run(sql: string, ...args: unknown[]) {
-    return this.db.$client.prepare(sql).run(...args)
+  private store() {
+    return new MediaIndexStore(this.db)
   }
 
   install() {
@@ -154,9 +147,7 @@ export class MediaIndex {
   }
   get ready() {
     if (this.closed || this.incomplete) return false
-    const meta = this.one<{ version: number; completed_at: number | null }>(
-      'SELECT version, completed_at FROM media_index_meta WHERE id = 1',
-    )
+    const meta = this.store().meta()
     return !this.rebuilding && meta?.version === INDEX_VERSION && meta.completed_at != null
   }
 
@@ -168,16 +159,16 @@ export class MediaIndex {
     const build = async () => {
       if (this.closed) return
       this.markIncomplete()
-      this.run('DELETE FROM media_sources')
+      this.store().clearSources()
       const groups = [
-        ['SELECT id FROM canvases', (id: string) => this.refreshCanvas(id)],
-        ['SELECT id FROM jobs', (id: string) => this.refreshJob(id)],
-        ['SELECT id FROM library_items', (id: string) => this.refreshLibrary(id)],
-        ['SELECT id FROM canvas_checkpoints', (id: string) => this.refreshCheckpoint(id)],
+        ['canvases', (id: string) => this.refreshCanvas(id)],
+        ['jobs', (id: string) => this.refreshJob(id)],
+        ['library_items', (id: string) => this.refreshLibrary(id)],
+        ['canvas_checkpoints', (id: string) => this.refreshCheckpoint(id)],
       ] as const
-      for (const [query, refresh] of groups) {
+      for (const [table, refresh] of groups) {
         if (this.closed) return
-        for (const { id } of this.rows<{ id: string }>(query)) {
+        for (const id of this.store().sourceIds(table)) {
           if (this.closed) return
           refresh(id)
           await new Promise<void>((resolve) => setImmediate(resolve))
@@ -191,11 +182,7 @@ export class MediaIndex {
         this.scheduleRepair()
         return
       }
-      this.run(
-        'UPDATE media_index_meta SET version=?,completed_at=? WHERE id=1',
-        INDEX_VERSION,
-        Date.now(),
-      )
+      this.store().markComplete(INDEX_VERSION)
       this.incomplete = false
       this.repairDelay = 1000
       if (this.repairTimer) clearTimeout(this.repairTimer)
@@ -213,10 +200,7 @@ export class MediaIndex {
   }
 
   private markIncomplete() {
-    this.run(
-      'INSERT INTO media_index_meta(id,version,completed_at) VALUES(1,?,NULL) ON CONFLICT(id) DO UPDATE SET version=excluded.version,completed_at=NULL',
-      INDEX_VERSION,
-    )
+    this.store().markIncomplete(INDEX_VERSION)
   }
 
   private scheduleRepair() {
@@ -262,38 +246,11 @@ export class MediaIndex {
   }
 
   private replace(type: SourceKind, id: string, rows: SourceRow[]) {
-    this.db.$client.transaction(() => {
-      this.run('DELETE FROM media_sources WHERE source_type=? AND source_id=?', type, id)
-      const put = this.db.$client.prepare(
-        'INSERT OR IGNORE INTO media_sources(owner_id,asset_id,source_type,source_id,locator,project_id,canvas_id,node_id,result_id,label,created_at,adopted) SELECT ?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM assets WHERE owner_id=? AND id=?)',
-      )
-      for (const r of rows)
-        put.run(
-          r.owner_id,
-          r.asset_id,
-          r.source_type,
-          r.source_id,
-          r.locator,
-          r.project_id,
-          r.canvas_id,
-          r.node_id,
-          r.result_id,
-          r.label,
-          r.created_at,
-          r.adopted,
-          r.owner_id,
-          r.asset_id,
-        )
-    })()
+    this.store().replaceSources(type, id, rows)
   }
 
   refreshCanvas(id: string) {
-    const row = this.one<{
-      owner_id: string
-      project_id: string | null
-      title: string
-      created_at: number
-    }>('SELECT owner_id,project_id,title,created_at FROM canvases WHERE id=?', id)
+    const row = this.store().canvas(id)
     if (!row) {
       this.replace('canvas', id, [])
       return
@@ -320,20 +277,7 @@ export class MediaIndex {
   }
 
   refreshJob(id: string) {
-    const row = this.one<{
-      owner_id: string
-      canvas_id: string
-      project_id: string | null
-      node_id: string
-      node_type: string
-      title: string
-      calls: string
-      recovery: string | null
-      created_at: number
-    }>(
-      'SELECT j.*,c.project_id,c.title FROM jobs j JOIN canvases c ON c.id=j.canvas_id AND c.owner_id=j.owner_id WHERE j.id=?',
-      id,
-    )
+    const row = this.store().job(id)
     if (!row) {
       this.replace('job', id, [])
       return
@@ -366,13 +310,7 @@ export class MediaIndex {
   }
 
   refreshLibrary(id: string) {
-    const row = this.one<{
-      owner_id: string
-      project_id: string | null
-      name: string
-      data: string
-      created_at: number
-    }>('SELECT * FROM library_items WHERE id=?', id)
+    const row = this.store().library(id)
     const rows: SourceRow[] = []
     if (row) {
       const data = json(row.data) as {
@@ -413,14 +351,8 @@ export class MediaIndex {
   }
 
   refreshCheckpoint(id: string) {
-    const cp = this.one<{ owner_id: string; project_id: string; name: string; created_at: number }>(
-      'SELECT * FROM canvas_checkpoints WHERE id=?',
-      id,
-    )
-    const refs = this.rows<{ asset_id: string }>(
-      'SELECT asset_id FROM checkpoint_assets WHERE checkpoint_id=?',
-      id,
-    )
+    const cp = this.store().checkpoint(id)
+    const refs = this.store().checkpointAssets(id)
     this.replace(
       'checkpoint',
       id,
@@ -444,19 +376,7 @@ export class MediaIndex {
   }
 
   purgeDeletedSources() {
-    for (const [kind, table] of [
-      ['canvas', 'canvases'],
-      ['job', 'jobs'],
-      ['library', 'library_items'],
-      ['checkpoint', 'canvas_checkpoints'],
-    ] as const)
-      this.run(
-        `DELETE FROM media_sources WHERE source_type=? AND NOT EXISTS(SELECT 1 FROM ${table} t WHERE t.id=media_sources.source_id AND t.owner_id=media_sources.owner_id)`,
-        kind,
-      )
-    this.run(
-      "UPDATE media_sources SET project_id=(SELECT project_id FROM library_items WHERE id=media_sources.source_id) WHERE source_type='library'",
-    )
+    this.store().purgeDeletedSources()
   }
 
   private requireReady() {
@@ -466,7 +386,7 @@ export class MediaIndex {
     this.purgeDeletedSources()
   }
   private requireProject(owner: string, id?: string) {
-    if (id && !this.one('SELECT id FROM projects WHERE id=? AND owner_id=?', id, owner))
+    if (id && !this.store().projectExists(owner, id))
       throw new MediaIndexError('not_found', '项目不存在')
   }
   private cursor(value: string | undefined, filter: string): SqlRow | null {
@@ -492,31 +412,8 @@ export class MediaIndex {
     const filter = digest([owner, query.projectId ?? '', query.kind ?? '', query.q])
     const cursor = this.cursor(query.cursor, filter)
     const asOf = (cursor?.asOf as number | undefined) ?? Date.now()
-    const conditions = ['a.owner_id=?', "a.kind IN ('image','video','audio')", 'a.created_at<=?']
-    const args: unknown[] = [owner, asOf]
-    if (query.kind) {
-      conditions.push('a.kind=?')
-      args.push(query.kind)
-    }
-    if (query.projectId) {
-      conditions.push(
-        'EXISTS(SELECT 1 FROM media_sources s WHERE s.owner_id=a.owner_id AND s.asset_id=a.id AND s.project_id=?)',
-      )
-      args.push(query.projectId)
-    }
-    if (query.q) {
-      conditions.push(
-        "(a.name LIKE ? ESCAPE '\\' OR EXISTS(SELECT 1 FROM media_sources s WHERE s.owner_id=a.owner_id AND s.asset_id=a.id AND s.label LIKE ? ESCAPE '\\'))",
-      )
-      args.push(literalLike(query.q), literalLike(query.q))
-    }
-    if (cursor) {
-      conditions.push('(a.created_at<? OR (a.created_at=? AND a.id<?))')
-      args.push(cursor.at, cursor.at, cursor.id)
-    }
-    const rows = this.rows<SqlRow>(
-      `SELECT a.* FROM assets a WHERE ${conditions.join(' AND ')} ORDER BY a.created_at DESC,a.id DESC LIMIT ?`,
-      ...args,
+    const rows = this.store().listAssets(
+      { owner, asOf, kind: query.kind, projectId: query.projectId, q: query.q, cursor },
       query.limit + 1,
     )
     const more = rows.length > query.limit
@@ -527,25 +424,8 @@ export class MediaIndex {
     const counts = new Map<string, number>()
     const rowsByAsset = new Map<string, SourceRow[]>()
     if (ids.length) {
-      const placeholders = ids.map(() => '?').join(',')
-      for (const row of this.rows<{ asset_id: string; n: number }>(
-        `SELECT asset_id, count(*) n FROM media_sources WHERE owner_id=? AND asset_id IN (${placeholders}) GROUP BY asset_id`,
-        owner,
-        ...ids,
-      ))
-        counts.set(row.asset_id, row.n)
-      for (const row of this.rows<SourceRow>(
-        // 每个素材只在 SQL 层取前三条来源：来源多的素材不会把整页的行都拉进内存。
-        `SELECT * FROM (
-           SELECT *, ROW_NUMBER() OVER (
-             PARTITION BY asset_id ORDER BY source_type,source_id,locator
-           ) AS rn
-           FROM media_sources
-           WHERE owner_id=? AND asset_id IN (${placeholders})
-         ) WHERE rn<=3 ORDER BY asset_id,source_type,source_id,locator`,
-        owner,
-        ...ids,
-      )) {
+      for (const row of this.store().sourceCounts(owner, ids)) counts.set(row.asset_id, row.n)
+      for (const row of this.store().assetSources(owner, ids)) {
         const list = rowsByAsset.get(row.asset_id)
         if (list) list.push(row)
         else rowsByAsset.set(row.asset_id, [row])
@@ -583,7 +463,7 @@ export class MediaIndex {
       r.canvas_id &&
       r.node_id &&
       !canvasNodes.has(r.canvas_id) &&
-      this.one('SELECT id FROM canvases WHERE id=? AND owner_id=?', r.canvas_id, r.owner_id)
+      this.store().canvasExists(r.canvas_id, r.owner_id)
     )
       canvasNodes.set(
         r.canvas_id,
@@ -614,7 +494,7 @@ export class MediaIndex {
     query: { cursor?: string; limit: number },
   ): MediaSourcesPage {
     this.requireReady()
-    if (!this.one('SELECT id FROM assets WHERE owner_id=? AND id=?', owner, asset))
+    if (!this.store().assetExists(owner, asset))
       throw new MediaIndexError('not_found', '素材不存在')
     const filter = digest([owner, asset])
     const cursor = this.cursor(query.cursor, filter)
@@ -630,11 +510,7 @@ export class MediaIndex {
       after = ' AND (source_type,source_id,locator)>(?,?,?)'
       args.push(...cursor.keys)
     }
-    const rows = this.rows<SourceRow>(
-      `SELECT * FROM media_sources WHERE owner_id=? AND asset_id=?${after} ORDER BY source_type,source_id,locator LIMIT ?`,
-      ...args,
-      query.limit + 1,
-    )
+    const rows = this.store().assetSourcePage(after, args, query.limit + 1)
     const shown = rows.slice(0, query.limit),
       last = shown.at(-1)
     const canvasNodes = new Map<string, Set<string>>()

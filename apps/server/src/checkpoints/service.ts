@@ -31,6 +31,7 @@ import { newCanvasId } from '../storage/canvases'
 import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
 import { checkpointAssetIds, type CheckpointRow } from './archive'
+import { CheckpointStore } from './store'
 import { compositionReferences } from '../media-index/references'
 
 const id = (prefix: string) => `${prefix}_${randomBytes(12).toString('base64url')}`
@@ -64,13 +65,12 @@ export function createCheckpointService(deps: {
 
 export class CheckpointService {
   constructor(readonly deps: { db: DB; rooms: Rooms; assets: AssetStore; index: MediaIndex }) {}
-  private get db() {
-    return this.deps.db.$client
+  private store() {
+    return new CheckpointStore(this.deps.db)
   }
+
   private row(owner: string, checkpointId: string) {
-    const row = this.db
-      .prepare('SELECT * FROM canvas_checkpoints WHERE id=? AND owner_id=?')
-      .get(checkpointId, owner) as CheckpointRow | undefined
+    const row = this.store().row(owner, checkpointId)
     if (!row) throw new CheckpointError('not_found', '检查点不存在')
     return row
   }
@@ -107,9 +107,7 @@ export class CheckpointService {
   }
 
   create(owner: string, canvasId: string, request: CreateCheckpoint): CanvasCheckpoint {
-    const canvas = this.db
-      .prepare('SELECT project_id,title FROM canvases WHERE id=? AND owner_id=?')
-      .get(canvasId, owner) as { project_id: string; title: string } | undefined
+    const canvas = this.store().canvas(owner, canvasId)
     if (!canvas) throw new CheckpointError('not_found', '画布不存在')
     let expected: Y.Snapshot
     try {
@@ -139,9 +137,7 @@ export class CheckpointService {
       })
       const history: PackageJob[] = []
       for (const runId of runIds) {
-        const job = this.db
-          .prepare('SELECT * FROM jobs WHERE id=? AND owner_id=? AND canvas_id=?')
-          .get(runId, owner, canvasId) as Record<string, unknown> | undefined
+        const job = this.store().job(owner, canvasId, runId) as Record<string, unknown> | undefined
         if (!job) continue
         history.push({
           id: runId,
@@ -178,18 +174,7 @@ export class CheckpointService {
         content_hash: sha(state),
       }
       const refs = checkpointAssetIds(state, (asset) => !!this.deps.assets.get(owner, asset))
-      this.db.transaction(() => {
-        this.db
-          .prepare(
-            'INSERT INTO canvas_checkpoints(id,owner_id,project_id,source_canvas_id,source_canvas_title,name,state,history,created_at,content_hash) VALUES(@id,@owner_id,@project_id,@source_canvas_id,@source_canvas_title,@name,@state,@history,@created_at,@content_hash)',
-          )
-          .run(row)
-        const pin = this.db.prepare(
-          'INSERT INTO checkpoint_assets(checkpoint_id,owner_id,asset_id) VALUES(?,?,?)',
-        )
-        for (const asset of refs.ids) pin.run(row.id, owner, asset)
-        this.deps.index.refreshCheckpoint(row.id)
-      })()
+      this.store().insert(row, refs.ids, () => this.deps.index.refreshCheckpoint(row.id))
       return this.metadata(row)
     } finally {
       doc?.destroy()
@@ -199,7 +184,7 @@ export class CheckpointService {
   }
 
   list(owner: string, projectId: string, query: CheckpointQuery): CheckpointPage {
-    if (!this.db.prepare('SELECT id FROM projects WHERE id=? AND owner_id=?').get(projectId, owner))
+    if (!this.store().projectExists(owner, projectId))
       throw new CheckpointError('not_found', '项目不存在')
     const conditions = ['owner_id=?', 'project_id=?'],
       args: unknown[] = [owner, projectId]
@@ -224,11 +209,7 @@ export class CheckpointService {
         throw new CheckpointError('invalid', '检查点分页游标无效')
       }
     }
-    const rows = this.db
-      .prepare(
-        `SELECT * FROM canvas_checkpoints WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC,id DESC LIMIT ?`,
-      )
-      .all(...args, query.limit + 1) as CheckpointRow[]
+    const rows = this.store().list(conditions, args, query.limit + 1)
     const shown = rows.slice(0, query.limit),
       last = shown.at(-1)
     return {
@@ -254,12 +235,7 @@ export class CheckpointService {
   }
   remove(owner: string, checkpointId: string) {
     this.row(owner, checkpointId)
-    this.db.transaction(() => {
-      this.db
-        .prepare('DELETE FROM canvas_checkpoints WHERE id=? AND owner_id=?')
-        .run(checkpointId, owner)
-      this.deps.index.refreshCheckpoint(checkpointId)
-    })()
+    this.store().remove(owner, checkpointId, () => this.deps.index.refreshCheckpoint(checkpointId))
   }
 
   restore(owner: string, checkpointId: string, title?: string): CheckpointRestored {
@@ -326,62 +302,46 @@ export class CheckpointService {
               ),
             )
           const library = el.params?.libraryId
-          if (
-            typeof library === 'string' &&
-            !this.db
-              .prepare('SELECT id FROM library_items WHERE id=? AND owner_id=?')
-              .get(library, owner)
-          )
+          if (typeof library === 'string' && !this.store().libraryItemExists(owner, library))
             (m.get('params') as Y.Map<unknown>)?.delete('libraryId')
         }
       })
       const now = Date.now()
       const state = Buffer.from(Y.encodeStateAsUpdate(ydoc))
-      this.db.transaction(() => {
-        this.db
-          .prepare(
-            'INSERT INTO canvases(id,owner_id,project_id,title,created_at,updated_at) VALUES(?,?,?,?,?,?)',
-          )
-          .run(
-            canvasId,
-            owner,
-            row.project_id,
-            title ?? `${row.source_canvas_title} · ${row.name}`.slice(0, 200),
-            now,
-            now,
-          )
-        this.db
-          .prepare('INSERT INTO doc_updates(canvas_id,data,created_at) VALUES(?,?,?)')
-          .run(canvasId, state, now)
-        const put = this.db.prepare(
-          "INSERT INTO jobs(id,owner_id,canvas_id,node_id,node_type,status,attempts,cache_key,cache_omit,input,error,created_at,started_at,finished_at,calls) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,'{}')",
-        )
-        for (const job of history) {
+      this.store().restore({
+        owner,
+        projectId: row.project_id,
+        now,
+        canvas: {
+          id: canvasId,
+          title: title ?? `${row.source_canvas_title} · ${row.name}`.slice(0, 200),
+        },
+        doc: { state },
+        jobs: history.flatMap((job) => {
           const fresh = remap.get(job.id)
-          if (fresh)
-            put.run(
-              fresh,
-              owner,
-              canvasId,
-              job.nodeId,
-              job.nodeType,
-              job.status,
-              job.attempts,
-              job.cacheKey,
-              job.cacheOmit,
-              job.input === undefined ? null : JSON.stringify(job.input),
-              null,
-              job.createdAt,
-              job.startedAt,
-              job.finishedAt ?? now,
-            )
-        }
-        this.db
-          .prepare('UPDATE projects SET updated_at=? WHERE id=? AND owner_id=?')
-          .run(now, row.project_id, owner)
-        this.deps.index.refreshCanvas(canvasId)
-        for (const fresh of remap.values()) this.deps.index.refreshJob(fresh)
-      })()
+          return fresh
+            ? [
+                {
+                  id: fresh,
+                  nodeId: job.nodeId,
+                  nodeType: job.nodeType,
+                  status: job.status,
+                  attempts: job.attempts,
+                  cacheKey: job.cacheKey,
+                  cacheOmit: job.cacheOmit,
+                  input: job.input,
+                  createdAt: job.createdAt,
+                  startedAt: job.startedAt,
+                  finishedAt: job.finishedAt,
+                },
+              ]
+            : []
+        }),
+        within: () => {
+          this.deps.index.refreshCanvas(canvasId)
+          for (const fresh of remap.values()) this.deps.index.refreshJob(fresh)
+        },
+      })
       return { canvasId }
     } finally {
       doc?.destroy()
