@@ -21,7 +21,13 @@ import { MentionTextarea } from '../../ui/MentionTextarea'
 import { Popover } from '../../ui/Popover'
 import { findNode, mentionTargets, targetImages, upstreams } from '../../canvas/nodes'
 import { useCatalog } from '../../stores/catalog'
-import { boundReferenceTokens, referenceBindings, type ReferenceIdentity } from '@plein/plugin-sdk'
+import {
+  boundReferenceTokens,
+  referenceBindings,
+  referenceLabelStyle,
+  referenceMediaLabel,
+  type ReferenceIdentity,
+} from '@plein/plugin-sdk'
 import { referenceMedia } from './submittedMedia'
 import { bindReferenceName, migrateReferenceNames, referenceName } from './referenceNames'
 import { MentionPicker, type MentionChoice, type MentionPickerHandle } from './MentionPicker'
@@ -197,13 +203,18 @@ export function PromptBox({
   // 编号只有一份：服务端给的最终提示词编号，直接拿来当编辑器里的徽标。
   const fresh = !preparing && prepared?.nodeId === selfId
   const sentTokens = new Map((prepared?.sent ?? []).map((item) => [item.index, item.token]))
+  const labelStyle = referenceLabelStyle(capability, prepared?.model?.provider)
   const numbers =
     fresh && prepared
       ? prepared.promptReferences?.map((ref) => ({
           start: ref.start,
           end: ref.end,
           text: ref.text,
-          labels: ref.indices.map((index) => sentTokens.get(index) ?? `图${index}`),
+          labels: ref.indices.map((index) =>
+            ref.kind === 'video' || ref.kind === 'audio'
+              ? referenceMediaLabel(labelStyle, ref.kind, index)
+              : (sentTokens.get(index) ?? `图${index}`),
+          ),
           name: ref.name,
           ...(ref.elementId ? { id: ref.elementId } : {}),
           ...(ref.reason ? { reason: ref.reason } : {}),

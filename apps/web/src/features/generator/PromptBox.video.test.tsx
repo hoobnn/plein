@@ -193,6 +193,86 @@ it.each([
   },
 )
 
+it.each([
+  {
+    model: 'minimax/api:MiniMax-H3',
+    provider: 'minimax/api',
+    video: '视频1',
+    audio: '音频1',
+  },
+  {
+    model: 'volc/ark:doubao-seedance-2-0-260128',
+    provider: 'volc/ark',
+    video: '@video1',
+    audio: '@audio1',
+  },
+])('编辑器按媒体类型显示 $provider 的视频与音频徽标', (item) => {
+  mockResizeObserver()
+  const doc = openDoc()
+  docs.push(doc)
+  const node = {
+    ...describeNode(
+      corePlugin.nodes.find((n) => n.type === 'plein/video')!,
+      'plein/core',
+    ),
+    executable: true,
+  }
+  useCatalog.setState({ catalog: { nodes: [node] } as unknown as Catalog })
+  const text = '动作 @舞.mp4，配乐 @歌.mp3'
+  const id = createElement(doc, {
+    kind: 'node',
+    nodeType: 'plein/video',
+    ports: { inputs: node.inputs, outputs: node.outputs },
+    params: { mode: 'reference', prompt: text, model: item.model },
+    x: 0,
+    y: 0,
+    w: 200,
+    h: 100,
+  })
+  const range = (token: string, kind: 'video' | 'audio') => ({
+    start: text.indexOf(token),
+    end: text.indexOf(token) + token.length,
+    text: token,
+    name: token.slice(1),
+    indices: [1],
+    kind,
+  })
+  const prepared: PreparedInput = {
+    v: PREPARED_INPUT_VERSION,
+    nodeId: id,
+    nodeType: 'plein/video',
+    preparedAt: 1,
+    status: 'ready',
+    model: { ref: item.model, provider: item.provider, title: item.model },
+    params: { mode: 'reference' },
+    inputs: {
+      videos: [{ type: 'video', assetId: 'video-asset' }],
+      audios: [{ type: 'audio', assetId: 'audio-asset' }],
+    },
+    refs: [],
+    sent: [],
+    promptReferences: [range('@舞.mp4', 'video'), range('@歌.mp3', 'audio')],
+    notices: [],
+    blocked: [],
+  }
+  renderApp(
+    <PromptBox
+      ref={createRef<HTMLTextAreaElement>()}
+      engine={{ doc } as Engine}
+      selfId={id}
+      prepared={prepared}
+      value={text}
+      presets={[]}
+      placeholder=""
+      onChange={() => {}}
+      onPreset={() => {}}
+    />,
+  )
+  expect(
+    [...document.querySelectorAll('.plein-mention-badge')].map((badge) => badge.textContent),
+  ).toEqual([item.video, item.audio])
+})
+
 it('两个离线协作者分配同一别名后合并并重开，冲突引用被阻断', () => {
   const first = openDoc()
   const second = openDoc()
