@@ -104,9 +104,10 @@ test(
       await expect(generator).toContainText('有候选待采用，请先查看并采用结果')
       await expect(generator.getByRole('button', { name: '生成', exact: true })).toBeDisabled()
       await generator.screenshot({ path: test.info().outputPath('held-upstream-input.png') })
-      await generator
-        .getByRole('button', { name: '「首次待采用候选」有候选待采用，点击定位来源', exact: true })
-        .click()
+      // 待采用的候选还没送进模型：不在参考素材清单里，「未送入」里写明原因并能定位到来源
+      await generator.locator('summary', { hasText: '未送入' }).click()
+      await expect(generator).toContainText('已连线，但还没有可用图片')
+      await generator.getByRole('button', { name: '定位到画布', exact: true }).first().click()
       await page.getByRole('button', { name: '查看待采用候选', exact: true }).click()
       await viewer.getByRole('button', { name: '采用此候选', exact: true }).click()
       await viewer.getByRole('button', { name: '关闭', exact: true }).click()
