@@ -77,6 +77,7 @@ import type {
   RecoverJobOptions,
   RunActivity,
   StaleNodes,
+  InputIssue,
 } from '@plein/protocol'
 import { PREPARED_INPUT_VERSION } from '@plein/protocol'
 import { sleep } from '../plugins/limiter'
@@ -771,7 +772,7 @@ export class NodeRuns implements BatchHost {
     const voice = voiceOf(params)
     const model = this.resolveModel(params.model)
     const limit = model?.limit
-    const blocked = [...(p.mentions?.blocked ?? [])]
+    const blocked = dedupeIssues([...(p.mentions?.blocked ?? [])])
     const promptLimit = model?.promptLimit
     if (promptLimit !== undefined && prompt && prompt.length > promptLimit) {
       blocked.push({
@@ -812,7 +813,7 @@ export class NodeRuns implements BatchHost {
       ...(def?.capability === 'audio.speech' && hasVoice(voice)
         ? { voice: { provider: voice.provider, voiceId: voice.voiceId } }
         : {}),
-      notices: [
+      notices: dedupeIssues([
         ...(p.mentions?.notices ?? []),
         ...((def?.capability === 'audio.transcribe' || def?.capability === 'audio.music') && model
           ? [
@@ -822,7 +823,7 @@ export class NodeRuns implements BatchHost {
               },
             ]
           : []),
-      ],
+      ]),
       blocked,
       inputHash: this.cacheKey(el, p, []),
     }
@@ -2573,6 +2574,17 @@ function groupState(g: GroupRow): GroupRunState {
     total: (JSON.parse(g.targets) as string[]).length,
     summary: g.summary ? JSON.parse(g.summary) : undefined,
   }
+}
+
+/** 同一处引用写多次、或多份文本带同一问题会重复报同一条：code、elementId、message 都相同的只留一条。 */
+function dedupeIssues(issues: InputIssue[]): InputIssue[] {
+  const seen = new Set<string>()
+  return issues.filter((issue) => {
+    const key = [issue.code, issue.elementId ?? '', issue.message].join('|')
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 function inputValue(v: PortValue, origin?: Origin): InputValue {

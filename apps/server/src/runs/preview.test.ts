@@ -1346,6 +1346,41 @@ it('未送入的消歧失败条目用用户原文的名字，不补序号；有�
   ])
 }, 30_000)
 
+it('blocked 与 notices 里内容相同的条目只留一条：同一处引用写多次不再重复报', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  card(doc, 'plein/character', '林夏', null, 0)
+
+  // 同一越界引用 @林夏#3 写了 3 次：只报一条；越界 #2 是另一处引用，不合并
+  const shot = addNode(doc, 'plein/image', {
+    params: { model: 'plein/mock:image', prompt: '@林夏#3 和 @林夏#3 与 @林夏#2' },
+    y: 400,
+  })
+  const input = await preview(server, id, shot)
+  expect(input.status).toBe('blocked')
+  expect(input.blocked).toEqual([
+    { code: 'prepare_failed', message: '「@林夏#3」不存在，画布上「林夏」只有 @林夏' },
+    { code: 'prepare_failed', message: '「@林夏#2」不存在，画布上「林夏」只有 @林夏' },
+  ])
+  // 未送入列表同理：每个不同的引用名一条，重复写不叠加
+  expect(input.unsent?.map((item) => item.name)).toEqual(['林夏#3', '林夏#2'])
+
+  // notices 同一问题：同一断链 @ 写两次只报一条
+  const broken = addNode(doc, 'plein/image', {
+    params: { model: 'plein/mock:image', prompt: '@林小 回头 和 @林小 微笑' },
+    y: 700,
+  })
+  const noticed = await preview(server, id, broken)
+  expect(noticed.status).toBe('ready')
+  expect(noticed.notices).toEqual([
+    {
+      code: 'mention_broken',
+      message: '提示词里的 @林小 找不到同名资产，可能已被改名为「林夏」，请改过来',
+    },
+  ])
+}, 30_000)
+
 it('消歧失败与有效引用混排、非参考模式视频：原文保留，有效引用照常处理', async () => {
   const { server } = await bootServer()
   mockSettings(server, {})
