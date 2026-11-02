@@ -46,6 +46,26 @@ describe('@ 引用', () => {
     expect(m[1]).toMatchObject({ start: 6, end: 9 })
   })
 
+  it('视频和音频文件名保留扩展名，不截成点号前的短名', () => {
+    const media = [
+      { id: 'v', name: '舞.mp4' },
+      { id: 'm', name: '跟拍.mov' },
+      { id: 'a', name: '歌.mp3' },
+      { id: 'w', name: '环境.wav' },
+    ]
+    expect(
+      findMentions('动作 @舞.mp4 与 @跟拍.mov，配乐 @歌.mp3 和 @环境.wav', media).map((item) => [
+        item.name,
+        item.id,
+      ]),
+    ).toEqual([
+      ['舞.mp4', 'v'],
+      ['跟拍.mov', 'm'],
+      ['歌.mp3', 'a'],
+      ['环境.wav', 'w'],
+    ])
+  })
+
   it('光标前正在输入的 @ 查询', () => {
     expect(mentionQuery('一个 @林', 5)).toMatchObject({ start: 3, query: '林' })
     expect(mentionQuery('一个 @林夏 走来', 9)).toBeNull()
@@ -117,6 +137,10 @@ describe('能被 @ 引用的元素', () => {
     [{ kind: 'node', nodeType: 'plein/character', name: ' 林夏 ' }, '林夏'],
     [{ kind: 'node', nodeType: 'plein/effect', name: '雨' }, '雨'],
     [{ kind: 'image', assetId: 'a', name: '海报' }, '海报'],
+    [{ kind: 'video', assetId: 'v', name: '舞.mp4' }, '舞.mp4'],
+    [{ kind: 'audio', assetId: 'u', name: '歌.mp3' }, '歌.mp3'],
+    [{ kind: 'video', name: '还没上传' }, null],
+    [{ kind: 'audio', name: '还没上传' }, null],
     [{ kind: 'image', name: '还没上传' }, null],
     [{ kind: 'node', nodeType: 'plein/image', name: '生成图片' }, null],
     [{ kind: 'node', nodeType: 'plein/character', name: '  ' }, null],

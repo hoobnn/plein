@@ -23,7 +23,8 @@ import {
   parseModelRef,
   type PortValue,
   referenceLabelStyle,
-  referenceNumbering,
+  referenceMediaNumbering,
+  type ReferenceMediaKind,
 } from '@plein/plugin-sdk'
 import type { InputIssue, InputRef, InputRefKind } from '@plein/protocol'
 
@@ -48,13 +49,13 @@ export interface AppliedMentions {
   refs: UsedRef[]
   /** 不阻断运行、但用户该知道的提示（音色无法校验、@ 名字可能已改名、可选参考降级） */
   notices: InputIssue[]
-  /** 每个引用的实际用法：能提供哪些图、送了哪些、没送的原因、是否必需；供实际输入预览与执行记录 */
+  /** 每个引用的实际用法：能提供哪些素材、送了哪些、没送的原因、是否必需；供实际输入预览与执行记录 */
   details: InputRef[]
   /** 必需参考用不上（缺图、当前模式不收、放不下）：这个镜头不提交 */
   blocked: InputIssue[]
 }
 
-/** 画布上可被 @ 引用的东西：资产卡（角色、场景、道具、风格）和有名字的图片元素 */
+/** 画布上可被 @ 引用的东西：资产卡（角色、场景、道具、风格、特效）和有名字的媒体元素 */
 export interface MentionElement {
   id: string
   name: string
@@ -175,6 +176,10 @@ export async function applyMentions(
   collect: (id: string) => Promise<Inputs>,
   maxRefs?: number,
   validateSceneViewImage?: (assetId: string) => Promise<boolean>,
+  mediaLimits: Record<'video' | 'audio', number> = {
+    video: Number.MAX_SAFE_INTEGER,
+    audio: Number.MAX_SAFE_INTEGER,
+  },
 ): Promise<AppliedMentions> {
   const params = { ...el.params }
   const targets = mentionTargets(doc)
@@ -239,6 +244,8 @@ export async function applyMentions(
   const groups: Group[] = []
   const refList: UsedRef[] = []
   const details: InputRef[] = []
+  const imageDetails: InputRef[] = []
+  const mediaDetails: InputRef[] = []
   const detailByHit = new Map<string, InputRef>()
   const blocked: InputIssue[] = []
   const voices: Array<{ name: string; voice: VoiceRef }> = []
@@ -268,6 +275,23 @@ export async function applyMentions(
       refList.push({ name: label(h), elementId: target.id, assetIds: [target.assetId] })
       const current = detail(target, label(h), priority, [target.assetId])
       details.push(current)
+      imageDetails.push(current)
+      detailByHit.set(hitKey(h), current)
+      continue
+    }
+    if ((target.kind === 'video' || target.kind === 'audio') && target.assetId) {
+      const current = detail(target, label(h), priority, [target.assetId])
+      details.push(current)
+      mediaDetails.push(current)
+      detailByHit.set(hitKey(h), current)
+      continue
+    }
+    if (target.nodeType === 'plein/effect') {
+      const own = await collect(target.id)
+      const candidates = (own.references ?? []).filter((value) => value.type === 'video')
+      const current = detail(target, label(h), priority, mediaIds(candidates, 'video'))
+      details.push(current)
+      mediaDetails.push(current)
       detailByHit.set(hitKey(h), current)
       continue
     }
@@ -354,6 +378,7 @@ export async function applyMentions(
       ...(selected !== undefined ? { selected } : {}),
     }
     details.push(current)
+    imageDetails.push(current)
     detailByHit.set(hitKey(h), current)
   }
 
@@ -407,7 +432,7 @@ export async function applyMentions(
 
   const own = send ? (inputs[port] ?? []) : []
   const refs = send ? pickRefs(own, groups, refList, details, maxRefs, notices, blocked) : []
-  for (const [i, d] of details.entries()) {
+  for (const [i, d] of imageDetails.entries()) {
     d.sent = send ? refList[i]!.assetIds : []
     if (d.selected?.some((id) => !d.available.includes(id))) d.reason = 'selection_missing'
     else if (d.available.length === 0)
@@ -419,18 +444,43 @@ export async function applyMentions(
   // 本次真正送进去的东西带到执行器（宿主不把运行摘要传下去，见 node 定义的 usedRefs 注释）
   params.usedRefs = refList
 
-  const merged =
+  let merged =
     send && refs.length
       ? {
           ...inputs,
           [port]: dedupe([...own, ...refs]),
         }
       : inputs
+  for (const kind of ['video', 'audio'] as const) {
+    const referenced = mediaDetails.filter((d) => d.media === kind)
+    if (!referenced.length) continue
+    const mediaPort = kind === 'video' ? 'videos' : 'audios'
+    const supported =
+      video &&
+      params.mode === 'reference' &&
+      def.inputs.some((p) => p.id === mediaPort && p.type === kind) &&
+      mediaLimits[kind] > 0
+    const requested = referenced.flatMap((d) =>
+      d.available.map((assetId): PortValue => ({ type: kind, assetId, kind, source: d.elementId })),
+    )
+    if (supported && requested.length)
+      merged = {
+        ...merged,
+        [mediaPort]: dedupe([...(merged[mediaPort] ?? []), ...requested]),
+      }
+    const finalIds = supported ? mediaIds(merged[mediaPort] ?? [], kind) : []
+    for (const d of referenced) {
+      d.sent = d.available.filter((id) => finalIds.includes(id))
+      if (d.available.length === 0) d.reason = 'no_image'
+      else if (!supported) d.reason = 'unsupported'
+    }
+  }
   const provider = parseModelRef(String(params.model ?? ''))?.provider
   if (numbered) {
-    // 编号只有一份：名称绑定、旧 @imageN 与 @ 引用都按送入顺序取同一个编号。
+    // 每类媒体各自编号：名称绑定、旧编号与 @ 引用都按最终送入顺序取号。
     const style = referenceLabelStyle(def.capability, provider)
-    rewriteReferenceMentions(deferred, detailByHit, referenceNumbering(style, merged[port] ?? []))
+    const media = [...(merged[port] ?? []), ...(merged.videos ?? []), ...(merged.audios ?? [])]
+    rewriteReferenceMentions(deferred, detailByHit, referenceMediaNumbering(style, media))
   }
   return { params, inputs: merged, refs: refList, notices, details, blocked }
 }
@@ -439,7 +489,7 @@ export async function applyMentions(
 function rewriteReferenceMentions(
   deferred: Map<MentionText, Array<{ mention: Mention; hit?: Hit }>>,
   details: Map<string, InputRef>,
-  numbering: { label(assetId: string): string | undefined },
+  numbering: { label(kind: ReferenceMediaKind, assetId: string): string | undefined },
 ) {
   for (const [source, occurrences] of deferred) {
     let text = source.value
@@ -449,7 +499,7 @@ function rewriteReferenceMentions(
         ? [
             ...new Set(
               current.sent.flatMap((id) => {
-                const label = numbering.label(id)
+                const label = numbering.label(current.media ?? 'image', id)
                 return label ? [label] : []
               }),
             ),
@@ -464,7 +514,7 @@ function rewriteReferenceMentions(
       const repeated = !!hit && text.slice(0, mention.start).endsWith(name)
       const replacement = !hit
         ? name
-        : hit.el.kind === 'image'
+        : hit.el.kind === 'image' || hit.el.kind === 'video' || hit.el.kind === 'audio'
           ? tokens.join('、') || name
           : repeated
             ? suffix
@@ -506,10 +556,17 @@ const KINDS: Record<string, InputRefKind> = {
 }
 
 function detail(el: CanvasElement, name: string, priority: number, available: string[]): InputRef {
+  const media =
+    el.kind === 'video' || el.kind === 'audio'
+      ? el.kind
+      : el.nodeType === 'plein/effect'
+        ? 'video'
+        : undefined
   return {
     elementId: el.id,
     name,
     kind: el.kind === 'image' ? 'image' : (KINDS[el.nodeType ?? ''] ?? 'other'),
+    ...(media ? { media } : {}),
     required: priority >= 0,
     available,
     sent: [],
@@ -618,8 +675,10 @@ function brokenNotice(name: string, candidates: string[]): InputIssue {
   }
 }
 
-const imageIds = (values: PortValue[]) =>
-  values.flatMap((v) => (v.type === 'image' && 'assetId' in v ? [v.assetId] : []))
+const imageIds = (values: PortValue[]) => mediaIds(values, 'image')
+
+const mediaIds = (values: PortValue[], kind: ReferenceMediaKind) =>
+  values.flatMap((v) => (v.type === kind && 'assetId' in v ? [v.assetId] : []))
 
 /** 参考图去重：同一张图经多个引用进来只送一次 */
 function dedupe(values: PortValue[]): PortValue[] {

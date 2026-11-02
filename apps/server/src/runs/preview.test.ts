@@ -1249,6 +1249,114 @@ it('上游文本与节点正文统一解析 @ 引用、去重并汇总未送入'
   expect(doc.get(upstream)?.params?.text).toBe(upstreamOriginal)
 })
 
+it('@ 视频与音频元素保留扩展名，并按实际送入顺序编号', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const dance = createElement(doc, {
+    kind: 'video',
+    name: '舞.mp4',
+    assetId: asset('c'),
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  const follow = createElement(doc, {
+    kind: 'video',
+    name: '跟拍.mov',
+    assetId: asset('d'),
+    x: 200,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  const song = createElement(doc, {
+    kind: 'audio',
+    name: '歌.mp3',
+    assetId: asset('e'),
+    x: 400,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  const original = '动作 @跟拍.mov 接 @舞.mp4，配乐 @歌.mp3'
+  for (const item of [
+    { model: 'minimax/api:MiniMax-H3', video: ['视频2', '视频1'], audio: '音频1' },
+    {
+      model: 'volc/ark:doubao-seedance-2-0-260128',
+      video: ['@video2', '@video1'],
+      audio: '@audio1',
+    },
+  ]) {
+    const video = addNode(doc, 'plein/video', {
+      params: { model: item.model, mode: 'reference', prompt: original },
+    })
+    connect(doc, [dance, 'video'], [video, 'videos'])
+    connect(doc, [follow, 'video'], [video, 'videos'])
+    connect(doc, [song, 'audio'], [video, 'audios'])
+    const input = await preview(server, id, video)
+    expect(input.status).toBe('ready')
+    expect(input.prompt).toBe(`动作 ${item.video[0]} 接 ${item.video[1]}，配乐 ${item.audio}`)
+    expect(input.inputs.videos?.map((value) => value.assetId)).toEqual([asset('c'), asset('d')])
+    expect(input.inputs.audios?.map((value) => value.assetId)).toEqual([asset('e')])
+    expect(input.promptReferences).toEqual([
+      expect.objectContaining({ text: '@跟拍.mov', indices: [2], kind: 'video' }),
+      expect.objectContaining({ text: '@舞.mp4', indices: [1], kind: 'video' }),
+      expect.objectContaining({ text: '@歌.mp3', indices: [1], kind: 'audio' }),
+    ])
+    expect(input.unsent).toEqual([])
+    expect(doc.get(video)?.params?.prompt).toBe(original)
+  }
+  const unlinked = addNode(doc, 'plein/video', {
+    params: {
+      model: 'minimax/api:MiniMax-H3',
+      mode: 'reference',
+      prompt: '动作 @舞.mp4，配乐 @歌.mp3',
+    },
+  })
+  const automatic = await preview(server, id, unlinked)
+  expect(automatic.status).toBe('ready')
+  expect(automatic.prompt).toBe('动作 视频1，配乐 音频1')
+  expect(automatic.inputs.videos?.map((value) => value.assetId)).toEqual([asset('c')])
+  expect(automatic.inputs.audios?.map((value) => value.assetId)).toEqual([asset('e')])
+})
+
+it('@ 特效卡送入参考视频并写成名字加视频编号', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const clip = createElement(doc, {
+    kind: 'video',
+    name: '爆炸.mov',
+    assetId: asset('c'),
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  const effect = addNode(doc, 'plein/effect', {
+    name: '爆炸',
+    params: { description: '快速推近' },
+  })
+  connect(doc, [clip, 'video'], [effect, 'references'])
+  const video = addNode(doc, 'plein/video', {
+    params: {
+      model: 'minimax/api:MiniMax-H3',
+      mode: 'reference',
+      prompt: '参考 @爆炸 的运镜',
+    },
+  })
+  const input = await preview(server, id, video)
+  expect(input.status).toBe('ready')
+  expect(input.prompt).toBe('参考 爆炸（视频1） 的运镜')
+  expect(input.inputs.videos?.map((value) => value.assetId)).toEqual([asset('c')])
+  expect(input.promptReferences).toEqual([
+    expect.objectContaining({ text: '@爆炸', indices: [1], kind: 'video' }),
+  ])
+  expect(input.unsent).toEqual([])
+})
+
 it('MiniMax 最终提示词含上游文本与分隔符，7000 字符边界在预览和执行前一致阻断', async () => {
   const { server } = await bootServer()
   server.plugins.configs.update('minimax/api', {

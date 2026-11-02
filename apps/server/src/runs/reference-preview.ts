@@ -17,6 +17,7 @@ import {
   type NodeDefinition,
   type PortValue,
   type ReferenceIdentity,
+  type ReferenceMediaKind,
 } from '@plein/plugin-sdk'
 import type {
   InputPromptReference,
@@ -60,6 +61,15 @@ export function referencePreview({
   const finalImages = ports.flatMap((port) =>
     (inputs[port] ?? []).filter((value) => value.type === 'image'),
   )
+  const finalMedia = {
+    image: finalImages,
+    video: def.inputs
+      .filter((port) => port.type === 'video')
+      .flatMap((port) => (inputs[port.id] ?? []).filter((value) => value.type === 'video')),
+    audio: def.inputs
+      .filter((port) => port.type === 'audio')
+      .flatMap((port) => (inputs[port.id] ?? []).filter((value) => value.type === 'audio')),
+  }
   const original = String(el.params?.prompt ?? '')
   const bindings = referenceBindings(el.params)
   const bound = boundReferenceTokens(original, el.params)
@@ -119,12 +129,20 @@ export function referencePreview({
     unsentKeys.add(key)
     unsent.push(item)
   }
-  const indexOf = (assetId: string) => sent.find((item) => item.assetId === assetId)?.index
-  const indicesOf = (assetIds: string[]) =>
+  const indexOf = (assetId: string, kind: ReferenceMediaKind = 'image') => {
+    if (kind !== 'image') {
+      const index = finalMedia[kind].findIndex(
+        (value) => 'assetId' in value && value.assetId === assetId,
+      )
+      return index < 0 ? undefined : index + 1
+    }
+    return sent.find((item) => item.assetId === assetId)?.index
+  }
+  const indicesOf = (assetIds: string[], kind: ReferenceMediaKind = 'image') =>
     [
       ...new Set(
         assetIds.flatMap((assetId) => {
-          const index = indexOf(assetId)
+          const index = indexOf(assetId, kind)
           return index === undefined ? [] : [index]
         }),
       ),
@@ -132,13 +150,16 @@ export function referencePreview({
 
   for (const token of bound) {
     const binding = bindings[token.name]
+    const kind = token.kind
     const source = binding?.source
     const saved = el.params?.referenceBindings
     const cleared =
       saved && typeof saved === 'object' && !Array.isArray(saved) && Object.keys(saved).length === 0
     const legacyIndex = !binding && !cleared ? /^image([1-9]\d*)$/.exec(token.name)?.[1] : undefined
     const match = binding
-      ? finalImages.find((value) => bindingMatches(binding, value, token.name, el.params))
+      ? finalMedia[binding.type].find((value) =>
+          bindingMatches(binding, value, token.name, el.params),
+        )
       : legacyIndex
         ? finalImages[Number(legacyIndex) - 1]
         : undefined
@@ -168,7 +189,8 @@ export function referencePreview({
       text: original.slice(token.start, token.end),
       name: token.name,
       ...(source ? { elementId: source } : {}),
-      indices: assetId ? indicesOf([assetId]) : [],
+      indices: assetId ? indicesOf([assetId], kind) : [],
+      ...(kind === 'image' ? {} : { kind }),
       ...(reason ? { reason, message } : {}),
     })
     if (reason && message)
@@ -188,15 +210,17 @@ export function referencePreview({
     const detail = mention.id
       ? details.find((item) => item.elementId === mention.id && item.name === name)
       : undefined
+    const kind = detail?.media ?? 'image'
     // 非多模态模式不会追加 @ 参考图，但首帧 / 尾帧本身已经通过连线送入。
-    const framed = detail?.reason === 'unsupported' ? detail.available : []
-    const indices = detail ? indicesOf([...detail.sent, ...framed]) : []
+    const framed = kind === 'image' && detail?.reason === 'unsupported' ? detail.available : []
+    const indices = detail ? indicesOf([...detail.sent, ...framed], kind) : []
     const reason: InputUnsentReason | undefined = problem
       ? 'mention_ambiguous'
       : indices.length
         ? undefined
         : (detail?.reason ?? (detail ? 'no_image' : undefined))
-    const message = problem ?? (reason ? reasonMessage(reason, name, referenceLimit) : undefined)
+    const message =
+      problem ?? (reason ? reasonMessage(reason, name, referenceLimit, kind) : undefined)
     promptReferences.push({
       start: mention.start,
       end: mention.end,
@@ -204,6 +228,7 @@ export function referencePreview({
       name: mention.name,
       ...(mention.id ? { elementId: mention.id } : {}),
       indices,
+      ...(kind === 'image' ? {} : { kind }),
       ...(reason ? { reason, message } : {}),
     })
     if (reason && reason !== 'over_limit' && message)
@@ -220,13 +245,14 @@ export function referencePreview({
   for (const detail of details) {
     const reason = detail.reason
     if (!reason || reason === 'over_limit') continue
-    const framed = reason === 'unsupported' ? detail.available : []
-    if (indicesOf([...detail.sent, ...framed]).length) continue
+    const kind = detail.media ?? 'image'
+    const framed = kind === 'image' && reason === 'unsupported' ? detail.available : []
+    if (indicesOf([...detail.sent, ...framed], kind).length) continue
     addUnsent({
       elementId: detail.elementId,
       name: detail.name,
       reason,
-      message: reasonMessage(reason, detail.name, referenceLimit),
+      message: reasonMessage(reason, detail.name, referenceLimit, kind),
       origins: detail.kind === 'character' ? ['mention', 'role'] : ['mention'],
     })
   }
@@ -408,11 +434,23 @@ function mentionName(mention: ReturnType<typeof findMentions>[number]) {
   return mention.sceneView ? `${label}（${mention.sceneView.name}）` : label
 }
 
-function reasonMessage(reason: InputUnsentReason, name: string, limit?: number) {
+function reasonMessage(
+  reason: InputUnsentReason,
+  name: string,
+  limit?: number,
+  kind: ReferenceMediaKind = 'image',
+) {
   if (reason === 'over_limit')
     return `「${name}」的图片超过模型参考上限${limit === undefined ? '' : ` ${limit} 张`}，未送入`
   if (reason === 'failed') return `「${name}」的参考图生成失败，未送入`
-  if (reason === 'unsupported') return `「${name}」的参考图在当前模式下不送入`
+  if (reason === 'unsupported') {
+    if (kind !== 'image') {
+      const media = kind === 'video' ? '参考视频' : '参考音频'
+      return `「${name}」的${media}在当前模型或模式下不送入`
+    }
+    return `「${name}」的参考图在当前模式下不送入`
+  }
   if (reason === 'selection_missing') return `「${name}」选定的参考图已不可用，未送入`
+  if (kind !== 'image') return `「${name}」没有可用${kind === 'video' ? '视频' : '音频'}，未送入`
   return `「${name}」没有可用图片，未送入`
 }

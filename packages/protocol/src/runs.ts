@@ -45,15 +45,17 @@ export interface InputRef {
   /** 显示名，写了档案项时是「林夏（少年·校服）」 */
   name: string
   kind: InputRefKind
+  /** 引用对应的媒体类型；缺省为图片，资产卡的参考图沿用旧记录。 */
+  media?: 'image' | 'video' | 'audio'
   /** 用户设为必需：缺失、不可用或放不下时不提交 */
   required: boolean
-  /** 它能提供的参考图资产 */
+  /** 它能提供的参考资产 */
   available: string[]
   /** 用户明确选择的角色图片；空数组为仅文字，未设置为自动选择。 */
   selected?: string[]
-  /** 实际送进模型的参考图资产 */
+  /** 实际送进模型的参考资产 */
   sent: string[]
-  /** available 里有图没送，或根本没图时的原因 */
+  /** available 里有素材没送，或根本没有素材时的原因 */
   reason?: InputRefReason
 }
 
@@ -147,8 +149,10 @@ export interface InputPromptReference {
   text: string
   name: string
   elementId?: string
-  /** 当前引用实际送入的图片编号；一张资产卡可以对应多张图。 */
+  /** 当前引用实际送入的同类媒体编号；一张资产卡可以对应多份素材。 */
   indices: number[]
+  /** indices 的媒体类型；缺省为图片。 */
+  kind?: 'image' | 'video' | 'audio'
   reason?: InputUnsentReason
   message?: string
 }

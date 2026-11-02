@@ -356,13 +356,13 @@ export const styleNode = defineNode({
 
 /**
  * 特效卡：运镜 / 转场 / 视觉特效的做法。
- * 描述在 @ 引用时并入视频提示词；参考视频可手动连到视频生成器的参考视频端口，@ 本身只引用描述。
+ * 多模态视频生成时，@ 引用会送入特效卡的参考视频；不会隐式附加文字描述。
  */
 export const effectNode = defineNode({
   type: 'plein/effect',
   version: 1,
   title: '特效',
-  description: '特效卡：运镜 / 特效的描述与参考视频，在视频提示词里 @ 特效名即可引用描述',
+  description: '特效卡：运镜 / 特效的描述与参考视频，在视频提示词里 @ 特效名即可引用参考视频',
   category: 'story',
   inputs: [{ id: 'references', label: '参考视频', type: 'video', multiple: true }],
   outputs: [{ id: 'videos', label: '参考视频', type: 'video' }],
