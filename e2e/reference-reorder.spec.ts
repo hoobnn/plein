@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, test } from './fixtures'
+import { expect, type Page, test } from './fixtures'
 import { addNode, byName, clickElement, edgesInto, newProject, revealGenerator } from './canvas'
 
 let dir = ''
@@ -19,11 +19,64 @@ test.beforeAll(() => {
 test.afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
 /** 参考图瓦片的显示顺序（aria-label 里的素材名）；多输入端口的顺序以界面上这条为准 */
-const tileNames = (page: import('./fixtures').Page) =>
+const tileNames = (page: Page) =>
   page
     .getByTestId('generator')
     .getByRole('group')
     .evaluateAll((tiles) => tiles.map((t) => t.getAttribute('aria-label') ?? ''))
+
+async function uploadReference(page: Page, hostId: string, file: string, expected: number) {
+  const chooser = page.waitForEvent('filechooser')
+  const uploadButton = page
+    .getByTestId('generator')
+    .getByRole('button', { name: '上传参考', exact: true })
+  await revealGenerator(page, uploadButton)
+  await uploadButton.click()
+  await page
+    .getByRole('dialog', { name: '上传参考', exact: true })
+    .getByRole('button', { name: '参考图', exact: true })
+    .click()
+  await (await chooser).setFiles(join(dir, file))
+  await expect.poll(() => edgesInto(page, hostId)).toHaveLength(expected)
+}
+
+test('从参考图编号点击可打开预览', { tag: '@core' }, async ({ page }) => {
+  await newProject(page)
+  await addNode(page, '角色')
+  const card = await byName(page, '角色')
+  await revealGenerator(page)
+  await uploadReference(page, card.id, 'a.png', 1)
+
+  const token = page
+    .getByTestId('generator')
+    .getByRole('group', { name: '参考 1：a.png' })
+    .locator('[data-token]')
+  const tokenBox = await token.boundingBox()
+  await page.mouse.click(tokenBox!.x + tokenBox!.width / 2, tokenBox!.y + tokenBox!.height / 2)
+  await expect(page.getByRole('dialog', { name: '查看「a.png」' })).toBeVisible()
+})
+
+test('从参考图编号拖动可换序', { tag: '@core' }, async ({ page }) => {
+  await newProject(page)
+  await addNode(page, '角色')
+  const card = await byName(page, '角色')
+  await revealGenerator(page)
+  await uploadReference(page, card.id, 'a.png', 1)
+  await uploadReference(page, card.id, 'b.png', 2)
+  expect(await tileNames(page)).toEqual(['参考 1：a.png', '参考 2：b.png'])
+
+  const tiles = page.getByTestId('generator').getByRole('group')
+  const tokenBox = await tiles.nth(1).locator('[data-token]').boundingBox()
+  const targetBox = await tiles.nth(0).boundingBox()
+  await page.mouse.move(tokenBox!.x + tokenBox!.width / 2, tokenBox!.y + tokenBox!.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(targetBox!.x + targetBox!.width / 2, targetBox!.y + targetBox!.height / 2, {
+    steps: 8,
+  })
+  await page.mouse.up()
+
+  await expect.poll(() => tileNames(page)).toEqual(['参考 1：b.png', '参考 2：a.png'])
+})
 
 test(
   '参考图拖动换序：放下重排、Esc 取消不改顺序、撤销一次恢复',
@@ -34,23 +87,9 @@ test(
     const card = await byName(page, '角色')
     await revealGenerator(page)
 
-    const upload = async (file: string, expected: number) => {
-      const chooser = page.waitForEvent('filechooser')
-      const uploadButton = page
-        .getByTestId('generator')
-        .getByRole('button', { name: '上传参考', exact: true })
-      await revealGenerator(page, uploadButton)
-      await uploadButton.click()
-      await page
-        .getByRole('dialog', { name: '上传参考', exact: true })
-        .getByRole('button', { name: '参考图', exact: true })
-        .click()
-      await (await chooser).setFiles(join(dir, file))
-      await expect.poll(() => edgesInto(page, card.id)).toHaveLength(expected)
-    }
-    await upload('a.png', 1)
-    await upload('b.png', 2)
-    await upload('c.png', 3)
+    await uploadReference(page, card.id, 'a.png', 1)
+    await uploadReference(page, card.id, 'b.png', 2)
+    await uploadReference(page, card.id, 'c.png', 3)
 
     expect(await tileNames(page)).toEqual(['参考 1：a.png', '参考 2：b.png', '参考 3：c.png'])
 

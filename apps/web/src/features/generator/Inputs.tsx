@@ -910,7 +910,7 @@ function ReferenceTile({
         </button>
         <span
           data-token={item.token}
-          className="absolute top-0.5 left-0.5 z-10 rounded bg-black/65 px-1 py-px text-2xs font-medium whitespace-nowrap text-white tabular-nums"
+          className="pointer-events-none absolute top-0.5 left-0.5 z-10 rounded bg-black/65 px-1 py-px text-2xs font-medium whitespace-nowrap text-white tabular-nums"
         >
           {item.token}
         </span>
