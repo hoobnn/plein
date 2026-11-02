@@ -2,6 +2,7 @@ import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement } from '@plein/doc'
 import { LIBRARY_KINDS, libraryKindOfNode } from '@plein/nodes'
 import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { assetUrls } from '../api/client'
 import { mediaOf } from '../canvas/grid'
 import { useDocVersion, useSelectionVersion } from '../canvas/hooks'
@@ -47,7 +48,9 @@ const TYPE_FILTERS: Array<{ value: TypeFilter; label: string }> = [
 export function Sidebar({ open }: { open: boolean }) {
   const engine = useCanvas((s) => s.engine)
   const canvasId = useCanvas((s) => s.canvasId)
-  const { tab, setTab, width } = useSidebar()
+  const { tab, setTab, width } = useSidebar(
+    useShallow((s) => ({ tab: s.tab, setTab: s.setTab, width: s.width })),
+  )
   // 资产库在服务端，本地演示没有
   const current = canvasId ? tab : 'layers'
   return (
@@ -159,7 +162,15 @@ function Count({ engine }: { engine: Engine }) {
 }
 
 function AssetCount() {
-  const { items, projectId, loaded, loading, error } = useLibrary()
+  const { items, projectId, loaded, loading, error } = useLibrary(
+    useShallow((s) => ({
+      items: s.items,
+      projectId: s.projectId,
+      loaded: s.loaded,
+      loading: s.loading,
+      error: s.error,
+    })),
+  )
   const n = items.filter((item) => projectId && item.projectId === projectId).length
   // 读取中如实说明；失败时首次与刷新分开：已有列表保留计数并说明未更新
   const label = loading
@@ -770,7 +781,17 @@ function Thumb({ el, type }: { el: CanvasElement; type: OutlineType }) {
 
 function Assets({ engine }: { engine: Engine | null }) {
   const placement = useLibraryPlacement(engine)
-  const { items, loaded, loading, error, load, projectId, show } = useLibrary()
+  const { items, loaded, loading, error, load, projectId, show } = useLibrary(
+    useShallow((s) => ({
+      items: s.items,
+      loaded: s.loaded,
+      loading: s.loading,
+      error: s.error,
+      load: s.load,
+      projectId: s.projectId,
+      show: s.show,
+    })),
+  )
   const version = useDocVersion(engine?.doc ?? NO_DOC)
   const canPlace = !!engine && !engine.doc.readOnly
   const mine = items.filter((i) => projectId && i.projectId === projectId)

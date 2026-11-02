@@ -9,6 +9,7 @@ import {
 } from '@plein/nodes'
 import type { CharacterImageSlot, LibraryItem } from '@plein/protocol'
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { api } from '../../api/client'
 import { confirmDialog } from '../../ui/Dialog'
 import { Icon, type IconName } from '../../ui/icons'
@@ -76,7 +77,9 @@ export function Editor({
   onProduce(item: LibraryItem, slot: CharacterImageSlot): Promise<void>
   onUploadPendingChange(pending: boolean): void
 }) {
-  const lib = useLibrary()
+  const lib = useLibrary(
+    useShallow((s) => ({ update: s.update, create: s.create, remove: s.remove })),
+  )
   const videoSourcePicker = useCompositionSourcePicker(kind.id, true)
   const readOnly = !!official
   const character = kind.id === 'character'

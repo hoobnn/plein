@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { desktop } from './desktop'
 import { useAgent } from './features/agent/store'
 import { DesktopEvents } from './shell/DesktopEvents'
@@ -157,7 +158,15 @@ export function App() {
 
 function AppContent({ onOpenSettings }: { onOpenSettings(): void }) {
   const route = useRoute()
-  const { status, info, error, refreshing, refresh } = useSession()
+  const { status, info, error, refreshing, refresh } = useSession(
+    useShallow((s) => ({
+      status: s.status,
+      info: s.info,
+      error: s.error,
+      refreshing: s.refreshing,
+      refresh: s.refresh,
+    })),
+  )
 
   useEffect(() => {
     // StrictMode 与 Suspense 的 effect 重放不应重复启动读取或隐式重试。

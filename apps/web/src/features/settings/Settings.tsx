@@ -2,6 +2,7 @@ import { DataMaintenance } from './DataMaintenance'
 import { ProviderSettings } from './ProviderSettings'
 import { Group } from './SettingsGroup'
 import { useQuery } from '@tanstack/react-query'
+import { useShallow } from 'zustand/react/shallow'
 import { useEffect, useState } from 'react'
 import { api } from '../../api/client'
 import { queryKeys } from '../../api/query'
@@ -33,7 +34,11 @@ export type Section =
 
 /** 设置：左侧分区导航，右侧当前分区 */
 export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?: Section }) {
-  const { catalog, load, error: catalogError } = useCatalog()
+  const {
+    catalog,
+    load,
+    error: catalogError,
+  } = useCatalog(useShallow((s) => ({ catalog: s.catalog, load: s.load, error: s.error })))
   const [section, setSection] = useState<Section>(initial ?? 'appearance')
   const [openProvider, setOpenProvider] = useState<string | null>(null)
   useEffect(() => {

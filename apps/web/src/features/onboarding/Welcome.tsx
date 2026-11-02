@@ -1,5 +1,6 @@
 import type { ProviderInfo } from '@plein/protocol'
 import { lazy, Suspense, useEffect, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { useCatalog } from '../../stores/catalog'
 import { LoadingPanel } from '../../ui/LoadingPanel'
 import { Presence } from '../../ui/Presence'
@@ -28,7 +29,9 @@ const usable = (p: ProviderInfo) => p.enabled && p.configured
 /** 已完成引导的首页不读取平台目录；首次引导只在确认需要时加载配置表单。 */
 export function Welcome() {
   const [eligible, setEligible] = useState(() => !welcomed())
-  const { catalog, error, load } = useCatalog()
+  const { catalog, error, load } = useCatalog(
+    useShallow((s) => ({ catalog: s.catalog, error: s.error, load: s.load })),
+  )
   const [open, setOpen] = useState(false)
   useEffect(() => {
     if (eligible) void load()

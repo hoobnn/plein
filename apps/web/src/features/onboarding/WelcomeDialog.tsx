@@ -1,5 +1,6 @@
 import type { Project, ProviderInfo } from '@plein/protocol'
 import { useEffect, useRef, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { api } from '../../api/client'
 import { invalidateProjects, queryClient, queryKeys } from '../../api/query'
 import { DRAMA_START, queueStartNode } from '../../canvas/startQueue'
@@ -17,7 +18,7 @@ const RECOMMENDED = ['volc/ark', 'doubao/speech']
 const usable = (p: ProviderInfo) => p.enabled && p.configured
 
 export function WelcomeDialog({ onClose }: { onClose(): void }) {
-  const { catalog, load } = useCatalog()
+  const { catalog, load } = useCatalog(useShallow((s) => ({ catalog: s.catalog, load: s.load })))
   const [step, setStep] = useState(0)
   const [openProvider, setOpenProvider] = useState<string | null>(RECOMMENDED[0]!)
   const [creating, setCreating] = useState(false)

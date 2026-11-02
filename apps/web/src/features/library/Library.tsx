@@ -6,6 +6,7 @@ import {
 } from '@plein/nodes'
 import type { CharacterImageSlot, LibraryItem, LibraryKind } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
+import { useShallow } from 'zustand/react/shallow'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../api/client'
 import { queryKeys } from '../../api/query'
@@ -73,7 +74,17 @@ export function LibraryPanel() {
 }
 
 function Panel({ kind: kindId }: { kind: LibraryKind }) {
-  const { items, loaded, loading, error, projectId, show, load } = useLibrary()
+  const { items, loaded, loading, error, projectId, show, load } = useLibrary(
+    useShallow((s) => ({
+      items: s.items,
+      loaded: s.loaded,
+      loading: s.loading,
+      error: s.error,
+      projectId: s.projectId,
+      show: s.show,
+      load: s.load,
+    })),
+  )
   const projects = useQuery({
     queryKey: queryKeys.projects,
     queryFn: api.projects,

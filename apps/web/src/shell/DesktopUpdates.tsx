@@ -4,6 +4,7 @@ import type {
   DesktopUpdateState,
 } from '@plein/protocol'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { desktop } from '../desktop'
 import { bytes, duration, relativeTime, shortTime } from '../ui/format'
 import { Icon, type IconName } from '../ui/icons'
@@ -76,7 +77,7 @@ function useNow(intervalMs = 30_000) {
 
 /** 全局监听与完整快照配合，主进程先完成下载、页面后挂载也能恢复。 */
 export function DesktopUpdates() {
-  const { state, open } = useUpdate()
+  const { state, open } = useUpdate(useShallow((s) => ({ state: s.state, open: s.open })))
   const [dismissed, setDismissed] = useState('')
   useEffect(() => {
     if (!desktop) return
@@ -181,7 +182,14 @@ const statusOf = (state: DesktopUpdateState): { title: string; hint: string; ico
 
 /** 设置和菜单共用同一内容，关闭面板不丢失说明或下载状态。 */
 export function UpdateContent({ scroll = false }: { scroll?: boolean } = {}) {
-  const { state, pending, bridgeError, preferences } = useUpdate()
+  const { state, pending, bridgeError, preferences } = useUpdate(
+    useShallow((s) => ({
+      state: s.state,
+      pending: s.pending,
+      bridgeError: s.bridgeError,
+      preferences: s.preferences,
+    })),
+  )
   if (!state)
     return (
       <div className="flex flex-col gap-3 text-sm text-ink-muted">
