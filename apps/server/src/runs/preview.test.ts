@@ -1215,6 +1215,35 @@ it('上游文本中的参考编号随素材重排映射，失效身份在预览�
   )
 })
 
+it('上游文本与节点正文统一解析 @ 引用、去重并汇总未送入', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  card(doc, 'plein/character', '林夏', asset('a'), 0)
+  card(doc, 'plein/prop', '铁盒', null, 300)
+  const original = '主提示：@林夏'
+  const upstreamOriginal = '上游：@林夏 回头，再说 @林夏，手拿@铁盒'
+  const upstream = addNode(doc, 'plein/text', { params: { text: upstreamOriginal } })
+  const image = addNode(doc, 'plein/image', {
+    params: { model: 'plein/mock:image', prompt: original },
+  })
+  connect(doc, [upstream, 'text'], [image, 'prompt'])
+  const input = await preview(server, id, image)
+  expect(input.status).toBe('ready')
+  expect(input.prompt).toBe(
+    '主提示：林夏（图1）\n\n上游：林夏（图1） 回头，再说 林夏（图1），手拿铁盒',
+  )
+  expect(input.inputs.references?.map((ref) => ref.assetId)).toEqual([asset('a')])
+  expect(input.sent?.map((ref) => [ref.index, ref.assetId])).toEqual([[1, asset('a')]])
+  expect(input.promptReferences).toEqual([expect.objectContaining({ text: '@林夏', indices: [1] })])
+  expect(original.slice(input.promptReferences![0]!.start, input.promptReferences![0]!.end)).toBe(
+    '@林夏',
+  )
+  expect(input.unsent).toContainEqual(expect.objectContaining({ name: '铁盒', reason: 'no_image' }))
+  expect(doc.get(image)?.params?.prompt).toBe(original)
+  expect(doc.get(upstream)?.params?.text).toBe(upstreamOriginal)
+})
+
 it('MiniMax 最终提示词含上游文本与分隔符，7000 字符边界在预览和执行前一致阻断', async () => {
   const { server } = await bootServer()
   server.plugins.configs.update('minimax/api', {

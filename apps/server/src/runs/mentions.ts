@@ -100,6 +100,12 @@ export function mentionEdges(doc: PleinDoc) {
   return edges
 }
 
+/** 一段需要解析 @ 的文本，以及把最终内容写回参数或上游输入的入口。 */
+interface MentionText {
+  value: string
+  write(text: string): void
+}
+
 /** 引用到的一个资产：写下来的名字与它在同名里的序号（重名时提示用） */
 interface Hit {
   name: string
@@ -178,9 +184,19 @@ export async function applyMentions(
   const numbered =
     def.capability === 'image.generate' ||
     (def.capability === 'video.generate' && params.mode === 'reference')
-  const deferred = new Map<string, Array<{ mention: Mention; hit?: Hit }>>()
+  const texts: MentionText[] = []
   for (const [key, value] of Object.entries(params)) {
     if (typeof value !== 'string' || !value.includes('@')) continue
+    texts.push({ value, write: (text) => (params[key] = text) })
+  }
+  // 上游文本与本节点正文共用同一套引用解析，最终拼接前已经完成编号和去重。
+  for (const item of inputs.prompt ?? []) {
+    if (item.type !== 'text' || !item.text.includes('@')) continue
+    texts.push({ value: item.text, write: (text) => (item.text = text) })
+  }
+  const deferred = new Map<MentionText, Array<{ mention: Mention; hit?: Hit }>>()
+  for (const source of texts) {
+    const { value } = source
     const found = findMentions(value, targets).filter((m) => m.id !== el.id)
     const broken = findBrokenMentions(value, targets)
     if (found.length === 0) {
@@ -192,9 +208,9 @@ export async function applyMentions(
     for (const m of found) {
       const h = checkMention(m, byId)
       if (numbered) {
-        const list = deferred.get(key) ?? []
+        const list = deferred.get(source) ?? []
         list.push({ mention: m, ...(h ? { hit: h } : {}) })
-        deferred.set(key, list)
+        deferred.set(source, list)
       } else {
         // 非参考模式沿用原行为：只去掉 @，保留参考用途原文，不插入平台编号。
         text += `${value.slice(last, m.start)}${h?.sceneView ? `${m.name}（${h.sceneView.name}）` : pickLabel(m.name, m.pick ?? {})}`
@@ -214,7 +230,7 @@ export async function applyMentions(
           ...(m.id ? { elementId: m.id } : {}),
         })
     }
-    if (!numbered) params[key] = text + value.slice(last)
+    if (!numbered) source.write(text + value.slice(last))
     for (const b of broken) notices.push(brokenNotice(b.name, b.candidates))
   }
   if (hit.size === 0) return { params, inputs, refs: [], notices, details: [], blocked: [] }
@@ -410,25 +426,19 @@ export async function applyMentions(
   if (numbered) {
     // 编号只有一份：名称绑定、旧 @imageN 与 @ 引用都按送入顺序取同一个编号。
     const style = referenceLabelStyle(def.capability, provider)
-    rewriteReferenceMentions(
-      params,
-      deferred,
-      detailByHit,
-      referenceNumbering(style, merged[port] ?? []),
-    )
+    rewriteReferenceMentions(deferred, detailByHit, referenceNumbering(style, merged[port] ?? []))
   }
   return { params, inputs: merged, refs: refList, notices, details, blocked }
 }
 
 /** 正文直接写最终平台编号；画布原文不变，也不再追加一份容易失配的「参考对应」表。 */
 function rewriteReferenceMentions(
-  params: Record<string, unknown>,
-  deferred: Map<string, Array<{ mention: Mention; hit?: Hit }>>,
+  deferred: Map<MentionText, Array<{ mention: Mention; hit?: Hit }>>,
   details: Map<string, InputRef>,
   numbering: { label(assetId: string): string | undefined },
 ) {
-  for (const [key, occurrences] of deferred) {
-    let text = String(params[key] ?? '')
+  for (const [source, occurrences] of deferred) {
+    let text = source.value
     for (const { mention, hit } of occurrences.toReversed()) {
       const current = hit ? details.get(hitKey(hit)) : undefined
       const tokens = current
@@ -457,7 +467,7 @@ function rewriteReferenceMentions(
             : name + suffix
       text = text.slice(0, mention.start) + replacement + text.slice(mention.end)
     }
-    params[key] = text
+    source.write(text)
   }
 }
 

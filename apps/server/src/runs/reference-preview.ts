@@ -216,6 +216,21 @@ export function referencePreview({
       })
   }
 
+  // 上游文本里的有效引用没有原文区间，但缺图 / 不支持等状态仍要进入未送入列表。
+  for (const detail of details) {
+    const reason = detail.reason
+    if (!reason || reason === 'over_limit') continue
+    const framed = reason === 'unsupported' ? detail.available : []
+    if (indicesOf([...detail.sent, ...framed]).length) continue
+    addUnsent({
+      elementId: detail.elementId,
+      name: detail.name,
+      reason,
+      message: reasonMessage(reason, detail.name, referenceLimit),
+      origins: detail.kind === 'character' ? ['mention', 'role'] : ['mention'],
+    })
+  }
+
   const ranges = [
     ...bound.map((token) => ({ start: token.start, end: token.end })),
     ...mentions.map((mention) => ({ start: mention.start, end: mention.end })),
