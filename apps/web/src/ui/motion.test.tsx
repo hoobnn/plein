@@ -64,7 +64,7 @@ it('没有 matchMedia 时按正常动态效果运行且不报错', async () => {
   await waitFor(() => expect(screen.queryByTestId('overlay')).toBeNull())
 })
 
-it('正常动态效果保留退场并用关闭态屏蔽指针', async () => {
+it('正常动态效果保留退场并用关闭态屏蔽指针与无障碍交互', async () => {
   const { rerender } = renderApp(
     <MotionConfig reducedMotion="never">
       <Overlay open />
@@ -79,6 +79,8 @@ it('正常动态效果保留退场并用关闭态屏蔽指针', async () => {
   )
   const overlay = screen.getByTestId('overlay')
   expect(overlay.dataset.pleinExiting).toBe('')
+  expect(overlay.getAttribute('aria-hidden')).toBe('true')
+  expect(overlay.hasAttribute('inert')).toBe(true)
   await waitFor(() => expect(screen.queryByTestId('overlay')).toBeNull())
 })
 

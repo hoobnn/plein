@@ -177,7 +177,7 @@ export async function addNode(page: Page, query: string, at = { x: 720, y: 450 }
     }
   }, at)
   await page.mouse.dblclick(blank.x, blank.y)
-  await page.getByPlaceholder('添加节点').fill(query)
+  await page.getByRole('textbox', { name: '搜索节点', exact: true }).fill(query)
   await page.keyboard.press('Enter')
 }
 

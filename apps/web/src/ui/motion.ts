@@ -188,6 +188,8 @@ export function useOverlayMotion(variants: Variants, custom?: PopSide) {
     // 无 exit 时 AnimatePresence 不保留退场队列，等价于零时长且同步清理。
     exit: reduced || featureFailed ? undefined : 'exit',
     'data-plein-exiting': closing ? '' : undefined,
+    'aria-hidden': closing || undefined,
+    inert: closing || undefined,
     'data-motion-feature-failed': featureFailed ? '' : undefined,
     variants: featureFailed ? undefined : variants,
     custom: featureFailed ? undefined : custom,
