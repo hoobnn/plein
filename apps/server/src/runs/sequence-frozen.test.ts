@@ -1,5 +1,5 @@
 import { addNode, bootServer, until } from '../testing'
-import { connect, createDoc, currentResult, SCHEMA_VERSION } from '@plein/doc'
+import { connect, createDoc, currentResult } from '@plein/doc'
 import type { ComposeSpec } from '@plein/plugin-sdk'
 import { hasFfmpeg } from '../assets/media'
 import { PluginHost } from '../plugins/host'
@@ -78,7 +78,8 @@ describe.skipIf(!available)('P11 v1在途序列冻结版本恢复', () => {
       f.server.runs.close()
       expect(await f.server.runs.wait(job)).toBe('running')
       hold.mockRestore()
-      f.doc.meta.set('schemaVersion', SCHEMA_VERSION - 1)
+      // v10 是 v10→v11 序列物化迁移之前的版本；不随 SCHEMA_VERSION 增长
+      f.doc.meta.set('schemaVersion', 10)
       f.doc.migrate()
       expect(f.doc.get(sequence)!.nodeVersion).toBe(2)
       expect(f.doc.get(sequence)!.params!.instanceVersion).toBe(2)
