@@ -11,6 +11,7 @@ import {
 import type { Catalog } from '@plein/protocol'
 import { describe, expect, it } from 'vite-plus/test'
 import { type NodeInfo, nodeElement, type Upstream, upstreams, validate } from './nodes'
+import { nodeElementOf } from '@plein/capabilities'
 
 type PortDecl = { id: string; label: string; type: string; multiple?: boolean; required?: boolean }
 
@@ -81,6 +82,18 @@ const ups = (entries: Record<string, Upstream[]> = {}) => new Map(Object.entries
 const ok = { prompt: '一只猫' }
 
 describe('运行前校验', () => {
+  // 契约：节点转元素有两份实现（capabilities 包的 nodeElementOf 与前端的 nodeElement），
+  // 尺寸算法有意不同，其余字段必须一致 —— 防止两份实现漂移。
+  it('nodeElementOf 与 nodeElement 对同一节点声明除 w/h 外输出相同', () => {
+    for (const node of [image, textCard, character]) {
+      const a = nodeElement(node)
+      const b = nodeElementOf(node as never)
+      const { w: _w, h: _h, ...restA } = a
+      const { w: _wa, h: _hb, ...restB } = b
+      expect(restB).toEqual(restA)
+    }
+  })
+
   it('纯节点不用校验；没有执行器的节点不能跑', () => {
     expect(validate(textCard, el({}), ups(), null)).toBeNull()
     expect(validate(info({ executable: false }), el(ok), ups(), null)).toBe('这个节点还没有执行器')

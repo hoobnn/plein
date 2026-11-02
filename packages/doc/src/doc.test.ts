@@ -531,11 +531,14 @@ describe('迁移', () => {
     const legacy = ydoc.getMap<unknown>('elements')
     legacy.set('a', { id: 'a', kind: 'llm', x: 1, y: 2, w: 3, h: 4, params: { model: 'm' } })
     legacy.set('b', { id: 'b', kind: 'group', x: 0, y: 0, w: 10, h: 10 })
+    legacy.set('c', { id: 'c', kind: 'sequence', x: 0, y: 0, w: 10, h: 10 })
 
     const doc = open(ydoc)
     expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
     expect(doc.get('a')).toMatchObject({ kind: 'node', nodeType: 'llm', params: { model: 'm' } })
     expect(doc.get('b')!.kind).toBe('frame')
+    // 已删除的 sequence kind 不在 LEGACY_KINDS 里，兑底映射为 node，旧文档不丢元素
+    expect(doc.get('c')).toMatchObject({ kind: 'node', nodeType: 'sequence' })
     expect(doc.undo.undoStack).toHaveLength(0)
   })
 

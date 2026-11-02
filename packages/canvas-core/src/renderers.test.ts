@@ -9,7 +9,7 @@ async function flush() {
   for (let i = 0; i < 20; i++) await Promise.resolve()
 }
 
-it.each(['image', 'video', 'audio', 'node', 'markdown', 'frame', 'sequence'] as const)(
+it.each(['image', 'video', 'audio', 'node', 'markdown', 'frame'] as const)(
   '%s destroys its owned graphics contexts without destroying borrowed textures',
   async (kind) => {
     const doc = openDoc()

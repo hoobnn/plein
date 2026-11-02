@@ -69,9 +69,10 @@ export function definePromptPreset(def: PromptPresetDefinition): PromptPresetDef
 }
 
 /**
- * 自定义元素类型：文档里存为 `kind: 'custom'` + `customType`。
- * 0.1.0 只有声明（标题、默认尺寸、数据 schema），渲染器以后用沙箱 iframe 提供；
- * 未安装对应插件时画布显示占位卡片，数据不丢。
+ * 自定义元素类型：**尚未开放**。第三方插件声明元素类型会被宿主拒绝
+ * （见 apps/server/src/plugins/external.ts 与 install.ts）；文档里也没有
+ * `kind: 'custom'` / `customType` 这样的存储形状。渲染方案规划为沙箱 iframe，
+ * 落地之前这个声明 API 只对内置插件可用，画布不会为它上屏。
  */
 export interface ElementTypeDefinition<D extends z.ZodObject = z.ZodObject> {
   type: string

@@ -48,7 +48,6 @@ const KIND_LABELS: Record<ElementKind, string> = {
   markdown: 'Markdown',
   node: '节点',
   frame: 'Frame',
-  sequence: '序列',
 }
 
 const labelStyle = {
@@ -380,18 +379,27 @@ const nodeRenderer: ElementRenderer = (el, ctx) => {
   return view
 }
 
+/** 默认注册表：Record<ElementKind, …> 让每个元素类型都必须有渲染器，漏一个编译期就报错 */
+const DEFAULT_RENDERERS: Record<ElementKind, ElementRenderer> = {
+  image: mediaRenderer,
+  video: mediaRenderer,
+  audio: mediaRenderer,
+  markdown: markdownRenderer,
+  node: nodeRenderer,
+  frame: frameRenderer,
+}
+
 /** 按元素类型注册渲染器；未注册的类型用占位卡片 */
 export class RendererRegistry {
   private map = new Map<ElementKind, ElementRenderer>()
 
   constructor(defaults = true) {
     if (defaults) {
-      this.register('frame', frameRenderer)
-      this.register('image', mediaRenderer)
-      this.register('video', mediaRenderer)
-      this.register('audio', mediaRenderer)
-      this.register('markdown', markdownRenderer)
-      this.register('node', nodeRenderer)
+      for (const [kind, renderer] of Object.entries(DEFAULT_RENDERERS) as [
+        ElementKind,
+        ElementRenderer,
+      ][])
+        this.register(kind, renderer)
     }
   }
 

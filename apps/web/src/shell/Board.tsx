@@ -81,7 +81,7 @@ function BoardPanel({
   // oxlint-disable react-hooks/exhaustive-deps -- version 变化即文档变化
   const columns = useMemo(() => {
     const items = [...engine.doc.elements()]
-      .filter((el) => el.kind !== 'frame' && el.kind !== 'sequence')
+      .filter((el) => el.kind !== 'frame')
       .flatMap((el) => {
         const r = engine.scene.rect(el.id)
         return r ? [{ el, id: el.id, x: r.x, y: r.y }] : []

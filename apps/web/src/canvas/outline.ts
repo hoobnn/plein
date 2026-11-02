@@ -27,8 +27,6 @@ export function outlineType(el: CanvasElement): OutlineType {
     case 'video':
     case 'audio':
       return el.kind
-    case 'sequence':
-      return 'video'
     case 'node': {
       // 节点按第一个输出端口归类
       const out = elementPorts(el)?.outputs[0]?.type
@@ -44,7 +42,6 @@ const KIND_LABELS: Record<CanvasElement['kind'], string> = {
   markdown: '文本',
   node: '节点',
   frame: '分组',
-  sequence: '序列',
 }
 
 /** 列表里显示的名称：自定义名 → 节点类型名 → Markdown 首行 → 元素类型 */

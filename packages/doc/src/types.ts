@@ -5,7 +5,7 @@ import type { DeliveryRecord } from './delivery'
 import type { GenerationOrigin, VideoSegment } from './video-segment'
 
 /** 画布元素类型。工作流节点统一为 `node`，具体节点由 `nodeType` 区分。 */
-export type ElementKind = 'image' | 'video' | 'audio' | 'markdown' | 'node' | 'frame' | 'sequence'
+export type ElementKind = 'image' | 'video' | 'audio' | 'markdown' | 'node' | 'frame'
 
 export const ELEMENT_KINDS: readonly ElementKind[] = [
   'image',
@@ -14,7 +14,6 @@ export const ELEMENT_KINDS: readonly ElementKind[] = [
   'markdown',
   'node',
   'frame',
-  'sequence',
 ]
 
 /** 可以作为父元素（分组容器）的类型 */

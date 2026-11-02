@@ -347,7 +347,7 @@ describe('production文档合同', () => {
 
   it('复制和模板导入显式保存历史；仅内部序列ID映射，外部选择不按名字重绑', () => {
     const { doc, id } = board()
-    const sequence = createElement(doc, { kind: 'sequence', x: 0, y: 0, w: 100, h: 100 })
+    const sequence = createElement(doc, node({ nodeType: 'plein/sequence', params: { clips: [] } }))
     confirm(doc, id)
     appendProductionDecision(doc, {
       scope: { canvasId: 'canvas', boardId: id },

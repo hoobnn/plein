@@ -57,7 +57,6 @@ export const DARK_THEME: CanvasTheme = {
     markdown: 0xfbbf24,
     node: 0xd4d4d4,
     frame: 0xa3a3a3,
-    sequence: 0xfb7185,
   },
   status: { queued: 0x8a8a8a, running: 0x4d8dff, failed: 0xf87171 },
 }
@@ -90,7 +89,6 @@ export const LIGHT_THEME: CanvasTheme = {
     markdown: 0xd97706,
     node: 0x525252,
     frame: 0x8e8e8e,
-    sequence: 0xe11d48,
   },
   status: { queued: 0x9a9a9a, running: 0x2869f0, failed: 0xdc4c4c },
 }
