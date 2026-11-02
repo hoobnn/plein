@@ -555,7 +555,7 @@ function failedReferenceSources(doc: PleinDoc, id: string): Array<{ id: string; 
     if (e.to[0] !== id || e.to[1] !== 'references') continue
     const src = doc.get(e.from[0])
     if (src?.kind !== 'node' || src.run?.status !== 'failed') continue
-    failed.set(src.id, src.name || src.nodeType)
+    failed.set(src.id, src.name || src.nodeType || '上游节点')
   }
   return [...failed].map(([id, name]) => ({ id, name }))
 }
