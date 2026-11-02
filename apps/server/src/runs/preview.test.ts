@@ -1006,6 +1006,33 @@ it('误留空格的断链 @ 进入未送入，正文编号与 sent 一致、引�
   expect(doc.get(video)?.params?.prompt).toBe(original)
 })
 
+it('原文在 @ 前已写同一个名字时只补编号，引用区间仍指向 @ 文本', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  for (const [name, image, x] of [
+    ['叶舒', asset('a'), 0],
+    ['安可', asset('b'), 200],
+  ] as const)
+    card(doc, 'plein/character', name, image, x)
+  const original = '叶舒@叶舒 与 安可@安可'
+  const video = addNode(doc, 'plein/video', {
+    params: { model: 'minimax/api:MiniMax-H3', mode: 'reference', prompt: original },
+  })
+  const input = await preview(server, id, video)
+  expect(input.status).toBe('ready')
+  expect(input.prompt).toBe('叶舒（图片1） 与 安可（图片2）')
+  expect(input.prompt).not.toContain('叶舒叶舒')
+  expect(input.prompt).not.toContain('安可安可')
+  expect(input.promptReferences?.map((item) => [item.text, item.indices])).toEqual([
+    ['@叶舒', [1]],
+    ['@安可', [2]],
+  ])
+  for (const item of input.promptReferences ?? [])
+    expect(original.slice(item.start, item.end)).toBe(item.text)
+  expect(doc.get(video)?.params?.prompt).toBe(original)
+})
+
 it('上游文本中的参考编号随素材重排映射，失效身份在预览中阻断', async () => {
   const { server } = await bootServer()
   mockSettings(server, {})

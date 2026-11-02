@@ -445,10 +445,16 @@ function rewriteReferenceMentions(
       const name = hit?.sceneView
         ? `${mention.name}（${hit.sceneView.name}）`
         : pickLabel(mention.name, mention.pick ?? {})
-      const replacement =
-        hit?.el.kind === 'image'
+      // 资产卡写成「名字（编号）」；原文紧挨着已经写了同一个名字时只补编号，避免「叶舒叶舒」。
+      const suffix = tokens.length ? `（${tokens.join('、')}）` : ''
+      const repeated = !!hit && text.slice(0, mention.start).endsWith(name)
+      const replacement = !hit
+        ? name
+        : hit.el.kind === 'image'
           ? tokens.join('、') || name
-          : name + (tokens.length ? `（${tokens.join('、')}）` : '')
+          : repeated
+            ? suffix
+            : name + suffix
       text = text.slice(0, mention.start) + replacement + text.slice(mention.end)
     }
     params[key] = text
