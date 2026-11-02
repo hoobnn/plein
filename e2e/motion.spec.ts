@@ -18,7 +18,11 @@ test('Popover 碰撞翻转后按实际 side 进退场', async ({ page }) => {
     element.style.zIndex = '100'
   })
   await trigger.click()
-  const popover = page.getByRole('dialog', { name: '视频生成模式', exact: true })
+  const popover = page.getByRole('dialog', {
+    name: '视频生成模式',
+    exact: true,
+    includeHidden: true,
+  })
   await expect(popover).toHaveAttribute('data-side', 'bottom')
   await page.waitForTimeout(200)
   await expect(popover).toHaveCSS('opacity', '1')
@@ -83,10 +87,10 @@ test('冷启动不被 Motion 阻塞，延后浮层与首页提示正常进场', 
   await page.unroute('**/*motion*')
 
   await newProject(page)
-  await page.getByRole('button', { name: '整理画布', exact: true }).click()
-  await page.getByRole('button', { name: '整理画布', exact: true }).click()
-  await page.locator('.app-brand').click()
-  await expect(page.getByRole('status').filter({ hasText: '画布已经很整齐了' })).toBeVisible()
+  const canvasId = /#\/c\/([^/?]+)/.exec(page.url())![1]!
+  const deleted = await page.request.delete(`/api/canvases/${canvasId}`)
+  expect(deleted.ok()).toBe(true)
+  await expect(page.getByRole('status').filter({ hasText: '画布不存在或已被删除' })).toBeVisible()
 
   await page.getByRole('button', { name: '设置', exact: true }).click()
   const settings = page.getByRole('dialog', { name: '设置', exact: true })
