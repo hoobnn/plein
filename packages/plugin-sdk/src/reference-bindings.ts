@@ -47,7 +47,11 @@ export function remapReferenceParams(
     if (next === params) next = { ...params }
     delete next[key]
     next[`${key.slice(0, separator + 1)}${mapped}`] =
-      value && typeof value === 'object' && !Array.isArray(value) && value.source === source
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      'source' in value &&
+      value.source === source
         ? { ...value, source: mapped }
         : value
   }
