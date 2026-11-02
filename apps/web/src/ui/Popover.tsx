@@ -32,8 +32,11 @@ export function Popover({
   children: ReactNode
 }) {
   const closing = useOverlayClosing()
-  const motion = useOverlayMotion(popVariants, placement)
   const popup = useRef<HTMLDivElement>(null)
+  const motion = useOverlayMotion(popVariants, () => {
+    const side = popup.current?.dataset.side
+    return side ? (side === 'top' ? 'above' : 'below') : placement
+  })
   useLayoutEffect(() => {
     if (scrollKey !== undefined) popup.current?.scrollTo({ top: 0 })
   }, [scrollKey])

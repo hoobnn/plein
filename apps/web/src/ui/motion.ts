@@ -21,27 +21,36 @@ const ease = {
 const duration = { fast: 0.12, base: 0.18, slow: 0.28, exit: 0.14 } as const
 
 export type PopSide = 'above' | 'below'
+export type PopCustom = PopSide | (() => PopSide)
+const resolvePopSide = (custom: PopCustom = 'below') =>
+  typeof custom === 'function' ? custom() : custom
 
 /** --pop-from / --pop-to：菜单沿锚点方向移动 4px，97% 进、98% 出。 */
 export const popVariants: Variants = {
-  initial: (side: PopSide = 'below') => ({
-    opacity: 0,
-    y: side === 'above' ? 4 : -4,
-    scale: 0.97,
-    transformOrigin: 'var(--transform-origin, var(--pop-origin, top left))',
-  }),
+  initial: (custom: PopCustom = 'below') => {
+    const side = resolvePopSide(custom)
+    return {
+      opacity: 0,
+      y: side === 'above' ? 4 : -4,
+      scale: 0.97,
+      transformOrigin: 'var(--transform-origin, var(--pop-origin, top left))',
+    }
+  },
   visible: {
     opacity: 1,
     y: 0,
     scale: 1,
     transition: { duration: duration.base, ease: ease.spring },
   },
-  exit: (side: PopSide = 'below') => ({
-    opacity: 0,
-    y: side === 'above' ? 2 : -2,
-    scale: 0.98,
-    transition: { duration: duration.exit, ease: ease.exit },
-  }),
+  exit: (custom: PopCustom = 'below') => {
+    const side = resolvePopSide(custom)
+    return {
+      opacity: 0,
+      y: side === 'above' ? 2 : -2,
+      scale: 0.98,
+      transition: { duration: duration.exit, ease: ease.exit },
+    }
+  },
 }
 
 /** 默认弹出：--pop-from scale(0.97)，--pop-to scale(0.98)，原点左上。 */
@@ -175,7 +184,7 @@ export function useOverlayClosing() {
 }
 
 /** 浮层统一的变体声明与关闭态标记；数值只来自本文件的变体。 */
-export function useOverlayMotion(variants: Variants, custom?: PopSide) {
+export function useOverlayMotion(variants: Variants, custom?: PopCustom) {
   const closing = useOverlayClosing()
   return {
     initial: 'initial',
