@@ -26,6 +26,16 @@ import { ShotWorkbench } from './ShotWorkbench'
 resetStoreAfterEach(useCatalog)
 
 const textValue = (element: HTMLElement) => (element as HTMLTextAreaElement).value
+
+async function choose(
+  user: ReturnType<typeof renderApp>['user'],
+  name: string,
+  option: string | RegExp,
+) {
+  await user.click(screen.getByRole('combobox', { name }))
+  await user.click(screen.getByRole('option', { name: option }))
+}
+
 const docs: PleinDoc[] = []
 afterEach(() => {
   for (const doc of docs.splice(0)) doc.destroy()
@@ -228,7 +238,7 @@ it('旧 JobInfo 与 nodeInput 晚回不串入已切换镜头', async () => {
   })
   const { user } = renderApp(<ShotWorkbench />)
   await Promise.all([inputAccepted, jobAccepted])
-  await user.selectOptions(screen.getByLabelText('工作台镜头'), 'two')
+  await choose(user, '工作台镜头', /^镜头 2 ·/)
   const current = await screen.findByRole('heading', { name: '当前节点实际输入' })
   await waitFor(() => expect(current.parentElement?.textContent).toContain('第二镜当前输入'))
   const historical = screen.getByRole('heading', { name: '此候选生成时实际输入' })
@@ -333,7 +343,7 @@ it('历史预览不自动采用，切候选和关闭回收媒体，重开立即�
   const first = screen.getByLabelText('工作台候选视频') as HTMLVideoElement
   const pause = vi.spyOn(first, 'pause').mockImplementation(() => {})
   const load = vi.spyOn(first, 'load').mockImplementation(() => {})
-  await user.selectOptions(screen.getByLabelText('工作台候选'), 'history')
+  await choose(user, '工作台候选', /history/)
   expect(doc.get('video-one')?.adopted).toBe(old.id)
   expect(screen.getByText(/历史预览，当前采用项保持不变/)).not.toBeNull()
   expect(pause).toHaveBeenCalledOnce()
@@ -366,7 +376,7 @@ it('同帧阶段改绑拒绝采用与审片，只读转换拒绝保存草稿', a
   workbenchReads(doc, [])
   const { user } = renderApp(<ShotWorkbench />)
   await screen.findByRole('button', { name: '保存为可用' })
-  await user.selectOptions(screen.getByLabelText('工作台候选'), 'history')
+  await choose(user, '工作台候选', /history/)
   const source = doc.get('video-one')!.params!.source
   act(() => {
     setParam(doc, 'video-one', 'source', { storyboard: board, shot: 'two', role: 'video' })
@@ -378,8 +388,8 @@ it('同帧阶段改绑拒绝采用与审片，只读转换拒绝保存草稿', a
     setParam(doc, 'video-one', 'source', source)
     doc.flush()
   })
-  await user.selectOptions(screen.getByLabelText('工作台阶段节点'), 'video-one')
-  await user.selectOptions(screen.getByLabelText('工作台候选'), old.id)
+  await choose(user, '工作台阶段节点', /video-one/)
+  await choose(user, '工作台候选', new RegExp(old.id.slice(-10)))
   act(() => {
     setParam(doc, 'video-one', 'source', { storyboard: board, shot: 'two', role: 'video' })
     fireEvent.click(screen.getByRole('button', { name: '保存为可用' }))
@@ -569,9 +579,13 @@ it('候选操作随镜头图、视频与采用状态变化', async () => {
   })
   await waitFor(() => expect(screen.getByRole('button', { name: '采用候选' })).toBeTruthy())
   expect(screen.getByText(/尚未采用，此为待选候选/)).toBeTruthy()
-  const candidates = screen.getByLabelText('工作台候选') as HTMLSelectElement
-  expect(candidates.options[0]?.text).toBe('尚未采用')
-  expect(candidates.options[1]?.text).toContain('待采用')
+  await user.click(screen.getByRole('combobox', { name: '工作台候选' }))
+  const candidates = within(screen.getByRole('listbox', { name: '工作台候选' })).getAllByRole(
+    'option',
+  )
+  expect(candidates[0]?.textContent).toBe('尚未采用')
+  expect(candidates[1]?.textContent).toContain('待采用')
+  await user.keyboard('{Escape}')
   await user.click(screen.getByRole('button', { name: '采用候选' }))
   await waitFor(() => expect(screen.getByRole('button', { name: '审阅' })).toBeTruthy())
   await user.click(screen.getByRole('button', { name: '审阅' }))
@@ -1162,7 +1176,7 @@ it('查看历史候选时对照区主按钮让位给采用候选', async () => {
   const { user } = renderApp(<ShotWorkbench />)
   const entry = () => screen.getByRole('button', { name: '标记需修改' })
   await waitFor(() => expect(entry().className).toContain('ui-btn-primary'))
-  await user.selectOptions(screen.getByLabelText('工作台候选'), 'history')
+  await choose(user, '工作台候选', /history/)
   await waitFor(() => expect(entry().className).not.toContain('ui-btn-primary'))
   expect(screen.getByRole('button', { name: '采用候选' })).toBeTruthy()
 })
@@ -1200,7 +1214,7 @@ it('查看镜头图阶段时只读并提示切回视频阶段', async () => {
   workbenchReads(doc, [])
   const { user } = renderApp(<ShotWorkbench />)
   await user.click(screen.getByText('阶段节点 · 2 个'))
-  await user.selectOptions(screen.getByLabelText('工作台阶段节点'), 'image-two')
+  await choose(user, '工作台阶段节点', /image-two/)
   const region = () => screen.getByLabelText('衔接意见')
   await waitFor(() => expect(region().textContent).toContain('衔接意见记在视频候选上'))
   // 显示的是目标视频候选上的衔接意见，且不可写
@@ -1215,7 +1229,9 @@ it('查看镜头图阶段时只读并提示切回视频阶段', async () => {
       false,
     ),
   )
-  expect((screen.getByLabelText('工作台阶段节点') as HTMLSelectElement).value).toBe('video-two')
+  expect(screen.getByRole('combobox', { name: '工作台阶段节点' }).textContent).toContain(
+    'video-two',
+  )
 })
 
 it('展示节点没有候选的默认状态不算不一致：可写并标明写入目标', async () => {
@@ -1320,7 +1336,7 @@ it('查看历史候选时只读并显示该候选自己的衔接意见', async (
   useCanvas.setState({ shotWorkbench: { boardId: 'board', shotId: 'two' } })
   workbenchReads(doc, [])
   const { user } = renderApp(<ShotWorkbench />)
-  await user.selectOptions(screen.getByLabelText('工作台候选'), 'history-b')
+  await choose(user, '工作台候选', /history-b/)
   const region = () => screen.getByLabelText('衔接意见')
   await waitFor(() => expect(region().textContent).toContain('衔接需修改：光线'))
   expect(region().textContent).toContain('衔接：光向反了')
@@ -1331,7 +1347,7 @@ it('查看历史候选时只读并显示该候选自己的衔接意见', async (
   await user.click(screen.getByRole('button', { name: '标记需修改' }))
   expect(doc.get('video-two')?.reviews).toHaveLength(1)
   expect(doc.get('video-two')?.reviews?.[0]?.target.resultId).toBe('history-b')
-  await user.selectOptions(screen.getByLabelText('工作台候选'), a.id)
+  await choose(user, '工作台候选', new RegExp(a.id.slice(-10)))
   await waitFor(() =>
     expect((screen.getByRole('button', { name: '标记需修改' }) as HTMLButtonElement).disabled).toBe(
       false,
@@ -1378,13 +1394,13 @@ it('查看尾帧时按同组关联到所属视频候选，多组不串', async (
   workbenchReads(doc, [])
   const { user } = renderApp(<ShotWorkbench />)
   const region = () => screen.getByLabelText('衔接意见')
-  await user.selectOptions(screen.getByLabelText('工作台候选'), 'tail-b')
+  await choose(user, '工作台候选', /tail-b/)
   await waitFor(() => expect(region().textContent).toContain('衔接需修改：服装'))
   expect(region().textContent).toContain('衔接：上衣颜色变了')
   expect((screen.getByRole('button', { name: '标记需修改' }) as HTMLButtonElement).disabled).toBe(
     true,
   )
-  await user.selectOptions(screen.getByLabelText('工作台候选'), 'tail-a')
+  await choose(user, '工作台候选', /tail-a/)
   await waitFor(() =>
     expect((screen.getByRole('button', { name: '标记需修改' }) as HTMLButtonElement).disabled).toBe(
       false,
@@ -1410,7 +1426,7 @@ it('旧数据无法唯一确定尾帧所属视频候选时只读并说明', asyn
   useCanvas.setState({ shotWorkbench: { boardId: 'board', shotId: 'two' } })
   workbenchReads(doc, [])
   const { user } = renderApp(<ShotWorkbench />)
-  await user.selectOptions(screen.getByLabelText('工作台候选'), 'tail-x')
+  await choose(user, '工作台候选', /tail-x/)
   const region = () => screen.getByLabelText('衔接意见')
   await waitFor(() => expect(region().textContent).toContain('无法确定这张尾帧属于哪个视频候选'))
   expect((screen.getByRole('button', { name: '标记需修改' }) as HTMLButtonElement).disabled).toBe(
@@ -1433,7 +1449,7 @@ it('查看非采用候选时提示已采用候选的衔接意见', async () => {
   useCanvas.setState({ shotWorkbench: { boardId: 'board', shotId: 'two' } })
   workbenchReads(doc, [])
   const { user } = renderApp(<ShotWorkbench />)
-  await user.selectOptions(screen.getByLabelText('工作台候选'), 'history-b')
+  await choose(user, '工作台候选', /history-b/)
   const region = () => screen.getByLabelText('衔接意见')
   await waitFor(() => expect(region().textContent).toContain('此候选没有衔接意见'))
   expect(region().textContent).toContain('衔接意见记在已采用的候选上')

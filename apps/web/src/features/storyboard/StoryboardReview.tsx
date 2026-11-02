@@ -15,6 +15,7 @@ import { useDocVersion } from '../../canvas/hooks'
 import { describeFailure, openProviderSettings } from '../../canvas/runStatus'
 import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
+import { Select } from '../../ui/Select'
 import { runNode } from '../runs/run'
 import { describeRecovery } from '../runs/recovery'
 import { RecoveryBlock } from '../runs/Tasks'
@@ -91,22 +92,22 @@ export function StoryboardReview({
   return (
     <>
       <div className="flex flex-none flex-wrap items-center gap-3 border-b border-line px-4 py-2 text-xs">
-        <label className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
           创作验收
-          <select
+          <Select
             aria-label="筛选镜头验收"
             value={filter}
-            onChange={(e) => setFilter(e.target.value as typeof filter)}
+            options={[
+              { value: 'all', label: '全部镜头' },
+              ...(['pending', 'usable', 'changes'] as const).map((value) => ({
+                value: value as string,
+                label: reviewLabels[value],
+              })),
+            ]}
+            onChange={(value) => setFilter(value as typeof filter)}
             className="ui-input"
-          >
-            <option value="all">全部镜头</option>
-            {(['pending', 'usable', 'changes'] as const).map((value) => (
-              <option key={value} value={value}>
-                {reviewLabels[value]}
-              </option>
-            ))}
-          </select>
-        </label>
+          />
+        </div>
         <button
           type="button"
           className="ui-btn ui-btn-secondary ui-btn-xs"

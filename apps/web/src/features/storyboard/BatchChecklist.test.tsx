@@ -120,50 +120,47 @@ it.each(['scope', 'content'] as const)(
       const confirm = screen.getByRole<HTMLButtonElement>('button', { name: '确认并开始生成' })
       await waitFor(() => expect(confirm.disabled).toBe(false))
       expect(screen.getByLabelText('清单冻结范围').textContent).toContain(sequences[0])
-      const select = screen.getByRole<HTMLSelectElement>('combobox', { name: '批量清单序列范围' })
-      // 范围变化走真实 change；文档变化在确认前同步作废预检，不靠重渲染禁用按钮。
+      const select = screen.getByRole('combobox', { name: '批量清单序列范围' })
+      if (change === 'scope') {
+        await user.click(select)
+        await user.click(screen.getByRole('option', { name: new RegExp(sequences[1]!) }))
+        expect(commits).toEqual([])
+        expect(started).not.toHaveBeenCalled()
+        expect(confirm.disabled).toBe(true)
+        await waitFor(() => expect(previews).toHaveLength(2))
+        expect(previews.map((request) => request.sequenceId)).toEqual(sequences)
+        expect(screen.getByText('正在准备实际输入，不会调用生成平台…')).toBeTruthy()
+        await act(async () => release())
+        await waitFor(() => expect(confirm.disabled).toBe(false))
+        expect(screen.getByLabelText('清单冻结范围').textContent).toContain(sequences[1])
+        await user.click(confirm)
+        await waitFor(() => expect(started).toHaveBeenCalledExactlyOnceWith(1))
+        expect(commits).toEqual([{ token: `token:${sequences[1]}:2` }])
+        return
+      }
+      // 文档变化在确认前同步作废预检，不靠重渲染禁用按钮。
       confirm.addEventListener(
         'click',
         () => {
-          if (change === 'scope') {
-            select.value = sequences[1]!
-            select.dispatchEvent(new Event('change', { bubbles: true }))
-          } else {
-            setParam(doc, source, 'prompt', '同帧更新后的生成输入')
-            doc.flush()
-            expect(confirm.disabled).toBe(false)
-          }
+          setParam(doc, source, 'prompt', '同帧更新后的生成输入')
+          doc.flush()
+          expect(confirm.disabled).toBe(false)
         },
         { capture: true, once: true },
       )
       await act(async () => {
         confirm.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       })
-      if (change === 'content') {
-        expect(commits).toEqual([])
-        expect(screen.getByRole('alert').textContent).toContain('清单范围或内容已变化，请重新检查')
-        expect(started).not.toHaveBeenCalled()
-        expect(confirm.disabled).toBe(true)
-        await user.click(screen.getByRole('button', { name: '重新检查清单' }))
-        await waitFor(() => expect(confirm.disabled).toBe(false))
-        await user.click(confirm)
-        await waitFor(() => expect(started).toHaveBeenCalledExactlyOnceWith(1))
-        expect(previews.map((request) => request.sequenceId)).toEqual([sequences[0], sequences[0]])
-        expect(commits).toEqual([{ token: `token:${sequences[0]}:2` }])
-        return
-      }
-      await waitFor(() => expect(previews).toHaveLength(2))
-      expect(previews.map((request) => request.sequenceId)).toEqual(sequences)
       expect(commits).toEqual([])
+      expect(screen.getByRole('alert').textContent).toContain('清单范围或内容已变化，请重新检查')
       expect(started).not.toHaveBeenCalled()
       expect(confirm.disabled).toBe(true)
-      expect(screen.getByText('正在准备实际输入，不会调用生成平台…')).toBeTruthy()
-      await act(async () => release())
+      await user.click(screen.getByRole('button', { name: '重新检查清单' }))
       await waitFor(() => expect(confirm.disabled).toBe(false))
-      expect(screen.getByLabelText('清单冻结范围').textContent).toContain(sequences[1])
       await user.click(confirm)
       await waitFor(() => expect(started).toHaveBeenCalledExactlyOnceWith(1))
-      expect(commits).toEqual([{ token: `token:${sequences[1]}:2` }])
+      expect(previews.map((request) => request.sequenceId)).toEqual([sequences[0], sequences[0]])
+      expect(commits).toEqual([{ token: `token:${sequences[0]}:2` }])
     } finally {
       await act(async () => release())
       unmount()

@@ -1,4 +1,5 @@
 import type { ShotScene } from './prepModel'
+import { Select } from '../../ui/Select'
 
 export function StoryboardPrepFilter({
   scenes,
@@ -26,22 +27,19 @@ export function StoryboardPrepFilter({
       aria-label="分镜显示筛选"
       className="flex flex-none flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-5 py-2 text-xs"
     >
-      <label className="flex items-center gap-2">
+      <div className="flex items-center gap-2">
         <span className="text-ink-muted">场景</span>
-        <select
+        <Select
           aria-label="按场景筛选"
           className="ui-input max-w-56"
           value={scene}
-          onChange={(event) => onScene(event.target.value)}
-        >
-          <option value="">全部场景</option>
-          {scenes.map((item) => (
-            <option key={item.key} value={item.key}>
-              {item.label}
-            </option>
-          ))}
-        </select>
-      </label>
+          options={[
+            { value: '', label: '全部场景' },
+            ...scenes.map((item) => ({ value: item.key, label: item.label })),
+          ]}
+          onChange={onScene}
+        />
+      </div>
       {onScenePrep && (
         <button type="button" className="ui-btn ui-btn-secondary ui-btn-sm" onClick={onScenePrep}>
           场景准备

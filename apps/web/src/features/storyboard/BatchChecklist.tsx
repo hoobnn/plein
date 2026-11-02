@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, api } from '../../api/client'
 import { useCanvas } from '../../stores/canvas'
 import { Modal, ModalHeader } from '../../ui/Modal'
+import { Select } from '../../ui/Select'
 import { BatchPlanDetails } from './BatchPlanDetails'
 
 const roles = { image: '分镜图', video: '视频', speech: '配音', sfx: '音效' }
@@ -188,30 +189,30 @@ export function BatchChecklist({
           资产准备也列在下方；阻塞和跳过项本次不会提交。
         </p>
         {!!plan?.scope?.sequenceIds.length && (
-          <label className="mb-3 block text-sm">
+          <div className="mb-3 block text-sm">
             本次序列范围{' '}
-            <select
+            <Select
               aria-label="批量清单序列范围"
               className="ui-input"
               value={sequenceId}
               disabled={busy || loading}
-              onChange={(event) => {
+              options={[
+                { value: '', label: '唯一关联时确定；多个序列需选择' },
+                ...[
+                  ...new Set([...plan.scope.sequenceIds, ...(sequenceId ? [sequenceId] : [])]),
+                ].map((id) => ({
+                  value: id,
+                  label: `${engine.doc.get(id)?.name ?? id} · ${id}`,
+                })),
+              ]}
+              onChange={(value) => {
                 invalidate()
                 setStale(true)
                 setPlan(null)
-                setSequenceId(event.target.value)
+                setSequenceId(value)
               }}
-            >
-              <option value="">唯一关联时确定；多个序列需选择</option>
-              {[...new Set([...plan.scope.sequenceIds, ...(sequenceId ? [sequenceId] : [])])].map(
-                (id) => (
-                  <option key={id} value={id}>
-                    {engine.doc.get(id)?.name ?? id} · {id}
-                  </option>
-                ),
-              )}
-            </select>
-          </label>
+            />
+          </div>
         )}
         {!online && (
           <p role="status" className="mb-3 text-sm text-danger">

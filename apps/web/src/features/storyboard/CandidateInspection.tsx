@@ -10,6 +10,7 @@ import { upstreams } from '../../canvas/nodes'
 import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
 import { Icon } from '../../ui/icons'
+import { Select } from '../../ui/Select'
 import { describeRecovery } from '../runs/recovery'
 import { CreativeReviewForm, reviewLabels } from './CreativeReviewForm'
 import { shotsOf, type ShotSource } from './model'
@@ -150,27 +151,22 @@ export function CandidateInspection({
           {latest && `任务 ${latest.status} · 尝试 ${latest.attempts}`}
         </p>
       )}
-      <label className="block text-sm">
+      <div className="block text-sm">
         查看候选{' '}
-        <select
+        <Select
           aria-label="工作台候选"
           className="ui-input w-full"
           value={candidate?.id ?? selected}
-          onChange={(e) => onSelect(e.target.value)}
-        >
-          <option value="">{adoptedResult ? '当前采用候选' : '尚未采用'}</option>
-          {(node.results ?? []).map((r) => (
-            <option key={r.id} value={r.id}>
-              {adoptedResult
-                ? currentResult(node, r.port)?.id === r.id
-                  ? '已采用'
-                  : '历史'
-                : '待采用'}{' '}
-              · {r.id.slice(-10)} · {r.port}
-            </option>
-          ))}
-        </select>
-      </label>
+          options={[
+            { value: '', label: adoptedResult ? '当前采用候选' : '尚未采用' },
+            ...(node.results ?? []).map((r) => ({
+              value: r.id,
+              label: `${adoptedResult ? (currentResult(node, r.port)?.id === r.id ? '已采用' : '历史') : '待采用'} · ${r.id.slice(-10)} · ${r.port}`,
+            })),
+          ]}
+          onChange={onSelect}
+        />
+      </div>
       {candidate ? (
         <CandidateMedia key={binding} result={candidate} />
       ) : (

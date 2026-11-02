@@ -21,6 +21,7 @@ import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
 import { useSession } from '../../stores/session'
 import { Modal, ModalHeader } from '../../ui/Modal'
+import { Select } from '../../ui/Select'
 import { Icon } from '../../ui/icons'
 import { useStale } from '../runs/stale'
 import { BatchChecklist } from './BatchChecklist'
@@ -457,21 +458,19 @@ function Workbench({
           ) : (
             <>
               <div className="plein-shot-workspace-context flex flex-wrap gap-3 items-center text-sm">
-                <label>
+                <div>
                   当前镜头{' '}
-                  <select
+                  <Select
                     aria-label="工作台镜头"
                     className="ui-input"
                     value={shotId}
-                    onChange={(e) => changeShot(e.target.value)}
-                  >
-                    {shots.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        镜头 {s.no} · {s.description.slice(0, 40)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    options={shots.map((s) => ({
+                      value: s.id,
+                      label: `镜头 ${s.no} · ${s.description.slice(0, 40)}`,
+                    }))}
+                    onChange={changeShot}
+                  />
+                </div>
                 <span className="text-xs text-ink-muted">
                   {shot.shotSize} · {shot.duration} 秒
                 </span>
@@ -677,23 +676,22 @@ function Workbench({
                     {!!nodes.length && (
                       <details>
                         <summary>阶段节点 · {nodes.length} 个</summary>
-                        <label className="block text-sm">
+                        <div className="block text-sm">
                           阶段节点{' '}
-                          <select
+                          <Select
                             aria-label="工作台阶段节点"
                             className="ui-input w-full"
                             value={node?.id ?? selectedNode}
-                            onChange={(e) => setSelectedNode(e.target.value)}
-                          >
-                            <option value="">请选择阶段</option>
-                            {nodes.map((n) => (
-                              <option key={n.id} value={n.id}>
-                                {roles[(n.params?.source as ShotSource)?.role] ?? '节点'} ·{' '}
-                                {n.name ?? n.id}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
+                            options={[
+                              { value: '', label: '请选择阶段' },
+                              ...nodes.map((n) => ({
+                                value: n.id,
+                                label: `${roles[(n.params?.source as ShotSource)?.role] ?? '节点'} · ${n.name ?? n.id}`,
+                              })),
+                            ]}
+                            onChange={setSelectedNode}
+                          />
+                        </div>
                       </details>
                     )}
                     <details>

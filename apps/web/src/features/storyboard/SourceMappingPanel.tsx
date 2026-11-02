@@ -21,6 +21,7 @@ import {
 import { useDocVersion } from '../../canvas/hooks'
 import { useCanvas } from '../../stores/canvas'
 import { useSession } from '../../stores/session'
+import { Select } from '../../ui/Select'
 import {
   sourceDisplayOffset,
   sourceExcerpt,
@@ -167,22 +168,22 @@ export function SourceMappingPanel({
       <div className="grid gap-5 lg:grid-cols-2">
         <div className="min-w-0 space-y-3">
           <div className="flex items-end gap-2">
-            <label className="min-w-0 flex-1 text-sm">
+            <div className="min-w-0 flex-1 text-sm">
               当前剧本输入
-              <select
+              <Select
                 aria-label="当前剧本输入"
                 className={field}
                 value={input ? key(input) : ''}
-                onChange={(e) => setInputKey(e.target.value)}
-              >
-                {!inputs.length && <option value="">尚未连接剧本文本</option>}
-                {inputs.map((v, index) => (
-                  <option key={key(v)} value={key(v)}>
-                    {index + 1}. {v.name} · {v.port}
-                  </option>
-                ))}
-              </select>
-            </label>
+                options={[
+                  ...(!inputs.length ? [{ value: '', label: '尚未连接剧本文本' }] : []),
+                  ...inputs.map((v, index) => ({
+                    value: key(v),
+                    label: `${index + 1}. ${v.name} · ${v.port}`,
+                  })),
+                ]}
+                onChange={setInputKey}
+              />
+            </div>
             <button
               type="button"
               className={button}
@@ -210,29 +211,26 @@ export function SourceMappingPanel({
             </button>
           </div>
           {input?.problem && <p className="text-sm text-ink-subtle">{input.problem}</p>}
-          <label className="block text-sm">
+          <div className="block text-sm">
             固定原文版本
-            <select
+            <Select
               aria-label="固定原文版本"
               className={field}
               value={snapshot?.id ?? ''}
-              onChange={(e) => {
-                setSnapshotId(e.target.value)
+              options={[
+                ...(!record.snapshots.length ? [{ value: '', label: '尚未固定原文' }] : []),
+                ...record.snapshots.map((s) => ({
+                  value: s.id,
+                  label: `${s.name} · ${new Date(s.capturedAt).toLocaleString()} · ${s.id.slice(-6)}${record.sources.some((entry) => entry.activeSnapshotId === s.id) ? ' · 当前计划版本' : ' · 历史版本'}`,
+                })),
+              ]}
+              onChange={(value) => {
+                setSnapshotId(value)
                 setOffset(0)
                 setRange(null)
               }}
-            >
-              {!record.snapshots.length && <option value="">尚未固定原文</option>}
-              {record.snapshots.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} · {new Date(s.capturedAt).toLocaleString()} · {s.id.slice(-6)}
-                  {record.sources.some((entry) => entry.activeSnapshotId === s.id)
-                    ? ' · 当前计划版本'
-                    : ' · 历史版本'}
-                </option>
-              ))}
-            </select>
-          </label>
+            />
+          </div>
           {snapshot && page && (
             <>
               <p role="status" className="text-sm text-ink-subtle">
@@ -330,15 +328,16 @@ export function SourceMappingPanel({
                 </button>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <select
+                <Select
                   aria-label="原文标注类型"
                   className="ui-input"
                   value={kind}
-                  onChange={(e) => setKind(e.target.value as SourceUnit['kind'])}
-                >
-                  <option value="event">事件</option>
-                  <option value="dialogue">对白</option>
-                </select>
+                  options={[
+                    { value: 'event', label: '事件' },
+                    { value: 'dialogue', label: '对白' },
+                  ]}
+                  onChange={(value) => setKind(value as SourceUnit['kind'])}
+                />
                 <button
                   type="button"
                   className={button}
@@ -373,34 +372,29 @@ export function SourceMappingPanel({
         </div>
         <div className="min-w-0 space-y-3">
           <div className="flex flex-wrap items-end gap-2">
-            <label className="min-w-0 flex-1 text-sm">
+            <div className="min-w-0 flex-1 text-sm">
               关联或定位镜头
-              <select
+              <Select
                 aria-label="关联或定位镜头"
                 className={field}
                 value={shotId}
-                onChange={(e) => setShotId(e.target.value)}
-              >
-                <option value="">请选择镜头</option>
-                {shots.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    镜头 {s.no} · {s.description.slice(0, 40)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <select
+                options={[
+                  { value: '', label: '请选择镜头' },
+                  ...shots.map((s) => ({
+                    value: s.id,
+                    label: `镜头 ${s.no} · ${s.description.slice(0, 40)}`,
+                  })),
+                ]}
+                onChange={setShotId}
+              />
+            </div>
+            <Select
               aria-label="覆盖处理"
               className="ui-input"
               value={treatment}
-              onChange={(e) => setTreatment(e.target.value as SourceLink['treatment'])}
-            >
-              {Object.entries(treatments).map(([value, title]) => (
-                <option key={value} value={value}>
-                  {title}
-                </option>
-              ))}
-            </select>
+              options={Object.entries(treatments).map(([value, label]) => ({ value, label }))}
+              onChange={(value) => setTreatment(value as SourceLink['treatment'])}
+            />
           </div>
           {shotId && (
             <div

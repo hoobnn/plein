@@ -7,6 +7,7 @@ import { api, assetUrls } from '../../api/client'
 import { upstreams } from '../../canvas/nodes'
 import { useCatalog } from '../../stores/catalog'
 import { Modal, ModalHeader } from '../../ui/Modal'
+import { Select } from '../../ui/Select'
 import { useStale } from '../runs/stale'
 import { CreativeReviewForm } from './CreativeReviewForm'
 import { continuityWindow } from './reviewModel'
@@ -164,22 +165,22 @@ function PairReview({
           </div>
         )}
         <div className="my-3 flex flex-wrap items-center gap-3 text-xs">
-          <label className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
             固定角色参考
-            <select
+            <Select
               aria-label="固定角色参考"
               className="ui-input"
               value={reference}
-              onChange={(e) => setReference(e.target.value)}
-            >
-              <option value="">不显示</option>
-              {unique.map((ref) => (
-                <option key={ref.id} value={ref.id}>
-                  {ref.name} · {ref.id.slice(0, 6)}
-                </option>
-              ))}
-            </select>
-          </label>
+              options={[
+                { value: '', label: '不显示' },
+                ...unique.map((ref) => ({
+                  value: ref.id,
+                  label: `${ref.name} · ${ref.id.slice(0, 6)}`,
+                })),
+              ]}
+              onChange={setReference}
+            />
+          </div>
           {reference && (
             <img
               src={assetUrls.original(reference)}

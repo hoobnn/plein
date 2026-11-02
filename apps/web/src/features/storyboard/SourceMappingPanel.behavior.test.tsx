@@ -63,6 +63,15 @@ function fixture(text = '甲：回来。\n乙：回来。', ydoc?: Y.Doc) {
   return { ...seeded, engine }
 }
 
+async function choose(
+  user: ReturnType<typeof renderApp>['user'],
+  name: string,
+  option: string | RegExp,
+) {
+  await user.click(screen.getByRole('combobox', { name }))
+  await user.click(screen.getByRole('option', { name: option }))
+}
+
 function render(engine: Engine, boardId: string) {
   return renderApp(
     <SourceMappingPanel
@@ -101,7 +110,7 @@ async function addUnit(
   textarea.setSelectionRange(start, end)
   fireEvent.select(textarea)
   await waitFor(() => expect(screen.getByText(`范围 ${start}–${end}`)).toBeTruthy())
-  await user.selectOptions(screen.getByLabelText('原文标注类型'), 'dialogue')
+  await choose(user, '原文标注类型', '对白')
   await user.click(screen.getByRole('button', { name: '将选中原文加入标注' }))
   doc.flush()
   await waitFor(() =>
@@ -119,8 +128,8 @@ describe('来源映射面板', () => {
     await user.click(screen.getByRole('button', { name: '我已核对本版原文' }))
     doc.flush()
 
-    await user.selectOptions(screen.getByLabelText('关联或定位镜头'), 'one')
-    await user.selectOptions(screen.getByLabelText('覆盖处理'), 'compress')
+    await choose(user, '关联或定位镜头', '镜头 1 · 她回头')
+    await choose(user, '覆盖处理', '压缩')
     // 真正点「关联所选镜头」：只在下拉框里选不算关联
     await user.click(screen.getByRole('button', { name: '关联所选镜头' }))
     doc.flush()
@@ -147,7 +156,7 @@ describe('来源映射面板', () => {
     )
     const { user } = view
     await addUnit(user, doc)
-    await user.selectOptions(screen.getByLabelText('关联或定位镜头'), 'one')
+    await choose(user, '关联或定位镜头', '镜头 1 · 她回头')
     await user.click(screen.getByRole('button', { name: '关联所选镜头' }))
     doc.flush()
     await waitFor(() => expect(linksOf(doc, board)).toHaveLength(1))
@@ -168,7 +177,7 @@ describe('来源映射面板', () => {
     const view = render(engine, board)
     const { user } = view
     await addUnit(user, doc)
-    await user.selectOptions(screen.getByLabelText('关联或定位镜头'), 'one')
+    await choose(user, '关联或定位镜头', '镜头 1 · 她回头')
     await user.click(screen.getByRole('button', { name: '关联所选镜头' }))
     await user.click(screen.getByRole('button', { name: '我已核对本版原文' }))
     doc.flush()
@@ -231,13 +240,13 @@ describe('来源映射面板', () => {
     // 协作者的变更同步回来：我这边还在看原固定版本
     Y.applyUpdate(ydocA, Y.encodeStateAsUpdate(ydocB))
     doc.flush()
-    await waitFor(() =>
-      expect(screen.getByLabelText('固定原文版本')).toHaveProperty('options.length', 2),
-    )
+    await user.click(screen.getByRole('combobox', { name: '固定原文版本' }))
+    await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(2))
+    await user.keyboard('{Escape}')
     expect(textarea.value).toBe('甲：回来。\n乙：回来。')
 
     // 选区加入的标注必须归属原快照，摘录也来自原文
-    await user.selectOptions(screen.getByLabelText('原文标注类型'), 'dialogue')
+    await choose(user, '原文标注类型', '对白')
     await user.click(screen.getByRole('button', { name: '将选中原文加入标注' }))
     doc.flush()
     await waitFor(() => expect(doc.get(board)!.production!.sourceMap!.units).toHaveLength(1))
@@ -265,12 +274,12 @@ describe('来源映射面板', () => {
     // 选中原文前 4 个字作为标注范围
     textarea.setSelectionRange(0, 4)
     fireEvent.select(textarea)
-    await user.selectOptions(screen.getByLabelText('原文标注类型'), 'dialogue')
+    await choose(user, '原文标注类型', '对白')
     await user.click(screen.getByRole('button', { name: '将选中原文加入标注' }))
     doc.flush()
     await waitFor(() => expect(screen.getByText('范围 0–4')).toBeTruthy())
 
-    await user.selectOptions(screen.getByLabelText('关联或定位镜头'), 'one')
+    await choose(user, '关联或定位镜头', '镜头 1 · 她回头')
     doc.flush()
     await waitFor(() => expect(screen.getByText(/本版 \d+ 个人工标注/).textContent).toContain('1'))
   })

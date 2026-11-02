@@ -2,6 +2,7 @@ import type { Engine } from '@plein/canvas-core'
 import { segmentUsers, shotSegmentMapping } from '@plein/capabilities'
 import { useState } from 'react'
 import { useCanvas } from '../../stores/canvas'
+import { Select } from '../../ui/Select'
 
 const soundLabels = {
   legacy: '旧版自动声音',
@@ -35,29 +36,29 @@ export function ShotSegmentReferences({
     <section aria-label="本镜序列映射" className="space-y-2 text-xs">
       <h3 className="font-medium">本镜序列映射</h3>
       {onSelectSequence && mapping.sequenceIds.length > 0 && (
-        <label className="block">
+        <div className="block">
           本镜序列范围{' '}
-          <select
+          <Select
             className="ui-input max-w-full"
             aria-label="本镜序列范围"
             value={sequenceId ?? ''}
-            onChange={(event) => {
+            options={[
+              { value: '', label: '唯一关联时确定；多个序列需选择' },
+              ...[...new Set([...mapping.sequenceIds, ...(sequenceId ? [sequenceId] : [])])].map(
+                (id) => ({
+                  value: id,
+                  label: `${engine.doc.get(id)?.name ?? id} · ${id}`,
+                }),
+              ),
+            ]}
+            onChange={(value) => {
               if (isCurrent()) {
-                onSelectSequence(event.target.value)
+                onSelectSequence(value)
                 setError('')
               }
             }}
-          >
-            <option value="">唯一关联时确定；多个序列需选择</option>
-            {[...new Set([...mapping.sequenceIds, ...(sequenceId ? [sequenceId] : [])])].map(
-              (id) => (
-                <option key={id} value={id}>
-                  {engine.doc.get(id)?.name ?? id} · {id}
-                </option>
-              ),
-            )}
-          </select>
-        </label>
+          />
+        </div>
       )}
       {mapping.problem && <p role="status">{mapping.problem}</p>}
       {!mapping.problem && !mapping.instances.length && <p>选定范围内尚无本镜的剪辑映射。</p>}
