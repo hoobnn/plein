@@ -10,6 +10,7 @@ import { useCanvas } from '../stores/canvas'
 import { useSession } from '../stores/session'
 import { useTheme } from '../stores/theme'
 import { DialogHost } from '../ui/Dialog'
+import { MotionProvider } from '../ui/MotionProvider'
 import { mockMatchMedia } from './browser'
 import { finishPendingRequests, mockFetch, takeUnhandledRequests } from './fetch'
 
@@ -108,8 +109,10 @@ export function renderApp(
   })
   const providers = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>
-      {Wrapper ? <Wrapper>{children}</Wrapper> : children}
-      {dialogs && <DialogHost />}
+      <MotionProvider>
+        {Wrapper ? <Wrapper>{children}</Wrapper> : children}
+        {dialogs && <DialogHost />}
+      </MotionProvider>
     </QueryClientProvider>
   )
   return { ...render(ui, { ...options, wrapper: providers }), user, queryClient }

@@ -2,6 +2,9 @@
 if (typeof window !== 'undefined') {
   const { mockMatchMedia } = await import('./browser')
   mockMatchMedia((query) => query === '(prefers-reduced-motion: reduce)')
+  // happy-dom 的 WAAPI cancel 会产生未处理的 AbortError；让 Motion 走它的 JS 动画后端。
+  if (navigator.userAgent.includes('HappyDOM'))
+    Object.defineProperty(Element.prototype, 'animate', { configurable: true, value: undefined })
 }
 
 export {}
