@@ -57,6 +57,15 @@ export interface ProductionTarget {
   trialShotId?: string
   sequenceId?: string
 }
+
+/**
+ * 制作目标在 production 子 Map 里的持久化键。
+ * 持久化键名沿用 v11 之前的 `selection`；语义是共享的制作目标指针，TypeScript 层统一叫 target。
+ * 改键名需要 schema 迁移，而迁移「替换整个子 Map」在两个客户端并发迁移时会有
+ * 父 Map 冲突淘汰新子 Map 的竞争，故不改键名、不做迁移。
+ */
+const TARGET_KEY = 'selection'
+
 export interface ProductionRecord {
   target?: ProductionTarget
   confirmations: ProductionConfirmation[]
@@ -117,7 +126,7 @@ const ordered = <T extends { at: number; id: string }>(a: T, b: T) =>
 export function createProductionMap(record?: ProductionRecord): Y.Map<unknown> {
   const snapshot = record ? clone(record) : undefined
   const map = new Y.Map<unknown>()
-  map.set('target', new Y.Map(Object.entries(snapshot?.target ?? {})))
+  map.set(TARGET_KEY, new Y.Map(Object.entries(snapshot?.target ?? {})))
   map.set(
     'confirmations',
     new Y.Map(
@@ -141,8 +150,7 @@ export function productionMapOf(doc: PleinDoc, boardId: string): Y.Map<unknown> 
 }
 export function readProduction(value: unknown): ProductionRecord | undefined {
   if (!(value instanceof Y.Map)) return undefined
-  // 旧字段 selection 在 schema v11→v12 迁到 target；未迁移的嵌套 Y.Map 兼容读
-  const stored = value.get('target') ?? value.get('selection')
+  const stored = value.get(TARGET_KEY)
   const pick = stored instanceof Y.Map ? stored.toJSON() : {}
   const confirmations = value.get('confirmations')
   const decisions = value.get('decisions')
@@ -239,7 +247,8 @@ function mutate(doc: PleinDoc, boardId: string, fn: (map: Y.Map<unknown>) => voi
   const map = productionMapOf(doc, boardId)
   if (
     !map ||
-    !['target', 'confirmations', 'decisions'].every((key) => map.get(key) instanceof Y.Map)
+    !(map.get(TARGET_KEY) instanceof Y.Map) ||
+    !['confirmations', 'decisions'].every((key) => map.get(key) instanceof Y.Map)
   )
     return false
   doc.undo.stopCapturing()
@@ -256,15 +265,13 @@ export function selectProductionTarget(
   target: ProductionTarget,
 ): boolean {
   return mutate(doc, boardId, (map) => {
-    const stored = map.get('target') as Y.Map<unknown>
+    const stored = map.get(TARGET_KEY) as Y.Map<unknown>
     for (const key of ['trialShotId', 'sequenceId'] as const) {
       if (key in target) {
         if (target[key] === undefined) stored.delete(key)
         else stored.set(key, clone(target[key]))
       }
     }
-    // 写入只认 target；旧客户端并发写入的 selection 字段在这里一并清掉
-    if (map.get('selection') instanceof Y.Map) map.delete('selection')
   })
 }
 /** 同端连续操作即使同毫秒也保持追加顺序；跨端同时间由 ID 确定。 */

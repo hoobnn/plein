@@ -129,7 +129,7 @@ describe('production文档合同', () => {
     const createdBytes = Y.encodeStateAsUpdate(doc.ydoc)
     record.target.extra.values.push('outside')
     record.confirmations[0]!.actor.userId = 'outside'
-    expect((createdMap.get('target') as Y.Map<unknown>).get('extra')).toEqual({
+    expect((createdMap.get('selection') as Y.Map<unknown>).get('extra')).toEqual({
       values: ['target-original'],
     })
     expect(doc.get(created)!.production!.confirmations[0]!.actor.userId).toBe('alice')
@@ -408,43 +408,44 @@ describe('production文档合同', () => {
     doc.destroy()
   })
 
-  it('v11→v12 迁移：旧字段 selection 改名 target，含旧字段的文档打开后目标不丢', () => {
+  it('制作目标在 Yjs 里持久化为 selection 键，读出为 record.target', () => {
     const { doc, id } = board()
-    selectProductionTarget(doc, id, { trialShotId: 'shot-one' })
-    // 把存储字段名改回旧名，模拟 v11 旧客户端写出的文档
-    const raw = new Y.Doc()
-    Y.applyUpdate(raw, Y.encodeStateAsUpdate(doc.ydoc))
-    const elements = raw.getMap<unknown>('elements')
-    const production = elements.get(id) as Y.Map<unknown>
-    production.set('selection', production.get('target'))
-    production.delete('target')
-    raw.getMap('meta').set('schemaVersion', 11)
-    doc.destroy()
-
-    const restored = openDoc(raw)
-    expect(restored.schemaVersion).toBe(SCHEMA_VERSION)
-    expect(restored.get(id)!.production!.target).toEqual({ trialShotId: 'shot-one' })
-    const map = productionMapOf(restored, id)!
-    expect(map.get('selection')).toBeUndefined()
-    expect(map.get('target')).toBeInstanceOf(Y.Map)
-    // 迁移后仍可写，且写入不复活旧字段
-    expect(selectProductionTarget(restored, id, { sequenceId: 'seq-2' })).toBe(true)
-    expect(map.get('selection')).toBeUndefined()
-    restored.destroy()
-  })
-
-  it('未迁移的旧 production 嵌套 Map 兼容读取，读取不写文档', () => {
-    const { doc, id } = board()
-    selectProductionTarget(doc, id, { trialShotId: 'shot-two' })
-    const map = productionMapOf(doc, id) as Y.Map<unknown>
-    const legacy = new Y.Map([...(map.get('target') as Y.Map<unknown>).entries()])
-    map.set('selection', legacy)
-    map.delete('target')
-    expect(readProduction(map)).toEqual({
-      target: { trialShotId: 'shot-two' },
-      confirmations: [],
-      decisions: [],
+    const sequence = createElement(doc, node({ nodeType: 'plein/sequence', params: { clips: [] } }))
+    selectProductionTarget(doc, id, { trialShotId: 'shot-one', sequenceId: sequence })
+    // 钉住持久化格式：键名沿用 v11 之前的 selection，避免并发迁移竞争
+    const map = productionMapOf(doc, id)!
+    expect(map.get('target')).toBeUndefined()
+    const stored = map.get('selection') as Y.Map<unknown>
+    expect(stored).toBeInstanceOf(Y.Map)
+    expect(stored.get('trialShotId')).toBe('shot-one')
+    expect(stored.get('sequenceId')).toBe(sequence)
+    // TypeScript 层读出为 target
+    expect(doc.get(id)!.production!.target).toEqual({
+      trialShotId: 'shot-one',
+      sequenceId: sequence,
     })
+    // 复制粘贴与导入沿用同一持久化键；序列 id 只在被复制时重映射
+    const [copy, copiedSequence] = duplicateElements(doc, [id, sequence])
+    expect(doc.get(copy!)!.production!.target).toEqual({
+      trialShotId: 'shot-one',
+      sequenceId: copiedSequence,
+    })
+    expect(
+      (productionMapOf(doc, copy!)!.get('selection') as Y.Map<unknown>).get('sequenceId'),
+    ).toBe(copiedSequence)
+    const destination = openDoc()
+    const [imported] = importElements(destination, exportElements(doc, [id]))
+    expect(destination.get(imported!)!.production!.target).toEqual({ trialShotId: 'shot-one' })
+    expect(
+      (productionMapOf(destination, imported!)!.get('selection') as Y.Map<unknown>).get(
+        'trialShotId',
+      ),
+    ).toBe('shot-one')
+    // 清除单个键后条目被删，持久化键不变
+    expect(selectProductionTarget(doc, id, { trialShotId: undefined })).toBe(true)
+    expect((map.get('selection') as Y.Map<unknown>).has('trialShotId')).toBe(false)
+    expect((map.get('selection') as Y.Map<unknown>).get('sequenceId')).toBe(sequence)
+    destination.destroy()
     doc.destroy()
   })
 })
