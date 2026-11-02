@@ -1,6 +1,7 @@
 import { Switch as Base } from '@base-ui/react/switch'
+import { cn } from './cn'
 
-/** 开关（Base UI Switch）：开 = accent 底，圆钮弹性滑到右边；点它不会冒泡到所在的行 */
+/** Nova 开关（Base UI Switch）：保留受控接口；点它不会冒泡到所在的行。 */
 export function Switch({
   checked,
   disabled,
@@ -21,9 +22,15 @@ export function Switch({
       render={<button type="button" />}
       onClick={(e) => e.stopPropagation()}
       onCheckedChange={(next) => onChange(next)}
-      className="ui-switch"
+      data-slot="switch"
+      className={cn(
+        'ui-switch peer group/switch relative inline-flex h-(--switch-h) w-(--switch-w) shrink-0 items-center rounded-full border border-transparent transition-colors outline-none focus-visible:border-accent focus-visible:ring-3 focus-visible:ring-accent-soft data-checked:bg-primary data-unchecked:bg-surface-3 data-disabled:cursor-not-allowed data-disabled:opacity-40',
+      )}
     >
-      <Base.Thumb />
+      <Base.Thumb
+        data-slot="switch-thumb"
+        className="pointer-events-none block size-4 rounded-full bg-white ring-0 transition-transform data-checked:translate-x-3.5 data-checked:bg-on-primary data-unchecked:translate-x-0"
+      />
     </Base.Root>
   )
 }
