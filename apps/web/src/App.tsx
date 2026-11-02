@@ -29,9 +29,6 @@ const AgentDock = lazy(() =>
 const LibraryPanel = lazy(() =>
   import('./features/library/Library').then((m) => ({ default: m.LibraryPanel })),
 )
-const SettingsHost = lazy(() =>
-  import('./features/settings/SettingsHost').then((m) => ({ default: m.SettingsHost })),
-)
 const MediaLibraryPanel = lazy(() =>
   import('./features/media-library/MediaLibrary').then((m) => ({ default: m.MediaLibraryPanel })),
 )
@@ -150,13 +147,15 @@ export function App() {
       <Suspense fallback={null}>{ready && libraryOpen && <LibraryPanel />}</Suspense>
       <Suspense fallback={null}>{ready && mediaOpen && <MediaLibraryPanel />}</Suspense>
       <Suspense fallback={null}>{ready && checkpointsOpen && <CheckpointsPanel />}</Suspense>
-      <DeferredPanel active={settingsOpen}>
-        <SettingsHost
-          open={settingsOpen}
-          initial={settings === false ? undefined : settings}
-          onClose={() => setSettings(false)}
-        />
-      </DeferredPanel>
+      <DeferredPanel
+        active={settingsOpen}
+        load={() => import('./features/settings/SettingsHost').then((m) => m.SettingsHost)}
+        props={{
+          open: settingsOpen,
+          initial: settings === false ? undefined : settings,
+          onClose: () => setSettings(false),
+        }}
+      />
       <DialogHost active={ready || route.name === 'demo'} />
       {(ready || route.name === 'demo') && <TooltipHost />}
       <DesktopEvents />

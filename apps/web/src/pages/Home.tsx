@@ -1,6 +1,6 @@
 import type { Project } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
-import { lazy, type MouseEvent, Suspense, useEffect, useRef, useState } from 'react'
+import { type MouseEvent, useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { cacheProject, invalidateProjects, queryClient, queryKeys } from '../api/query'
 import { DRAMA_START, queueStartNode } from '../canvas/startQueue'
@@ -15,6 +15,7 @@ import { prefetchIdle } from '../ui/idle'
 import { fullTime, relativeTime } from '../ui/format'
 import { Icon, type IconName } from '../ui/icons'
 import { InlineTitle } from '../ui/InlineTitle'
+import { StaticToast } from '../ui/StaticToast'
 import { ThemeToggle } from '../ui/ThemeToggle'
 import { EmptyState } from '../ui/EmptyState'
 import { zoomView } from '../ui/viewTransition'
@@ -24,14 +25,6 @@ import { useCheckpoints } from '../features/checkpoints/store'
 import { HomeAgentTrigger } from '../features/agent/HomeAgentTrigger'
 import { useAgent } from '../features/agent/store'
 import { preloadEditor } from './EditorLoader'
-
-const Welcome = lazy(() =>
-  import('../features/onboarding/Welcome').then((m) => ({ default: m.Welcome })),
-)
-const HomeToast = lazy(() => import('./HomeToast').then((m) => ({ default: m.HomeToast })))
-const HomePackageDialogs = lazy(() =>
-  import('./HomePackageDialogs').then((m) => ({ default: m.HomePackageDialogs })),
-)
 
 /** 快速开始：新建项目并在它的第一张画布上放好对应节点、打开生成器 */
 const QUICK_START: Array<{
@@ -402,29 +395,34 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
           )}
         </section>
       </main>
-      <Suspense fallback={null}>
-        <Welcome />
-      </Suspense>
+      <DeferredPanel
+        active
+        load={() => import('../features/onboarding/Welcome').then((m) => m.Welcome)}
+        props={{}}
+      />
       {/* 画布页留下的提示（如画布已在别处删除，跳回首页时） */}
-      <DeferredPanel active={!!notice}>
-        <HomeToast notice={notice} />
-      </DeferredPanel>
+      <DeferredPanel
+        active={!!notice}
+        load={() => import('./HomeToast').then((m) => m.HomeToast)}
+        props={{ notice }}
+        fallback={notice ? <StaticToast>{notice}</StaticToast> : null}
+      />
       <DeferredPanel
         active={!!exporting || !!importing}
-        fallback={exporting || importing ? <p role="status">正在打开项目包…</p> : null}
-      >
-        <HomePackageDialogs
-          exporting={exporting}
-          importing={importing}
-          onCloseExport={() => setExporting(null)}
-          onCloseImport={() => setImporting(null)}
-          onImported={(r) => {
+        load={() => import('./HomePackageDialogs').then((m) => m.HomePackageDialogs)}
+        props={{
+          exporting,
+          importing,
+          onCloseExport: () => setExporting(null),
+          onCloseImport: () => setImporting(null),
+          onImported: (r) => {
             setImporting(null)
             void invalidateProjects()
             if (r.canvasId) navigate({ name: 'canvas', id: r.canvasId })
-          }}
-        />
-      </DeferredPanel>
+          },
+        }}
+        fallback={exporting || importing ? <p role="status">正在打开项目包…</p> : null}
+      />
     </div>
   )
 }

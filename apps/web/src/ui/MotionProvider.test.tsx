@@ -1,13 +1,9 @@
 // @vitest-environment happy-dom
 import { MotionConfig } from 'motion/react'
-import { lazy, useState } from 'react'
+import { useState } from 'react'
 import { expect, it } from 'vite-plus/test'
 import { renderApp, screen, waitFor } from '../testing/render'
 import { DeferredPanel } from './DeferredPanel'
-
-const DeferredToast = lazy(() =>
-  import('../pages/HomeToast').then((module) => ({ default: module.HomeToast })),
-)
 
 function Fixture() {
   const [notice, setNotice] = useState<string | null>(null)
@@ -16,9 +12,11 @@ function Fixture() {
       <button type="button" onClick={() => setNotice((current) => (current ? null : '已保存'))}>
         切换提示
       </button>
-      <DeferredPanel active={!!notice}>
-        <DeferredToast notice={notice} />
-      </DeferredPanel>
+      <DeferredPanel
+        active={!!notice}
+        load={() => import('../pages/HomeToast').then((module) => module.HomeToast)}
+        props={{ notice }}
+      />
     </MotionConfig>
   )
 }

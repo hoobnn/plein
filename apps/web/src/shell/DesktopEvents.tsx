@@ -5,12 +5,10 @@ import { navigate } from '../router'
 import { switchMode, useCanvas } from '../stores/canvas'
 import { DeferredPanel } from '../ui/DeferredPanel'
 import { prefetchIdle } from '../ui/idle'
+import { StaticToast } from '../ui/StaticToast'
 
 const DesktopUpdates = lazy(() =>
   import('./DesktopUpdates').then((m) => ({ default: m.DesktopUpdates })),
-)
-const DesktopSavedToast = lazy(() =>
-  import('./DesktopSavedToast').then((m) => ({ default: m.DesktopSavedToast })),
 )
 
 /** 等画布和节点都加载好再定位，最多等这么久 */
@@ -57,14 +55,40 @@ export function DesktopEvents() {
       <Suspense fallback={null}>
         <DesktopUpdates />
       </Suspense>
-      <DeferredPanel active={!!saved}>
-        <DesktopSavedToast
-          saved={saved}
-          showLabel={desktop.platform === 'darwin' ? '在访达中显示' : '在文件夹中显示'}
-          onShow={(path) => void desktop?.showSavedFile(path)}
-          onClose={() => setSaved(null)}
-        />
-      </DeferredPanel>
+      <DeferredPanel
+        active={!!saved}
+        load={() => import('./DesktopSavedToast').then((m) => m.DesktopSavedToast)}
+        props={{
+          saved,
+          showLabel: desktop.platform === 'darwin' ? '在访达中显示' : '在文件夹中显示',
+          onShow: (path) => void desktop?.showSavedFile(path),
+          onClose: () => setSaved(null),
+        }}
+        fallback={
+          saved ? (
+            <StaticToast
+              action={
+                saved.savePath && (
+                  <button
+                    type="button"
+                    className="ui-btn ui-btn-quiet ui-btn-sm"
+                    onClick={() => {
+                      void desktop?.showSavedFile(saved.savePath!)
+                      setSaved(null)
+                    }}
+                  >
+                    {desktop.platform === 'darwin' ? '在访达中显示' : '在文件夹中显示'}
+                  </button>
+                )
+              }
+            >
+              {saved.state === 'completed'
+                ? `已保存「${saved.name}」`
+                : `「${saved.name}」保存失败`}
+            </StaticToast>
+          ) : null
+        }
+      />
     </>
   )
 }
