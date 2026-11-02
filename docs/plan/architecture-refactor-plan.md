@@ -821,7 +821,7 @@ zustand v5 的 `useStore()` 不带 selector 时，**store 里任何字段变化�
 | 2.3 | `sessions.ts` / `tools.ts` / `package.ts` 拆分；复评 `runs.ts` / `host.ts`            | G（服务端部分） | 已完成 |
 | 2.4 | 前端节点注册表、`RendererRegistry` 支持 nodeType、编辑器表驱动、删 `catalog.elements` | A2、A3          | 已完成 |
 | 2.5 | 侧栏换 react-resizable-panels、参考图排序换 dnd-kit                                   | I2              | 未开始 |
-| 2.6 | 引入 Motion，`Presence` 换 `AnimatePresence`，改写动效规范                            | I6              | 未开始 |
+| 2.6 | 引入 Motion，`Presence` 换 `AnimatePresence`，改写动效规范                            | I6              | 已完成 |
 
 **理由**：D 是「能力系统兑现承诺」的一步；`tools.ts` 的拆分与 D 同批，避免同一文件改两遍。
 A2 / A3 只依赖 A1，不依赖 B。
