@@ -335,7 +335,7 @@ export function Inputs({
   // 必需参考是引用的一项设置，跟着参考素材走：送入的在素材上改，没送入的在「未送入」里改。
   const canRequire = !!node.paramsSchema && fieldsOf(node).some(([key]) => key === 'requiredRefs')
   const requiredRefs = Array.isArray(el.params?.requiredRefs)
-    ? (el.params.requiredRefs as string[])
+    ? (el.params.requiredRefs as string[]).filter((id) => engine.doc.has(id))
     : []
   const toggleRequired = (id: string) =>
     setParam(

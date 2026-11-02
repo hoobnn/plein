@@ -248,7 +248,7 @@ export async function applyMentions(
   }
   if (hit.size === 0) return { params, inputs, refs: [], notices, details: [], blocked }
 
-  const required = requiredOrder(params.requiredRefs)
+  const required = requiredOrder(params.requiredRefs, doc)
   const groups: Group[] = []
   const refList: UsedRef[] = []
   const details: InputRef[] = []
@@ -573,9 +573,11 @@ interface Group {
   images: PortValue[]
 }
 
-/** 必需参考的元素 id → 先后顺序 */
-function requiredOrder(value: unknown) {
-  const ids = Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []
+/** 当前仍存在的必需参考元素 id → 先后顺序；删除后的残留 id 不参与解析。 */
+function requiredOrder(value: unknown, doc: PleinDoc) {
+  const ids = Array.isArray(value)
+    ? value.filter((v): v is string => typeof v === 'string' && doc.has(v))
+    : []
   return new Map(ids.map((id, i) => [id, i]))
 }
 

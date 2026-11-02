@@ -3,6 +3,7 @@ import {
   connect,
   createDoc,
   createElement,
+  deleteElements,
   type PleinDoc,
   updateElement,
   writeRun,
@@ -98,6 +99,32 @@ describe('必需参考与取舍', () => {
     expect(r2.blocked).toHaveLength(1)
     expect(r2.blocked[0]).toMatchObject({ code: 'required_no_image', elementId: key })
     expect(r2.blocked[0]?.message).toContain('「钥匙」是必需参考')
+  })
+
+  it('删除卡后残留的必需引用和选图不参与解析，也不阻断其他引用', async () => {
+    const { doc, hero, key } = scene()
+    const n = shot(doc, 'plein/image', {
+      prompt: '@林夏 @钥匙',
+      requiredRefs: [hero, key],
+      referenceImagePicks: { [hero]: [asset('a')], [key]: ['deleted-selection'] },
+    })
+    deleteElements(doc, [key])
+    const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc), 3)
+    expect(r.blocked).toEqual([])
+    expect(r.details).toHaveLength(1)
+    expect(r.details[0]).toMatchObject({
+      elementId: hero,
+      required: true,
+      selected: [asset('a')],
+      sent: [asset('a')],
+    })
+    expect(sent(r.inputs.references)).toEqual([asset('a')])
+    expect(doc.get(n)?.params?.requiredRefs).toEqual([hero, key])
+    expect(doc.get(n)?.params?.referenceImagePicks).toEqual({
+      [hero]: [asset('a')],
+      [key]: ['deleted-selection'],
+    })
+    doc.destroy()
   })
 
   it('参考图生成失败：记为 failed，和还没生成分开', async () => {

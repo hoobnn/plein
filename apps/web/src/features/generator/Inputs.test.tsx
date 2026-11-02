@@ -27,6 +27,8 @@ describe('多模态参考名称', () => {
       refs?: (sources: string[], assets: string[]) => PreparedInput['refs']
       sent?: (sources: string[], assets: string[]) => PreparedInput['sent']
       unsent?: (sources: string[], assets: string[]) => PreparedInput['unsent']
+      params?: Record<string, unknown>
+      requirable?: boolean
     } = {},
   ) {
     doc = openDoc()
@@ -40,6 +42,9 @@ describe('多模态参考名称', () => {
         { id: 'audios', label: '音频', type: 'audio', multiple: true },
       ],
       outputs: [],
+      ...(options.requirable
+        ? { paramsSchema: { properties: { requiredRefs: { type: 'array' } } } }
+        : {}),
     } as unknown as NodeInfo
     const id = createElement(doc, {
       kind: 'node',
@@ -53,6 +58,7 @@ describe('多模态参考名称', () => {
         mode: 'reference',
         prompt: '参考',
         model: options.model ?? 'minimax/api:MiniMax-H3',
+        ...options.params,
       },
     })
     const sources: string[] = []
@@ -152,6 +158,26 @@ describe('多模态参考名称', () => {
     ])
     expect(screen.getByRole('button', { name: '管理参考 3' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '管理参考 4' })).toBeTruthy()
+  })
+
+  it('已删除元素的残留 id 不在参考面板上显示为必需', async () => {
+    const f = setup({
+      requirable: true,
+      params: { requiredRefs: ['deleted-card'] },
+      sent: (_sources, assets) => [
+        {
+          index: 1,
+          token: '图片1',
+          assetId: assets[0]!,
+          elementId: 'deleted-card',
+          name: '已删除角色',
+          origins: ['mention', 'role'],
+        },
+      ],
+    })
+    await f.user.click(screen.getByRole('button', { name: '管理参考 1' }))
+    expect(screen.getByRole('button', { name: '设为必需参考' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '取消必需参考' })).toBeNull()
   })
 
   it('图片与方舟长编号移出缩略图裁切区域并完整显示', () => {
