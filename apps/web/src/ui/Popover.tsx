@@ -70,12 +70,13 @@ export function Popover({
           anchor={anchor}
           side={placement === 'above' ? 'top' : 'bottom'}
           align="start"
-          sideOffset={8}
+          sideOffset={4}
           collisionPadding={8}
           className="z-70"
         >
           <Base.Popup
             ref={popup}
+            data-slot="popover-content"
             initialFocus={initialFocus}
             aria-label={label}
             {...exit}
@@ -86,7 +87,7 @@ export function Popover({
               // 最低高度不能高过窗口的三成：两侧都放不下时，弹层要留在窗口里，不能溢出屏幕
               maxHeight: 'min(480px, 70vh, max(var(--available-height, 70vh), min(200px, 30vh)))',
             }}
-            className="ui-menu ui-scrollbar pointer-events-auto overflow-y-auto outline-none"
+            className="ui-menu ui-scrollbar pointer-events-auto flex origin-(--transform-origin) flex-col gap-2.5 overflow-y-auto rounded-lg bg-menu p-2.5 text-sm text-ink shadow-3 ring-1 ring-line outline-none"
           >
             {children}
           </Base.Popup>
