@@ -1,5 +1,6 @@
 import { Dialog } from '@base-ui/react/dialog'
 import { type ReactNode, useEffect, useRef } from 'react'
+import { cn } from './cn'
 import { Icon } from './icons'
 import { useClosing, useExit } from './Presence'
 import { claimMenuEscape, hasMenuEscapeLayer, isMenuEscape } from './menuEscape'
@@ -97,7 +98,7 @@ export function Modal({
       <Dialog.Portal>
         <Dialog.Backdrop
           {...exit}
-          className={`ui-dialog-scrim pointer-events-auto fixed inset-0 bg-scrim ${top ? 'z-50' : 'z-40'}`}
+          className={`ui-dialog-scrim pointer-events-auto fixed inset-0 bg-scrim supports-backdrop-filter:backdrop-blur-xs ${top ? 'z-50' : 'z-40'}`}
         />
         <Dialog.Viewport
           data-fullscreen={fullScreen || undefined}
@@ -127,7 +128,11 @@ export function Modal({
             initialFocus={initialFocus}
             data-plein-active={isolateKeys ? '' : undefined}
             {...exit}
-            className={`ui-dialog relative flex max-h-full w-full flex-col overflow-hidden ${fullScreen ? 'rounded-none' : 'rounded-2xl'} bg-surface shadow-4 outline-none ${className}`}
+            className={cn(
+              'ui-dialog relative flex max-h-full w-full flex-col overflow-hidden bg-menu text-sm text-ink ring-1 ring-line outline-none',
+              fullScreen ? 'rounded-none bg-surface' : 'rounded-xl',
+              className,
+            )}
           >
             {children}
           </Dialog.Popup>
@@ -160,7 +165,7 @@ export function ModalHeader({
         divider ? 'border-b border-line' : ''
       }`}
     >
-      <h2 className="min-w-0 flex-1 basis-full text-lg font-semibold break-words sm:basis-auto">
+      <h2 className="min-w-0 flex-1 basis-full text-base leading-none font-medium break-words sm:basis-auto">
         {title}
       </h2>
       {meta}
@@ -175,7 +180,7 @@ export function ModalHeader({
         title="关闭（Esc）"
         disabled={closeDisabled}
         onClick={onClose}
-        className="ui-btn ui-btn-quiet ui-icon-btn absolute top-2.5 right-3"
+        className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn absolute top-2 right-2"
       >
         <Icon name="x" />
       </button>

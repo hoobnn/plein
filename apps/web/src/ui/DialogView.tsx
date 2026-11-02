@@ -79,7 +79,10 @@ export function DialogView({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Backdrop {...exit} className="ui-dialog-scrim fixed inset-0 z-60 bg-scrim" />
+        <Dialog.Backdrop
+          {...exit}
+          className="ui-dialog-scrim fixed inset-0 z-60 bg-scrim supports-backdrop-filter:backdrop-blur-xs"
+        />
         <Dialog.Viewport className="app-dialog-viewport fixed inset-0 z-60 flex items-center justify-center p-4 sm:p-6">
           <Dialog.Popup
             {...exit}
@@ -102,10 +105,10 @@ export function DialogView({
                 }}
               />
             }
-            className="ui-dialog ui-dialog-pad ui-scrollbar relative flex max-h-full w-full max-w-100 flex-col gap-5 overflow-y-auto rounded-2xl bg-surface shadow-4 outline-none [&>*]:shrink-0"
+            className="ui-dialog ui-scrollbar relative flex max-h-full w-full max-w-sm flex-col gap-4 overflow-y-auto rounded-xl bg-menu p-4 text-sm text-ink ring-1 ring-line outline-none [&>*]:shrink-0"
           >
-            <div className="flex flex-col gap-1.5">
-              <h2 className="text-lg font-semibold break-words">{options.title}</h2>
+            <div className="flex flex-col gap-2">
+              <h2 className="text-base leading-none font-medium break-words">{options.title}</h2>
               {options.message && (
                 <p className="ui-note break-words whitespace-pre-line text-ink-muted">
                   {options.message}
@@ -116,7 +119,7 @@ export function DialogView({
               <input
                 ref={inputRef}
                 aria-label={req.options.placeholder ?? options.title}
-                className="ui-input ui-input-lg w-full"
+                className="ui-input w-full"
                 value={text}
                 placeholder={req.options.placeholder}
                 maxLength={req.options.maxLength}
@@ -137,7 +140,7 @@ export function DialogView({
             <div className="flex shrink-0 flex-wrap justify-end gap-2">
               <button
                 type="button"
-                className="ui-btn ui-btn-secondary ui-btn-lg"
+                className="ui-btn ui-btn-secondary"
                 onClick={() => finish(null)}
               >
                 {busy ? '关闭' : (options.cancelLabel ?? '取消')}
@@ -147,7 +150,7 @@ export function DialogView({
                   ref={alternateRef}
                   type="button"
                   disabled={busy}
-                  className="ui-btn ui-btn-secondary ui-btn-lg"
+                  className="ui-btn ui-btn-secondary"
                   onClick={() => finish('alternate')}
                 >
                   {req.options.alternateLabel}
@@ -157,7 +160,7 @@ export function DialogView({
                 ref={confirmRef}
                 type="submit"
                 disabled={!canConfirm || busy}
-                className={`ui-btn ui-btn-lg ${danger ? 'ui-btn-danger-solid' : 'ui-btn-primary'}`}
+                className={`ui-btn ${danger ? 'ui-btn-danger-solid' : 'ui-btn-primary'}`}
               >
                 {busy ? `${options.confirmLabel ?? '提交'}中…` : (options.confirmLabel ?? '确定')}
               </button>
