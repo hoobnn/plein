@@ -2,7 +2,9 @@ import {
   imageModelProblem,
   selectedImageOptions,
   boundReferenceTokens,
-  resolveReferenceBindings,
+  referenceLabelStyle,
+  referenceNumbering,
+  type ReferenceIdentity,
 } from '@plein/plugin-sdk'
 import { videoModelProblem, videoReferencePrompt, videoTaskOverrides } from '@plein/plugin-sdk'
 import {
@@ -56,7 +58,7 @@ import {
   ProviderError,
   resolveParams,
 } from '@plein/plugin-sdk'
-import { hasVoice, voiceOf } from '@plein/nodes'
+import { findMentions, hasVoice, voiceOf } from '@plein/nodes'
 import type {
   BatchItem,
   FlowRunOptions,
@@ -83,7 +85,13 @@ import { type CallRecord, NodeRunError, SHUTDOWN, stageOf } from '../plugins/pro
 import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
 import { fillModels } from './models'
-import { type AppliedMentions, applyMentions, mentionEdges } from './mentions'
+import { type AppliedMentions, applyMentions, mentionEdges, mentionTargets } from './mentions'
+import {
+  type BoundReference,
+  type ReferenceImage,
+  type ReferenceMedia,
+  resolveBoundReference,
+} from './reference-tokens'
 import { executionEdges, runGraph, sequenceEdgeAllowed, toPortValue, toResultValue } from './graph'
 
 // 依赖图与冻结参数在各自模块里实现，这里转出去给兄弟模块用
@@ -2074,35 +2082,67 @@ export class NodeRuns implements BatchHost {
     )
     if (continuation.issue) blocked.push(continuation.issue)
     if (referenceMode) {
-      const formatReference = (item: { type: string; index: number }) =>
-        def.capability === 'image.generate' ? `图${item.index}` : `@${item.type}${item.index}`
-      const media = Object.values(inputs)
+      // 名称绑定、旧 @imageN 与 @ 引用共用同一份编号：编号顺序就是最终送入的顺序。
+      const style = referenceLabelStyle(
+        def.capability,
+        parseModelRef(String(params.model ?? ''))?.provider,
+      )
+      const imagePort = def.capability === 'image.generate' ? 'references' : 'images'
+      const images = (inputs[imagePort] ?? []).filter(
+        (item): item is ReferenceImage => item.type === 'image',
+      )
+      const numbering = referenceNumbering(style, images)
+      const others = Object.values(inputs)
         .flat()
-        .filter((item) => item.type === 'image' || item.type === 'video' || item.type === 'audio')
+        .filter((item): item is ReferenceMedia => item.type === 'video' || item.type === 'audio')
+      // 只在最终送入的素材里找：连着但没送入、或素材被换掉，都算对不上。
+      const media = [...images, ...others]
+      // 残留绑定的判定：元素已被删除，或既没连到这个节点也没被 @ 引用。
+      const connected = new Set<string>()
+      for (const edge of doc.edges()) if (edge.to[0] === el.id) connected.add(edge.from[0])
+      const mentioned = new Set<string>()
+      for (const m of findMentions(String(el.params?.prompt ?? ''), mentionTargets(doc)))
+        if (m.id) mentioned.add(m.id)
+      const isStale = (binding: ReferenceIdentity) => {
+        const source = binding.source
+        if (!source) return false
+        if (!doc.has(source)) return true
+        return !connected.has(source) && !mentioned.has(source)
+      }
+      const resolveOne = (name: string) =>
+        resolveBoundReference({
+          name,
+          params: el.params ?? {},
+          media,
+          imageLabel: numbering.label,
+          isStale,
+        })
+      const report = (result: BoundReference, name: string) => {
+        if (result.error) blocked.push({ code: 'prepare_failed', message: result.error })
+        else if (result.stale)
+          notices.push({
+            code: 'stale_binding',
+            message: `残留绑定 @${name} 已忽略（元素已删除，或既未连线也未被 @ 引用）`,
+          })
+      }
       params.prompt = String(params.prompt ?? '').replace(
         /\uE000(\d+)\uE001/g,
         (_match, index: string) => {
           const alias = referenceTokens[Number(index)]!.name
-          const resolved = resolveReferenceBindings(
-            `@${alias}`,
-            media as Array<{ type: 'image' | 'video' | 'audio'; assetId: string; source?: string }>,
-            el.params,
-            formatReference,
-          )
-          if (resolved.error) blocked.push({ code: 'prepare_failed', message: resolved.error })
-          return resolved.prompt ?? `@${alias}`
+          const result = resolveOne(alias)
+          report(result, alias)
+          return result.text
         },
       )
       for (const item of inputs.prompt ?? []) {
         if (item.type !== 'text') continue
-        const upstream = resolveReferenceBindings(
-          item.text,
-          media as Array<{ type: 'image' | 'video' | 'audio'; assetId: string; source?: string }>,
-          el.params,
-          formatReference,
-        )
-        if (upstream.error) blocked.push({ code: 'prepare_failed', message: upstream.error })
-        else item.text = upstream.prompt!
+        let text = item.text
+        for (const token of boundReferenceTokens(text, el.params).toReversed()) {
+          const result = resolveOne(token.name)
+          report(result, token.name)
+          text = text.slice(0, token.start) + result.text + text.slice(token.end)
+        }
+        item.text = text
       }
     }
 

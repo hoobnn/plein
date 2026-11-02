@@ -847,18 +847,14 @@ it('持久引用在服务端重排后按身份映射，替换、删除及旧编�
       issue.message.includes('已删除、替换'),
     ),
   ).toBe(true)
+  // 断开连线后这条绑定就是残留数据：忽略，不再阻断，也不参与编号。
   removeEdges(doc, [edges[0]!.id])
-  expect(
-    (await preview(server, id, video)).blocked.some((issue) =>
-      issue.message.includes('已删除、替换'),
-    ),
-  ).toBe(true)
+  const disconnected = await preview(server, id, video)
+  expect(disconnected.blocked).toEqual([])
+  expect(disconnected.status).not.toBe('blocked')
+  expect(disconnected.unsent?.some((item) => item.reason === 'stale_binding')).toBe(true)
   setParams(doc, video, { referenceBindings: undefined })
-  expect(
-    (await preview(server, id, video)).blocked.some((issue) =>
-      issue.message.includes('尚未确认素材身份'),
-    ),
-  ).toBe(true)
+  expect((await preview(server, id, video)).blocked).toEqual([])
 })
 
 it('名称引用使用来源当前结果，文件名不会被重复展开，原始提示词保持名称', async () => {
@@ -1115,8 +1111,10 @@ it('图片生成名称引用按实际多图顺序映射，重复提及不重复�
   ])
   removeEdges(doc, [edges[0]!.id])
   const disconnected = await preview(server, id, image)
-  expect(disconnected.status).toBe('blocked')
-  expect(disconnected.blocked).toContainEqual(
-    expect.objectContaining({ message: expect.stringContaining('已删除、替换或未送入') }),
-  )
+  // 断开连线不再阻断：正文里的 @ 引用还在，素材改由 @ 引用送入，编号也跟着变。
+  expect(disconnected.status).toBe('ready')
+  expect(disconnected.blocked).toEqual([])
+  // 断开连线后那张图不再送入；这条绑定变成残留数据，被忽略，不阻断。
+  expect(disconnected.inputs.references?.map((v) => v.assetId)).toEqual([asset('b')])
+  expect(disconnected.prompt).toBe('保留 @生成图片#1 的人物，在 图1 中奔跑，再参考 @生成图片#1')
 })

@@ -91,6 +91,7 @@ export type InputIssueCode =
   | 'prepare_failed'
   | 'optional_dropped'
   | 'mention_broken'
+  | 'stale_binding'
   | 'profile_miss'
   | 'profile_conflict'
   | 'model_access_unverified'
@@ -110,6 +111,8 @@ export type InputReferenceOrigin = 'edge' | 'mention' | 'role' | 'continuation' 
 /** 顶部参考素材的唯一数据源：index 与最终提示词里的平台编号一致。 */
 export interface InputSentReference {
   index: number
+  /** 最终提示词正文里的编号写法（图片节点「图1」、MiniMax 视频「图片1」、其余「@image1」）。 */
+  token: string
   assetId: string
   elementId?: string
   name: string

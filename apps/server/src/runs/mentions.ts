@@ -18,7 +18,13 @@ import {
   voiceFitsProvider,
   voiceOf,
 } from '@plein/nodes'
-import { type NodeDefinition, parseModelRef, type PortValue } from '@plein/plugin-sdk'
+import {
+  type NodeDefinition,
+  parseModelRef,
+  type PortValue,
+  referenceLabelStyle,
+  referenceNumbering,
+} from '@plein/plugin-sdk'
 import type { InputIssue, InputRef, InputRefKind } from '@plein/protocol'
 
 import { NodeRunError } from '../plugins/provider-protocol'
@@ -402,12 +408,14 @@ export async function applyMentions(
       : inputs
   const provider = parseModelRef(String(params.model ?? ''))?.provider
   if (numbered) {
-    const token = video
-      ? provider === 'minimax/api'
-        ? (index: number) => `图片${index + 1}`
-        : (index: number) => `@image${index + 1}`
-      : (index: number) => `图${index + 1}`
-    rewriteReferenceMentions(params, deferred, detailByHit, merged[port] ?? [], token)
+    // 编号只有一份：名称绑定、旧 @imageN 与 @ 引用都按送入顺序取同一个编号。
+    const style = referenceLabelStyle(def.capability, provider)
+    rewriteReferenceMentions(
+      params,
+      deferred,
+      detailByHit,
+      referenceNumbering(style, merged[port] ?? []),
+    )
   }
   return { params, inputs: merged, refs: refList, notices, details, blocked }
 }
@@ -417,8 +425,7 @@ function rewriteReferenceMentions(
   params: Record<string, unknown>,
   deferred: Map<string, Array<{ mention: Mention; hit?: Hit }>>,
   details: Map<string, InputRef>,
-  images: PortValue[],
-  token: (index: number) => string,
+  numbering: { label(assetId: string): string | undefined },
 ) {
   for (const [key, occurrences] of deferred) {
     let text = String(params[key] ?? '')
@@ -428,12 +435,13 @@ function rewriteReferenceMentions(
         ? [
             ...new Set(
               current.sent.flatMap((id) => {
-                const index = images.findIndex((v) => v.type === 'image' && v.assetId === id)
-                return index < 0 ? [] : [token(index)]
+                const label = numbering.label(id)
+                return label ? [label] : []
               }),
             ),
           ]
         : []
+      // 正文里的名字保持可读：#序号只用于区分同名资产，不写进正文。
       const name = hit?.sceneView
         ? `${mention.name}（${hit.sceneView.name}）`
         : pickLabel(mention.name, mention.pick ?? {})

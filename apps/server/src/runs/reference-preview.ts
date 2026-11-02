@@ -8,7 +8,11 @@ import {
 } from '@plein/nodes'
 import {
   boundReferenceTokens,
+  parseModelRef,
   referenceBindings,
+  referenceLabel,
+  referenceLabelStyle,
+  referenceNumbering,
   sameReference,
   type NodeDefinition,
   type PortValue,
@@ -65,6 +69,12 @@ export function referencePreview({
       !bound.some((token) => token.start <= mention.start && token.end > mention.start),
   )
   const sent: InputSentReference[] = []
+  // 编号只有一份：这里的 token 就是最终提示词正文里写的那个编号。
+  const style = referenceLabelStyle(
+    def?.capability,
+    parseModelRef(String(params.model ?? ''))?.provider,
+  )
+  const numbering = referenceNumbering(style, finalImages)
   for (const [index, value] of finalImages.entries()) {
     if (!('assetId' in value)) continue
     const assetId = value.assetId
@@ -91,6 +101,7 @@ export function referencePreview({
     const elementId = primary?.elementId ?? source
     sent.push({
       index: index + 1,
+      token: numbering.label(assetId) ?? referenceLabel(style, index + 1),
       assetId,
       ...(elementId ? { elementId } : {}),
       name: primary?.name ?? (elementId && doc.get(elementId)?.name) ?? '参考素材',
@@ -125,16 +136,18 @@ export function referencePreview({
       ? finalImages.find((value) => bindingMatches(binding, value, token.name, el.params))
       : undefined
     const assetId = match && 'assetId' in match ? match.assetId : undefined
-    const missing = !source || !doc.has(source)
+    const deleted = source ? !doc.has(source) : false
     const reason: InputUnsentReason | undefined = assetId
       ? undefined
-      : missing
+      : !binding || deleted
         ? 'stale_binding'
         : 'not_sent'
     const message = reason
-      ? reason === 'stale_binding'
-        ? `绑定 @${token.name} 指向已删除的元素，已忽略`
-        : `绑定 @${token.name} 的素材未送入，请重新选择`
+      ? !binding
+        ? `残留引用 @${token.name} 没有可确认的素材身份，已忽略`
+        : deleted
+          ? `绑定 @${token.name} 指向已删除的元素，已忽略`
+          : `绑定 @${token.name} 的素材未送入，请重新选择`
       : undefined
     promptReferences.push({
       start: token.start,
