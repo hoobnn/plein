@@ -17,6 +17,11 @@ visit('src/pages/Home.tsx')
 const files = [
   ...new Set([...visited].map((key) => manifest[key].file).filter((file) => file.endsWith('.js'))),
 ]
+const featureEntry = Object.values(manifest).find(
+  (item) => item.src === 'src/ui/motion-features.ts',
+)
+if (featureEntry && files.includes(featureEntry.file))
+  throw new Error('Motion domAnimation features must stay out of the Home initial chunks')
 const bytes = files.reduce(
   (sum, file) => sum + gzipSync(readFileSync(join(dist, file))).byteLength,
   0,

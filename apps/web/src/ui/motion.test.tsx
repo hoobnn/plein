@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { m } from 'motion/react'
+import { m, MotionConfig } from 'motion/react'
 import { expect, it } from 'vite-plus/test'
-import { renderApp, screen } from '../testing/render'
+import { renderApp, screen, waitFor } from '../testing/render'
 import { AnimatePresence, fadeVariants, useOverlayMotion } from './motion'
 
 function OverlayContent() {
@@ -19,6 +19,24 @@ it('减少动态效果时零时长退场并卸载', async () => {
   await screen.findByTestId('overlay')
   rerender(<Overlay open={false} />)
   expect(screen.queryByTestId('overlay')).toBeNull()
+})
+
+it('正常动态效果保留退场并用关闭态屏蔽指针', async () => {
+  const { rerender } = renderApp(
+    <MotionConfig reducedMotion="never">
+      <Overlay open />
+    </MotionConfig>,
+    { dialogs: false },
+  )
+  await screen.findByTestId('overlay')
+  rerender(
+    <MotionConfig reducedMotion="never">
+      <Overlay open={false} />
+    </MotionConfig>,
+  )
+  const overlay = screen.getByTestId('overlay')
+  expect(overlay.dataset.pleinExiting).toBe('')
+  await waitFor(() => expect(screen.queryByTestId('overlay')).toBeNull())
 })
 
 it('LazyMotion strict 下禁止直接使用 motion 组件', () => {

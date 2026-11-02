@@ -2,7 +2,7 @@ import {
   AnimatePresence as MotionAnimate,
   type AnimatePresenceProps,
   useIsPresent,
-  useReducedMotion,
+  useReducedMotionConfig,
   type Variants,
 } from 'motion/react'
 import { createElement, type ReactNode } from 'react'
@@ -150,7 +150,7 @@ export const fadeVariants: Variants = {
 
 /** 减少动态效果时绕过保留队列，关闭即卸载；其余情况交给 Motion 等待 exit。 */
 export function AnimatePresence(props: AnimatePresenceProps & { children?: ReactNode }) {
-  const reduced = useReducedMotion()
+  const reduced = useReducedMotionConfig()
   return reduced ? props.children : createElement(MotionAnimate, props)
 }
 
