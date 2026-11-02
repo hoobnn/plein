@@ -223,7 +223,8 @@ export function deleteElements(doc: PleinDoc, ids: Iterable<string>) {
     if (doomed.size === 0) return
     // 一次构建有效父子关系，避免多选删除时为每个元素重新扫描整份文档。
     const children = new Map<string, string[]>()
-    for (const el of doc.elements()) {
+    const elements = [...doc.elements()]
+    for (const el of elements) {
       const parent = doc.effectiveParent(el)
       if (parent === null) continue
       const siblings = children.get(parent)
@@ -236,8 +237,55 @@ export function deleteElements(doc: PleinDoc, ids: Iterable<string>) {
     for (const [edgeId, e] of doc.edgeMap) {
       if (doomed.has(e.from[0]) || doomed.has(e.to[0])) doc.edgeMap.delete(edgeId)
     }
+    clearReferenceBindings(doc, doomed, undefined, elements)
     for (const id of doomed) doc.elementMaps.delete(id)
   })
+}
+
+/** 连线或来源元素消失时，同步清掉指向它的名称 / 旧编号绑定；正文仍保留，预览会标为断链。 */
+function clearReferenceBindings(
+  doc: PleinDoc,
+  sources: ReadonlySet<string>,
+  targetId?: string,
+  elements: Iterable<CanvasElement> = doc.elements(),
+) {
+  for (const el of elements) {
+    if (targetId && el.id !== targetId) continue
+    const params = el.params
+    if (!params) continue
+    const patch: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(params)) {
+      if (key === 'referenceBindings') continue
+      const source = referenceBindingSource(key, value)
+      if (source && sources.has(source)) patch[key] = undefined
+    }
+    const nested = params.referenceBindings
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      const entries = Object.entries(nested as Record<string, unknown>)
+      const kept = entries.filter(([key, value]) => {
+        const source = referenceBindingSource(key, value)
+        return !source || !sources.has(source)
+      })
+      if (kept.length !== entries.length) patch.referenceBindings = Object.fromEntries(kept)
+    }
+    if (Object.keys(patch).length) setParams(doc, el.id, patch)
+  }
+}
+
+function referenceBindingSource(key: string, value: unknown): string | undefined {
+  const named = key.startsWith('referenceNameBinding:')
+  const legacy = key.startsWith('referenceBinding:')
+  const numbered = /^(image|video|audio)[1-9]\d*(?::|$)/.test(key)
+  if (!named && !legacy && !numbered) return undefined
+  if (value && typeof value === 'object' && 'source' in value && typeof value.source === 'string')
+    return value.source
+  if (named) {
+    const body = key.slice('referenceNameBinding:'.length)
+    return body.slice(body.lastIndexOf(':') + 1) || undefined
+  }
+  if (key.startsWith('referenceBinding:'))
+    return key.slice('referenceBinding:'.length).split(':')[1] || undefined
+  return undefined
 }
 
 /**
@@ -749,10 +797,14 @@ export function replaceInput(doc: PleinDoc, edgeId: string, from: PortAddress): 
 
 export function removeEdges(doc: PleinDoc, ids: Iterable<string>) {
   write(doc, () => {
+    const detached = new Map<string, Set<string>>()
     for (const id of ids) {
       const edge = doc.edgeMap.get(id)
       if (edge) {
         const target = doc.get(edge.to[0])
+        const sources = detached.get(edge.to[0]) ?? new Set<string>()
+        sources.add(edge.from[0])
+        detached.set(edge.to[0], sources)
         if (target?.nodeType === 'plein/sequence' && target.params?.instanceVersion === 2)
           setParams(doc, target.id, {
             clips: (Array.isArray(target.params.clips) ? target.params.clips : []).filter(
@@ -762,5 +814,6 @@ export function removeEdges(doc: PleinDoc, ids: Iterable<string>) {
       }
       doc.edgeMap.delete(id)
     }
+    for (const [targetId, sources] of detached) clearReferenceBindings(doc, sources, targetId)
   })
 }

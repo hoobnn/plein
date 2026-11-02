@@ -1,4 +1,4 @@
-import { type PleinDoc, setParam } from '@plein/doc'
+import { type PleinDoc, setParam, setParams } from '@plein/doc'
 import { boundReferenceTokens, referenceBindings, type ReferenceIdentity } from '@plein/plugin-sdk'
 
 /** 名称重复时按元素 id 消歧，顺序不随连线或结果变化。 */
@@ -95,4 +95,40 @@ export function replaceReferenceName(
     next = next.slice(0, token.start) + `@${name}` + next.slice(token.end)
   }
   if (next !== prompt) setParam(doc, nodeId, 'prompt', next)
+  // 换掉来源后，旧来源的绑定就是残留数据：一起清掉，避免编号时又把它算进去。
+  clearSourceBindings(doc, nodeId, oldSource)
+}
+
+/** 清掉指向某个来源元素的全部绑定（名称绑定、旧编号绑定都算）。 */
+export function clearSourceBindings(doc: PleinDoc, nodeId: string, source: string) {
+  const el = doc.get(nodeId)
+  if (!el?.params) return
+  const patch: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(el.params)) {
+    if (key === 'referenceBindings') continue
+    if (bindingSource(key, value) === source) patch[key] = undefined
+  }
+  const nested = el.params.referenceBindings
+  if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+    const entries = Object.entries(nested as Record<string, unknown>)
+    const kept = entries.filter(([key, value]) => bindingSource(key, value) !== source)
+    if (kept.length !== entries.length) patch.referenceBindings = Object.fromEntries(kept)
+  }
+  if (Object.keys(patch).length) setParams(doc, nodeId, patch)
+}
+
+/** 一条绑定指向哪个来源元素；旧编号绑定从键名里取。 */
+function bindingSource(key: string, value: unknown): string | undefined {
+  const named = key.startsWith('referenceNameBinding:')
+  const legacy = key.startsWith('referenceBinding:')
+  const numbered = /^(image|video|audio)[1-9]\d*(?::|$)/.test(key)
+  if (!named && !legacy && !numbered) return undefined
+  if (value && typeof value === 'object' && 'source' in value && typeof value.source === 'string')
+    return value.source
+  if (named) {
+    const body = key.slice('referenceNameBinding:'.length)
+    return body.slice(body.lastIndexOf(':') + 1) || undefined
+  }
+  if (legacy) return key.slice('referenceBinding:'.length).split(':')[1] || undefined
+  return undefined
 }
