@@ -54,17 +54,33 @@ test(
 
     expect(await tileNames(page)).toEqual(['参考 1：a.png', '参考 2：b.png', '参考 3：c.png'])
 
-    // 把第 2 块（b）拖到第 1 块（a）上：插入到它前面
+    // 把第 2 块（b）拖到第 1 块（a）上：插入到它前面。返回落点坐标
     const drag = async (from: number, to: number) => {
       const tiles = page.getByTestId('generator').getByRole('group')
       const fromBox = await tiles.nth(from).boundingBox()
       const toBox = await tiles.nth(to).boundingBox()
+      const point = { x: toBox!.x + toBox!.width / 2, y: toBox!.y + toBox!.height / 2 }
       await page.mouse.move(fromBox!.x + fromBox!.width / 2, fromBox!.y + fromBox!.height / 2)
       await page.mouse.down()
-      await page.mouse.move(toBox!.x + toBox!.width / 2, toBox!.y + toBox!.height / 2, { steps: 8 })
+      await page.mouse.move(point.x, point.y, { steps: 8 })
       await page.mouse.up()
+      return point
     }
-    await drag(1, 0)
+    const dropPoint = await drag(1, 0)
+
+    // 松手后的落点点击在库的抑制窗口（~50ms）内不会误开预览；
+    // CDP 本地往返毫秒级，第一下点击必然落在窗口内
+    const viewer = page.getByRole('dialog', { name: /查看「/ })
+    await page.mouse.click(dropPoint.x, dropPoint.y)
+    await expect(viewer).toHaveCount(0)
+    await page.waitForTimeout(150)
+    await page.mouse.click(dropPoint.x, dropPoint.y)
+    await expect(viewer).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(viewer).toHaveCount(0)
+    // 关看器的 Esc 同时会取消选中关面板：重新选中后再继续
+    await clickElement(page, card.id)
+    await revealGenerator(page)
     await expect
       .poll(() => tileNames(page))
       .toEqual(['参考 1：b.png', '参考 2：a.png', '参考 3：c.png'])
@@ -72,10 +88,10 @@ test(
     // Esc 取消：拖起来再按 Esc，顺序不变。
     // 应用层会把 Esc 当作取消选中并关闭面板（与旧原生拖拽一致），重新选中后断言。
     const tiles = page.getByTestId('generator').getByRole('group')
-    const fromBox = await tiles.nth(0).boundingBox()
-    await page.mouse.move(fromBox!.x + fromBox!.width / 2, fromBox!.y + fromBox!.height / 2)
+    const dragBox = await tiles.nth(0).boundingBox()
+    await page.mouse.move(dragBox!.x + dragBox!.width / 2, dragBox!.y + dragBox!.height / 2)
     await page.mouse.down()
-    await page.mouse.move(fromBox!.x + fromBox!.width / 2 + 60, fromBox!.y, { steps: 6 })
+    await page.mouse.move(dragBox!.x + dragBox!.width / 2 + 60, dragBox!.y, { steps: 6 })
     await page.keyboard.press('Escape')
     await page.mouse.up()
     await clickElement(page, card.id)

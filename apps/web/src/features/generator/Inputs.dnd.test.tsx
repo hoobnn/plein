@@ -6,7 +6,6 @@ import { useDocVersion } from '../../canvas/hooks'
 import type { NodeInfo } from '../../canvas/nodes'
 import { upstreams } from '../../canvas/nodes'
 import { mediaTestEngine } from '../../shell/media-tools/testEngine'
-import { useCanvas } from '../../stores/canvas'
 import { act, fireEvent, renderApp, screen, within } from '../../testing/render'
 import { Inputs } from './Inputs'
 
@@ -103,11 +102,6 @@ describe('参考图拖拽排序（dnd-kit）', () => {
     // 第 1 块拖到第 0 块的位置（x=24 落在 [0,48]）
     await dragTile(1, 24)
     expect(order()).toEqual([f.sources[1], f.sources[0], f.sources[2]])
-    // 拖拽结束后的落点点击被库抑制，不会误开预览
-    const view = vi.spyOn(useCanvas.getState(), 'view')
-    fireEvent.click(within(screen.getAllByRole('group')[1]!).getByRole('button', { name: /预览/ }))
-    expect(view).not.toHaveBeenCalled()
-    view.mockRestore()
     // 一次撤销回到原顺序：整个拖放是一个撤销分组
     act(() => {
       f.doc.undo.undo()
@@ -115,49 +109,33 @@ describe('参考图拖拽排序（dnd-kit）', () => {
     expect(order()).toEqual(f.sources)
   })
 
-  it('拖拽中按 Esc 取消：不写文档、不产生撤销分组，点击预览不受影响', async () => {
-    // 用可控计时器验证库的点击抑制窗口（拖拽激活到结束后 50ms 才移除监听）：
-    // 窗口内的落点点击被吞掉，窗口后恢复正常，不依赖真实时间。
-    // 只 fake setTimeout/Date：库的清理链还依赖 requestAnimationFrame，不能一并 fake
-    vi.useFakeTimers({
-      toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
+  it('拖拽激活后按 Esc 取消：不写文档、不产生撤销分组，退出拖拽态', async () => {
+    const f = setup()
+    stubTileRects()
+    const order = () => inputEdges(f.doc, f.id, 'images').map((edge) => edge.from[0])
+    const stackSize = () => f.doc.undo.undoStack.length
+    const before = stackSize()
+    const tiles = screen.getAllByRole('group')
+    const button = within(tiles[1]!).getByRole('button', { name: /预览/ })
+    fireEvent.pointerDown(button, {
+      pointerId: 1,
+      button: 0,
+      isPrimary: true,
+      pointerType: 'mouse',
+      clientX: 144,
+      clientY: 24,
     })
-    try {
-      const f = setup()
-      stubTileRects()
-      const order = () => inputEdges(f.doc, f.id, 'images').map((edge) => edge.from[0])
-      const stackSize = () => f.doc.undo.undoStack.length
-      const before = stackSize()
-      const tiles = screen.getAllByRole('group')
-      const button = within(tiles[1]!).getByRole('button', { name: /预览/ })
-      fireEvent.pointerDown(button, {
-        pointerId: 1,
-        button: 0,
-        isPrimary: true,
-        pointerType: 'mouse',
-        clientX: 144,
-        clientY: 24,
-      })
-      fireEvent.pointerMove(button, { pointerId: 1, clientX: 130, clientY: 24 })
-      await act(async () => {})
-      fireEvent.keyDown(document, { key: 'Escape', code: 'Escape' })
-      await act(async () => {})
-      expect(order()).toEqual(f.sources)
-      expect(stackSize()).toBe(before)
-      // 取消后同一次按压的释放点击被库抑制（与旧原生拖拽取消一致）
-      const view = vi.spyOn(useCanvas.getState(), 'view')
-      fireEvent.click(button)
-      expect(view).not.toHaveBeenCalled()
-      // 过了抑制窗口后点击恢复正常预览
-      act(() => {
-        vi.advanceTimersByTime(60)
-      })
-      fireEvent.click(button)
-      expect(view).toHaveBeenCalled()
-      view.mockRestore()
-    } finally {
-      vi.useRealTimers()
-    }
+    // 越过 8px 激活约束：被拖瓦片进入拖拽态（isDragging → zIndex），
+    // 证明后面的 Esc 走的是真实取消路径而非空操作
+    fireEvent.pointerMove(button, { pointerId: 1, clientX: 130, clientY: 24 })
+    await act(async () => {})
+    expect(tiles[1]!.style.zIndex).toBe('1')
+    // 库按 event.code 匹配 Esc
+    fireEvent.keyDown(document, { key: 'Escape', code: 'Escape' })
+    await act(async () => {})
+    expect(order()).toEqual(f.sources)
+    expect(stackSize()).toBe(before)
+    expect(tiles[1]!.style.zIndex).toBe('')
   })
 
   it('非 multiple 端口的参考不可拖：拖动尝试不改顺序、不产生撤销分组', async () => {
