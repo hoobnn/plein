@@ -242,7 +242,7 @@ export function deleteElements(doc: PleinDoc, ids: Iterable<string>) {
   })
 }
 
-/** 连线或来源元素消失时，同步清掉指向它的名称 / 旧编号绑定；正文仍保留，预览会标为断链。 */
+/** 连线或来源元素消失时，同步清掉指向它的名称 / 旧编号绑定、必需引用与选图；正文仍保留，预览会标为断链。 */
 function clearReferenceBindings(
   doc: PleinDoc,
   sources: ReadonlySet<string>,
@@ -267,6 +267,17 @@ function clearReferenceBindings(
         return !source || !sources.has(source)
       })
       if (kept.length !== entries.length) patch.referenceBindings = Object.fromEntries(kept)
+    }
+    if (Array.isArray(params.requiredRefs)) {
+      const requiredRefs = params.requiredRefs.filter(
+        (source) => typeof source !== 'string' || !sources.has(source),
+      )
+      if (requiredRefs.length !== params.requiredRefs.length) patch.requiredRefs = requiredRefs
+    }
+    const picks = params.referenceImagePicks
+    if (picks && typeof picks === 'object' && !Array.isArray(picks)) {
+      for (const key of Object.keys(picks))
+        if (sources.has(key)) setParamEntry(doc, el.id, 'referenceImagePicks', key, undefined)
     }
     if (Object.keys(patch).length) setParams(doc, el.id, patch)
   }

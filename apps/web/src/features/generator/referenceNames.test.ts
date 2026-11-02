@@ -67,6 +67,8 @@ it('替换参考图时同时更新普通名称与旧编号，连线和正文一�
       },
       params: {
         prompt: '@旧图.png @image1',
+        requiredRefs: [old, 'external'],
+        referenceImagePicks: { [old]: ['old'], external: ['external'] },
         referenceBindings: { image1: { type: 'image', assetId: 'old', source: old } },
       },
     })
@@ -80,10 +82,17 @@ it('替换参考图时同时更新普通名称与旧编号，连线和正文一�
     doc.flush()
     expect(doc.get(id)!.params?.prompt).toBe('@新图.png @新图.png')
     expect(referenceBindings(doc.get(id)!.params)['新图.png']?.source).toBe(next)
+    expect(doc.get(id)!.params?.requiredRefs).toEqual(['external'])
+    expect(doc.get(id)!.params?.referenceImagePicks).toEqual({ external: ['external'] })
     doc.undo.undo()
     doc.flush()
     expect(inputEdges(doc, id, 'images')[0]!.from[0]).toBe(old)
     expect(doc.get(id)!.params?.prompt).toBe('@旧图.png @image1')
+    expect(doc.get(id)!.params?.requiredRefs).toEqual([old, 'external'])
+    expect(doc.get(id)!.params?.referenceImagePicks).toEqual({
+      [old]: ['old'],
+      external: ['external'],
+    })
   } finally {
     doc.destroy()
   }

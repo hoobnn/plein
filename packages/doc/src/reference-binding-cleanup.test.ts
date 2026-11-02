@@ -1,4 +1,5 @@
 import { expect, it } from 'vite-plus/test'
+import * as Y from 'yjs'
 
 import { connect, createElement, deleteElements, removeEdges, setParams } from './index'
 import { openDoc } from './testing'
@@ -56,6 +57,11 @@ function fixture() {
 
 it('移除连线同步清理该来源绑定，其他绑定保留且可一起撤销', () => {
   const f = fixture()
+  setParams(f.doc, f.target, {
+    requiredRefs: [f.source, f.other],
+    referenceImagePicks: { [f.source]: ['asset-a'], [f.other]: ['asset-b'] },
+  })
+  f.doc.undo.stopCapturing()
   removeEdges(f.doc, [f.edge.id])
   const params = f.doc.get(f.target)?.params
   expect(params).not.toHaveProperty(f.nameKey)
@@ -65,9 +71,16 @@ it('移除连线同步清理该来源绑定，其他绑定保留且可一起撤�
   })
   expect(params).toHaveProperty(f.otherKey)
   expect(params).toHaveProperty('referenceNameBinding:%E5%8E%86%E5%8F%B2.png:history', null)
+  expect(params?.requiredRefs).toEqual([f.other])
+  expect(params?.referenceImagePicks).toEqual({ [f.other]: ['asset-b'] })
 
   f.doc.undo.undo()
   expect(f.doc.get(f.target)?.params).toHaveProperty(f.nameKey)
+  expect(f.doc.get(f.target)?.params?.requiredRefs).toEqual([f.source, f.other])
+  expect(f.doc.get(f.target)?.params?.referenceImagePicks).toEqual({
+    [f.source]: ['asset-a'],
+    [f.other]: ['asset-b'],
+  })
   expect(f.doc.get(f.target)?.params?.referenceBindings).toHaveProperty('image2')
   expect([...f.doc.edges()]).toHaveLength(1)
   f.doc.destroy()
@@ -93,6 +106,46 @@ it('删除元素清理所有节点指向它的绑定（含历史 null），撤�
   expect(f.doc.has(f.source)).toBe(true)
   expect(f.doc.get(f.target)?.params).toHaveProperty(f.nameKey)
   expect(f.doc.get(f.target)?.params).toHaveProperty(`referenceNameBinding:null:${f.source}`, null)
+  f.doc.destroy()
+})
+
+it('删除元素清理必需引用与选图键，保留其他键和原 Yjs 子 Map', () => {
+  const f = fixture()
+  setParams(f.doc, f.target, {
+    requiredRefs: [f.source, f.other, 'external'],
+  })
+  const params = f.doc.mutable(f.target)!.get('params') as Y.Map<unknown>
+  const picks = new Y.Map<unknown>([
+    [f.source, ['asset-a']],
+    [f.other, ['asset-b']],
+  ])
+  f.doc.ydoc.transact(() => params.set('referenceImagePicks', picks), f.doc.origin)
+  const otherNode = createElement(f.doc, {
+    kind: 'node',
+    nodeType: 'plein/image',
+    params: {
+      requiredRefs: [f.source],
+      referenceImagePicks: { [f.source]: ['asset-a'], [f.other]: ['asset-b'] },
+    },
+    x: 300,
+    y: 300,
+    w: 200,
+    h: 100,
+  })
+  f.doc.undo.stopCapturing()
+
+  deleteElements(f.doc, [f.source])
+  expect(f.doc.get(f.target)?.params?.requiredRefs).toEqual([f.other, 'external'])
+  expect(picks.toJSON()).toEqual({ [f.other]: ['asset-b'] })
+  expect(params.get('referenceImagePicks')).toBe(picks)
+  expect(f.doc.get(otherNode)?.params?.requiredRefs).toEqual([])
+  expect(f.doc.get(otherNode)?.params?.referenceImagePicks).toEqual({
+    [f.other]: ['asset-b'],
+  })
+
+  f.doc.undo.undo()
+  expect(f.doc.get(f.target)?.params?.requiredRefs).toEqual([f.source, f.other, 'external'])
+  expect(picks.toJSON()).toEqual({ [f.source]: ['asset-a'], [f.other]: ['asset-b'] })
   f.doc.destroy()
 })
 

@@ -1,4 +1,4 @@
-import { type PleinDoc, setParam, setParams } from '@plein/doc'
+import { type PleinDoc, setParam, setParamEntry, setParams } from '@plein/doc'
 import { boundReferenceTokens, referenceBindings, type ReferenceIdentity } from '@plein/plugin-sdk'
 
 /** 名称重复时按元素 id 消歧，顺序不随连线或结果变化。 */
@@ -99,7 +99,7 @@ export function replaceReferenceName(
   clearSourceBindings(doc, nodeId, oldSource)
 }
 
-/** 清掉指向某个来源元素的全部绑定（名称绑定、旧编号绑定都算）。 */
+/** 清掉指向某个来源元素的全部绑定、必需引用与选图（名称绑定、旧编号绑定都算）。 */
 export function clearSourceBindings(doc: PleinDoc, nodeId: string, source: string) {
   const el = doc.get(nodeId)
   if (!el?.params) return
@@ -114,6 +114,13 @@ export function clearSourceBindings(doc: PleinDoc, nodeId: string, source: strin
     const kept = entries.filter(([key, value]) => bindingSource(key, value) !== source)
     if (kept.length !== entries.length) patch.referenceBindings = Object.fromEntries(kept)
   }
+  if (Array.isArray(el.params.requiredRefs)) {
+    const requiredRefs = el.params.requiredRefs.filter((id) => id !== source)
+    if (requiredRefs.length !== el.params.requiredRefs.length) patch.requiredRefs = requiredRefs
+  }
+  const picks = el.params.referenceImagePicks
+  if (picks && typeof picks === 'object' && !Array.isArray(picks) && Object.hasOwn(picks, source))
+    setParamEntry(doc, nodeId, 'referenceImagePicks', source, undefined)
   if (Object.keys(patch).length) setParams(doc, nodeId, patch)
 }
 
