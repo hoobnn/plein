@@ -58,12 +58,23 @@ export function referencePreview({
   referenceLimit?: number
   referenceMediaLimits?: { video: number; audio: number }
 }): ReferencePreview {
-  if (def?.capability !== 'image.generate' && def?.capability !== 'video.generate') return {}
+  if (
+    def?.capability !== 'image.generate' &&
+    def?.capability !== 'video.generate' &&
+    def?.capability !== 'text.chat' &&
+    def?.capability !== 'image.edit' &&
+    def?.capability !== 'image.process' &&
+    def?.capability !== 'audio.speech'
+  )
+    return {}
   const capability = def.capability
   const isVideo = capability === 'video.generate'
   const videoMode = isVideo ? String(params.mode ?? 'text') : undefined
   // 文生视频不送任何图；首尾帧模式的连线图按位置作帧，不是参考图。
   const textOnly = videoMode === 'text'
+  // 这几类能力不收 @ 参考图，但预览同样要给出 sent / unsent：
+  // @ 了却没送、连了图确实送了，都要看得见，不能静默。
+  const plainMedia = !isVideo && capability !== 'image.generate'
   const ports = def.inputs.filter((port) => port.type === 'image').map((port) => port.id)
   const finalImages = ports.flatMap((port) =>
     (inputs[port] ?? []).filter((value) => value.type === 'image'),
@@ -87,45 +98,67 @@ export function referencePreview({
       !bound.some((token) => token.start <= mention.start && token.end > mention.start),
   )
   const sent: InputSentReference[] = []
-  // 编号只有一份：这里的 token 就是最终提示词正文里写的那个编号。
-  const style = referenceLabelStyle(capability, parseModelRef(String(params.model ?? ''))?.provider)
-  const numbering = referenceNumbering(style, finalImages)
-  // 文生视频不送图：连线图不进 sent（预览与实际提交一致），稍后放进 unsent 说明原因。
-  for (const [index, value] of (textOnly ? [] : finalImages).entries()) {
-    if (!('assetId' in value)) continue
-    const assetId = value.assetId
-    const source = 'source' in value ? value.source : undefined
-    const refs = details.filter((detail) => detail.sent.includes(assetId))
-    const origins = new Set<InputSentReference['origins'][number]>()
-    if (
-      ports.some((port) =>
-        (collected[port] ?? []).some(
-          (item) => item.type === 'image' && 'assetId' in item && item.assetId === assetId,
-        ),
-      )
-    )
-      origins.add('edge')
-    if (refs.length) origins.add('mention')
-    if (refs.some((ref) => ref.kind === 'character')) origins.add('role')
-    const continuation = params.continuesFrom
-    if (continuation && typeof continuation === 'object' && index === 0) origins.add('continuation')
-    for (const token of bound) {
-      const binding = bindings[token.name]
-      if (binding && bindingMatches(binding, value, token.name, el.params)) origins.add('binding')
+  if (plainMedia) {
+    // 这类节点不写参考编号：媒体按连线顺序如实列出（与执行器实际送入的一致），
+    // token 只是面板徽标用的顺序标记，不是提示词里的编号写法。
+    for (const [index, value] of finalImages.entries()) {
+      if (!('assetId' in value)) continue
+      const elementId = 'source' in value ? value.source : undefined
+      sent.push({
+        index: index + 1,
+        token: `图${index + 1}`,
+        assetId: value.assetId,
+        ...(elementId ? { elementId } : {}),
+        name: (elementId && doc.get(elementId)?.name) ?? '参考素材',
+        // @ 引用不会并入这类节点的输入，这里的媒体都来自连线。
+        origins: ['edge'],
+      })
     }
-    const primary = !origins.has('edge') && refs.length ? refs[0] : undefined
-    const elementId = primary?.elementId ?? source
-    // 首尾帧按位置标注用途；token 保留平台编号写法，前端有 role 时优先显示用途。
-    const role = frameRole(videoMode, index)
-    sent.push({
-      index: index + 1,
-      token: numbering.label(assetId) ?? referenceLabel(style, index + 1),
-      ...(role ? { role } : {}),
-      assetId,
-      ...(elementId ? { elementId } : {}),
-      name: primary?.name ?? (elementId && doc.get(elementId)?.name) ?? '参考素材',
-      origins: [...origins],
-    })
+  } else {
+    // 编号只有一份：这里的 token 就是最终提示词正文里写的那个编号。
+    const style = referenceLabelStyle(
+      capability,
+      parseModelRef(String(params.model ?? ''))?.provider,
+    )
+    const numbering = referenceNumbering(style, finalImages)
+    // 文生视频不送图：连线图不进 sent（预览与实际提交一致），稍后放进 unsent 说明原因。
+    for (const [index, value] of (textOnly ? [] : finalImages).entries()) {
+      if (!('assetId' in value)) continue
+      const assetId = value.assetId
+      const source = 'source' in value ? value.source : undefined
+      const refs = details.filter((detail) => detail.sent.includes(assetId))
+      const origins = new Set<InputSentReference['origins'][number]>()
+      if (
+        ports.some((port) =>
+          (collected[port] ?? []).some(
+            (item) => item.type === 'image' && 'assetId' in item && item.assetId === assetId,
+          ),
+        )
+      )
+        origins.add('edge')
+      if (refs.length) origins.add('mention')
+      if (refs.some((ref) => ref.kind === 'character')) origins.add('role')
+      const continuation = params.continuesFrom
+      if (continuation && typeof continuation === 'object' && index === 0)
+        origins.add('continuation')
+      for (const token of bound) {
+        const binding = bindings[token.name]
+        if (binding && bindingMatches(binding, value, token.name, el.params)) origins.add('binding')
+      }
+      const primary = !origins.has('edge') && refs.length ? refs[0] : undefined
+      const elementId = primary?.elementId ?? source
+      // 首尾帧按位置标注用途；token 保留平台编号写法，前端有 role 时优先显示用途。
+      const role = frameRole(videoMode, index)
+      sent.push({
+        index: index + 1,
+        token: numbering.label(assetId) ?? referenceLabel(style, index + 1),
+        ...(role ? { role } : {}),
+        assetId,
+        ...(elementId ? { elementId } : {}),
+        name: primary?.name ?? (elementId && doc.get(elementId)?.name) ?? '参考素材',
+        origins: [...origins],
+      })
+    }
   }
 
   const promptReferences: InputPromptReference[] = []
@@ -139,7 +172,8 @@ export function referencePreview({
     unsentKeys.add(key)
     unsent.push(item)
   }
-  const unsentScope: UnsupportedScope = textOnly ? 'text' : 'mode'
+  // unsupported 的文案按节点区分：非生成节点是「不送 @ 引用」，文生视频是「不用参考图」。
+  const unsentScope: UnsupportedScope = plainMedia ? 'node' : textOnly ? 'text' : 'mode'
   const indexOf = (assetId: string, kind: ReferenceMediaKind = 'image') => {
     if (kind !== 'image') {
       const index = finalMedia[kind].findIndex(
@@ -471,7 +505,7 @@ function frameRole(
   return undefined
 }
 
-type UnsupportedScope = 'mode' | 'text'
+type UnsupportedScope = 'mode' | 'node' | 'text'
 
 function reasonMessage(
   reason: InputUnsentReason,
@@ -484,6 +518,8 @@ function reasonMessage(
     return `「${name}」的图片超过模型参考上限${limit === undefined ? '' : ` ${limit} 张`}，未送入`
   if (reason === 'failed') return `「${name}」的参考图生成失败，未送入`
   if (reason === 'unsupported') {
+    // 不收参考图的节点（对话、局部重绘、精修、配音、分镜等）：@ 引用只保留名称。
+    if (scope === 'node') return `「${name}」当前节点不会送入 @ 引用的参考图`
     if (scope === 'text' && kind === 'image') return `「${name}」文生视频模式不使用参考图`
     if (kind !== 'image') {
       const media = kind === 'video' ? '参考视频' : '参考音频'

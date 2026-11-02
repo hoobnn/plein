@@ -2063,3 +2063,74 @@ it('同一引用在未送入列表只出现一次，条目名与文案同为带�
     message: '「林夏#2」没有可用图片，未送入',
   })
 }, 30_000)
+
+it('不收参考图的节点也给出 sent / unsent：@ 有图的卡明确说明不送入，连线的图如实列出', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const hero = card(doc, 'plein/character', '林夏', asset('a'), 0)
+  const cases = [
+    { type: 'plein/llm', params: { model: 'plein/mock:chat', prompt: '@林夏 是谁' } },
+    { type: 'plein/image-edit', params: { model: 'plein/mock:image', prompt: '@林夏 改一下' } },
+    {
+      type: 'plein/speech',
+      params: { model: 'plein/mock:audio', text: '@林夏 说一句' },
+    },
+    {
+      type: 'plein/storyboard',
+      params: { model: 'plein/mock:chat', prompt: '拆分 @林夏 的镜头' },
+    },
+  ] as const
+  for (const item of cases) {
+    const node = addNode(doc, item.type, { params: { ...item.params }, y: 400 })
+    const input = await preview(server, id, node)
+    // sent / unsent 必须存在（不再是 undefined）
+    expect(input.sent).toEqual([])
+    // @ 到有图的卡：看得见「没送入」，不静默
+    expect(input.unsent).toContainEqual(
+      expect.objectContaining({
+        elementId: hero,
+        name: '林夏',
+        reason: 'unsupported',
+        message: '「林夏」当前节点不会送入 @ 引用的参考图',
+      }),
+    )
+    // 提示词不出现编号
+    expect(input.prompt).not.toMatch(/图\d|@image\d|图片\d/)
+  }
+
+  // LLM 连了图：sent 如实列出，并与执行器实际送入模型的一致
+  const llm = addNode(doc, 'plein/llm', {
+    params: { model: 'plein/mock:chat', prompt: '看图说话' },
+    y: 800,
+  })
+  const image = imgEl(doc, 'a.png', asset('b'), 300)
+  connect(doc, [image, 'image'], [llm, 'images'])
+  const connected = await preview(server, id, llm)
+  expect(connected.sent).toEqual([
+    expect.objectContaining({
+      index: 1,
+      token: '图1',
+      assetId: asset('b'),
+      elementId: image,
+      name: 'a.png',
+      origins: ['edge'],
+    }),
+  ])
+  expect(connected.inputs.images?.map((value) => value.assetId)).toEqual([asset('b')])
+  const seen: Array<Record<string, any>> = []
+  const submit = mockProvider.submit
+  vi.spyOn(mockProvider, 'submit').mockImplementation(async (req, ctx) => {
+    seen.push(req.input as Record<string, any>)
+    return submit.call(mockProvider, req, ctx)
+  })
+  const res = await run(server, id, llm, connected.inputHash)
+  expect(res.status).toBe(202)
+  const { runId } = (await res.json()) as { runId: string }
+  expect(await server.runs.wait(runId)).toBe('succeeded')
+  const messages = seen[0]!['messages'] as Array<{ content: unknown }>
+  const content = messages.at(-1)!.content as Array<{ type: string; image?: { assetId: string } }>
+  expect(
+    content.filter((part) => part.type === 'image').map((part) => part.image?.assetId),
+  ).toEqual([asset('b')])
+}, 30_000)
