@@ -158,13 +158,14 @@ export function referencePreview({
     const saved = el.params?.referenceBindings
     const cleared =
       saved && typeof saved === 'object' && !Array.isArray(saved) && Object.keys(saved).length === 0
-    const legacyIndex = !binding && !cleared ? /^image([1-9]\d*)$/.exec(token.name)?.[1] : undefined
+    const legacyIndex =
+      !binding && !cleared ? /^(?:image|video|audio)([1-9]\d*)$/.exec(token.name)?.[1] : undefined
     const match = binding
       ? finalMedia[binding.type].find((value) =>
           bindingMatches(binding, value, token.name, el.params),
         )
       : legacyIndex
-        ? finalImages[Number(legacyIndex) - 1]
+        ? finalMedia[kind][Number(legacyIndex) - 1]
         : undefined
     const assetId = supported && match && 'assetId' in match ? match.assetId : undefined
     const deleted = source ? !doc.has(source) : false

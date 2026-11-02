@@ -54,11 +54,12 @@ export function resolveBoundReference({
   const bindings = referenceBindings(params)
   const binding = bindings[name]
   if (!binding) {
-    // 没有持久绑定的旧图片编号按当前送入顺序解析；越界时不能猜身份，维持阻断。
-    const legacy = /^image([1-9]\d*)$/.exec(name)
+    // 没有持久绑定的旧编号按同类媒体的实际送入顺序解析；越界时不能猜身份。
+    const legacy = /^(image|video|audio)([1-9]\d*)$/.exec(name)
     if (legacy) {
+      const kind = legacy[1] as ReferenceIdentity['type']
       const saved = params.referenceBindings
-      // 断连清理会留下空的绑定表；这种旧编号是失效的持久引用，不能改指到别张图。
+      // 断连清理会留下空的绑定表；这种旧编号是失效的持久引用，不能改指到别的素材。
       if (
         saved &&
         typeof saved === 'object' &&
@@ -66,16 +67,19 @@ export function resolveBoundReference({
         Object.keys(saved).length === 0
       )
         return { text: `@${name}`, stale: true }
-      const current = media.filter((item) => item.type === 'image')[Number(legacy[1]) - 1]
-      const label = current && imageLabel(current.assetId)
-      if (label) return { text: label }
+      if (mediaSupported && !mediaSupported(kind)) return { text: name }
+      const current = media.filter((item) => item.type === kind)[Number(legacy[2]) - 1]
+      if (current) {
+        if (kind === 'image') {
+          const label = imageLabel(current.assetId)
+          if (label) return { text: label }
+        } else return { text: `@${kind}${mediaIndex(media, current)}` }
+      }
       return {
         text: `@${name}`,
         error: `引用 @${name} 尚未确认素材身份，请从参考素材重新选择`,
       }
     }
-    // 视频 / 音频旧编号仍沿用残留绑定规则。
-    if (/^(video|audio)[1-9]\d*$/.test(name)) return { text: `@${name}`, stale: true }
     return { text: name, error: `引用 @${name} 尚未确认素材身份，请从参考素材重新选择` }
   }
   if (mediaSupported && !mediaSupported(binding.type)) return { text: name }

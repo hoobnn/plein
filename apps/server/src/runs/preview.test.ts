@@ -980,6 +980,73 @@ it('无持久绑定的旧 @imageN 按送入顺序映射，越界时阻断', asyn
   )
 })
 
+it('无持久绑定的旧视频音频编号按实际输入映射，越界时阻断', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  for (const [kind, name, assetId] of [
+    ['image', '人物.png', asset('a')],
+    ['video', '舞.mp4', asset('c')],
+    ['audio', '歌.mp3', asset('d')],
+  ] as const)
+    createElement(doc, { kind, name, assetId, x: 0, y: 0, w: 100, h: 100 })
+  const target = addNode(doc, 'plein/video', {
+    params: {
+      model: 'minimax/api:MiniMax-H3',
+      mode: 'reference',
+      prompt: '@image1 @video1 @audio1',
+    },
+  })
+  const sources = doc
+    .elements()
+    .filter((element) => ['image', 'video', 'audio'].includes(element.kind))
+  for (const source of sources)
+    connect(
+      doc,
+      [source.id, source.kind as 'image' | 'video' | 'audio'],
+      [target, source.kind === 'image' ? 'images' : source.kind === 'video' ? 'videos' : 'audios'],
+    )
+  const ready = await preview(server, id, target)
+  expect(ready.status).toBe('ready')
+  expect(ready.prompt).toBe('图片1 视频1 音频1')
+  expect(ready.unsent).toEqual([])
+  expect(ready.notices).toEqual([])
+  expect(ready.promptReferences).toEqual([
+    expect.objectContaining({ text: '@image1', indices: [1] }),
+    expect.objectContaining({ text: '@video1', indices: [1], kind: 'video' }),
+    expect.objectContaining({ text: '@audio1', indices: [1], kind: 'audio' }),
+  ])
+  setParams(doc, target, { prompt: '@video2 @audio2' })
+  const blocked = await preview(server, id, target)
+  expect(blocked.status).toBe('blocked')
+  expect(blocked.blocked).toEqual(
+    expect.arrayContaining([
+      {
+        code: 'prepare_failed',
+        message: '引用 @video2 尚未确认素材身份，请从参考素材重新选择',
+      },
+      {
+        code: 'prepare_failed',
+        message: '引用 @audio2 尚未确认素材身份，请从参考素材重新选择',
+      },
+    ]),
+  )
+  expect(blocked.promptReferences).toEqual([
+    expect.objectContaining({
+      text: '@video2',
+      indices: [],
+      kind: 'video',
+      reason: 'mention_broken',
+    }),
+    expect.objectContaining({
+      text: '@audio2',
+      indices: [],
+      kind: 'audio',
+      reason: 'mention_broken',
+    }),
+  ])
+})
+
 it('名称引用使用来源当前结果，文件名不会被重复展开，原始提示词保持名称', async () => {
   const { server } = await bootServer()
   mockSettings(server, {})
