@@ -1,6 +1,6 @@
 # 界面设计规范
 
-原则：外壳克制、尺寸成体系、层级靠材质和阴影区分，颜色留给画布里的作品。所有数值都是 `apps/web/src/styles/tokens.css` 里的令牌，组件只用令牌和通用控件类，不写任意值（`rounded-[10px]`、`text-[13px]`、`!h-9` 这类）。
+原则：外壳克制、尺寸成体系、层级靠材质和阴影区分，颜色留给画布里的作品。通用控件的视觉以 shadcn/ui Nova（Base UI）为基准。所有数值都是 `apps/web/src/styles/tokens.css` 里的令牌或 Tailwind 的令牌化阶梯，组件只用这些工具类和仍需保留的通用控件类，不写任意值（`rounded-[10px]`、`text-[13px]`、`!h-9` 这类）。
 
 ## 配色
 
@@ -16,17 +16,17 @@
 
 ## 间距
 
-4 的倍数：2 · 4 · 6 · 8 · 12 · 16 · 20 · 24 · 32 · 40 · 48 · 64。Tailwind 的 `--spacing` 固定为 4px，`p-3` 就是 12，不随根字号变化。
+以 4px 为基线，使用 2 的倍数：2 · 4 · 6 · 8 · 10 · 12 · 14 · 16 · 20 · 24 · 32 · 40 · 48 · 64。Tailwind 的 `--spacing` 固定为 4px，`p-3` 就是 12，Nova 常用的 `p-2.5` 就是 10，不随根字号变化。
 
 | 场景                           | 值                                                                                                   |
 | ------------------------------ | ---------------------------------------------------------------------------------------------------- |
 | 浮动外框离视口边               | 12（`--chrome-inset`）                                                                               |
-| 浮层之间、工具条离所贴元素     | 8                                                                                                    |
-| 工具条、菜单的内边距           | 4                                                                                                    |
+| 浮层之间、工具条离所贴元素     | 旧工具条 8；Nova Select / Popover / MenuSelect 为 4                                                  |
+| 工具条、菜单的内边距           | 4；Nova 弹层内容用 10（`p-2.5`）                                                                     |
 | 字段内部（标签、控件、说明）   | 6（`--field-gap`）                                                                                   |
 | 字段之间                       | 紧凑表单 12 / 普通表单 16                                                                            |
 | 面板内边距                     | 紧凑侧栏 12（`--panel-pad-sm`）/ 普通面板 16（`--panel-pad`）/ 大型工作对话框 20（`--panel-pad-lg`） |
-| 确认 / 表单对话框内边距        | 桌面 24 / 窄屏 20                                                                                    |
+| 确认 / 输入对话框内边距        | Nova 统一 16；项目打包对话框暂保留桌面 24 / 窄屏 20                                                  |
 | 分区之间                       | 24                                                                                                   |
 | 首页栏宽 / 网格间距 / 区块间距 | 1008 / 16 / 32                                                                                       |
 
@@ -34,18 +34,18 @@
 
 ## 圆角
 
-六级，**同心**：嵌套且内边距不超过 8 时，内层圆角 = 外层圆角 − 内边距。
+六级，数值以 Nova 的 10px 基准圆角为中心；组件按角色选令牌，不在组件里另算圆角。
 
-| 令牌          | 值  | 用在                                                      |
-| ------------- | --- | --------------------------------------------------------- |
-| `rounded-xs`  | 4   | 键帽、复选框、行内代码                                    |
-| `rounded-sm`  | 6   | 标签、角标、24 高的小控件、分段控件里的项                 |
-| `rounded-md`  | 8   | 28–36 高的按钮、输入框、菜单项、工具条按钮、≤ 64 的缩略图 |
-| `rounded-lg`  | 12  | 工具条、菜单、弹层、提示条、大缩略图                      |
-| `rounded-xl`  | 16  | 卡片、面板、生成器、画布上的节点                          |
-| `rounded-2xl` | 20  | 对话框                                                    |
+| 令牌          | 值  | 用在                                                             |
+| ------------- | --- | ---------------------------------------------------------------- |
+| `rounded-xs`  | 4   | 键帽、复选框、行内代码                                           |
+| `rounded-sm`  | 6   | 标签、角标、24 高的小控件、旧式分段块里的项                      |
+| `rounded-md`  | 8   | 28–36 高的按钮、输入框、菜单项、工具条按钮、Tooltip、≤ 64 缩略图 |
+| `rounded-lg`  | 10  | Nova Select、Segmented、菜单、弹层、工具条、提示条、大缩略图     |
+| `rounded-xl`  | 14  | 卡片、面板、生成器、画布上的节点、Nova 对话框                    |
+| `rounded-2xl` | 18  | 大型卡片和特殊页面外壳；Nova 对话框不套用这一级                  |
 
-例：工具条 12 − 内边距 4 = 按钮 8；首页卡片 16 − 内边距 6 = 封面 10。
+嵌套元素仍尽量保持同心，但 Nova 组件的 `lg` 外壳与 `md` 菜单项是固定配方，不为了机械相减而新增数值。
 
 ## 字号
 
@@ -61,6 +61,8 @@
 | `text-xl`   | 20 / 28     | 页面标题（故事板、登录）         |
 | `text-2xl`  | 26 / 32     | 首页大标题，字距 −0.02em         |
 
+Nova 组件引用 `text-sm`、`text-base` 等语义类，但数值仍取本表。Nova 默认 `text-sm` 为 14/20，本应用保持 13/18；字号和行高的整体替换会扩大既有布局，待单独评估，不在控件迁移时顺带改令牌。
+
 同一字号在不同角色下需要不同行高时，组合固定在令牌里，组件里不写小数行高：
 
 | 角色                               | 字号 / 行高 | 用法                        |
@@ -72,18 +74,21 @@
 
 ## 控件高度
 
-| 高度    | 用在                                                                                    |
-| ------- | --------------------------------------------------------------------------------------- |
-| 24      | 分段控件里的项、标签、节点卡片里的小按钮、`.ui-input-xs` 紧凑输入（表格和列表行内编辑） |
-| 28      | `.ui-btn-sm`：面板和工具条里的次要操作                                                  |
-| 32      | 默认：`.ui-btn`、`.ui-input`、菜单项、贴着元素的工具条按钮                              |
-| 36      | `.ui-btn-lg`、`.ui-input-lg`：页面主操作、对话框和设置里的表单；底部和顶部工具条的按钮  |
-| 40 / 44 | `.ui-bar-sm` / `.ui-bar` 工具条外框                                                     |
+| 高度    | 用在                                                                                     |
+| ------- | ---------------------------------------------------------------------------------------- |
+| 24      | 标签、节点卡片里的小按钮、`.ui-input-xs` 紧凑输入（表格和列表行内编辑）                  |
+| 28      | `.ui-btn-sm`：面板和工具条里的次要操作、对话框关闭按钮                                   |
+| 32      | 默认：`.ui-btn`、`.ui-input`、Nova Select / Segmented、贴着元素的工具条按钮              |
+| 36      | `.ui-btn-lg`、`.ui-input-lg`、大号 Segmented：页面主操作和设置表单；底部和顶部工具条按钮 |
+| 40 / 44 | `.ui-bar-sm` / `.ui-bar` 工具条外框                                                      |
+
+Nova Switch 是独立的 32 × 18.4（`--switch-w` / `--switch-h`），圆钮 16（`size-4`），checked 位移 14；不套用控件高度阶梯。Nova 确认 / 输入对话框里的输入和按钮用默认 32。
 
 ## 对话框与提示条
 
-- 对话框有两种壳：工作面板（设置、生成历史、分镜表、序列等）四边内边距统一 20；确认框和输入框桌面 24、窄屏 20。标题行同样按 20 对齐。
-- 对话框里的说明文字成段时用 13/20 的多行说明；只有一行的短说明仍用 12/16。
+- 对话框有两种壳：工作面板（设置、生成历史、分镜表、序列等）正文和标题行仍按 20 排版；Nova 确认框和输入框统一 16 内边距、16 内容间距、最大宽 `max-w-sm`，输入和按钮高 32。项目打包对话框暂沿用 `.ui-dialog-pad` 的 20–24。
+- 浮动的 Nova 对话框用 `rounded-xl`、`bg-menu`、`ring-1 ring-line`，不另加大阴影；全屏工作面板保留 `rounded-none bg-surface`。遮罩保留 `scrim` 令牌，并支持细 backdrop blur。
+- 对话框标题用 `text-base leading-none font-medium`；说明文字成段时用 13/20 的多行说明，只有一行的短说明仍用 12/16。
 - 提示条贴在顶栏下方 64、离左右 12（`--chrome-top` / `--chrome-inset`）。普通消息最低 36；带操作按钮的按 40 排版：上下 4、按钮 28、文字与按钮间距 12，多行时自然增高。
 
 ## 图标
@@ -104,12 +109,12 @@
 
 ## 层级与材质
 
-| 高度 | 阴影         | 用在                       |
-| ---- | ------------ | -------------------------- |
-| 1    | `--shadow-1` | 静止的卡片（`shadow-1`）   |
-| 2    | `--shadow-2` | 浮动工具条、卡片悬停       |
-| 3    | `--shadow-3` | 生成器、菜单、弹层、提示条 |
-| 4    | `--shadow-4` | 对话框                     |
+| 高度 | 阴影         | 用在                                                |
+| ---- | ------------ | --------------------------------------------------- |
+| 1    | `--shadow-1` | 静止的卡片（`shadow-1`）                            |
+| 2    | `--shadow-2` | 浮动工具条、卡片悬停                                |
+| 3    | `--shadow-3` | Nova `shadow-md` 数值：生成器、菜单、弹层、提示条   |
+| 4    | `--shadow-4` | 特殊大型浮层；Nova 对话框只用细描边，不叠加这层阴影 |
 
 - `--float`：小面积工具条，92% 实底加 `--blur-float`（20px）模糊。
 - `--menu`：菜单和弹层，98% 实底加 `--blur-menu`（24px）模糊，盖在图片上也读得清。
@@ -142,38 +147,46 @@
 
 ## 状态
 
-| 状态                   | 表现                                                                |
-| ---------------------- | ------------------------------------------------------------------- |
-| 悬停                   | `--hover` 底，文字从 muted 变 ink                                   |
-| 按下 / 打开 / 当前工具 | `--active` 底                                                       |
-| 选中（选项、分段）     | 分段控件里浮起的白底；选项卡片用 `accent-soft` 加 `accent` 描边     |
-| 焦点                   | 按钮 2px `accent` 外框、偏移 2；输入框 1px `accent` 描边加 3px 柔光 |
-| 禁用                   | 40% 不透明，没有悬停效果                                            |
+| 状态                   | 表现                                                                              |
+| ---------------------- | --------------------------------------------------------------------------------- |
+| 悬停                   | `--hover` 底，文字从 muted 变 ink                                                 |
+| 按下 / 打开 / 当前工具 | `--active` 底                                                                     |
+| 选中（选项、分段）     | Nova 分段用 `hover` 灰底和滑动的选中底；选项卡片用 `accent-soft` 加 `accent` 描边 |
+| 焦点                   | 按钮 2px `accent` 外框、偏移 2；输入框 1px `accent` 描边加 3px 柔光               |
+| 禁用                   | 40% 不透明，没有悬停效果                                                          |
+
+## Nova 组件翻译规则
+
+`apps/web/components.json` 只供 shadcn CLI 识别 `base-nova`、Lucide、样式入口和源码位置；aliases 使用相对路径，项目没有也不新增 `@/` 别名。**组件源码手工翻译进 `src/ui/`，不要在仓库里运行 CLI 直接覆盖源码。** 保留现有导出名、props 和调用方，Base UI 负责的键盘、焦点与 ARIA 行为不因换样式而改变。
+
+- 类名合并统一用 `ui/cn.ts` 的 `cn()`（`clsx` + `tailwind-merge`）；变体需要时用 `class-variance-authority`。自定义阴影、`text-2xs` 和控件高度已注册冲突分组，`ui-*` 类不参与合并。
+- 数值只取现有令牌：不引入 shadcn 的变量别名块、Geist 字体、`tw-animate-css`、`shadcn/tailwind.css` 或任意值。Nova 的进退场类不搬入，继续使用现有 `Presence` / `data-ending-style`；Base UI 状态直接写 Tailwind `data-[open]:` 等变体。
+- 语义类按应用令牌翻译：`bg-muted` / 悬停灰 → `bg-hover`，`bg-popover` → `bg-menu`，`border-border` / `border-input` → `border-line`，`ring-ring` → 本文「状态」里的 accent 焦点规则，`text-muted-foreground` → `text-ink-muted`，`bg-primary` / `text-primary-foreground` → `bg-primary` / `text-on-primary`，`destructive` → `danger`。同名变量不直接照抄语义。
+- 图标统一走 `ui/icons.tsx`，不引入 `lucide-react`；缺少的 Lucide 图标在该文件补充。画布相关令牌、节点卡片和业务组件样式不随 Nova 控件迁移。
 
 ## 通用控件
 
-| 类                                                                                                                                                                     | 说明                                                                                                                                     |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `.ui-bar` / `.ui-bar-sm` / `.ui-bar-btn` / `.ui-bar-sep` / `.ui-bar-text` / `.ui-bar-check`（复选项）；纯图标按钮加 `.ui-icon-btn`；`.ui-bar-bare` 同尺寸不带底色      | 工具条：页头、底部工具条、结果 / Frame / 多选工具条；首页和画布顶栏都用 44 的 `.ui-bar`，Logo 共用 `ui/Brand.tsx`                        |
-| `.ui-btn` + `-primary` `-secondary` `-quiet` `-danger` `-danger-solid`，尺寸 `-xs` `-sm` `-lg`，`.ui-icon-btn`（宽 = 高），`.ui-btn-menu`（打开菜单，末尾箭头弱色）    | 按钮                                                                                                                                     |
-| `.ui-input` / `.ui-select` / `.ui-input-lg` / `.ui-input-xs`                                                                                                           | 输入框、下拉框（`ui/Select.tsx`）；默认 32，表单对话框 36，表格和列表行内编辑 24                                                         |
-| `.ui-field` / `.ui-label` / `.ui-help` / `.ui-section-title` / `.ui-note`                                                                                              | 表单字段和分组标题；`.ui-note` 是 13/20 的多行说明                                                                                       |
-| `.ui-seg` / `.ui-seg-item`，`.ui-seg-block`（铺满等分，选中底色滑动切换，需传 `--seg-n` / `--seg-i`）、`.ui-seg-tall`（图标在上）、`.ui-seg-aspect`（画幅，最多 9 项） | 分段控件：主题切换、筛选；参数面板选画幅、分辨率                                                                                         |
-| `.ui-menu` / `.ui-menu-item` / `.ui-menu-label` / `.ui-sep`，两行项用 `.ui-menu-text` + `.ui-menu-desc`                                                                | 菜单、弹层（`ui/Popover.tsx`）                                                                                                           |
-| `.ui-dialog-scrim` / `.ui-dialog` / `.ui-dialog-pad` / `.ui-dialog-head`                                                                                               | 对话框动效与内边距（`ui/Dialog.tsx`、`ui/Modal.tsx`）：`.ui-dialog-pad` 是确认 / 表单框的 20–24，`.ui-dialog-head` 是工作面板标题行的 20 |
-| `.ui-toast-wrap` / `.ui-toast`（带操作加 `.ui-toast-action`）/ `.ui-tooltip`                                                                                           | 顶栏下方的提示条（普通 36、带操作 40）、悬停提示（`ui/Tooltip.tsx`）                                                                     |
-| `.ui-chip` / `.ui-chip-btn` / `.ui-chip-remove` / `.ui-tag`（`-success` `-warning` `-danger` `-accent`）/ `.ui-badge`                                                  | 24 高的标签（`-btn` 是可点的单选下拉，`aria-pressed` 亮起）和它的移除按钮；20 高的状态标签；图片上的角标                                 |
-| `.ui-drop-tile`                                                                                                                                                        | 96 见方的虚线投放格（上传、从画布选）                                                                                                    |
-| `.ui-kbd` / `.ui-keycap`                                                                                                                                               | 菜单里的快捷键提示；成组出现的键帽                                                                                                       |
-| `.ui-spinner`                                                                                                                                                          | 加载中，`size-3` / `size-4` 缩小                                                                                                         |
-| `.ui-run-steps` / `.ui-run-step-bar` / `.ui-run-step-label`                                                                                                            | 外部调用的四步进度（提交、排队、生成、保存）                                                                                             |
-| `.ui-empty`（`-fill` `-compact`）                                                                                                                                      | 空状态（`ui/EmptyState.tsx`）                                                                                                            |
-| `.ui-switch`                                                                                                                                                           | 开关（`ui/Switch.tsx`）                                                                                                                  |
-| `.ui-pop`（`.ui-pop-up` `.ui-pop-right`）                                                                                                                              | 其他弹出的浮层的进场方向                                                                                                                 |
+| 类                                                                                                                                                                     | 说明                                                                                                              |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `.ui-bar` / `.ui-bar-sm` / `.ui-bar-btn` / `.ui-bar-sep` / `.ui-bar-text` / `.ui-bar-check`（复选项）；纯图标按钮加 `.ui-icon-btn`；`.ui-bar-bare` 同尺寸不带底色      | 工具条：页头、底部工具条、结果 / Frame / 多选工具条；首页和画布顶栏都用 44 的 `.ui-bar`，Logo 共用 `ui/Brand.tsx` |
+| `.ui-btn` + `-primary` `-secondary` `-quiet` `-danger` `-danger-solid`，尺寸 `-xs` `-sm` `-lg`，`.ui-icon-btn`（宽 = 高），`.ui-btn-menu`（打开菜单，末尾箭头弱色）    | 按钮                                                                                                              |
+| `.ui-input` / `.ui-select` / `.ui-input-lg` / `.ui-input-xs`                                                                                                           | 输入框、下拉框（`ui/Select.tsx`）；默认 32，表单对话框 36，表格和列表行内编辑 24                                  |
+| `.ui-field` / `.ui-label` / `.ui-help` / `.ui-section-title` / `.ui-note`                                                                                              | 表单字段和分组标题；`.ui-note` 是 13/20 的多行说明                                                                |
+| `.ui-seg` / `.ui-seg-item`，`.ui-seg-block`（铺满等分，选中底色滑动切换，需传 `--seg-n` / `--seg-i`）、`.ui-seg-tall`（图标在上）、`.ui-seg-aspect`（画幅，最多 9 项） | `ui/Segmented.tsx` 用 Nova toggle-group 外观（默认 32、大号 36）；块级类留给参数面板选画幅、分辨率                |
+| `.ui-menu` / `.ui-menu-item` / `.ui-menu-label` / `.ui-sep`，两行项用 `.ui-menu-text` + `.ui-menu-desc`                                                                | 菜单、弹层（`ui/Popover.tsx`）                                                                                    |
+| `.ui-dialog-scrim` / `.ui-dialog` / `.ui-dialog-pad` / `.ui-dialog-head`                                                                                               | 对话框动效与工作面板标题行；`.ui-dialog-pad` 只留给项目打包对话框的 20–24，Nova 确认 / 输入框直接用 `p-4`         |
+| `.ui-toast-wrap` / `.ui-toast`（带操作加 `.ui-toast-action`）/ `.ui-tooltip`                                                                                           | 顶栏下方的提示条（普通 36、带操作 40）、悬停提示（`ui/Tooltip.tsx`）                                              |
+| `.ui-chip` / `.ui-chip-btn` / `.ui-chip-remove` / `.ui-tag`（`-success` `-warning` `-danger` `-accent`）/ `.ui-badge`                                                  | 24 高的标签（`-btn` 是可点的单选下拉，`aria-pressed` 亮起）和它的移除按钮；20 高的状态标签；图片上的角标          |
+| `.ui-drop-tile`                                                                                                                                                        | 96 见方的虚线投放格（上传、从画布选）                                                                             |
+| `.ui-kbd` / `.ui-keycap`                                                                                                                                               | 菜单里的快捷键提示；成组出现的键帽                                                                                |
+| `.ui-spinner`                                                                                                                                                          | 加载中，`size-3` / `size-4` 缩小                                                                                  |
+| `.ui-run-steps` / `.ui-run-step-bar` / `.ui-run-step-label`                                                                                                            | 外部调用的四步进度（提交、排队、生成、保存）                                                                      |
+| `.ui-empty`（`-fill` `-compact`）                                                                                                                                      | 空状态（`ui/EmptyState.tsx`）                                                                                     |
+| `.ui-pop`（`.ui-pop-up` `.ui-pop-right`）                                                                                                                              | 其他弹出的浮层的进场方向                                                                                          |
 
 纯图标的控件一律显式标记（`.ui-icon-btn`、`Segmented` 的 `iconOnly`），不要用 `:has(> svg:only-child)` 推断：`:only-child` 不看文字节点，图标加文字的控件也会命中。
 
-新组件先找这里的类；确实需要新的样式时，先在 `styles/controls.css` 加成通用类，再在组件里用。通用控件都在 `@layer components` 里，组件上的 Tailwind 工具类能直接覆盖，不需要 `!`；`styles/` 下其他文件是不分层的页面样式，别和同属性的工具类混用。
+新组件先按上一节翻译 Nova 源码并复用这里的令牌；确有多个组件共享且 Nova 工具类覆盖不到的样式，才在 `styles/controls.css` 增加通用类。通用控件都在 `@layer components` 里，组件上的 Tailwind 工具类能直接覆盖，不需要 `!`；`styles/` 下其他文件是不分层的页面样式，别和同属性的工具类混用。已被 Nova 接管的旧类删除前先检索全部调用方，仍被原生控件或业务组件使用的类保留。
 
 ## 共享模块
 
@@ -181,12 +194,16 @@
 
 | 模块                  | 用途                                                                             |
 | --------------------- | -------------------------------------------------------------------------------- |
-| `ui/Modal.tsx`        | 全屏面板的遮罩、外框和标题行（设置、生成历史、分镜表、序列、快捷键）             |
+| `ui/cn.ts`            | Nova 类名合并：条件类名、Tailwind 冲突和应用自定义工具类                         |
+| `ui/Select.tsx`       | Nova 下拉触发器、弹层、选项和滚动箭头（Base UI Select）                          |
+| `ui/MenuSelect.tsx`   | 轻量 ghost 触发器 + Nova 单选菜单（Base UI Menu）                                |
+| `ui/Modal.tsx`        | Nova 工作面板的遮罩、外框和标题行（设置、生成历史、分镜表、序列、快捷键）        |
+| `ui/DialogView.tsx`   | Nova 确认框 / 输入框外壳；异步确认和焦点行为不变                                 |
 | `ui/Presence.tsx`     | 浮层退场：`<Presence>` 延迟卸载，`useExit()` 铺属性，`useClosing()` 判断收起中   |
-| `ui/Popover.tsx`      | 锚定在按钮上的弹层，从锚点那一侧长出（Base UI Popover）                          |
-| `ui/Segmented.tsx`    | 分段控件（筛选、范围、主题），选中底色滑动                                       |
+| `ui/Popover.tsx`      | Nova 弹层外壳，锚定按钮并从锚点那一侧长出（Base UI Popover）                     |
+| `ui/Segmented.tsx`    | Nova toggle-group 外观的分段控件，保留 fieldset/button 和选中底色滑动            |
 | `ui/EmptyState.tsx`   | 空状态：图标、标题、说明、操作                                                   |
-| `ui/Switch.tsx`       | 开关                                                                             |
+| `ui/Switch.tsx`       | Nova 开关：32 × 18.4，checked 用 primary 底                                      |
 | `ui/Toast.tsx`        | 顶栏下方的提示条                                                                 |
 | `ui/keys.ts`          | 快捷键的显示文本：`shortcut('mod+shift+z')` → macOS「⇧⌘Z」、其他「Ctrl+Shift+Z」 |
 | `ui/format.ts`        | 时间：相对时间、「今天 14:05」、时长                                             |
