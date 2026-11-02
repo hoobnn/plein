@@ -127,6 +127,16 @@ apps/server/src
 - 二进制资源不进 Yjs 文档，只存 assetId
 - GPU 画内容，DOM 覆盖层负责编辑与表单（按 LOD 挂载）
 
+### 结构调整约定
+
+下面几条是改结构时共同遵守的约定，来源与背景见[架构调整方案](docs/plan/architecture-refactor-plan.md)。
+
+- **元素类型注册**：新增节点类型只在 `packages/nodes` 声明；需要专门的打开行为或编辑器时，在前端节点注册表登记（注册表由方案 A2 建立，未建立前沿用现有分发处）。不要新增 `ElementKind`，除非是新的媒体类元素。
+- **能力审批**：能力的副作用等级用 `effect` 声明；不要在 `apps/server/src/agent/tools.ts` 或 `approvals.ts` 里按能力名加特判。
+- **路由顺序**：路径形状互相覆盖的路由要有专门的回归用例，见 `apps/server/src/media-index/route-order.test.ts`。
+- **数据访问**：Drizzle 查询放在存储模块（`store.ts` / `*-store.ts` / `storage/` 目录）；路由文件里不直接写库。
+- **前端依赖**：优先复用已有依赖，已有依赖能表达的组件和行为不自己实现；新增前端依赖前先看 [architecture-refactor-plan.md](docs/plan/architecture-refactor-plan.md) §3.I 的选型表，同一用途不引第二个库；跨包共用的依赖版本写在 `pnpm-workspace.yaml` 的 `catalog:`。
+
 ## 桌面端
 
 ```bash
