@@ -857,6 +857,61 @@ it('持久引用在服务端重排后按身份映射，替换、删除及旧编�
   expect((await preview(server, id, video)).blocked).toEqual([])
 })
 
+it('无持久绑定的旧 @imageN 按送入顺序映射，越界时阻断', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const source = createElement(doc, {
+    kind: 'image',
+    name: '首图.png',
+    assetId: asset('a'),
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  const cases = [
+    { type: 'plein/image', model: 'plein/mock:image', port: 'references', label: '图1' },
+    { type: 'plein/video', model: 'minimax/api:MiniMax-H3', port: 'images', label: '图片1' },
+    {
+      type: 'plein/video',
+      model: 'volc/ark:doubao-seedance-2-0-260128',
+      port: 'images',
+      label: '@image1',
+    },
+  ]
+  for (const item of cases) {
+    const node = addNode(doc, item.type, {
+      params: { model: item.model, mode: 'reference', prompt: '@image1 的人走路' },
+    })
+    connect(doc, [source, 'image'], [node, item.port])
+    const ready = await preview(server, id, node)
+    expect(ready.status).toBe('ready')
+    expect(ready.prompt).toBe(`${item.label} 的人走路`)
+    expect(ready.promptReferences).toEqual([
+      expect.objectContaining({ text: '@image1', indices: [1] }),
+    ])
+    expect(ready.unsent?.some((ref) => ref.name === 'image1')).toBe(false)
+    expect(ready.notices.some((notice) => notice.code === 'stale_binding')).toBe(false)
+  }
+  const image = addNode(doc, 'plein/image', {
+    params: { model: 'plein/mock:image', prompt: '@image9 的人走路' },
+  })
+  connect(doc, [source, 'image'], [image, 'references'])
+  const blocked = await preview(server, id, image)
+  expect(blocked.status).toBe('blocked')
+  expect(blocked.blocked).toContainEqual({
+    code: 'prepare_failed',
+    message: '引用 @image9 尚未确认素材身份，请从参考素材重新选择',
+  })
+  expect(blocked.promptReferences).toEqual([
+    expect.objectContaining({ text: '@image9', indices: [], reason: 'mention_broken' }),
+  ])
+  expect(blocked.unsent).toContainEqual(
+    expect.objectContaining({ name: 'image9', reason: 'mention_broken' }),
+  )
+})
+
 it('名称引用使用来源当前结果，文件名不会被重复展开，原始提示词保持名称', async () => {
   const { server } = await bootServer()
   mockSettings(server, {})

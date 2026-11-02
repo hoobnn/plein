@@ -133,19 +133,31 @@ export function referencePreview({
   for (const token of bound) {
     const binding = bindings[token.name]
     const source = binding?.source
+    const saved = el.params?.referenceBindings
+    const cleared =
+      saved && typeof saved === 'object' && !Array.isArray(saved) && Object.keys(saved).length === 0
+    const legacyIndex = !binding && !cleared ? /^image([1-9]\d*)$/.exec(token.name)?.[1] : undefined
     const match = binding
       ? finalImages.find((value) => bindingMatches(binding, value, token.name, el.params))
-      : undefined
+      : legacyIndex
+        ? finalImages[Number(legacyIndex) - 1]
+        : undefined
     const assetId = match && 'assetId' in match ? match.assetId : undefined
     const deleted = source ? !doc.has(source) : false
     const reason: InputUnsentReason | undefined = assetId
       ? undefined
-      : !binding || deleted
-        ? 'stale_binding'
-        : 'not_sent'
+      : !binding
+        ? legacyIndex
+          ? 'mention_broken'
+          : 'stale_binding'
+        : deleted
+          ? 'stale_binding'
+          : 'not_sent'
     const message = reason
       ? !binding
-        ? `残留引用 @${token.name} 没有可确认的素材身份，已忽略`
+        ? legacyIndex
+          ? `引用 @${token.name} 尚未确认素材身份，请从参考素材重新选择`
+          : `残留引用 @${token.name} 没有可确认的素材身份，已忽略`
         : deleted
           ? `绑定 @${token.name} 指向已删除的元素，已忽略`
           : `绑定 @${token.name} 的素材未送入，请重新选择`
