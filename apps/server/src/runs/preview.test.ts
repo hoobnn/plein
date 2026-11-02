@@ -2034,23 +2034,42 @@ it('同一引用在未送入列表只出现一次，条目名与文案同为带�
   })
   const multi = await preview(server, id, scene)
   expect(multi.sent).toEqual([])
-  const names = multi.unsent?.map((item) => item.name) ?? []
-  // 裸名字「天台」的那条重复项消失
-  expect(names).not.toContain('天台')
+  // 同一张卡的不同视角是不同引用：逐条列出，不再合并成一条
+  expect(multi.unsent?.map((item) => item.name)).toEqual(['天台（正面）', '天台（背面）'])
   // 每一条的名字都出现在自己的文案里（A-6：条目名与文案一致）
   for (const item of multi.unsent ?? []) expect(item.message).toContain(`「${item.name}」`)
-  // 同一元素同一原因只留一条（去重键不含 name 也能去重）
-  const keys = (multi.unsent ?? []).map((item) => `${item.elementId}:${item.reason}`)
-  expect(new Set(keys).size).toBe(keys.length)
+  // 同一处引用（mention 路径与 detail 路径）只报一次：每个引用名只出现一条
+  const names = multi.unsent?.map((item) => item.name) ?? []
+  expect(new Set(names).size).toBe(names.length)
   // 未被汇总的引用状态仍在正文引用区间里
   expect(multi.promptReferences?.map((item) => [item.text, item.reason])).toEqual([
     ['@天台/正面', 'no_image'],
     ['@天台/背面', 'no_image'],
   ])
 
+  // 档案项同理：同一角色的不同时期分别列出
+  const hero = card(doc, 'plein/character', '林夏', null, 600)
+  setParams(doc, hero, {
+    profile: {
+      periods: [
+        { id: 'p-child', name: '童年', images: [] },
+        { id: 'p-adult', name: '青年', images: [] },
+      ],
+      expressions: [],
+    },
+  })
+  const picks = addNode(doc, 'plein/image', {
+    params: { model: 'plein/mock:image', prompt: '@林夏/童年 和 @林夏/青年' },
+    y: 800,
+  })
+  const both = await preview(server, id, picks)
+  expect(both.sent).toEqual([])
+  expect(both.unsent?.map((item) => item.name)).toEqual(['林夏（童年）', '林夏（青年）'])
+  for (const item of both.unsent ?? []) expect(item.message).toContain(`「${item.name}」`)
+
   // 重名 #2：mention 路径与 detail 路径不再各报一条
-  card(doc, 'plein/character', '林夏', null, 600)
-  card(doc, 'plein/character', '林夏', null, 900)
+  card(doc, 'plein/character', '林夏', null, 1200)
+  card(doc, 'plein/character', '林夏', null, 1500)
   const dup = addNode(doc, 'plein/image', {
     params: { model: 'plein/mock:image', prompt: '@林夏#2 回头' },
     y: 800,

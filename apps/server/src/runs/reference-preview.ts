@@ -164,16 +164,30 @@ export function referencePreview({
   const promptReferences: InputPromptReference[] = []
   const unsent: InputUnsentReference[] = []
   const unsentKeys = new Set<string>()
-  const addUnsent = (item: InputUnsentReference) => {
+  const addUnsent = (item: InputUnsentReference, identity = '') => {
     // 去重键不含 name：不同路径对同一引用的取名格式可能不同（如带不带 #序号），
-    // 键里带 name 会让同一引用去重失效。
-    const key = [item.reason, item.elementId ?? '', item.assetId ?? ''].join('|')
+    // 键里带 name 会让同一引用去重失效。同一张卡的不同视角 / 档案项是不同引用，
+    // 用视角 / 档案项身份区分，逐条列出。
+    const key = [item.reason, item.elementId ?? '', item.assetId ?? '', identity].join('|')
     if (unsentKeys.has(key)) return
     unsentKeys.add(key)
     unsent.push(item)
   }
   // unsupported 的文案按节点区分：非生成节点是「不送 @ 引用」，文生视频是「不用参考图」。
   const unsentScope: UnsupportedScope = plainMedia ? 'node' : textOnly ? 'text' : 'mode'
+  /** 同一处引用被 mention 路径与 detail 路径各报一次时只留一条：按身份而非显示名关联。 */
+  // detail 可能来自上游文本里的 @ 引用（没有原文区间），一并纳入查找。
+  const upstreamMentions = (inputs.prompt ?? []).flatMap((item) =>
+    item.type === 'text' && item.text.includes('@')
+      ? findMentions(item.text, targets).filter((m) => m.id !== el.id)
+      : [],
+  )
+  const identityOf = (detail: InputRef) => {
+    const hit =
+      mentions.find((m) => m.id === detail.elementId && mentionName(m) === detail.name) ??
+      upstreamMentions.find((m) => m.id === detail.elementId && mentionName(m) === detail.name)
+    return hit ? pickIdentity(hit) : ''
+  }
   const indexOf = (assetId: string, kind: ReferenceMediaKind = 'image') => {
     if (kind !== 'image') {
       const index = finalMedia[kind].findIndex(
@@ -285,14 +299,17 @@ export function referencePreview({
       ...(reason ? { reason, message } : {}),
     })
     if (reason && reason !== 'over_limit' && message)
-      addUnsent({
-        ...(mention.id ? { elementId: mention.id } : {}),
-        // 与文案里的名字一致：用带 #序号 / 视角后缀的显示名，不用裸 mention.name。
-        name,
-        reason,
-        message,
-        origins: ['mention'],
-      })
+      addUnsent(
+        {
+          ...(mention.id ? { elementId: mention.id } : {}),
+          // 与文案里的名字一致：用带 #序号 / 视角后缀的显示名，不用裸 mention.name。
+          name,
+          reason,
+          message,
+          origins: ['mention'],
+        },
+        pickIdentity(mention),
+      )
   }
 
   // 上游文本里的有效引用没有原文区间，但缺图 / 不支持等状态仍要进入未送入列表。
@@ -302,13 +319,16 @@ export function referencePreview({
     const kind = detail.media ?? 'image'
     const framed = kind === 'image' && reason === 'unsupported' ? detail.available : []
     if (indicesOf([...detail.sent, ...framed], kind).length) continue
-    addUnsent({
-      elementId: detail.elementId,
-      name: detail.name,
-      reason,
-      message: reasonMessage(reason, detail.name, referenceLimit, kind, unsentScope),
-      origins: detail.kind === 'character' ? ['mention', 'role'] : ['mention'],
-    })
+    addUnsent(
+      {
+        elementId: detail.elementId,
+        name: detail.name,
+        reason,
+        message: reasonMessage(reason, detail.name, referenceLimit, kind, unsentScope),
+        origins: detail.kind === 'character' ? ['mention', 'role'] : ['mention'],
+      },
+      identityOf(detail),
+    )
   }
 
   const ranges = [
@@ -348,14 +368,17 @@ export function referencePreview({
     if (detail.reason !== 'over_limit') continue
     for (const assetId of detail.available) {
       if (indexOf(assetId) !== undefined) continue
-      addUnsent({
-        assetId,
-        elementId: detail.elementId,
-        name: detail.name,
-        reason: 'over_limit',
-        message: reasonMessage('over_limit', detail.name, referenceLimit),
-        origins: detail.kind === 'character' ? ['mention', 'role'] : ['mention'],
-      })
+      addUnsent(
+        {
+          assetId,
+          elementId: detail.elementId,
+          name: detail.name,
+          reason: 'over_limit',
+          message: reasonMessage('over_limit', detail.name, referenceLimit),
+          origins: detail.kind === 'character' ? ['mention', 'role'] : ['mention'],
+        },
+        identityOf(detail),
+      )
     }
   }
 
@@ -482,6 +505,20 @@ function bindingMatches(
         ...('source' in value ? { source: value.source } : {}),
       })
     : binding.source === ('source' in value ? value.source : undefined)
+}
+
+/** 档案项 / 视角的稳定身份（不含显示名）：同一张卡的不同视角或档案项是不同引用，去重时不能合并。 */
+function pickIdentity(mention: ReturnType<typeof findMentions>[number]): string {
+  const pick = mention.pick
+  return [
+    pick?.period?.id,
+    pick?.outfit?.id,
+    pick?.expression?.id,
+    pick?.voiceState?.id,
+    mention.sceneView?.id,
+  ]
+    .map((value) => value ?? '')
+    .join('/')
 }
 
 function mentionName(mention: ReturnType<typeof findMentions>[number]) {
