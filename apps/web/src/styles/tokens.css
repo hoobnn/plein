@@ -189,6 +189,23 @@
   box-shadow: var(--shadow-4);
 }
 
+/* 与 cn() 的高度冲突分组一致：自定义高度也能和 h-8 等 Tailwind 工具类互相覆盖。 */
+@utility h-xs {
+  height: var(--h-xs);
+}
+@utility h-sm {
+  height: var(--h-sm);
+}
+@utility h-md {
+  height: var(--h-md);
+}
+@utility h-lg {
+  height: var(--h-lg);
+}
+@utility h-xl {
+  height: var(--h-xl);
+}
+
 :root {
   /* 控件高度：xs 24 · sm 28 · md 32（默认）· lg 36（工具条按钮）· xl 40 */
   --h-xs: 24px;
