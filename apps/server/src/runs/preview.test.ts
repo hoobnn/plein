@@ -2011,3 +2011,55 @@ it('首尾帧模式标注用途 role，token 保留编号写法；多模态参�
     )
   }
 }, 30_000)
+
+it('同一引用在未送入列表只出现一次，条目名与文案同为带序号 / 视角的显示名', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  // 场景多视角：两个视角引用都缺图
+  addNode(doc, 'plein/scene', {
+    name: '天台',
+    params: {
+      description: '天台',
+      sceneViews: [
+        { id: 'view-front', name: '正面', images: [asset('a')] },
+        { id: 'view-back', name: '背面', images: [asset('b')] },
+      ],
+    },
+    x: 0,
+  })
+  const scene = addNode(doc, 'plein/image', {
+    params: { model: 'plein/mock:image', prompt: '@天台/正面 和 @天台/背面' },
+    y: 400,
+  })
+  const multi = await preview(server, id, scene)
+  expect(multi.sent).toEqual([])
+  const names = multi.unsent?.map((item) => item.name) ?? []
+  // 裸名字「天台」的那条重复项消失
+  expect(names).not.toContain('天台')
+  // 每一条的名字都出现在自己的文案里（A-6：条目名与文案一致）
+  for (const item of multi.unsent ?? []) expect(item.message).toContain(`「${item.name}」`)
+  // 同一元素同一原因只留一条（去重键不含 name 也能去重）
+  const keys = (multi.unsent ?? []).map((item) => `${item.elementId}:${item.reason}`)
+  expect(new Set(keys).size).toBe(keys.length)
+  // 未被汇总的引用状态仍在正文引用区间里
+  expect(multi.promptReferences?.map((item) => [item.text, item.reason])).toEqual([
+    ['@天台/正面', 'no_image'],
+    ['@天台/背面', 'no_image'],
+  ])
+
+  // 重名 #2：mention 路径与 detail 路径不再各报一条
+  card(doc, 'plein/character', '林夏', null, 600)
+  card(doc, 'plein/character', '林夏', null, 900)
+  const dup = addNode(doc, 'plein/image', {
+    params: { model: 'plein/mock:image', prompt: '@林夏#2 回头' },
+    y: 800,
+  })
+  const named = await preview(server, id, dup)
+  expect(named.unsent).toHaveLength(1)
+  expect(named.unsent?.[0]).toMatchObject({
+    name: '林夏#2',
+    reason: 'no_image',
+    message: '「林夏#2」没有可用图片，未送入',
+  })
+}, 30_000)

@@ -132,11 +132,14 @@ export function referencePreview({
   const unsent: InputUnsentReference[] = []
   const unsentKeys = new Set<string>()
   const addUnsent = (item: InputUnsentReference) => {
-    const key = [item.reason, item.elementId ?? '', item.assetId ?? '', item.name].join('|')
+    // 去重键不含 name：不同路径对同一引用的取名格式可能不同（如带不带 #序号），
+    // 键里带 name 会让同一引用去重失效。
+    const key = [item.reason, item.elementId ?? '', item.assetId ?? ''].join('|')
     if (unsentKeys.has(key)) return
     unsentKeys.add(key)
     unsent.push(item)
   }
+  const unsentScope: UnsupportedScope = textOnly ? 'text' : 'mode'
   const indexOf = (assetId: string, kind: ReferenceMediaKind = 'image') => {
     if (kind !== 'image') {
       const index = finalMedia[kind].findIndex(
@@ -188,7 +191,7 @@ export function referencePreview({
             : 'not_sent'
     const message =
       reason === 'unsupported'
-        ? reasonMessage(reason, token.name, undefined, kind)
+        ? reasonMessage(reason, token.name, undefined, kind, unsentScope)
         : reason
           ? !binding
             ? legacyIndex
@@ -235,7 +238,8 @@ export function referencePreview({
         ? undefined
         : (detail?.reason ?? (detail ? 'no_image' : undefined))
     const message =
-      problem ?? (reason ? reasonMessage(reason, name, referenceLimit, kind) : undefined)
+      problem ??
+      (reason ? reasonMessage(reason, name, referenceLimit, kind, unsentScope) : undefined)
     promptReferences.push({
       start: mention.start,
       end: mention.end,
@@ -249,7 +253,8 @@ export function referencePreview({
     if (reason && reason !== 'over_limit' && message)
       addUnsent({
         ...(mention.id ? { elementId: mention.id } : {}),
-        name: mention.name,
+        // 与文案里的名字一致：用带 #序号 / 视角后缀的显示名，不用裸 mention.name。
+        name,
         reason,
         message,
         origins: ['mention'],
@@ -267,7 +272,7 @@ export function referencePreview({
       elementId: detail.elementId,
       name: detail.name,
       reason,
-      message: reasonMessage(reason, detail.name, referenceLimit, kind),
+      message: reasonMessage(reason, detail.name, referenceLimit, kind, unsentScope),
       origins: detail.kind === 'character' ? ['mention', 'role'] : ['mention'],
     })
   }
