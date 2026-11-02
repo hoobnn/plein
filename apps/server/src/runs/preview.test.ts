@@ -997,9 +997,9 @@ it('无持久绑定的旧视频音频编号按实际输入映射，越界时阻�
       prompt: '@image1 @video1 @audio1',
     },
   })
-  const sources = doc
-    .elements()
-    .filter((element) => ['image', 'video', 'audio'].includes(element.kind))
+  const sources = [...doc.elements()].filter((element) =>
+    ['image', 'video', 'audio'].includes(element.kind),
+  )
   for (const source of sources)
     connect(
       doc,
