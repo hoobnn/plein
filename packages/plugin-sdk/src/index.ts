@@ -13,6 +13,7 @@ export * from './media'
 export * from './node'
 export * from './plugin'
 export * from './ports'
+export * from './prepare'
 export * from './provider'
 export * from './rpc'
 

@@ -4,8 +4,10 @@ import type {
   Capability,
   CapabilityApproval,
   CapabilityApprovalContext,
+  CapabilityPrepareContext,
   NodeDefinition,
   NodeDescriptor,
+  PreparedCall,
   PromptPresetDefinition,
   VoicePreset,
 } from '@plein/plugin-sdk'
@@ -129,6 +131,16 @@ export interface CapabilityDefinition<
     ctx: C,
     extra: CapabilityApprovalContext,
   ) => CapabilityApproval | null
+  /**
+   * 执行前的准备流程（批次计划、输入预检、方案确认）。调度器读到声明后通用分派：
+   * answer 直接返回给调用方；否则按 request（或审批模式）建确认单，
+   * 批准后运行 run，未声明时运行原调用。
+   */
+  prepare?: (
+    input: z.output<S>,
+    ctx: C,
+    extra: CapabilityPrepareContext,
+  ) => PreparedCall | null | Promise<PreparedCall | null>
   input: S
   /**
    * 出现在 ⌘K 命令面板里：按当前选区生成输入（返回 null 表示当前选区不适用，不显示）。

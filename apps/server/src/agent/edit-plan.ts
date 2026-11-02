@@ -1,5 +1,5 @@
 import { CapabilityError, capabilityFor, clip } from '@plein/capabilities'
-import { type EditEstimate, type EditPlan, EditScope } from '@plein/protocol'
+import { type EditEstimate, type EditPlan, ApplyEditPlan, EditScope } from '@plein/protocol'
 import { z } from 'zod'
 
 import { NodeRunError } from '../plugins/provider-protocol'
@@ -124,6 +124,51 @@ const proposeEdit = serverCapability({
       }
     } catch (err) {
       return rethrow(err)
+    }
+  },
+  // 方案即确认单：不经审批模式直接建卡片，用户在卡片上选范围后服务端按范围执行
+  prepare: async (a, ctx, { onEditPlan }) => {
+    // 没有修改方案服务时（部分环境不带 plans）走普通调用
+    if (!ctx.env.plans) return null
+    const plans = ctx.env.plans
+    const plan = await plansOf(ctx).propose(ctx.env.canvasId, ctx.env.ownerId, a)
+    return {
+      request: { reason: plan.summary, ids: plan.targets.map((t) => t.nodeId) },
+      card: plan,
+      detail: { plan: planBrief(plan) },
+      next: '方案卡片已经给用户看了，用户会选只改文字、只出候选图或完整方案，也可能在卡片上逐项改字段、去掉某个目标或某个步骤。用一句话说明方案要点，然后调用 await_approval 等用户选择；用户批准后服务端直接按范围执行并返回最终方案（以返回里的 targets、applied 为准，revised_by_user / skipped_by_user 表示用户改过），不要再调用 apply_edit_plan。',
+      run: async (choice, approvalId) => {
+        const pick = ApplyEditPlan.catch({ scope: 'text' }).parse(choice)
+        try {
+          const apply = async () => {
+            ctx.env.execution?.assertOpen()
+            return applyEdit.run(ctx, {
+              plan_id: plan.id,
+              scope: pick.scope,
+              ...(pick.only ? { only: pick.only } : {}),
+              ...(pick.skip ? { skip: pick.skip } : {}),
+            })
+          }
+          const out = (await (ctx.env.execution
+            ? ctx.env.execution.serialize(apply)
+            : apply())) as Record<string, unknown>
+          return JSON.stringify(
+            {
+              ...out,
+              scope: pick.scope,
+              ...(pick.skip?.length ? { skipped_by_user: pick.skip } : {}),
+            },
+            null,
+            1,
+          )
+        } catch (err) {
+          if (!(err instanceof CapabilityError)) throw err
+          return { content: [{ type: 'text', text: err.message }], isError: true }
+        } finally {
+          const now = plans.get(plan.id, ctx.env.ownerId)
+          if (now) onEditPlan?.(approvalId ?? '', now)
+        }
+      },
     }
   },
 })

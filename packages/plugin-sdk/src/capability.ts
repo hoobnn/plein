@@ -2,6 +2,7 @@ import type { z } from 'zod'
 import type { CapabilityApproval, CapabilityApprovalContext } from './approval'
 import type { ExecutorContext } from './executor'
 import { NAMESPACED_ID, vendorOf } from './ids'
+import type { PreparedCall } from './prepare'
 
 /**
  * 插件贡献的能力：用户能做的一件事。登记后出现在 ⌘K 命令面板和智能体（内置 / Claude Code / Codex）的工具里。
@@ -48,6 +49,11 @@ export interface PluginCapabilityDefinition<S extends z.ZodObject = z.ZodObject>
    * always 模式下宿主以声明为准。插件拿不到运行上下文，只能看本次输入与宿主给的改动集。
    */
   approval?: (input: z.output<S>, extra: CapabilityApprovalContext) => CapabilityApproval | null
+  /**
+   * 执行前流程（只对内置插件开放；第三方插件不能提供能力）。本期插件拿不到运行上下文，
+   * 返回 null 走原调用。
+   */
+  prepare?: (input: z.output<S>) => PreparedCall | null | Promise<PreparedCall | null>
   /**
    * 出现在 ⌘K 命令面板里：always 一直显示，selection 有选区时显示（选区经 ctx.selection 传入）。
    * 从面板调用时输入为 {}，所以输入的每个字段都要可选。不填则只给智能体用。

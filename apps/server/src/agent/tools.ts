@@ -45,7 +45,6 @@ import { describeNode, executionOf, withDefaultModel } from '@plein/plugin-sdk'
 import {
   type AgentApprovalMode,
   type EditPlan,
-  ApplyEditPlan,
   MediaDeriveRequest,
   MediaDerivationOrigin,
   type MediaDerivation,
@@ -66,9 +65,9 @@ import type { NodeRuns } from '../runs/runs'
 import { storyboardBatchesOf, type StoryboardBatches } from '../runs/storyboard-batch'
 import type { LibraryStore } from '../library/store'
 import type { Rooms } from '../sync/rooms'
-import { type Approvals, approvalFor, RUN_LIMIT } from './approvals'
+import { type Approvals, approvalFor, type ApprovalRequest, RUN_LIMIT } from './approvals'
 import type { AgentChanges } from './changes'
-import { APPLY_EDIT, editPlanCapabilities, planBrief, PROPOSE_EDIT } from './edit-plan'
+import { editPlanCapabilities } from './edit-plan'
 import { libraryCapabilities } from './library'
 import type { AgentPlan } from './plan'
 import { pluginCapabilities } from './plugin-caps'
@@ -251,6 +250,18 @@ const runNode = serverCapability({
       return { reason: `生成视频 ${node}（较贵、较慢）`, ids: [a.id] }
     if (changes.runCount >= RUN_LIMIT)
       return { reason: `运行 ${node}：这一轮已经运行了 ${changes.runCount} 次`, ids: [a.id] }
+    return null
+  },
+  // 输入预检：不花钱地看一次实际输入，状态不对就拦下，不进审批
+  prepare: async (a, ctx) => {
+    const input = await ctx.env.runs.preview(ctx.env.canvasId, a.id, ctx.env.ownerId)
+    if (input.status !== 'ready')
+      return {
+        answer: {
+          content: [{ type: 'text', text: input.blocked.map((b) => b.message).join('\n') }],
+          isError: true,
+        },
+      }
     return null
   },
   input: z.object({
@@ -1060,6 +1071,28 @@ const runStoryboard = serverCapability({
     const what = { image: '分镜图', video: '镜头视频', speech: '配音', sfx: '音效' }[a.role] ?? ''
     return { reason: `批量生成${elName(ctx, a.id)}的${what}`, ids: [a.id] }
   },
+  // 先出批次清单：preview 只读；要生成的先请用户审阅，批准后只提交原 token
+  prepare: async (raw, ctx) => {
+    const a = StoryboardRun.parse(raw)
+    const plan = await storyboardPlan(ctx, a)
+    ctx.env.execution?.assertOpen()
+    if (a.preview_only) return { answer: toToolResult({ status: 'ready_for_review', plan }) }
+    if (!plan.summary.run)
+      return { answer: toToolResult({ status: 'nothing_to_run', plan: storyboardReview(plan) }) }
+    const review = storyboardReview(plan)
+    return {
+      request: { storyboardBatch: review },
+      detail: { plan: review },
+      next: '具体批量清单已展示给用户。调用 await_approval 等原调用结果，不重复调用 run_storyboard；若返回 input_changed，重新审阅新清单后再请求确认。',
+      run: async () => {
+        const approved = async () => {
+          ctx.env.execution?.assertOpen()
+          return toToolResult(await commitStoryboard(ctx, plan))
+        }
+        return ctx.env.execution ? ctx.env.execution.serialize(approved) : approved()
+      },
+    }
+  },
   input: StoryboardRun,
   run: async (ctx, raw) => {
     const a = StoryboardRun.parse(raw)
@@ -1185,109 +1218,55 @@ export function agentTools(
   const tools = capabilityTools(registry, ctx, async (cap, args, run) => {
     const blocked = opts.plan?.blocked(registry.effectOf(cap, args, ctx))
     if (blocked) return { content: [{ type: 'text', text: blocked }], isError: true }
-    if (cap.name === 'run_storyboard') {
-      const input = StoryboardRun.parse(args)
-      const plan = await storyboardPlan(ctx, input)
+    // 声明了 prepare 的能力先走自己的执行前流程（批次计划、输入预检、方案确认）
+    const prepared = cap.prepare
+      ? await cap.prepare(args, ctx, {
+          onEditPlan: (approvalId, plan) => opts.onEditPlan?.(approvalId, plan as EditPlan),
+        })
+      : null
+    if (prepared?.answer !== undefined) return prepared.answer
+    let approvalId: string | undefined
+    const resume = prepared?.run
+    const approved = async (choice?: unknown) => {
       env.execution?.assertOpen()
-      if (input.preview_only) return toToolResult({ status: 'ready_for_review', plan })
-      if (!plan.summary.run)
-        return toToolResult({ status: 'nothing_to_run', plan: storyboardReview(plan) })
-      const req = approvalFor(opts.mode(), cap, args, ctx, opts.changes)
-      const approved = async () => {
-        env.execution?.assertOpen()
-        return toToolResult(await commitStoryboard(ctx, plan))
-      }
-      if (!req) return approved()
-      const review = storyboardReview(plan)
-      const approval = opts.approvals.create(cap.name, { ...req, storyboardBatch: review }, () =>
-        env.execution ? env.execution.serialize(approved) : approved(),
-      )
-      return JSON.stringify({
-        status: 'needs_approval',
-        approval_id: approval.id,
-        reason: req.reason,
-        plan: review,
-        next: '具体批量清单已展示给用户。调用 await_approval 等原调用结果，不重复调用 run_storyboard；若返回 input_changed，重新审阅新清单后再请求确认。',
-      })
+      return resume ? resume(choice, approvalId) : run()
     }
-    if (cap.name === 'run_node') {
-      const input = await env.runs.preview(env.canvasId, String(args.id), env.ownerId)
-      if (input.status !== 'ready')
-        return {
-          content: [{ type: 'text', text: input.blocked.map((b) => b.message).join('\n') }],
-          isError: true,
-        }
-    }
-    const req = approvalFor(opts.mode(), cap, args, ctx, opts.changes)
-    if (!req) return null
-    const approved = async () => {
-      env.execution?.assertOpen()
-      return run()
-    }
-    const a = opts.approvals.create(cap.name, req, () =>
-      env.execution ? env.execution.serialize(approved) : approved(),
+    // 声明自带 reason 的（方案卡片）不经审批模式直接建单；其余按审批策略分派
+    const declared = prepared?.request?.reason
+    const req =
+      declared !== undefined
+        ? { reason: declared, ids: prepared!.request!.ids ?? [] }
+        : approvalFor(opts.mode(), cap, args, ctx, opts.changes)
+    if (!req) return resume ? await approved() : null
+    const approval = opts.approvals.create(
+      cap.name,
+      {
+        ...req,
+        ...(prepared?.request?.storyboardBatch !== undefined
+          ? {
+              storyboardBatch: prepared.request
+                .storyboardBatch as ApprovalRequest['storyboardBatch'],
+            }
+          : {}),
+      },
+      resume
+        ? (choice) => resume(choice, approvalId)
+        : (choice) =>
+            env.execution ? env.execution.serialize(() => approved(choice)) : approved(choice),
     )
+    approvalId = approval.id
+    if (prepared?.card !== undefined) opts.onEditPlan?.(approval.id, prepared.card as EditPlan)
     return JSON.stringify({
       status: 'needs_approval',
-      approval_id: a.id,
-      reason: req.reason,
-      next: '已请用户在面板里确认。调用 await_approval 等待：用户允许后会直接执行并返回结果，不要重复调用原工具；用户跳过就换个做法或问用户。',
+      approval_id: approval.id,
+      // 方案卡片的 reason 就是方案摘要，已在 plan 里，不再重复一个字段
+      ...(declared !== undefined ? {} : { reason: req.reason }),
+      ...prepared?.detail,
+      next:
+        prepared?.next ??
+        '已请用户在面板里确认。调用 await_approval 等待：用户允许后会直接执行并返回结果，不要重复调用原工具；用户跳过就换个做法或问用户。',
     })
   })
-  // 修改方案：方案本身就是确认单，用户在卡片上选范围后服务端按范围执行
-  const propose = tools.find((t) => t.name === PROPOSE_EDIT)
-  if (propose && env.plans) {
-    const plans = env.plans
-    propose.run = async (args) => {
-      const brief = (await registry.invoke(PROPOSE_EDIT, ctx, args)) as { plan_id: string }
-      const plan = plans.get(brief.plan_id, env.ownerId)!
-      let approvalId = ''
-      const a = opts.approvals.create(
-        PROPOSE_EDIT,
-        { reason: plan.summary, ids: plan.targets.map((t) => t.nodeId) },
-        async (choice) => {
-          const pick = ApplyEditPlan.catch({ scope: 'text' }).parse(choice)
-          try {
-            const apply = async () => {
-              env.execution?.assertOpen()
-              return registry.invoke(APPLY_EDIT, ctx, {
-                plan_id: plan.id,
-                scope: pick.scope,
-                ...(pick.only ? { only: pick.only } : {}),
-                ...(pick.skip ? { skip: pick.skip } : {}),
-              })
-            }
-            const out = (await (env.execution
-              ? env.execution.serialize(apply)
-              : apply())) as Record<string, unknown>
-            return JSON.stringify(
-              {
-                ...out,
-                scope: pick.scope,
-                ...(pick.skip?.length ? { skipped_by_user: pick.skip } : {}),
-              },
-              null,
-              1,
-            )
-          } catch (err) {
-            if (!(err instanceof CapabilityError)) throw err
-            return { content: [{ type: 'text', text: err.message }], isError: true }
-          } finally {
-            const now = plans.get(plan.id, env.ownerId)
-            if (now) opts.onEditPlan?.(approvalId, now)
-          }
-        },
-      )
-      approvalId = a.id
-      opts.onEditPlan?.(a.id, plan)
-      return JSON.stringify({
-        status: 'needs_approval',
-        approval_id: a.id,
-        plan: planBrief(plan),
-        next: '方案卡片已经给用户看了，用户会选只改文字、只出候选图或完整方案，也可能在卡片上逐项改字段、去掉某个目标或某个步骤。用一句话说明方案要点，然后调用 await_approval 等用户选择；用户批准后服务端直接按范围执行并返回最终方案（以返回里的 targets、applied 为准，revised_by_user / skipped_by_user 表示用户改过），不要再调用 apply_edit_plan。',
-      })
-    }
-  }
   if (opts.plan) tools.push(...opts.plan.tools(opts.approvals))
   tools.push({
     name: 'await_approval',

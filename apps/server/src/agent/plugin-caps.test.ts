@@ -3,10 +3,14 @@ import {
   definePluginCapability,
   defineServerPlugin,
   PLUGIN_API_VERSION,
+  PluginDescriptor,
+  RPC_VERSION,
 } from '@plein/plugin-sdk'
 import type { Canvas, CapabilityCallResult, PluginCapabilityInfo } from '@plein/protocol'
 import { beforeAll, describe, expect, it } from 'vite-plus/test'
 import { z } from 'zod'
+import { proxyPlugin } from '../plugins/external'
+import type { PluginProcess } from '../plugins/process'
 import { request, startTestServer } from '../testing'
 import { Approvals } from './approvals'
 import { AgentChanges } from './changes'
@@ -43,6 +47,42 @@ const acme = defineServerPlugin(
   }),
   { capabilities: caps },
 )
+
+/** 声明了 approval / prepare 的内置插件能力：声明经 plugin-caps 透传，调度器按声明分派 */
+const declaredCaps = [
+  definePluginCapability({
+    id: 'acme2/answer',
+    title: '预检短路',
+    description: 'prepare 给出直接结果',
+    effect: 'run',
+    input: z.object({}),
+    prepare: () => ({ answer: '预检结果' }),
+    run: () => '不该执行',
+  }),
+  definePluginCapability({
+    id: 'acme2/gated',
+    title: '按声明确认',
+    description: '声明审批说明：rules 不问，always 问',
+    effect: 'run',
+    input: z.object({}),
+    approval: (_input, { mode }) =>
+      mode === 'always' ? { reason: '声明里的说法', ids: [] } : null,
+    prepare: () => null,
+    run: () => 'ran',
+  }),
+]
+const acme2 = defineServerPlugin(
+  definePlugin({
+    manifest: {
+      id: 'acme2/tools',
+      version: '1.0.0',
+      name: 'Acme 声明',
+      engines: { plein: `^${PLUGIN_API_VERSION}` },
+      contributes: { capabilities: ['acme2/answer', 'acme2/gated'] },
+    },
+  }),
+  { capabilities: declaredCaps },
+)
 const bad = (id: string, capabilities: string[], cap: ReturnType<typeof definePluginCapability>) =>
   defineServerPlugin(
     definePlugin({
@@ -66,6 +106,7 @@ beforeAll(async () => {
   running.server.plugins.load(
     [
       acme,
+      acme2,
       // 出现在命令面板里，输入却有必填项
       bad(
         'bad/palette',
@@ -178,6 +219,55 @@ describe('插件贡献的能力', () => {
     changes.begin('t1')
     expect(JSON.parse((await call('acme__spend')).text).status).toBe('needs_approval')
     changes.release()
+  })
+
+  it('内置插件的 approval / prepare 声明经透传生效；第三方声明直接被拒', async () => {
+    const { rooms, runs, plugins, assets } = running.server
+    const env = { canvasId, ownerId: 'local', rooms, runs, host: plugins, assets }
+    const build = (mode: 'rules' | 'always') => {
+      const changes = new AgentChanges(`agt_declared_${mode}`, canvasId, 'local', rooms, runs)
+      const server = new McpServer(
+        { name: 'plein', version: 'test' },
+        agentTools(env, { changes, approvals: new Approvals(() => {}), mode: () => mode }),
+      )
+      return { call: mcpOf(server), changes }
+    }
+
+    const rules = build('rules')
+    // prepare 的 answer 直接返回给调用方，不执行原调用也不建确认单
+    expect((await rules.call('acme2__answer')).text).toBe('预检结果')
+    // rules 下声明返回 null：不问，直接执行
+    expect((await rules.call('acme2__gated')).text).toBe('ran')
+
+    // always 下声明自己给说法
+    const always = build('always')
+    const gated = JSON.parse((await always.call('acme2__gated')).text) as {
+      status: string
+      reason: string
+    }
+    expect(gated).toMatchObject({ status: 'needs_approval', reason: '声明里的说法' })
+
+    // 第三方插件报上来的声明（哪怕是 approval / prepare）整批拒绝，不会生效
+    const desc = PluginDescriptor.parse({
+      rpc: RPC_VERSION,
+      manifest: {
+        id: 'acme3/late',
+        version: '1.0.0',
+        name: 'Acme 迟到',
+        engines: { plein: '^0.1.0' },
+      },
+      sandbox: { permission: true, fsWrite: false, net: true },
+      nodes: [],
+      executors: [],
+      providers: [],
+      prompts: [],
+      templates: [],
+      elements: 0,
+      capabilities: 1,
+    })
+    expect(() => proxyPlugin(desc, {} as unknown as PluginProcess)).toThrow(
+      '第三方插件暂不支持能力',
+    )
   })
 
   it('⌘K 经 HTTP 调用：列出能力、执行、整次撤销', async () => {

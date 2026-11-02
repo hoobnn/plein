@@ -27,6 +27,7 @@ export function pluginCapabilities(host: PluginHost, builtin: CapabilityRegistry
   const out: Cap[] = []
   for (const { def, plugin } of host.registry.capabilities.values()) {
     const manifest = host.pluginManifest(plugin)
+    const { approval, prepare } = def
     out.push({
       name: capabilityToolName(def.id),
       title: def.title,
@@ -35,10 +36,9 @@ export function pluginCapabilities(host: PluginHost, builtin: CapabilityRegistry
       where: 'server',
       effect: def.effect,
       input: def.input,
-      // 插件的审批声明拿不到运行上下文，宿主补上多余参数后透传
-      ...(def.approval
-        ? { approval: (input, _ctx: ServerContext, extra) => def.approval!(input, extra) }
-        : {}),
+      // 插件的声明拿不到运行上下文：宿主补上多余参数后透传（只对内置插件开放）
+      ...(approval ? { approval: (input, _ctx, extra) => approval(input, extra) } : {}),
+      ...(prepare ? { prepare: (input) => prepare(input) } : {}),
       run: async (ctx, input) => {
         ctx.env.execution?.assertOpen()
         const signal = AbortSignal.any([
