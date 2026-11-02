@@ -263,8 +263,13 @@ test(
     await expect.poll(() => panel.locator('iframe').getAttribute('src')).not.toBe(firstUrl)
     await expect(panel.locator('.motion-preview')).toHaveAttribute('data-state', 'ready')
     await expect(panel.getByLabel('当前预览时间')).toContainText(/0:0[56]\./)
-    const bar = await seek.boundingBox()
-    await page.mouse.click(bar!.x + bar!.width * 0.4, bar!.y + bar!.height / 2)
+    // 时间滑杆是 ui/Slider（Base UI）：seek 命中的是 thumb 上的隐藏输入框，点击定位按轨道几何算
+    const track = panel
+      .locator('[data-slot="slider"]')
+      .filter({ has: page.getByRole('slider', { name: '预览时间' }) })
+      .locator('[data-slot="slider-track"]')
+    const bar = (await track.boundingBox())!
+    await page.mouse.click(bar.x + bar.width * 0.4, bar.y + bar.height / 2)
     await expect(panel.getByLabel('当前预览时间')).toContainText('0:02.')
     expect((await elements(page)).find((el) => el.id === node.id)?.results).toBe(0)
     expect(errors).toEqual([])
