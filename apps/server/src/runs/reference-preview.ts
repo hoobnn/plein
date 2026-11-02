@@ -165,10 +165,17 @@ export function referencePreview({
   const unsent: InputUnsentReference[] = []
   const unsentKeys = new Set<string>()
   const addUnsent = (item: InputUnsentReference, identity = '') => {
-    // 去重键不含 name：不同路径对同一引用的取名格式可能不同（如带不带 #序号），
-    // 键里带 name 会让同一引用去重失效。同一张卡的不同视角 / 档案项是不同引用，
-    // 用视角 / 档案项身份区分，逐条列出。
-    const key = [item.reason, item.elementId ?? '', item.assetId ?? '', identity].join('|')
+    // 去重键不含 name（有 elementId 时）：不同路径对同一引用的取名格式可能不同
+    // （如带不带 #序号），键里带 name 会让同一引用去重失效；同一张卡的不同视角 /
+    // 档案项用视角 / 档案项身份区分，逐条列出。没有 elementId 的条目（断链 @、
+    // 消歧失败、无来源的残留绑定）只剩显示名能标识引用：键里带上它，
+    // 不同引用不合并，同一引用写多次仍只报一次。
+    const key = [
+      item.reason,
+      item.elementId ?? '',
+      item.assetId ?? '',
+      item.elementId ? identity : item.name,
+    ].join('|')
     if (unsentKeys.has(key)) return
     unsentKeys.add(key)
     unsent.push(item)

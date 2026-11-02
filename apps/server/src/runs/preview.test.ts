@@ -2083,6 +2083,23 @@ it('同一引用在未送入列表只出现一次，条目名与文案同为带�
   })
 }, 30_000)
 
+it('不同的断链 @ 逐条列出，同一个断链 @ 写两次只报一次', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const n = addNode(doc, 'plein/image', {
+    params: { model: 'plein/mock:image', prompt: '@幽灵道具 和 @幽灵场景，再看 @幽灵道具' },
+    y: 400,
+  })
+  const input = await preview(server, id, n)
+  // 两个不同的断链引用是两处不同的引用：各自一条，不合并
+  const broken = (input.unsent ?? []).filter((item) => item.reason === 'mention_broken')
+  expect(broken.map((item) => item.name)).toEqual(['幽灵道具', '幽灵场景'])
+  // 同一个断链 @ 写两次：只保留一条
+  expect(input.unsent).toHaveLength(2)
+  for (const item of broken) expect(item.message).toContain(`@${item.name}`)
+}, 30_000)
+
 it('不收参考图的节点也给出 sent / unsent：@ 有图的卡明确说明不送入，连线的图如实列出', async () => {
   const { server } = await bootServer()
   mockSettings(server, {})
