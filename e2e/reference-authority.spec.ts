@@ -119,9 +119,16 @@ test('短名称 @ 的编号徽标完整可读，悬停能读到名称', { tag: '
   await rename.getByRole('button', { name: '保存并同步引用' }).click()
   expect((await byName(page, '叶')).id).toBe(image.id)
 
-  await addNode(page, '生成图片', { x: 1200, y: 450 })
-  const target = await nodeByType(page, 'plein/image')
-  await clickElement(page, target.id)
+  const targetId = await page.evaluate(() =>
+    window.__plein.addNode({
+      type: 'plein/image',
+      name: '短名称引用',
+      params: { model: 'plein/mock:image', prompt: '' },
+      x: 1200,
+      y: 450,
+    }),
+  )
+  await clickElement(page, targetId)
   await revealGenerator(page)
   const prompt = page.getByTestId('generator').getByRole('textbox', { name: '提示词' })
   await prompt.click()
