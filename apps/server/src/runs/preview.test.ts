@@ -1148,6 +1148,89 @@ it('MiniMax 正文直接编号，绑定与 @ 共用 sent，历史 null 残留只
   expect(doc.get(video)?.params?.prompt).toBe('@桌边.png 与 @角色.png')
 })
 
+it('旁路改名后越界的 @林夏#2 按普通 blocked 预览，不自动改写提示词', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const first = card(doc, 'plein/character', '林夏', asset('a'), 0)
+  card(doc, 'plein/character', '林夏', asset('b'), 300)
+  const shot = addNode(doc, 'plein/image', {
+    params: { model: 'plein/mock:image', prompt: '@林夏#2 回头' },
+    y: 400,
+  })
+  const ready = await preview(server, id, shot)
+  expect(ready.status).toBe('ready')
+  expect(ready.prompt).toContain('回头')
+
+  // 旁路改名（不经 renameElement，画布 API / 智能体都可能这么改）：同名集合从 2 变 1，#2 越界
+  updateElement(doc, first, { name: '林小夏' })
+  const blocked = await preview(server, id, shot)
+  expect(blocked.status).toBe('blocked')
+  expect(blocked.prompt).toBe('@林夏#2 回头')
+  expect(blocked.blocked).toContainEqual({
+    code: 'prepare_failed',
+    message: '「@林夏#2」不存在，画布上「林夏」只有 @林夏',
+  })
+  expect(blocked.unsent).toContainEqual(
+    expect.objectContaining({ name: '林夏', reason: 'mention_ambiguous' }),
+  )
+
+  // 改回去后引用恢复，节点重新可运行
+  updateElement(doc, first, { name: '林夏' })
+  const recovered = await preview(server, id, shot)
+  expect(recovered.status).toBe('ready')
+  expect(recovered.prompt).toContain('回头')
+})
+
+it('参考图上游生成失败时，提示能定位到失败的上游节点', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const gen = addNode(doc, 'plein/image', { name: '定妆图生成', params: { prompt: '定妆' } })
+  const hero = addNode(doc, 'plein/character', { name: '林夏', params: { description: '主角' } })
+  connect(doc, [gen, 'images'], [hero, 'references'])
+  // 上游还没有结果且最近一次运行失败：卡片没有可用参考图
+  writeRun(doc, gen, { id: 'run-1', status: 'failed', at: Date.now() })
+  const required = addNode(doc, 'plein/image', {
+    params: { model: 'plein/mock:image', prompt: '@林夏 回头', requiredRefs: [hero] },
+    y: 400,
+  })
+  const blocked = await preview(server, id, required)
+  expect(blocked.status).toBe('blocked')
+  expect(blocked.blocked).toContainEqual({
+    code: 'required_failed',
+    elementId: hero,
+    message:
+      '「林夏」是必需参考，但它的参考图生成失败了（来自「定妆图生成」），请重新生成或取消必需',
+  })
+  expect(blocked.unsent).toContainEqual(expect.objectContaining({ name: '林夏', reason: 'failed' }))
+
+  // 可选参考不阻断，但同样提示是哪个上游失败了
+  setParams(doc, required, { requiredRefs: [] })
+  const optional = await preview(server, id, required)
+  expect(optional.status).toBe('ready')
+  expect(optional.notices).toContainEqual({
+    code: 'prepare_failed',
+    elementId: hero,
+    message: '「林夏」的参考图来自「定妆图生成」，最近一次运行失败，未送入；请重新生成后再运行',
+  })
+
+  // 上游成功后提示消失
+  addResults(doc, gen, [
+    {
+      id: 'r1',
+      runId: 'run-2',
+      port: 'images',
+      value: { type: 'image', kind: 'image', assetId: asset('c') },
+      at: Date.now(),
+    },
+  ])
+  const recovered = await preview(server, id, required)
+  expect(recovered.status).toBe('ready')
+  expect(recovered.notices).toEqual([])
+  expect(recovered.sent?.map((item) => item.assetId)).toEqual([asset('c')])
+})
+
 it('误留空格的断链 @ 进入未送入，正文编号与 sent 一致、引用区间可回读原文', async () => {
   const { server } = await bootServer()
   mockSettings(server, {})

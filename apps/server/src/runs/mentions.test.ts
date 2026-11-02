@@ -290,14 +290,34 @@ describe('运行前解析 @ 引用', () => {
 })
 
 describe('重名不静默', () => {
-  it('两个同名资产：单名写法报错并给出 #序号', async () => {
+  it('两个同名资产：单名写法不猜对象，阻断并给出 #序号，预览照常给出', async () => {
     const doc = createDoc(undefined, { schedule: () => {} })
     character(doc, '林夏', { description: '主角，短发' }, 0)
     character(doc, '林夏', { description: '路人，长发' }, 200)
     const n = node(doc, 'plein/image', { prompt: '@林夏站在天台' })
-    await expect(applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))).rejects.toThrow(
-      '画布上有 2 个「林夏」，请写成 @林夏#1 或 @林夏#2',
-    )
+    // 不再抛错把整个节点打成 unprepared：返回 blocked，提示詞原样保留，不自动改写
+    const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))
+    expect(r.blocked).toEqual([
+      { code: 'prepare_failed', message: '画布上有 2 个「林夏」，请写成 @林夏#1 或 @林夏#2' },
+    ])
+    expect(r.params.prompt).toBe('@林夏站在天台')
+    expect(r.refs).toEqual([])
+    expect(r.details).toEqual([])
+  })
+
+  it('序号越界（旁路改名后同名变少）：阻断而不是 unprepared，提示改成哪个写法', async () => {
+    const doc = createDoc(undefined, { schedule: () => {} })
+    const first = character(doc, '林夏', { description: '主角，短发' }, 0)
+    character(doc, '林夏', { description: '路人，长发' }, 200)
+    const n = node(doc, 'plein/image', { prompt: '@林夏#2 回头' })
+    // 另一张同名卡改名（不经 renameElement 的旁路），同名集合从 2 变 1，#2 越界
+    updateElement(doc, first, { name: '林小夏' })
+    const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))
+    expect(r.blocked).toEqual([
+      { code: 'prepare_failed', message: '「@林夏#2」不存在，画布上「林夏」只有 @林夏' },
+    ])
+    expect(r.params.prompt).toBe('@林夏#2 回头')
+    expect(r.refs).toEqual([])
   })
 
   it('写了 #序号就按序号取，不追加任一同名角色设定', async () => {

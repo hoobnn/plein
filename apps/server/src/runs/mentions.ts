@@ -135,11 +135,17 @@ const hitKey = (h: Hit) =>
     h.sceneView?.id,
   ].join('/')
 
-/** 提示词里 @ 的名字，对应到画布上的元素 */
-function checkMention(m: Mention, byId: Map<string, CanvasElement>): Hit | undefined {
-  // 重名没写序号、序号越界：不能猜，否则引用会悄悄串到另一个资产上
+/** 提示词里 @ 的名字，对应到画布上的元素；消歧问题不抛错，写进 blocked 让预览照常给出 */
+function checkMention(
+  m: Mention,
+  byId: Map<string, CanvasElement>,
+  blocked: InputIssue[],
+): Hit | undefined {
+  // 重名没写序号、序号越界：不能猜，否则引用会悄悄串到另一个资产上。
+  // 不再抛错把整个节点打成 unprepared（预览完全看不到）：照常准备，这条引用
+  // 不自动改写，blocked 与「未送入」列表（mention_ambiguous）都会提示该改成哪个写法。
   const problem = mentionProblem(m)
-  if (problem) throw new NodeRunError('invalid_input', problem)
+  if (problem) blocked.push({ code: 'prepare_failed', message: problem })
   const el = m.id ? byId.get(m.id) : undefined
   if (!el) return undefined
   if (m.sceneViewMiss !== undefined)
@@ -186,6 +192,7 @@ export async function applyMentions(
   const byId = new Map(targets.map((t) => [t.id, t.el]))
   const hit = new Map<string, Hit>()
   const notices: InputIssue[] = []
+  const blocked: InputIssue[] = []
   const numbered =
     def.capability === 'image.generate' ||
     (def.capability === 'video.generate' && params.mode === 'reference')
@@ -211,7 +218,7 @@ export async function applyMentions(
     let text = ''
     let last = 0
     for (const m of found) {
-      const h = checkMention(m, byId)
+      const h = checkMention(m, byId, blocked)
       if (numbered) {
         const list = deferred.get(source) ?? []
         list.push({ mention: m, ...(h ? { hit: h } : {}) })
@@ -238,7 +245,7 @@ export async function applyMentions(
     if (!numbered) source.write(text + value.slice(last))
     for (const b of broken) notices.push(brokenNotice(b.name, b.candidates))
   }
-  if (hit.size === 0) return { params, inputs, refs: [], notices, details: [], blocked: [] }
+  if (hit.size === 0) return { params, inputs, refs: [], notices, details: [], blocked }
 
   const required = requiredOrder(params.requiredRefs)
   const groups: Group[] = []
@@ -247,10 +254,9 @@ export async function applyMentions(
   const imageDetails: InputRef[] = []
   const mediaDetails: InputRef[] = []
   const detailByHit = new Map<string, InputRef>()
-  const blocked: InputIssue[] = []
   const voices: Array<{ name: string; voice: VoiceRef }> = []
-  /** 参考图来自生成失败的上游：和「还没生成或没连」分开提示 */
-  const failedRefs = new Set<string>()
+  /** 参考图来自生成失败的上游（记下是哪个节点，供提示定位）：和「还没生成或没连」分开提示 */
+  const failedRefs = new Map<string, Array<{ id: string; name: string }>>()
   const imageValidation = new Map<string, Promise<boolean>>()
   const sceneImageUsable = (assetId: string) => {
     if (!validateSceneViewImage) return Promise.resolve(true)
@@ -299,7 +305,10 @@ export async function applyMentions(
     if (hasVoice(v)) voices.push({ name: label(h), voice: v })
     const own = await collect(target.id)
     const base = (own.references ?? []).filter((v) => v.type === 'image')
-    if (base.length === 0 && referenceFailed(doc, target.id)) failedRefs.add(target.id)
+    if (base.length === 0) {
+      const failed = failedReferenceSources(doc, target.id)
+      if (failed.length) failedRefs.set(target.id, failed)
+    }
     // 只校验实际送入模型的截图；全景原始来源缺失不会误阻断已有截图。
     const invalidViewImages = h.sceneView
       ? (
@@ -420,7 +429,7 @@ export async function applyMentions(
           ? {
               code: 'required_failed',
               elementId: d.elementId,
-              message: `「${d.name}」是必需参考，但它的参考图生成失败了，请重新生成或取消必需`,
+              message: `「${d.name}」是必需参考，但它的参考图生成失败了（来自${sourceNames(failedRefs.get(d.elementId)!)}），请重新生成或取消必需`,
             }
           : {
               code: 'required_no_image',
@@ -439,6 +448,17 @@ export async function applyMentions(
       d.reason = failedRefs.has(d.elementId) ? 'failed' : 'no_image'
     else if (!send) d.reason = 'unsupported'
     else if (d.sent.length < (d.selected ?? d.available).length) d.reason = 'over_limit'
+  }
+  // 可选参考的上游失败不阻断运行，但同样要在提示里定位到失败的上游节点；
+  // 必需参考的失败已经在 blocked（required_failed）里说明，不重复一条提示。
+  for (const [elementId, sources] of failedRefs) {
+    const d = details.find((item) => item.elementId === elementId)
+    if (!d || d.required || d.reason !== 'failed') continue
+    notices.push({
+      code: 'prepare_failed',
+      elementId,
+      message: `「${d.name}」的参考图来自${sourceNames(sources)}，最近一次运行失败，未送入；请重新生成后再运行`,
+    })
   }
 
   // 本次真正送进去的东西带到执行器（宿主不把运行摘要传下去，见 node 定义的 usedRefs 注释）
@@ -525,15 +545,24 @@ function rewriteReferenceMentions(
   }
 }
 
-/** 连进卡片参考图端口的上游节点里，有最近一次运行失败的 */
-function referenceFailed(doc: PleinDoc, id: string) {
+/**
+ * 连进卡片参考图端口的上游节点里，最近一次运行失败的（带名称，提示里能定位是哪张图）。
+ * 同一个上游连多条线只记一次；没有任何上游失败时返回空。
+ */
+function failedReferenceSources(doc: PleinDoc, id: string): Array<{ id: string; name: string }> {
+  const failed = new Map<string, string>()
   for (const e of doc.edges()) {
     if (e.to[0] !== id || e.to[1] !== 'references') continue
     const src = doc.get(e.from[0])
-    if (src?.kind === 'node' && src.run?.status === 'failed') return true
+    if (src?.kind !== 'node' || src.run?.status !== 'failed') continue
+    failed.set(src.id, src.name || src.nodeType)
   }
-  return false
+  return [...failed].map(([id, name]) => ({ id, name }))
 }
+
+/** 失败上游节点的名称列表：写进提示文案，用户能定位要重跑哪个节点 */
+const sourceNames = (sources: Array<{ name: string }>) =>
+  sources.map((s) => `「${s.name}」`).join('、')
 
 /** 一组 @ 引用带来的参考图；priority 为必需参考的先后（-1 为可选） */
 interface Group {
