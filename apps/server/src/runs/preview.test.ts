@@ -788,10 +788,15 @@ it('首帧与尾帧模式下，@ 已送入的帧图不再误报未送入', async
     expect(input.prompt).toBe(item.final)
     expect(input.promptReferences?.map((ref) => ref.indices)).toEqual(item.indices)
     expect(input.unsent?.some((ref) => ['首帧.png', '尾帧.png'].includes(ref.name))).toBe(false)
-    if (item.mode === 'frames')
+    const unsupported = input.notices.filter((notice) => notice.code === 'unsupported_refs')
+    if (item.mode === 'frames') {
       expect(input.unsent).toContainEqual(
         expect.objectContaining({ name: '林夏', reason: 'unsupported' }),
       )
+      expect(unsupported).toHaveLength(1)
+      expect(unsupported[0]?.message).toContain('林夏')
+      expect(unsupported[0]?.message).not.toContain('首帧.png、尾帧.png')
+    } else expect(unsupported).toEqual([])
   }
 })
 

@@ -367,11 +367,15 @@ export async function applyMentions(
     def.inputs.some((p) => p.id === port && p.type === 'image') &&
     (!video || params.mode === 'reference')
   if (video && !send && groups.some((g) => g.images.length)) {
-    const ignored = refList.flatMap((r) => (r.assetIds.length ? [r.name] : []))
-    notices.push({
-      code: 'unsupported_refs',
-      message: `@ 引用的参考图（${ignored.join('、')}）只在「多模态参考」模式下送入模型；当前模式未送入，仅保留提示词中的引用名称，不追加文字设定`,
-    })
+    const framed = new Set(imageIds(inputs[port] ?? []))
+    const ignored = refList.flatMap((r) =>
+      r.assetIds.length && !r.assetIds.some((id) => framed.has(id)) ? [r.name] : [],
+    )
+    if (ignored.length)
+      notices.push({
+        code: 'unsupported_refs',
+        message: `@ 引用的参考图（${ignored.join('、')}）只在「多模态参考」模式下送入模型；当前模式未送入，仅保留提示词中的引用名称，不追加文字设定`,
+      })
     for (const r of refList) r.assetIds = []
   }
 
