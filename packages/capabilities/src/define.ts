@@ -124,9 +124,9 @@ export interface CapabilityDefinition<
   effect: Effect | ((input: z.output<S>, ctx: C) => Effect)
   /**
    * 确认的说法，以及显式放行（exempt）：返回 { reason, ids } 或 { exempt } = 要确认 / 放行，
-   * 两种审批模式同样生效；返回 null = rules 模式下不需要确认（always 下回退为统一说法）。
-   * extra.mode 只读，用于生成说明文案；是否必须确认由调度层兜底，声明关不掉通用回退
-   * （always 都问；rules 里破坏性的、插件能力花钱或删东西的问）。
+   * 两种审批模式同样生效；返回 null 等价于没声明，继续走调度器的统一回退链
+   * （always 都问；rules 里破坏性的、插件能力花钱或删东西的问，其它不问）。
+   * extra.mode 只读，用于生成说明文案；是否必须确认由调度层兜底，声明关不掉通用回退。
    */
   approval?: (
     input: z.output<S>,

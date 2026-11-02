@@ -24,8 +24,8 @@ type Cap = CapabilityDefinition<z.ZodObject, ServerContext>
  * 确认策略（调度层，通用回退声明关不掉）：
  * - auto：全部直接执行；effect 不是 run / destructive 的直接放行；
  * - 声明了 approval 的能力提供确认的说法（两种模式同样生效），或用 exempt 显式放行；
- *   返回 null 表示 rules 模式下不问，always 下回退为统一说法，插件能力在 rules 下也不能免确认；
- * - 未声明的：always 都问；rules 里破坏性的、插件能力花钱或删东西的问，其它不问。
+ *   返回 null 等价于没声明，继续走下面的统一回退链；
+ * - 统一回退：always 都问；rules 里破坏性的、插件能力花钱或删东西的问，其它不问。
  */
 export function approvalFor(
   mode: AgentApprovalMode,
@@ -37,15 +37,12 @@ export function approvalFor(
   if (mode === 'auto') return null
   const effect = typeof cap.effect === 'function' ? cap.effect(input, ctx) : cap.effect
   if (effect !== 'run' && effect !== 'destructive') return null
+  const fallback = { reason: cap.title, ids: [] }
   if (cap.approval) {
     const declared = cap.approval(input, ctx, { mode, changes })
     if (declared) return 'exempt' in declared ? null : declared
-    if (mode === 'always') return { reason: cap.title, ids: [] }
-    // 插件能力声明了也关不掉 rules 下的通用回退：宿主不知道它具体做什么
-    if (cap.group === 'plugin') return { reason: cap.title, ids: [] }
-    return null
+    // 没给说法（null）不提前返回，继续走统一回退链
   }
-  const fallback = { reason: cap.title, ids: [] }
   if (mode === 'always') return fallback
   if (effect === 'destructive') return fallback
   // 插件能力会花钱或删东西时，规则模式下也先问：宿主不知道它具体做什么

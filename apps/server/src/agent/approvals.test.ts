@@ -291,6 +291,13 @@ describe('approvalFor 对照：各能力的确认策略', () => {
     effect: 'run',
     approval: () => ({ exempt: '本轮新建' }),
   })
+  const silentDestructive = cap({
+    name: 'silent_destructive',
+    title: '静默破坏',
+    group: 'run',
+    effect: 'destructive',
+    approval: () => null,
+  })
 
   it('门禁：声明恒返回 null 的 run 能力关不掉 always 回退', () => {
     expect(ask('rules', silentRun, {})).toBeNull()
@@ -306,6 +313,12 @@ describe('approvalFor 对照：各能力的确认策略', () => {
     expect(ask('rules', exemptRun, {})).toBeNull()
     expect(ask('always', exemptRun, {})).toBeNull()
     expect(ask('auto', exemptRun, {})).toBeNull()
+  })
+
+  it('门禁：声明恒返回 null 的破坏性能力在 rules 与 always 下都要问', () => {
+    expect(ask('rules', silentDestructive, {})).toEqual({ reason: '静默破坏', ids: [] })
+    expect(ask('always', silentDestructive, {})).toEqual({ reason: '静默破坏', ids: [] })
+    expect(ask('auto', silentDestructive, {})).toBeNull()
   })
 })
 
