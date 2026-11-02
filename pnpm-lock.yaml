@@ -195,6 +195,12 @@ catalogs:
     vite-plus:
       specifier: 1.4.0
       version: 1.4.0
+    yjs:
+      specifier: ^13.6.33
+      version: 13.6.33
+    zod:
+      specifier: 4.6.7
+      version: 4.6.7
 
 overrides:
   vite@*: npm:@voidzero-dev/vite-plus-core@1.4.0
@@ -350,10 +356,10 @@ importers:
         specifier: ^1.0.7
         version: 1.0.7(yjs@13.6.33)
       yjs:
-        specifier: ^13.6.33
+        specifier: 'catalog:'
         version: 13.6.33
       zod:
-        specifier: 4.6.7
+        specifier: 'catalog:'
         version: 4.6.7
     devDependencies:
       '@types/better-sqlite3':
@@ -462,7 +468,7 @@ importers:
         specifier: ^3.1.0
         version: 3.1.0(yjs@13.6.33)
       yjs:
-        specifier: ^13.6.33
+        specifier: 'catalog:'
         version: 13.6.33
       zustand:
         specifier: ^5.0.16
@@ -545,10 +551,10 @@ importers:
         specifier: workspace:*
         version: link:../plugin-sdk
       yjs:
-        specifier: ^13.6.33
+        specifier: 'catalog:'
         version: 13.6.33
       zod:
-        specifier: 4.6.7
+        specifier: 'catalog:'
         version: 4.6.7
     devDependencies:
       typescript:
@@ -564,7 +570,7 @@ importers:
         specifier: ^4.0.0
         version: 4.0.0
       yjs:
-        specifier: ^13.6.33
+        specifier: 'catalog:'
         version: 13.6.33
     devDependencies:
       typescript:
@@ -583,7 +589,7 @@ importers:
         specifier: workspace:*
         version: link:../plugin-sdk
       zod:
-        specifier: 4.6.7
+        specifier: 'catalog:'
         version: 4.6.7
     devDependencies:
       typescript:
@@ -593,7 +599,7 @@ importers:
   packages/plugin-sdk:
     dependencies:
       zod:
-        specifier: 4.6.7
+        specifier: 'catalog:'
         version: 4.6.7
     devDependencies:
       typescript:
@@ -606,7 +612,7 @@ importers:
         specifier: workspace:*
         version: link:../plugin-sdk
       zod:
-        specifier: 4.6.7
+        specifier: 'catalog:'
         version: 4.6.7
     devDependencies:
       typescript:
@@ -628,7 +634,7 @@ importers:
         specifier: 7.0.157
         version: 7.0.157(zod@4.6.7)
       zod:
-        specifier: 4.6.7
+        specifier: 'catalog:'
         version: 4.6.7
     devDependencies:
       '@types/node':

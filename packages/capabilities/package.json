@@ -14,8 +14,8 @@
     "@plein/doc": "workspace:*",
     "@plein/nodes": "workspace:*",
     "@plein/plugin-sdk": "workspace:*",
-    "zod": "4.6.7",
-    "yjs": "^13.6.33"
+    "zod": "catalog:",
+    "yjs": "catalog:"
   },
   "devDependencies": {
     "typescript": "^7.0.2"
