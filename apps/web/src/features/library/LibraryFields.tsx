@@ -121,7 +121,7 @@ export function CanvasPick({
             </div>
             <div
               ref={grid}
-              className="ui-scrollbar grid max-h-80 grid-cols-4 gap-2 overflow-y-auto p-2"
+              className="ui-scrollbar grid max-h-80 min-h-20 grid-cols-4 gap-2 overflow-y-auto p-2"
             >
               {list.map((m, index) => {
                 const on = taken.includes(m.assetId)
