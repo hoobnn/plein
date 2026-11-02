@@ -1,5 +1,5 @@
 import { Popover as Base } from '@base-ui/react/popover'
-import { m } from 'motion/react'
+import { m, type HTMLMotionProps } from 'motion/react'
 import { type ReactNode, useEffect, useLayoutEffect, useRef } from 'react'
 import { LazyMotion } from './LazyMotion'
 import { popVariants, useOverlayClosing, useOverlayMotion } from './motion'
@@ -34,10 +34,7 @@ export function Popover({
 }) {
   const closing = useOverlayClosing()
   const popup = useRef<HTMLDivElement>(null)
-  const motion = useOverlayMotion(popVariants, () => {
-    const side = popup.current?.dataset.side
-    return side ? (side === 'top' ? 'above' : 'below') : placement
-  })
+  const motion = useOverlayMotion(popVariants)
   useLayoutEffect(() => {
     if (scrollKey !== undefined) popup.current?.scrollTo({ top: 0 })
   }, [scrollKey])
@@ -90,7 +87,20 @@ export function Popover({
               data-slot="popover-content"
               initialFocus={initialFocus}
               aria-label={label}
-              render={<m.div {...motion} />}
+              render={(props, state) => {
+                // Base UI 的 DOM animationstart 与 Motion 回调同名；这里未使用 DOM 监听器。
+                const { onAnimationStart: _onAnimationStart, ...domProps } = props
+                return (
+                  <m.div
+                    {...(domProps as HTMLMotionProps<'div'>)}
+                    {...motion}
+                    // 等 Base UI 确定碰撞后的 side 再开始进场，首帧不会沿请求方向。
+                    initial={false}
+                    animate={state.transitionStatus === 'starting' ? 'visible' : 'initial'}
+                    custom={state.side === 'top' ? 'above' : 'below'}
+                  />
+                )
+              }}
               style={{
                 width,
                 maxWidth: 'var(--available-width, calc(100vw - 16px))',

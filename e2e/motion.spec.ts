@@ -6,20 +6,32 @@ const noCssAnimation = async (locator: Locator) => {
   expect(await locator.evaluate((element) => getComputedStyle(element).animationName)).toBe('none')
 }
 
-test('Popover 碰撞翻转后按实际 side 退场', async ({ page }) => {
+test('Popover 碰撞翻转后按实际 side 进退场', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   await newProject(page)
   await addNode(page, '生成视频')
   const trigger = page.getByRole('button', { name: '生成模式', exact: true })
-  await trigger.click()
-  const popover = page.getByRole('dialog', { name: '视频生成模式', exact: true })
   await trigger.evaluate((element) => {
     element.style.position = 'fixed'
     element.style.top = '0'
     element.style.left = '400px'
     element.style.zIndex = '100'
   })
+  await trigger.click()
+  const popover = page.getByRole('dialog', { name: '视频生成模式', exact: true })
   await expect(popover).toHaveAttribute('data-side', 'bottom')
+  await expect
+    .poll(() =>
+      popover.evaluate((element) =>
+        JSON.stringify(
+          element.getAnimations().flatMap((animation) => {
+            const effect = animation.effect
+            return effect instanceof KeyframeEffect ? effect.getKeyframes() : []
+          }),
+        ),
+      ),
+    )
+    .toContain('translateY(-4px)')
   await page.waitForTimeout(200)
   await trigger.click()
   await expect(popover).toHaveAttribute('data-plein-exiting', '')
