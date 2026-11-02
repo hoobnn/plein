@@ -6,6 +6,7 @@ import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
 import { useSession } from '../../stores/session'
 import { Modal, ModalHeader } from '../../ui/Modal'
+import { Select } from '../../ui/Select'
 import {
   applyControlDraft,
   buildControlDraft,
@@ -120,21 +121,22 @@ export function ShotControls({
                 分别写清相机位置、相机运动和主体动作；分别描述光源在哪里、光往哪里照。焦段和角度是提示词意图，实际效果需要具体候选审片。
               </p>
             </section>
-            <label className="ui-field">
+            <div className="ui-field">
               <span className="ui-label">建议用途</span>
-              <select
+              <Select
                 aria-label="建议用途"
                 className="ui-input"
                 value={role}
-                onChange={(e) => {
-                  setRole(e.target.value as ControlRole)
+                options={[
+                  { value: 'image', label: '分镜图' },
+                  { value: 'video', label: '视频运动' },
+                ]}
+                onChange={(value) => {
+                  setRole(value as ControlRole)
                   setDraft(null)
                 }}
-              >
-                <option value="image">分镜图</option>
-                <option value="video">视频运动</option>
-              </select>
-            </label>
+              />
+            </div>
             <details className="rounded-lg border border-line p-3" open>
               <summary className="cursor-pointer text-sm font-medium">
                 当前用途的模型指南与能力
@@ -196,25 +198,22 @@ export function ShotControls({
                   />
                 </label>
               ))}
-              <label className="ui-field">
+              <div className="ui-field">
                 <span className="ui-label">景别</span>
-                <select
+                <Select
                   aria-label="控制景别"
                   className="ui-input"
                   disabled={!writable}
                   value={controls.shotSize}
-                  onChange={(e) =>
-                    setControls({ ...controls, shotSize: e.target.value as Controls['shotSize'] })
+                  options={[
+                    { value: '', label: `保留当前景别（${context.shot.shotSize}）` },
+                    ...SHOT_SIZES.map((size) => ({ value: size as string, label: size })),
+                  ]}
+                  onChange={(value) =>
+                    setControls({ ...controls, shotSize: value as Controls['shotSize'] })
                   }
-                >
-                  <option value="">保留当前景别（{context.shot.shotSize}）</option>
-                  {SHOT_SIZES.map((size) => (
-                    <option key={size} value={size}>
-                      {size}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                />
+              </div>
             </div>
             <button
               type="button"
@@ -262,30 +261,28 @@ export function ShotControls({
                           value={draft.baseShot[field]}
                         />
                       </label>
-                      <label className="ui-field">
+                      <div className="ui-field">
                         <span className="ui-label">建议{labels[field]}</span>
                         {field === 'shotSize' ? (
-                          <select
+                          <Select
                             aria-label={`建议${labels[field]}`}
                             className="ui-input"
                             disabled={!writable || stale}
                             value={draft.values.shotSize}
-                            onChange={(e) =>
+                            options={SHOT_SIZES.map((size) => ({
+                              value: size as string,
+                              label: size,
+                            }))}
+                            onChange={(value) =>
                               setDraft({
                                 ...draft,
                                 values: {
                                   ...draft.values,
-                                  shotSize: e.target.value as (typeof SHOT_SIZES)[number],
+                                  shotSize: value as (typeof SHOT_SIZES)[number],
                                 },
                               })
                             }
-                          >
-                            {SHOT_SIZES.map((size) => (
-                              <option key={size} value={size}>
-                                {size}
-                              </option>
-                            ))}
-                          </select>
+                          />
                         ) : (
                           <textarea
                             aria-label={`建议${labels[field]}`}
@@ -300,7 +297,7 @@ export function ShotControls({
                             }
                           />
                         )}
-                      </label>
+                      </div>
                     </div>
                   </div>
                 ))}

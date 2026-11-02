@@ -70,7 +70,8 @@ it('连续性计划保存后，状态层和控制层 Esc 均只关顶层且零�
   await user.click(within(editor).getByRole('button', { name: '目的与起止状态' }))
   const state = await screen.findByRole('dialog', { name: '镜头目的与起止计划' })
   await user.click(within(state).getByText('添加可选主体', { exact: true }))
-  await user.selectOptions(within(state).getByLabelText('主体类型'), 'prop')
+  await user.click(within(state).getByRole('combobox', { name: '主体类型' }))
+  await user.click(screen.getByRole('option', { name: '道具' }))
   await user.type(within(state).getByRole('textbox', { name: '主体名称' }), '红信封')
   await user.click(within(state).getByRole('button', { name: '添加主体' }))
   await user.type(within(state).getByRole('textbox', { name: '镜头目的' }), '建立持有关系')
@@ -132,9 +133,11 @@ it('候选观察按 result 隔离，并用给定回放证据控制区间与声�
   }
   const { user, rerender } = renderApp(<ShotObservationForm {...props} node={doc.get(node)!} />)
   const form = () => screen.getByRole('region', { name: '起始候选观察' })
-  expect(
-    (within(form()).getByRole('option', { name: '实际回放区间' }) as HTMLOptionElement).disabled,
-  ).toBe(true)
+  await user.click(within(form()).getByRole('combobox', { name: '起始检查范围' }))
+  expect(screen.getByRole('option', { name: '实际回放区间' }).getAttribute('aria-disabled')).toBe(
+    'true',
+  )
+  await user.keyboard('{Escape}')
   await user.type(within(form()).getByRole('textbox', { name: '起始观察备注' }), '色块无法判断')
   await user.click(within(form()).getByRole('button', { name: '保存独立观察' }))
   expect(within(form()).getByRole('list', { name: '起始当前候选观察' }).textContent).toContain(
@@ -165,10 +168,10 @@ it('候选观察按 result 隔离，并用给定回放证据控制区间与声�
     ).toHaveLength(0),
   )
   expect(form().textContent).toContain('历史候选观察（1）')
-  expect(
-    (within(form()).getByRole('option', { name: '实际回放区间' }) as HTMLOptionElement).disabled,
-  ).toBe(false)
-  await user.selectOptions(within(form()).getByLabelText('起始检查范围'), 'interval')
+  await user.click(within(form()).getByRole('combobox', { name: '起始检查范围' }))
+  const interval = screen.getByRole('option', { name: '实际回放区间' })
+  expect(interval.getAttribute('aria-disabled')).toBeNull()
+  await user.click(interval)
   await user.click(within(form()).getByRole('checkbox', { name: '动作回看' }))
   expect(
     (within(form()).getByRole('checkbox', { name: '声音回听' }) as HTMLInputElement).disabled,

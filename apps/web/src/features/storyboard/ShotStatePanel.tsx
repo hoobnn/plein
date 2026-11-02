@@ -17,6 +17,7 @@ import { useState } from 'react'
 import { useDocVersion } from '../../canvas/hooks'
 import { useSession } from '../../stores/session'
 import { Modal, ModalHeader } from '../../ui/Modal'
+import { Select } from '../../ui/Select'
 import { shotsOf } from './model'
 import { continuityWriteContext, stateLabels } from './continuityModel'
 
@@ -127,19 +128,19 @@ export function ShotPlanForm({
       {current.state === 'conflict' && (
         <div className="text-sm">
           <p role="alert">存在协作分支，请明确选择内容并保存合并版本。</p>
-          <select
+          <Select
             aria-label="计划协作分支"
             className="ui-input"
             value={branch}
-            onChange={(e) => setBranch(e.target.value)}
-          >
-            <option value="">选择分支</option>
-            {current.heads.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.id.slice(-8)} · {p.userId} · {p.content.intent || '未填目的'}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: '', label: '选择分支' },
+              ...current.heads.map((p) => ({
+                value: p.id,
+                label: `${p.id.slice(-8)} · ${p.userId} · ${p.content.intent || '未填目的'}`,
+              })),
+            ]}
+            onChange={setBranch}
+          />
           <button
             type="button"
             className={button}
@@ -172,26 +173,25 @@ export function ShotPlanForm({
         />
       </label>
       <div className="flex flex-wrap items-end gap-2 text-sm">
-        <label>
+        <div>
           状态主体
-          <select
+          <Select
             aria-label="状态主体"
             className="ui-input"
             value={subject?.id ?? ''}
-            onChange={(e) => {
-              setSubjectId(e.target.value)
+            options={[
+              { value: '', label: '请选择' },
+              ...record.subjects.map((s) => ({
+                value: s.id,
+                label: `${s.label} · ${{ character: '角色', scene: '场景', prop: '道具' }[s.kind]} · ${s.id.slice(-6)}`,
+              })),
+            ]}
+            onChange={(value) => {
+              setSubjectId(value)
               setInheritFields([])
             }}
-          >
-            <option value="">请选择</option>
-            {record.subjects.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.label} · {{ character: '角色', scene: '场景', prop: '道具' }[s.kind]} ·{' '}
-                {s.id.slice(-6)}
-              </option>
-            ))}
-          </select>
-        </label>
+          />
+        </div>
         <span className="text-xs text-ink-subtle">
           {subject?.binding?.elementId
             ? engine.doc.get(subject.binding.elementId)
@@ -205,20 +205,21 @@ export function ShotPlanForm({
       <details className="rounded-lg border border-line p-3 text-sm">
         <summary>添加可选主体</summary>
         <div className="mt-2 flex flex-wrap gap-2">
-          <select
+          <Select
             aria-label="主体类型"
             className="ui-input"
             value={subjectKind}
             disabled={!writable}
-            onChange={(e) => {
-              setSubjectKind(e.target.value as typeof subjectKind)
+            options={[
+              { value: 'character', label: '角色' },
+              { value: 'scene', label: '场景' },
+              { value: 'prop', label: '道具' },
+            ]}
+            onChange={(value) => {
+              setSubjectKind(value as typeof subjectKind)
               setBindingId('')
             }}
-          >
-            <option value="character">角色</option>
-            <option value="scene">场景</option>
-            <option value="prop">道具</option>
-          </select>
+          />
           <input
             aria-label="主体名称"
             className="ui-input"
@@ -226,25 +227,25 @@ export function ShotPlanForm({
             disabled={!writable}
             onChange={(e) => setLabel(e.target.value)}
           />
-          <select
+          <Select
             aria-label="主体明确绑定"
             className="ui-input"
             value={bindingId}
             disabled={!writable}
-            onChange={(e) => {
-              setBindingId(e.target.value)
-              if (e.target.value) setLabel(engine.doc.get(e.target.value)?.name ?? '')
+            options={[
+              { value: '', label: '不绑定，不按名称推断' },
+              ...[...engine.doc.elements()]
+                .filter((el) => el.nodeType === `plein/${subjectKind}`)
+                .map((el) => ({
+                  value: el.id,
+                  label: `${el.name ?? subjectKind} · ${el.id.slice(-6)}`,
+                })),
+            ]}
+            onChange={(value) => {
+              setBindingId(value)
+              if (value) setLabel(engine.doc.get(value)?.name ?? '')
             }}
-          >
-            <option value="">不绑定，不按名称推断</option>
-            {[...engine.doc.elements()]
-              .filter((el) => el.nodeType === `plein/${subjectKind}`)
-              .map((el) => (
-                <option key={el.id} value={el.id}>
-                  {el.name ?? subjectKind} · {el.id.slice(-6)}
-                </option>
-              ))}
-          </select>
+          />
           <button
             type="button"
             className={button}
@@ -295,54 +296,55 @@ export function ShotPlanForm({
                   const inherited = phase === 'start' && linked(field)
                   return (
                     <div key={field} className="text-sm">
-                      <label>
+                      <div>
                         {stateLabels[field]}
                         {field === 'holder' ? (
                           <div className="flex gap-2">
-                            <select
+                            <Select
                               aria-label={`${phase === 'start' ? '起始' : '结束'}${stateLabels[field]}`}
                               className="ui-input min-w-0 flex-1"
                               disabled={inherited}
                               value={typeof value === 'object' ? value.subjectId : ''}
-                              onChange={(e) =>
+                              options={[
+                                { value: '', label: '未计划' },
+                                ...record.subjects
+                                  .filter((s) => s.kind === 'character')
+                                  .map((s) => ({
+                                    value: s.id,
+                                    label: `${s.label} · ${s.id.slice(-6)}`,
+                                  })),
+                              ]}
+                              onChange={(selected) =>
                                 change(
                                   phase,
                                   field,
-                                  e.target.value
+                                  selected
                                     ? {
-                                        subjectId: e.target.value,
+                                        subjectId: selected,
                                         hand: typeof value === 'object' ? value.hand : 'right',
                                       }
                                     : undefined,
                                 )
                               }
-                            >
-                              <option value="">未计划</option>
-                              {record.subjects
-                                .filter((s) => s.kind === 'character')
-                                .map((s) => (
-                                  <option key={s.id} value={s.id}>
-                                    {s.label} · {s.id.slice(-6)}
-                                  </option>
-                                ))}
-                            </select>
-                            <select
+                            />
+                            <Select
                               aria-label={`${phase === 'start' ? '起始' : '结束'}持物手`}
                               className="ui-input"
                               disabled={inherited || typeof value !== 'object'}
                               value={typeof value === 'object' ? value.hand : 'right'}
-                              onChange={(e) => {
+                              options={[
+                                { value: 'right', label: '右手' },
+                                { value: 'left', label: '左手' },
+                                { value: 'both', label: '双手' },
+                              ]}
+                              onChange={(selected) => {
                                 if (typeof value === 'object')
                                   change(phase, field, {
                                     ...value,
-                                    hand: e.target.value as 'left' | 'right' | 'both',
+                                    hand: selected as 'left' | 'right' | 'both',
                                   })
                               }}
-                            >
-                              <option value="right">右手</option>
-                              <option value="left">左手</option>
-                              <option value="both">双手</option>
-                            </select>
+                            />
                           </div>
                         ) : (
                           <input
@@ -354,7 +356,7 @@ export function ShotPlanForm({
                             placeholder="未计划"
                           />
                         )}
-                      </label>
+                      </div>
                       {inherited && (
                         <button
                           type="button"
@@ -384,34 +386,35 @@ export function ShotPlanForm({
         </div>
       )}
       <div className="space-y-2 rounded-lg border border-line p-3 text-sm">
-        <label>
+        <div>
           连续关系
-          <select
+          <Select
             aria-label="连续关系"
             className="ui-input ml-2"
             disabled={!writable}
             value={draft.reset?.kind ?? ''}
-            onChange={(e) =>
+            options={[
+              { value: '', label: '允许明确引用前镜计划' },
+              { value: 'time_jump', label: '时间跳跃，重置继承' },
+              { value: 'new_scene', label: '独立场景，重置继承' },
+              { value: 'flashback', label: '插叙，重置继承' },
+            ]}
+            onChange={(value) =>
               setDraft(
-                e.target.value
+                value
                   ? {
                       ...draft,
                       inherits: [],
                       reset: {
-                        kind: e.target.value as 'time_jump' | 'new_scene' | 'flashback',
+                        kind: value as 'time_jump' | 'new_scene' | 'flashback',
                         reason: '',
                       },
                     }
                   : { ...draft, reset: undefined },
               )
             }
-          >
-            <option value="">允许明确引用前镜计划</option>
-            <option value="time_jump">时间跳跃，重置继承</option>
-            <option value="new_scene">独立场景，重置继承</option>
-            <option value="flashback">插叙，重置继承</option>
-          </select>
-        </label>
+          />
+        </div>
         {draft.reset ? (
           <input
             aria-label="重置原因"
@@ -426,25 +429,25 @@ export function ShotPlanForm({
         ) : (
           subject && (
             <>
-              <select
+              <Select
                 aria-label="引用计划版本"
                 className="ui-input w-full"
                 disabled={!writable}
                 value={inheritPlanId}
-                onChange={(e) => {
-                  setInheritPlanId(e.target.value)
+                options={[
+                  { value: '', label: '选择确切镜头与计划版本' },
+                  ...record.plans
+                    .filter((p) => p.shotId !== shotId && shots.some((s) => s.id === p.shotId))
+                    .map((p) => ({
+                      value: p.id,
+                      label: `镜头 ${shots.find((s) => s.id === p.shotId)?.no} · ${p.id.slice(-8)}`,
+                    })),
+                ]}
+                onChange={(value) => {
+                  setInheritPlanId(value)
                   setInheritFields([])
                 }}
-              >
-                <option value="">选择确切镜头与计划版本</option>
-                {record.plans
-                  .filter((p) => p.shotId !== shotId && shots.some((s) => s.id === p.shotId))
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>
-                      镜头 {shots.find((s) => s.id === p.shotId)?.no} · {p.id.slice(-8)}
-                    </option>
-                  ))}
-              </select>
+              />
               <div className="flex flex-wrap gap-3">
                 {STATE_FIELDS.filter(
                   (field) =>

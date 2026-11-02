@@ -15,6 +15,7 @@ import {
 import { useState } from 'react'
 import { useDocVersion } from '../../canvas/hooks'
 import { useSession } from '../../stores/session'
+import { Select } from '../../ui/Select'
 import {
   certaintyLabels,
   continuityWriteContext,
@@ -94,75 +95,68 @@ export function ShotObservationForm({
       {!record.subjects.length && <p>先在“镜头目的与起止计划”中添加需要观察的主体。</p>}
       <fieldset disabled={!writable} className="space-y-2">
         <div className="flex flex-wrap gap-2">
-          <select
+          <Select
             aria-label={`${phase === 'start' ? '起始' : '结束'}观察主体`}
             className="ui-input"
             value={subject?.id ?? ''}
-            onChange={(e) => {
-              setSubjectId(e.target.value)
+            options={[
+              { value: '', label: '选择主体' },
+              ...record.subjects.map((s) => ({
+                value: s.id,
+                label: `${s.label} · ${s.id.slice(-6)}`,
+              })),
+            ]}
+            onChange={(value) => {
+              setSubjectId(value)
               setField('condition')
             }}
-          >
-            <option value="">选择主体</option>
-            {record.subjects.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.label} · {s.id.slice(-6)}
-              </option>
-            ))}
-          </select>
-          <select
+          />
+          <Select
             aria-label={`${phase === 'start' ? '起始' : '结束'}观察字段`}
             className="ui-input"
             value={field}
-            onChange={(e) => setField(e.target.value as StateField)}
-          >
-            {STATE_FIELDS.filter((f) => f !== 'holder' || subject?.kind === 'prop').map((f) => (
-              <option key={f} value={f}>
-                {stateLabels[f]}
-              </option>
-            ))}
-          </select>
-          <select
+            options={STATE_FIELDS.filter((f) => f !== 'holder' || subject?.kind === 'prop').map(
+              (f) => ({ value: f as string, label: stateLabels[f] }),
+            )}
+            onChange={(value) => setField(value as StateField)}
+          />
+          <Select
             aria-label={`${phase === 'start' ? '起始' : '结束'}观察确定性`}
             className="ui-input"
             value={certainty}
-            onChange={(e) => setCertainty(e.target.value as ObservedValue['certainty'])}
-          >
-            {Object.entries(certaintyLabels).map(([key, label]) => (
-              <option key={key} value={key}>
-                {label}
-              </option>
-            ))}
-          </select>
+            options={Object.entries(certaintyLabels).map(([value, label]) => ({ value, label }))}
+            onChange={(value) => setCertainty(value as ObservedValue['certainty'])}
+          />
         </div>
         {certainty !== 'unknown' &&
           (field === 'holder' ? (
             <div className="flex gap-2">
-              <select
+              <Select
                 aria-label={`${phase === 'start' ? '起始' : '结束'}观察持有者`}
                 className="ui-input"
                 value={holderId}
-                onChange={(e) => setHolderId(e.target.value)}
-              >
-                <option value="">选择确切角色</option>
-                {record.subjects
-                  .filter((s) => s.kind === 'character')
-                  .map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.label} · {s.id.slice(-6)}
-                    </option>
-                  ))}
-              </select>
-              <select
+                options={[
+                  { value: '', label: '选择确切角色' },
+                  ...record.subjects
+                    .filter((s) => s.kind === 'character')
+                    .map((s) => ({
+                      value: s.id,
+                      label: `${s.label} · ${s.id.slice(-6)}`,
+                    })),
+                ]}
+                onChange={setHolderId}
+              />
+              <Select
                 aria-label={`${phase === 'start' ? '起始' : '结束'}观察持物手`}
                 className="ui-input"
                 value={hand}
-                onChange={(e) => setHand(e.target.value as typeof hand)}
-              >
-                <option value="right">右手</option>
-                <option value="left">左手</option>
-                <option value="both">双手</option>
-              </select>
+                options={[
+                  { value: 'right', label: '右手' },
+                  { value: 'left', label: '左手' },
+                  { value: 'both', label: '双手' },
+                ]}
+                onChange={(value) => setHand(value as typeof hand)}
+              />
             </div>
           ) : (
             <input
@@ -184,20 +178,23 @@ export function ShotObservationForm({
               : '说明具体依据；推测不会成为剧情事实'
           }
         />
-        <select
+        <Select
           aria-label={`${phase === 'start' ? '起始' : '结束'}检查范围`}
           className="ui-input"
           value={mode}
-          onChange={(e) => {
-            setMode(e.target.value as typeof mode)
+          options={[
+            { value: 'frame', label: `${phase === 'start' ? '首帧' : '末帧'}视觉检查` },
+            {
+              value: 'interval',
+              label: '实际回放区间',
+              disabled: !played || target.kind === 'image',
+            },
+          ]}
+          onChange={(value) => {
+            setMode(value as typeof mode)
             setDeclared(false)
           }}
-        >
-          <option value="frame">{phase === 'start' ? '首帧' : '末帧'}视觉检查</option>
-          <option value="interval" disabled={!played || target.kind === 'image'}>
-            实际回放区间
-          </option>
-        </select>
+        />
         {mode === 'frame' ? (
           <p className="text-xs text-ink-subtle">
             记录实际派生{phase === 'start' ? '首帧' : '末帧'}

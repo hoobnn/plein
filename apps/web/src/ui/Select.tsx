@@ -13,7 +13,7 @@ export interface SelectOption {
 }
 
 /**
- * 下拉选择（Base UI Select + Nova 样式）：替代原生 <select>，弹层与应用里其他菜单一致。
+ * 下拉选择（Base UI Select + Nova 样式）：替代原生下拉，弹层与应用里其他菜单一致。
  * 菜单已显示时同步完成触发器到选项的键盘导航；输入首字跳转、选择和 Esc 由 Base UI 处理。
  * 关闭后焦点回到按钮。
  */

@@ -186,6 +186,8 @@ Nova Switch 是独立的 32 × 18.4（`--switch-w` / `--switch-h`），圆钮 16
 | `.ui-empty`（`-fill` `-compact`）                                                                                                                                      | 空状态（`ui/EmptyState.tsx`）                                                                                     |
 | `.ui-pop`（`.ui-pop-up` `.ui-pop-right`）                                                                                                                              | 其他弹出的浮层的进场方向                                                                                          |
 
+下拉与滑块不使用原生 `<select>` 或 `<input type="range">`：下拉统一用 `ui/Select.tsx`，单值滑块统一用 `ui/Slider.tsx`。滑块的 `onValueChange` 用于拖动中的实时预览，`onValueCommitted` 用于松手或键盘交互完成后的提交；调用方按原有事务与撤销语义选择回调，不把每一帧预览额外变成一次提交。
+
 纯图标的控件一律显式标记（`.ui-icon-btn`、`Segmented` 的 `iconOnly`），不要用 `:has(> svg:only-child)` 推断：`:only-child` 不看文字节点，图标加文字的控件也会命中。
 
 新组件先按上一节翻译 Nova 源码并复用这里的令牌；确有多个组件共享且 Nova 工具类覆盖不到的样式，才在 `styles/controls.css` 增加通用类。通用控件都在 `@layer components` 里，组件上的 Tailwind 工具类能直接覆盖，不需要 `!`；`styles/` 下其他文件是不分层的页面样式，别和同属性的工具类混用。已被 Nova 接管的旧类删除前先检索全部调用方，仍被原生控件或业务组件使用的类保留。
@@ -198,6 +200,7 @@ Nova Switch 是独立的 32 × 18.4（`--switch-w` / `--switch-h`），圆钮 16
 | --------------------- | -------------------------------------------------------------------------------- |
 | `ui/cn.ts`            | Nova 类名合并：条件类名、Tailwind 冲突和应用自定义工具类                         |
 | `ui/Select.tsx`       | Nova 下拉触发器、弹层、选项和滚动箭头（Base UI Select）                          |
+| `ui/Slider.tsx`       | Nova 单值滑块：实时预览与完成提交分离（Base UI Slider）                          |
 | `ui/MenuSelect.tsx`   | 轻量 ghost 触发器 + Nova 单选菜单（Base UI Menu）                                |
 | `ui/Modal.tsx`        | Nova 工作面板的遮罩、外框和标题行（设置、生成历史、分镜表、序列、快捷键）        |
 | `ui/DialogView.tsx`   | Nova 确认框 / 输入框外壳；异步确认和焦点行为不变                                 |
