@@ -163,8 +163,8 @@ export function Select({
                   data-slot="select-item"
                   className="relative flex w-full cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-40 data-highlighted:bg-hover aria-disabled:opacity-40"
                 >
-                  <Base.ItemText className="flex min-w-0 flex-1 gap-2 whitespace-nowrap">
-                    <span className="flex min-w-0 items-center gap-2">
+                  <Base.ItemText className="flex min-w-0 flex-1 gap-2 whitespace-normal break-words">
+                    <span className="flex min-w-0 flex-1 items-center gap-2 whitespace-normal break-words">
                       {options.find((option) => option.value === o.value)?.icon}
                       {o.label}
                     </span>
