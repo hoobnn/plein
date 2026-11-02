@@ -7,6 +7,7 @@ import {
   dialogVariants,
   fadeVariants,
   useOverlayClosing,
+  useOverlayModal,
   useOverlayMotion,
 } from './motion'
 
@@ -42,6 +43,7 @@ export function DialogView({
   const alternateRef = useRef<HTMLButtonElement>(null)
   const popupRef = useRef<HTMLElement | null>(null)
   const closing = useOverlayClosing()
+  const modal = useOverlayModal()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const busyRef = useRef(false)
@@ -107,6 +109,7 @@ export function DialogView({
   return (
     <Dialog.Root
       open
+      modal={modal}
       onOpenChange={(open, details) => {
         if (closing) {
           details.cancel()

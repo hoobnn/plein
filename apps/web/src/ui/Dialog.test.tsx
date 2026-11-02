@@ -143,5 +143,9 @@ it('关闭后退场动画期间焦点离开对话框，撤销快捷键不会落�
   expect(dialog.isConnected).toBe(true)
   expect(dialog.getAttribute('data-plein-exiting')).toBe('')
   expect(dialog.contains(document.activeElement)).toBe(false)
+  // Base UI 的模态阻挡层（铺满视口、无类名的 presentation 节点）随退场一起撤掉，页面其余部分恢复可交互。
+  expect(
+    document.querySelector('[role="presentation"][data-base-ui-inert]:not([class])'),
+  ).toBeNull()
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 })

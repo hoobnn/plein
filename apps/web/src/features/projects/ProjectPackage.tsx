@@ -12,7 +12,13 @@ import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { api, ApiError } from '../../api/client'
 import { invalidateProjects } from '../../api/query'
 import { useCanvas } from '../../stores/canvas'
-import { dialogVariants, fadeVariants, useOverlayClosing, useOverlayMotion } from '../../ui/motion'
+import {
+  dialogVariants,
+  fadeVariants,
+  useOverlayClosing,
+  useOverlayModal,
+  useOverlayMotion,
+} from '../../ui/motion'
 import { bytes } from '../../ui/format'
 import { Switch } from '../../ui/Switch'
 
@@ -35,11 +41,13 @@ function PackageDialog({
   dismissible?: boolean
 }) {
   const closing = useOverlayClosing()
+  const modal = useOverlayModal()
   const popupMotion = useOverlayMotion(dialogVariants)
   const backdropMotion = useOverlayMotion(fadeVariants)
   return (
     <Dialog.Root
       open
+      modal={modal}
       onOpenChange={(open, details) => {
         if (open) return
         if (closing || !dismissible) details.cancel()

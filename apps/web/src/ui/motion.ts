@@ -177,6 +177,15 @@ export function useOverlayClosing() {
   return !useIsPresent()
 }
 
+/**
+ * Base UI 浮层的 modal 取值：退场一开始就不再是模态。
+ * 否则退场动画的 140ms 里，页面其余部分仍被标成 inert/aria-hidden，Base UI 也还留着
+ * 铺满视口的阻挡层，紧接着的点击和双击会被吞掉。退场动画本身与卸载时的焦点归还都不受影响。
+ */
+export function useOverlayModal() {
+  return !useOverlayClosing()
+}
+
 /** 浮层统一的变体声明与关闭态标记；数值只来自本文件的变体。 */
 export function useOverlayMotion(variants: Variants, custom?: PopSide) {
   const closing = useOverlayClosing()

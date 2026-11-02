@@ -1195,6 +1195,10 @@
 :where([data-plein-exiting], .ui-menu[data-ending-style], .ui-dialog[data-ending-style]) * {
   pointer-events: none;
 }
+/* 对话框视口只是居中容器：退场时浮层已不响应指针，铺满屏幕的视口也不能再挡住画布上的点击。 */
+.app-dialog-viewport:has([data-plein-exiting]) {
+  pointer-events: none;
+}
 :root .ui-menu[data-ending-style],
 :root .ui-dialog[data-ending-style] {
   animation: ui-pop-out var(--dur-exit) var(--ease-exit) forwards;

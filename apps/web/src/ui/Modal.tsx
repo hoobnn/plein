@@ -3,7 +3,13 @@ import { m } from 'motion/react'
 import { type ReactNode, useEffect, useRef } from 'react'
 import { cn } from './cn'
 import { Icon } from './icons'
-import { dialogVariants, fadeVariants, useOverlayClosing, useOverlayMotion } from './motion'
+import {
+  dialogVariants,
+  fadeVariants,
+  useOverlayClosing,
+  useOverlayModal,
+  useOverlayMotion,
+} from './motion'
 import { claimMenuEscape, hasMenuEscapeLayer, isMenuEscape } from './menuEscape'
 
 /**
@@ -40,6 +46,7 @@ export function Modal({
   children: ReactNode
 }) {
   const closing = useOverlayClosing()
+  const modal = useOverlayModal()
   const popupMotion = useOverlayMotion(dialogVariants)
   const backdropMotion = useOverlayMotion(fadeVariants)
   const popup = useRef<HTMLDivElement>(null)
@@ -69,6 +76,7 @@ export function Modal({
   return (
     <Dialog.Root
       open
+      modal={modal}
       onOpenChange={(open, details) => {
         if (closing) {
           details.cancel()
