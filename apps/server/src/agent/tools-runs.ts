@@ -349,12 +349,11 @@ export const runStoryboard = serverCapability({
       request: { storyboardBatch: review },
       detail: { plan: review },
       next: '具体批量清单已展示给用户。调用 await_approval 等原调用结果，不重复调用 run_storyboard；若返回 input_changed，重新审阅新清单后再请求确认。',
+      // 批准后的恢复入口由调度器串行化；无需确认的直接执行不再排队（外层已串行化）
+      serialize: true,
       run: async () => {
-        const approved = async () => {
-          ctx.env.execution?.assertOpen()
-          return toToolResult(await commitStoryboard(ctx, plan))
-        }
-        return ctx.env.execution ? ctx.env.execution.serialize(approved) : approved()
+        ctx.env.execution?.assertOpen()
+        return toToolResult(await commitStoryboard(ctx, plan))
       },
     }
   },

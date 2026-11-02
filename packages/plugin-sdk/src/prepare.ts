@@ -26,9 +26,11 @@ export interface PreparedCall {
   /** needs_approval 返回里给模型的下一步提示；不填用通用文案 */
   next?: string
   /**
-   * 批准（或无需批准直接执行）时运行的调用，替代原调用。
-   * 回合校验与串行化由声明自己负责；第二个参数是确认单 id。
+   * 批准（或无需批准直接执行）时运行的调用，替代原调用；只写执行体，自己负责回合校验。
+   * 串行化：无需确认的直接执行沿用外层工具调用已有的串行化，不重复排队；
+   * 用户批准后的异步恢复入口由调度器 serialize（设 serialize: true）。
    */
+  serialize?: boolean
   run?(choice: unknown, approvalId: string | undefined): Promise<CapabilityToolResult | string>
 }
 

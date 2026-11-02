@@ -408,6 +408,10 @@ export function agentTools(
         ? { reason: declared, ids: prepared!.request!.ids ?? [] }
         : approvalFor(opts.mode(), cap, args, ctx, opts.changes)
     if (!req) return resume ? await approved() : null
+    // 无需确认的直接执行沿用外层工具调用的串行化（不再排队）；
+    // 用户批准后的异步恢复入口才进回合队列：带 serialize 标志的声明由这里 serialize，
+    // 不带的（方案卡片自己串行化内部调用）由声明自己负责；未声明 prepare 的照旧串行化原调用。
+    const resumeSerialized = prepared?.serialize === true
     const approval = opts.approvals.create(
       cap.name,
       {
@@ -420,7 +424,10 @@ export function agentTools(
           : {}),
       },
       resume
-        ? (choice) => resume(choice, approvalId)
+        ? (choice) =>
+            resumeSerialized && env.execution
+              ? env.execution.serialize(() => resume(choice, approvalId))
+              : resume(choice, approvalId)
         : (choice) =>
             env.execution ? env.execution.serialize(() => approved(choice)) : approved(choice),
     )
