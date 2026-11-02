@@ -36,6 +36,62 @@ test('重名与无效序号保持消歧警示，不把任一目标误标为已�
   expect(parts[2]).toMatchObject({ id: 'b', warning: undefined })
 })
 
+test('服务端 promptReferences 的区间直接决定标记：断链 @ .png 也显示警示与原因', () => {
+  const text = '09分镜｜调度05：参考 @ .png 只供空间调度，@叶舒 站在门口。'
+  const brokenStart = text.indexOf('@ .png')
+  const roleStart = text.indexOf('@叶舒')
+  const parts = mentionParts(text, [], {
+    bindings: {},
+    items: [],
+    numbers: [
+      {
+        start: brokenStart,
+        end: brokenStart + '@ .png'.length,
+        text: '@ .png',
+        name: '.png',
+        labels: [],
+        reason: 'mention_broken',
+        message: '提示词里的 @.png 找不到同名资产，可能已删除或改名，请重新选择',
+      },
+      {
+        start: roleStart,
+        end: roleStart + '@叶舒'.length,
+        text: '@叶舒',
+        name: '叶舒',
+        id: 'card',
+        labels: ['图片5'],
+      },
+    ],
+  })
+  expect(parts.map((p) => p.text).join('')).toBe(text)
+  const marks = parts.filter((p) => p.mention)
+  expect(marks.map((p) => [p.text, p.id, !!p.missing])).toEqual([
+    ['@ .png', undefined, true],
+    ['@叶舒', 'card', false],
+  ])
+  expect(marks[0]?.warning).toContain('找不到同名资产')
+  expect(marks[1]?.badge).toEqual({ labels: ['图片5'], title: '叶舒 · 图片5' })
+})
+
+test('服务端区间与当前草稿对不上时退回本地解析，不把旧区间画到新正文上', () => {
+  const parts = mentionParts('看着@林夏', [{ id: 'role', name: '林夏' }], {
+    bindings: {},
+    items: [],
+    numbers: [
+      {
+        start: 0,
+        end: 5,
+        text: '@旧角色',
+        name: '旧角色',
+        labels: ['图片1'],
+      },
+    ],
+  })
+  const marks = parts.filter((p) => p.mention)
+  expect(marks.map((p) => [p.text, p.id])).toEqual([['@林夏', 'role']])
+  expect(marks[0]?.badge).toBeUndefined()
+})
+
 test('名称绑定高亮完整文件名，断开输入标为失效，刷新期间保留待确认状态', () => {
   const name = '田野 2026.png'
   const identity = { type: 'image' as const, source: 'generated', assetId: 'asset' }

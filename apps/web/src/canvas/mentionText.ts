@@ -12,13 +12,27 @@ export interface MentionNumber {
   /** 原文里的起止位置 */
   start: number
   end: number
+  /** 服务端看到的原文，用来确认区间仍对应当前草稿 */
+  text?: string
   /** 最终提示词里的编号写法，如「图片3」；一张资产卡可能对应多张图 */
   labels: string[]
   /** 引用的名字 */
   name?: string
+  /** 引用元素；Cmd / Ctrl + 点击可定位 */
+  id?: string
   /** 送不进去的原因 */
   reason?: string
   message?: string
+}
+
+/** 面板里要画成标记的一处引用区间。 */
+interface MentionRange {
+  start: number
+  end: number
+  id?: string
+  missing?: true
+  warning?: string
+  badge?: { labels: string[]; title: string }
 }
 
 /** 有效引用共用生成解析器；找不到目标的 @ 写法单独标为缺失，不绑定到猜测的元素。 */
@@ -46,6 +60,57 @@ export function mentionParts(
     badge?: { labels: string[]; title: string }
   }> = []
   let end = 0
+  // 服务端 promptReferences 是唯一权威区间：断链、残留绑定与编号都按它画。
+  // 只有服务端没给、或区间对不上当前草稿（例如正在输入）时，才退回本地解析。
+  const numbers = references?.numbers
+  const serverRanges: MentionRange[] | undefined =
+    numbers &&
+    numbers.every((n) => text.slice(n.start, n.end) === (n.text ?? text.slice(n.start, n.end)))
+      ? numbers.map((n) => ({
+          start: n.start,
+          end: n.end,
+          id: n.id,
+          missing:
+            n.reason === 'mention_broken' ||
+            n.reason === 'mention_ambiguous' ||
+            n.reason === 'stale_binding'
+              ? (true as const)
+              : undefined,
+          warning: n.message,
+          badge:
+            n.labels.length && !n.reason
+              ? {
+                  labels: n.labels,
+                  title: [n.name, n.labels.join('、')].filter(Boolean).join(' · '),
+                }
+              : undefined,
+        }))
+      : undefined
+  const ranges: MentionRange[] = serverRanges ?? localRanges(text, targets, references)
+  for (const m of ranges) {
+    if (m.start < end) continue
+    if (m.start > end) parts.push({ text: text.slice(end, m.start), start: end })
+    parts.push({
+      text: text.slice(m.start, m.end),
+      start: m.start,
+      mention: true,
+      id: m.id,
+      missing: m.missing,
+      warning: m.warning,
+      ...(m.badge ? { badge: m.badge } : {}),
+    })
+    end = m.end
+  }
+  if (end < text.length) parts.push({ text: text.slice(end), start: end })
+  return parts
+}
+
+/** 服务端没有 `promptReferences` 时的本地兜底：只做名称绑定与同名元素解析。 */
+function localRanges(
+  text: string,
+  targets: readonly MentionTarget[],
+  references?: MentionReferences,
+): MentionRange[] {
   const bindings = referenceBindings(references?.bindings)
   const bound = references ? boundReferenceTokens(text, references.bindings) : []
   const matches = findMentions(text, targets).filter(
@@ -54,7 +119,7 @@ export function mentionParts(
   const reserved = new Set(videoReferenceTokens(text).map((t) => t.start))
   const unknown =
     /@[^\s@，。,.!！?？:：;；、（）()【】[\]「」"'“”]+(?:[ \t]+·[ \t]*[^\s@，。,.!！?？:：;；、（）()【】[\]「」"'“”]+)*/g
-  const ranges = [
+  return [
     ...bound.map((token) => {
       const error = references?.pending
         ? undefined
@@ -99,31 +164,6 @@ export function mentionParts(
       ]
     }),
   ].sort((a, b) => a.start - b.start)
-  for (const m of ranges) {
-    if (m.start < end) continue
-    if (m.start > end) parts.push({ text: text.slice(end, m.start), start: end })
-    // 服务端给了这一处的编号与问题时以它为准：面板与最终提示词说同一件事。
-    const number = references?.numbers?.find((n) => n.start === m.start)
-    const badge =
-      number && number.labels.length && !number.reason
-        ? {
-            labels: number.labels,
-            title: [number.name, number.labels.join('、')].filter(Boolean).join(' · '),
-          }
-        : undefined
-    parts.push({
-      text: text.slice(m.start, m.end),
-      start: m.start,
-      mention: true,
-      id: 'id' in m ? m.id : undefined,
-      missing: 'missing' in m ? m.missing : undefined,
-      warning: number ? number.message : m.warning,
-      ...(badge ? { badge } : {}),
-    })
-    end = m.end
-  }
-  if (end < text.length) parts.push({ text: text.slice(end), start: end })
-  return parts
 }
 
 export function renderMentionText(

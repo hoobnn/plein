@@ -202,8 +202,10 @@ export function PromptBox({
       ? prepared.promptReferences?.map((ref) => ({
           start: ref.start,
           end: ref.end,
+          text: ref.text,
           labels: ref.indices.map((index) => sentTokens.get(index) ?? `图${index}`),
           name: ref.name,
+          ...(ref.elementId ? { id: ref.elementId } : {}),
           ...(ref.reason ? { reason: ref.reason } : {}),
           ...(ref.message ? { message: ref.message } : {}),
         }))
