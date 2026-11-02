@@ -196,8 +196,11 @@ export function Inputs({
         .view({ assetId: v.assetId, kind: v.type, name: up.source.name ?? '参考素材' })
     else locate(up)
   }
-  const previewAsset = (assetId: string, name: string) =>
-    useCanvas.getState().view({ assetId, kind: 'image', name })
+  const previewAsset = (
+    assetId: string,
+    name: string,
+    kind: 'image' | 'video' | 'audio' = 'image',
+  ) => useCanvas.getState().view({ assetId, kind, name })
   const locateElement = (id: string) => {
     if (!engine.doc.has(id)) return
     engine.selection.set([id])
@@ -277,6 +280,7 @@ export function Inputs({
               ? (sent?.token ?? `图${sent?.index ?? index + 1}`)
               : mediaToken(node, el.params, v.type, sent?.index ?? index + 1),
           assetId: v.assetId,
+          kind: v.type,
           elementId: u.source.id,
           name: u.source.name ?? '参考素材',
           origins: ['edge' as const],
@@ -299,19 +303,31 @@ export function Inputs({
           u.value.assetId === item.assetId &&
           u.value.type === item.type,
       )
+      const mentioned = (prepared.refs ?? []).filter(
+        (ref) => ref.media === item.type && ref.sent.includes(item.assetId!),
+      )
+      const origins = new Set<InputReferenceOrigin>()
+      if (found) origins.add('edge')
+      if (mentioned.length) origins.add('mention')
+      if (mentioned.some((ref) => ref.kind === 'character')) origins.add('role')
+      // 旧执行记录没有 refs 时保留原来的连线来源展示。
+      if (!origins.size) origins.add('edge')
+      const elementId = found?.u.source.id ?? mentioned[0]?.elementId ?? item.source
+      const name =
+        found?.u.source.name ??
+        mentioned[0]?.name ??
+        (item.source && engine.doc.get(item.source)?.name) ??
+        '参考素材'
       offset++
       return [
         {
           index: offset,
           token: mediaToken(node, el.params, item.type, item.index),
           assetId: item.assetId,
-          ...(found
-            ? { elementId: found.u.source.id }
-            : item.source
-              ? { elementId: item.source }
-              : {}),
-          name: found?.u.source.name ?? '参考素材',
-          origins: ['edge' as const],
+          kind: item.type,
+          ...(elementId ? { elementId } : {}),
+          name,
+          origins: [...origins],
         },
       ]
     })
@@ -352,7 +368,9 @@ export function Inputs({
         onLocate={
           up ? () => locate(up) : item.elementId ? () => locateElement(item.elementId!) : undefined
         }
-        onPreview={() => (up ? previewUpstream(up) : previewAsset(item.assetId, item.name))}
+        onPreview={() =>
+          up ? previewUpstream(up) : previewAsset(item.assetId, item.name, item.kind)
+        }
         onRemove={up ? () => disconnect(up) : undefined}
         onReplace={up && port ? () => setReplacing({ port, edgeId: up.edgeId }) : undefined}
         onUpload={up && port ? () => pick(port, up.edgeId) : undefined}
@@ -829,7 +847,17 @@ function ReferenceTile({
     action()
   }
   const v = up?.value
-  const img = up ? preview(v) : assetUrls.variant(item.assetId, 'thumb-256')
+  const kind =
+    v?.type === 'image' || v?.type === 'video' || v?.type === 'audio'
+      ? v.type
+      : (item.kind ?? 'image')
+  const img = up
+    ? preview(v)
+    : kind === 'video'
+      ? assetUrls.variant(item.assetId, 'poster')
+      : kind === 'audio'
+        ? null
+        : assetUrls.variant(item.assetId, 'thumb-256')
   const name = item.name
   const origin = item.origins.map((o) => ORIGIN_LABEL[o]).filter(Boolean)
   const previewLabel = up
@@ -875,9 +903,7 @@ function ReferenceTile({
             <img src={img} alt="" className="size-full object-cover" />
           ) : (
             <span className="flex size-full items-center justify-center text-ink-subtle">
-              <Icon
-                name={v?.type === 'video' ? 'video' : v?.type === 'audio' ? 'audio' : 'image'}
-              />
+              <Icon name={kind} />
             </span>
           )}
           <span

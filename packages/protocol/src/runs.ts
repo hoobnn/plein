@@ -113,6 +113,8 @@ export type InputReferenceOrigin = 'edge' | 'mention' | 'role' | 'continuation' 
 /** 顶部参考素材的唯一数据源：index 与最终提示词里的平台编号一致。 */
 export interface InputSentReference {
   index: number
+  /** 媒体类型；缺省为图片，兼容只包含图片的旧执行记录。 */
+  kind?: 'image' | 'video' | 'audio'
   /** 最终提示词正文里的编号写法（图片节点「图1」、MiniMax 视频「图片1」、其余「@image1」）。 */
   token: string
   assetId: string

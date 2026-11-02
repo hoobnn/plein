@@ -21,6 +21,9 @@ describe('多模态参考名称', () => {
   afterEach(() => doc?.destroy())
   function setup(
     options: {
+      connected?: boolean
+      inputs?: (sources: string[], assets: string[]) => PreparedInput['inputs']
+      refs?: (sources: string[], assets: string[]) => PreparedInput['refs']
       sent?: (sources: string[], assets: string[]) => PreparedInput['sent']
       unsent?: (sources: string[], assets: string[]) => PreparedInput['unsent']
     } = {},
@@ -61,11 +64,12 @@ describe('多模态参考名称', () => {
       })
       sources.push(source)
       assets.push(`asset${i}`)
-      connect(
-        doc,
-        [source, kind],
-        [id, kind === 'image' ? 'images' : kind === 'video' ? 'videos' : 'audios'],
-      )
+      if (options.connected !== false)
+        connect(
+          doc,
+          [source, kind],
+          [id, kind === 'image' ? 'images' : kind === 'video' ? 'videos' : 'audios'],
+        )
     }
     const engine = mediaTestEngine(doc)
     function Harness() {
@@ -78,8 +82,8 @@ describe('多模态参考名称', () => {
         ]),
       )
       const prepared = {
-        inputs,
-        refs: [],
+        inputs: options.inputs?.(sources, assets) ?? inputs,
+        refs: options.refs?.(sources, assets) ?? [],
         ...(options.sent ? { sent: options.sent(sources, assets) } : {}),
         ...(options.unsent ? { unsent: options.unsent(sources, assets) } : {}),
       } as unknown as PreparedInput
@@ -143,6 +147,56 @@ describe('多模态参考名称', () => {
     ])
     expect(screen.getByRole('button', { name: '管理参考 3' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '管理参考 4' })).toBeTruthy()
+  })
+
+  it('@-only 视频和音频保留名称与 @ 来源，并按媒体类型打开查看器', async () => {
+    const f = setup({
+      connected: false,
+      sent: () => [],
+      inputs: (sources, assets) => ({
+        videos: [{ type: 'video', assetId: assets[2]!, source: sources[2] }],
+        audios: [{ type: 'audio', assetId: assets[3]!, source: sources[3] }],
+      }),
+      refs: (sources, assets) => [
+        {
+          elementId: sources[2]!,
+          name: '素材2',
+          kind: 'other',
+          media: 'video',
+          required: false,
+          available: [assets[2]!],
+          sent: [assets[2]!],
+        },
+        {
+          elementId: sources[3]!,
+          name: '素材3',
+          kind: 'other',
+          media: 'audio',
+          required: false,
+          available: [assets[3]!],
+          sent: [assets[3]!],
+        },
+      ],
+    })
+    const groups = within(screen.getByLabelText('实际送入的参考素材')).getAllByRole('group')
+    expect(groups.map((group) => group.getAttribute('data-asset-id'))).toEqual(['asset2', 'asset3'])
+    for (const [index, name] of ['素材2', '素材3'].entries()) {
+      expect(within(groups[index]!).getByText(name)).toBeTruthy()
+      expect(within(groups[index]!).getByText('@')).toBeTruthy()
+      expect(within(groups[index]!).queryByText('连线')).toBeNull()
+    }
+    await f.user.click(screen.getByRole('button', { name: '预览「素材2」' }))
+    expect(useCanvas.getState().viewer).toMatchObject({
+      assetId: 'asset2',
+      kind: 'video',
+      name: '素材2',
+    })
+    await f.user.click(screen.getByRole('button', { name: '预览「素材3」' }))
+    expect(useCanvas.getState().viewer).toMatchObject({
+      assetId: 'asset3',
+      kind: 'audio',
+      name: '素材3',
+    })
   })
 
   it('未送入的连线条目保留预览、替换、排序与断开入口', async () => {
