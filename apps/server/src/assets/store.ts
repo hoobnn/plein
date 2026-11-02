@@ -46,6 +46,16 @@ export class UploadTooLargeError extends Error {}
 
 type AssetRow = typeof assets.$inferSelect
 
+/** 素材时长（秒）；没有这条素材时是 undefined */
+export function assetDuration(db: DB, ownerId: string, id: string): number | undefined {
+  const row = db
+    .select({ duration: assets.duration })
+    .from(assets)
+    .where(and(eq(assets.owner_id, ownerId), eq(assets.id, id)))
+    .get()
+  return row?.duration ?? undefined
+}
+
 function toAsset(r: AssetRow): Asset {
   return {
     id: r.id,

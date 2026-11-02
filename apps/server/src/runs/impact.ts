@@ -25,12 +25,11 @@ import type {
   PreparedInput,
   SequenceIssue,
 } from '@plein/protocol'
-import { and, eq } from 'drizzle-orm'
 import { newId } from '../ids'
 
+import { assetDuration } from '../assets/store'
 import { NodeRunError } from '../plugins/provider-protocol'
 import type { DB } from '../storage/db'
-import { assets } from '../storage/schema'
 import { type Inspection, type NodeRuns, runGraph } from './runs'
 import type { DecisionRow, JobRow } from './store'
 
@@ -394,12 +393,7 @@ export class ImpactAnalyzer {
     affected: Map<string, ImpactNode>,
   ): Promise<SequenceIssue[]> {
     const out: SequenceIssue[] = []
-    const duration = (assetId: string) =>
-      this.db
-        .select({ duration: assets.duration })
-        .from(assets)
-        .where(and(eq(assets.owner_id, ownerId), eq(assets.id, assetId)))
-        .get()?.duration ?? undefined
+    const duration = (assetId: string) => assetDuration(this.db, ownerId, assetId)
     const signal = new AbortController().signal
     for (const el of doc.elements()) {
       if (el.nodeType !== SEQUENCE_TYPE || !this.runs.isJobNode(el)) continue
