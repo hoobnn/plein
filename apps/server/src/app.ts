@@ -207,6 +207,7 @@ export async function createServer(config: Config): Promise<Server> {
   if (maintenance) app.route('/', maintenanceRoutes(maintenance))
   // 素材来源路由要排在 creative 之前：资产文件路由 /api/assets/:id/:variant?
   // 会把 /api/assets/:id/sources 当成变体名抢先匹配，来源分页就永远 404。
+  // 顺序由 media-index/route-order.test.ts 守护。
   app.route('/', mediaLibraryRoutes(mediaIndex))
   app.route('/', creative)
   app.route('/', checkpointRoutes(checkpoints))
