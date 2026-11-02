@@ -81,7 +81,11 @@ export function MentionTextarea({
         onPointerMove={(event) => {
           onPointerMove?.(event)
           const hit = [...(layer.current?.querySelectorAll('mark') ?? [])].find((mark) =>
-            [...mark.getClientRects()].some(
+            // 短名字的编号徽标会伸出原文占位宽度，悬停徽标本身也要能读到名称。
+            [
+              ...mark.getClientRects(),
+              ...(mark.querySelector('.plein-mention-badge')?.getClientRects() ?? []),
+            ].some(
               (r) =>
                 event.clientX >= r.left &&
                 event.clientX <= r.right &&
@@ -91,6 +95,7 @@ export function MentionTextarea({
           )
           event.currentTarget.title =
             hit?.getAttribute('data-warning') ??
+            hit?.getAttribute('data-title') ??
             (hit && onLocate ? '⌘ / Ctrl + 点击定位引用元素' : '')
         }}
         onScroll={(event) => {
@@ -113,6 +118,7 @@ export function MentionTextarea({
                 data-state={part.missing ? 'missing' : part.warning ? 'warning' : 'resolved'}
                 data-mention-id={part.id}
                 data-warning={part.warning}
+                data-title={part.badge?.title}
                 title={part.badge?.title ?? part.warning}
               >
                 {part.badge ? (

@@ -23,7 +23,8 @@
   background: var(--accent-soft);
   outline: 1px solid var(--accent);
 }
-/* 引用徽标：只显示送入模型的编号。原文保留占位宽度，徽标叠在上面，正文不会跟着挪位。 */
+/* 引用徽标：只显示送入模型的编号。原文保留占位宽度，徽标叠在上面，正文不会跟着挪位。
+   编号必须完整可读：短名字（如「@叶」）的占位宽度放不下徽标时向外溢出，而不是裁掉数字。 */
 .plein-mention:has(> .plein-mention-badge) {
   position: relative;
   background: transparent;
@@ -36,17 +37,17 @@
   position: absolute;
   inset-block-start: 0;
   inset-inline-start: 0;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
-  max-width: 100%;
+  width: max-content;
   border-radius: 4px;
   padding: 0 4px;
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
   color: var(--accent);
   font-size: 0.8em;
   line-height: 1.5;
   white-space: nowrap;
-  overflow: hidden;
 }
 .plein-mention-input textarea {
   color: transparent;

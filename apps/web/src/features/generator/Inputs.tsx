@@ -855,7 +855,7 @@ function ReferenceTile({
       }}
       className="relative flex w-[5.5rem] flex-none flex-col items-start gap-0.5 text-2xs text-ink-subtle"
     >
-      <div className="relative">
+      <div className="relative w-full">
         <button
           type="button"
           ref={setActivatorNodeRef}
@@ -895,7 +895,7 @@ function ReferenceTile({
             aria-label={`管理参考 ${index}`}
             aria-expanded={!!anchor}
             title={`管理参考 ${index}：${name}`}
-            className="absolute top-0.5 left-6 flex size-5 items-center justify-center rounded-md bg-surface/95 text-sm text-ink shadow-1"
+            className="absolute top-0.5 right-0 flex size-5 items-center justify-center rounded-md bg-surface/95 text-sm text-ink shadow-1"
           >
             ⋯
           </button>
