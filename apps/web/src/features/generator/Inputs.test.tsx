@@ -19,7 +19,12 @@ vi.mock('../../canvas/import', () => ({ importFiles: vi.fn() }))
 describe('多模态参考名称', () => {
   let doc: PleinDoc
   afterEach(() => doc?.destroy())
-  function setup() {
+  function setup(
+    options: {
+      sent?: (sources: string[], assets: string[]) => PreparedInput['sent']
+      unsent?: (sources: string[], assets: string[]) => PreparedInput['unsent']
+    } = {},
+  ) {
     doc = openDoc()
     const node = {
       type: 'plein/video',
@@ -40,8 +45,10 @@ describe('多模态参考名称', () => {
       y: 0,
       w: 160,
       h: 90,
-      params: { mode: 'reference', prompt: '参考' },
+      params: { mode: 'reference', prompt: '参考', model: 'minimax/api:MiniMax-H3' },
     })
+    const sources: string[] = []
+    const assets: string[] = []
     for (const [i, kind] of (['image', 'image', 'video', 'audio'] as const).entries()) {
       const source = createElement(doc, {
         kind,
@@ -52,6 +59,8 @@ describe('多模态参考名称', () => {
         w: 160,
         h: 90,
       })
+      sources.push(source)
+      assets.push(`asset${i}`)
       connect(
         doc,
         [source, kind],
@@ -68,10 +77,15 @@ describe('多模态参考名称', () => {
           (ups.get(port.id) ?? []).flatMap((u) => (u.value ? [u.value] : [])),
         ]),
       )
-      const prepared = { inputs, refs: [] } as unknown as PreparedInput
+      const prepared = {
+        inputs,
+        refs: [],
+        ...(options.sent ? { sent: options.sent(sources, assets) } : {}),
+        ...(options.unsent ? { unsent: options.unsent(sources, assets) } : {}),
+      } as unknown as PreparedInput
       return <Inputs engine={engine} el={doc.get(id)!} node={node} ups={ups} prepared={prepared} />
     }
-    return { ...renderApp(<Harness />), id, engine }
+    return { ...renderApp(<Harness />), id, engine, sources, assets }
   }
 
   it('多模态引用按素材名称插入提示词，重排真实连线后显示最终顺序', async () => {
@@ -91,6 +105,81 @@ describe('多模态参考名称', () => {
       'asset2',
       'asset3',
     ])
+  })
+
+  it('服务端 sent 之外的参考视频和音频也留在顶部唯一列表，并按类型编号', () => {
+    setup({
+      sent: (sources, assets) => [
+        {
+          index: 1,
+          token: '图片1',
+          assetId: assets[0]!,
+          elementId: sources[0]!,
+          name: '素材0',
+          origins: ['edge'],
+        },
+        {
+          index: 2,
+          token: '图片2',
+          assetId: assets[1]!,
+          elementId: sources[1]!,
+          name: '素材1',
+          origins: ['edge'],
+        },
+      ],
+    })
+    const groups = within(screen.getByLabelText('实际送入的参考素材')).getAllByRole('group')
+    expect(groups.map((g) => g.getAttribute('data-asset-id'))).toEqual([
+      'asset0',
+      'asset1',
+      'asset2',
+      'asset3',
+    ])
+    expect(groups.map((g) => g.querySelector('[data-token]')?.getAttribute('data-token'))).toEqual([
+      '图片1',
+      '图片2',
+      '视频1',
+      '音频1',
+    ])
+    expect(screen.getByRole('button', { name: '管理参考 3' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '管理参考 4' })).toBeTruthy()
+  })
+
+  it('未送入的连线条目保留预览、替换、排序与断开入口', async () => {
+    const f = setup({
+      sent: (sources, assets) => [
+        {
+          index: 1,
+          token: '图片1',
+          assetId: assets[0]!,
+          elementId: sources[0]!,
+          name: '素材0',
+          origins: ['edge'],
+        },
+      ],
+      unsent: (sources, assets) => [
+        {
+          elementId: sources[1]!,
+          assetId: assets[1]!,
+          name: '素材1',
+          reason: 'not_sent',
+          message: '「素材1」已连线，但未送入当前模型',
+          origins: ['edge'],
+        },
+      ],
+    })
+    await f.user.click(screen.getByText('未送入 · 1'))
+    expect(screen.getByRole('button', { name: '预览未送入参考「素材1」' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '替换未送入参考「素材1」' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '上传替换未送入参考「素材1」' })).toBeTruthy()
+    const order = () => inputEdges(doc, f.id, 'images').map((edge) => edge.from[0])
+    expect(order()).toEqual([f.sources[0], f.sources[1]])
+    await f.user.click(screen.getByRole('button', { name: '向前移动未送入参考「素材1」' }))
+    act(() => doc.flush())
+    expect(order()).toEqual([f.sources[1], f.sources[0]])
+    await f.user.click(screen.getByRole('button', { name: '断开未送入参考「素材1」' }))
+    act(() => doc.flush())
+    expect(order()).toEqual([f.sources[0]])
   })
 
   it('从画布替换参考时，正文同步换成新图片名', async () => {

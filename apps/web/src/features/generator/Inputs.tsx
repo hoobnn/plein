@@ -18,9 +18,9 @@ import type {
 } from '@plein/protocol'
 import { DndContext, type DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
-import type { ReferenceIdentity } from '@plein/plugin-sdk'
+import { parseModelRef, referenceLabelStyle, type ReferenceIdentity } from '@plein/plugin-sdk'
 import { filterReferenceCandidates, referenceCandidates } from './referenceCandidates'
-import { referenceMedia } from './submittedMedia'
+import { referenceMedia, submittedMedia } from './submittedMedia'
 import { bindReferenceName, referenceName, replaceReferenceName } from './referenceNames'
 import { RoleReferencePicker } from './RoleReferencePicker'
 import { useRef, useState } from 'react'
@@ -46,6 +46,25 @@ const ORIGIN_LABEL: Record<InputReferenceOrigin, string> = {
   role: '角色',
   continuation: '续镜',
   binding: '绑定',
+}
+
+/**
+ * 视频 / 音频在最终提示词里的编号写法：MiniMax 写「视频1」，方舟系保留 @video1。
+ * 图片的编号由服务端 sent 直接给出，不在这里重算。
+ */
+function mediaToken(
+  node: NodeInfo,
+  params: Record<string, unknown> | undefined,
+  type: 'image' | 'video' | 'audio',
+  index: number,
+) {
+  if (type === 'image') return `图${index}`
+  if (
+    referenceLabelStyle(node.capability, parseModelRef(String(params?.model ?? ''))?.provider) ===
+    'minimax-video'
+  )
+    return `${type === 'video' ? '视频' : '音频'}${index}`
+  return `@${type}${index}`
 }
 
 /**
@@ -216,6 +235,28 @@ export function Inputs({
     }
     return undefined
   }
+  /** 未送入的项也要能管理：按来源元素找到仍然存在的连线。 */
+  const findUnsentUpstream = (item: InputUnsentReference) => {
+    if (item.elementId) {
+      const exact = upsList.find(({ u }) => u.source.id === item.elementId)
+      if (exact) return exact
+    }
+    if (!item.assetId) return undefined
+    return upsList.find(
+      ({ u }) => u.value && 'assetId' in u.value && u.value.assetId === item.assetId,
+    )
+  }
+  const moveUpstream = (port: InputPort, edgeId: string, delta: number) => {
+    const ids = (ups.get(port.id) ?? []).map((up) => up.edgeId)
+    const i = ids.indexOf(edgeId)
+    const j = i + delta
+    if (i < 0 || j < 0 || j >= ids.length) return
+    const ordered = [...ids]
+    ;[ordered[i], ordered[j]] = [ordered[j]!, ordered[i]!]
+    engine.doc.undo.stopCapturing()
+    reorderInputs(engine.doc, [el.id, port.id], ordered)
+    engine.doc.undo.stopCapturing()
+  }
   /** 服务端还没给清单时（例如旧记录），退回按连线顺序显示。 */
   const fallbackSent = (): InputSentReference[] =>
     upsList.flatMap(({ port, u }, index) => {
@@ -231,7 +272,10 @@ export function Inputs({
       return [
         {
           index: sent?.index ?? index + 1,
-          token: sent?.token ?? `图${sent?.index ?? index + 1}`,
+          token:
+            v.type === 'image'
+              ? (sent?.token ?? `图${sent?.index ?? index + 1}`)
+              : mediaToken(node, el.params, v.type, sent?.index ?? index + 1),
           assetId: v.assetId,
           elementId: u.source.id,
           name: u.source.name ?? '参考素材',
@@ -239,6 +283,39 @@ export function Inputs({
         },
       ]
     })
+  /**
+   * 服务端 sent 只包含图片。参考视频 / 音频同样必须出现在唯一的顶部列表里，
+   * 按媒体类型各自编号（与最终提示词一致），并从实际输入补进来。
+   */
+  const extraMedia = (images: InputSentReference[]): InputSentReference[] => {
+    if (!prepared) return []
+    let offset = images.length
+    return submittedMedia(prepared).flatMap((item) => {
+      if (item.type === 'image' || !item.assetId) return []
+      const found = upsList.find(
+        ({ u }) =>
+          u.value &&
+          'assetId' in u.value &&
+          u.value.assetId === item.assetId &&
+          u.value.type === item.type,
+      )
+      offset++
+      return [
+        {
+          index: offset,
+          token: mediaToken(node, el.params, item.type, item.index),
+          assetId: item.assetId,
+          ...(found
+            ? { elementId: found.u.source.id }
+            : item.source
+              ? { elementId: item.source }
+              : {}),
+          name: found?.u.source.name ?? '参考素材',
+          origins: ['edge' as const],
+        },
+      ]
+    })
+  }
   // 必需参考是引用的一项设置，跟着参考素材走：送入的在素材上改，没送入的在「未送入」里改。
   const canRequire = !!node.paramsSchema && fieldsOf(node).some(([key]) => key === 'requiredRefs')
   const requiredRefs = Array.isArray(el.params?.requiredRefs)
@@ -252,7 +329,9 @@ export function Inputs({
       requiredRefs.includes(id) ? requiredRefs.filter((x) => x !== id) : [...requiredRefs, id],
     )
   const authoritative = Array.isArray(prepared?.sent)
-  const sentItems = authoritative ? prepared!.sent! : fallbackSent()
+  const sentItems = authoritative
+    ? [...prepared!.sent!, ...extraMedia(prepared!.sent!)]
+    : fallbackSent()
   const unsentItems: InputUnsentReference[] = prepared?.unsent ?? []
   const limit = prepared?.referenceLimit
 
@@ -470,7 +549,7 @@ export function Inputs({
           <div className="flex items-baseline gap-2 px-0.5 text-2xs text-ink-subtle">
             <span className="font-medium text-ink-muted">参考素材</span>
             <span>
-              送入 {sentItems.length} 张{limit !== undefined ? `（上限 ${limit}）` : ''}
+              送入 {sentItems.length} 项{limit !== undefined ? `（参考图上限 ${limit}）` : ''}
             </span>
           </div>
           {/* 主行可排序的 edgeId：按送入顺序排列 */}
@@ -492,40 +571,113 @@ export function Inputs({
           <details className="plein-generator-unsent text-2xs text-ink-subtle">
             <summary className="cursor-pointer py-1">未送入 · {unsentItems.length}</summary>
             <ul className="flex flex-col gap-1 pb-1">
-              {unsentItems.map((item) => (
-                <li
-                  key={`${item.reason}:${item.elementId ?? ''}:${item.assetId ?? ''}:${item.name}`}
-                >
-                  <span className="text-ink-muted">{item.name}</span>
-                  <span className="mx-1">·</span>
-                  <span>{item.message}</span>
-                  {item.elementId && engine.doc.has(item.elementId) && (
-                    <button
-                      type="button"
-                      className="ui-btn ui-btn-xs ui-btn-quiet ml-1"
-                      onClick={() => locateElement(item.elementId!)}
-                    >
-                      定位到画布
-                    </button>
-                  )}
-                  {canRequire && item.elementId && (
-                    <button
-                      type="button"
-                      className="ui-btn ui-btn-xs ui-btn-quiet ml-1"
-                      aria-pressed={requiredRefs.includes(item.elementId)}
-                      title={
-                        requiredRefs.includes(item.elementId)
-                          ? '必需参考：缺图或放不下时不提交。点击改为可选'
-                          : '设为必需参考：优先送入，缺图或放不下时不提交'
-                      }
-                      onClick={() => toggleRequired(item.elementId!)}
-                    >
-                      <Icon name="star" size={12} />
-                      {requiredRefs.includes(item.elementId) ? '必需' : '可选'}
-                    </button>
-                  )}
-                </li>
-              ))}
+              {unsentItems.map((item) => {
+                const found = findUnsentUpstream(item)
+                const up = found?.u
+                const port = found?.port
+                const order = port ? (ups.get(port.id) ?? []).map((x) => x.edgeId) : []
+                const at = up ? order.indexOf(up.edgeId) : -1
+                return (
+                  <li
+                    key={`${item.reason}:${item.elementId ?? ''}:${item.assetId ?? ''}:${item.name}`}
+                  >
+                    <span className="text-ink-muted">{item.name}</span>
+                    <span className="mx-1">·</span>
+                    <span>{item.message}</span>
+                    {item.elementId && engine.doc.has(item.elementId) && (
+                      <button
+                        type="button"
+                        className="ui-btn ui-btn-xs ui-btn-quiet ml-1"
+                        onClick={() => locateElement(item.elementId!)}
+                      >
+                        定位到画布
+                      </button>
+                    )}
+                    {/* 连线来源的未送入项保留原有管理入口：预览、替换、排序、断开。 */}
+                    {up && port && (
+                      <>
+                        <button
+                          type="button"
+                          className="ui-btn ui-btn-xs ui-btn-quiet ml-1"
+                          aria-label={`预览未送入参考「${item.name}」`}
+                          title={`预览「${item.name}」`}
+                          onClick={() => previewUpstream(up)}
+                        >
+                          <Icon name="image" size={12} />
+                          预览
+                        </button>
+                        <button
+                          type="button"
+                          className="ui-btn ui-btn-xs ui-btn-quiet ml-1"
+                          aria-label={`替换未送入参考「${item.name}」`}
+                          title="从画布替换这条连线"
+                          onClick={() => setReplacing({ port, edgeId: up.edgeId })}
+                        >
+                          <Icon name="retry" size={12} />
+                          替换
+                        </button>
+                        <button
+                          type="button"
+                          className="ui-btn ui-btn-xs ui-btn-quiet ml-1"
+                          aria-label={`上传替换未送入参考「${item.name}」`}
+                          title="上传新素材替换这条连线"
+                          onClick={() => pick(port, up.edgeId)}
+                        >
+                          <Icon name="upload" size={12} />
+                          上传替换
+                        </button>
+                        {port.multiple && order.length > 1 && (
+                          <>
+                            <button
+                              type="button"
+                              className="ui-btn ui-btn-xs ui-btn-quiet"
+                              aria-label={`向前移动未送入参考「${item.name}」`}
+                              disabled={at <= 0}
+                              onClick={() => moveUpstream(port, up.edgeId, -1)}
+                            >
+                              ↑
+                            </button>
+                            <button
+                              type="button"
+                              className="ui-btn ui-btn-xs ui-btn-quiet"
+                              aria-label={`向后移动未送入参考「${item.name}」`}
+                              disabled={at < 0 || at >= order.length - 1}
+                              onClick={() => moveUpstream(port, up.edgeId, 1)}
+                            >
+                              ↓
+                            </button>
+                          </>
+                        )}
+                        <button
+                          type="button"
+                          className="ui-btn ui-btn-xs ui-btn-quiet ml-1 text-danger"
+                          aria-label={`断开未送入参考「${item.name}」`}
+                          onClick={() => disconnect(up)}
+                        >
+                          <Icon name="x" size={12} />
+                          断开
+                        </button>
+                      </>
+                    )}
+                    {canRequire && item.elementId && (
+                      <button
+                        type="button"
+                        className="ui-btn ui-btn-xs ui-btn-quiet ml-1"
+                        aria-pressed={requiredRefs.includes(item.elementId)}
+                        title={
+                          requiredRefs.includes(item.elementId)
+                            ? '必需参考：缺图或放不下时不提交。点击改为可选'
+                            : '设为必需参考：优先送入，缺图或放不下时不提交'
+                        }
+                        onClick={() => toggleRequired(item.elementId!)}
+                      >
+                        <Icon name="star" size={12} />
+                        {requiredRefs.includes(item.elementId) ? '必需' : '可选'}
+                      </button>
+                    )}
+                  </li>
+                )
+              })}
             </ul>
           </details>
         )}
