@@ -738,7 +738,7 @@ zustand v5 的 `useStore()` 不带 selector 时，**store 里任何字段变化�
 
 分阶段，**每阶段结束必须满足「全绿 + 可回滚」**。
 
-状态列随实施更新；1.2 只完成前端部分，服务端拆分在 2.3。
+状态列随实施更新；1.2 只完成前端部分，服务端拆分在 2.3，其中 `tools.ts` 已随 2.1 拆完。
 
 ### 阶段 0：护栏（半天）
 
@@ -760,7 +760,7 @@ zustand v5 的 `useStore()` 不带 selector 时，**store 里任何字段变化�
 | 1.4 | `commands.ts` 拆出 `commands/sequence.ts`，领域记录挪进 `src/domain/`                                           | B1              | 已完成 |
 | 1.5 | `production.selection` → `production.target` + 架构文档补例外                                                   | C1              | 已完成 |
 | 1.6 | 路由顺序专门用例                                                                                                | E（短期）       | 已完成 |
-| 1.7 | Nova 基线：`components.json`、令牌对齐、`ui/*` 控件按 Nova 重建、改写设计规范                                   | I5              | 进行中 |
+| 1.7 | Nova 基线：`components.json`、令牌对齐、`ui/*` 控件按 Nova 重建、改写设计规范                                   | I5              | 已完成 |
 | 1.8 | 原生 `<select>` / 滑块 / Tooltip 收敛到 Nova 控件，同批加检查                                                   | I1              | 未开始 |
 
 **理由**：全部是低风险、可用现有单测充分回归的改动，先把地基清干净。
@@ -769,9 +769,9 @@ zustand v5 的 `useStore()` 不带 selector 时，**store 里任何字段变化�
 
 | 项  | 内容                                                                                  | 对应            | 状态   |
 | --- | ------------------------------------------------------------------------------------- | --------------- | ------ |
-| 2.1 | 能力增加审批说明与执行前流程声明，调度器与审批去掉按名特判                            | D               | 进行中 |
-| 2.2 | 10 个直连文件分类，路由里的写操作收进存储模块                                         | F               | 进行中 |
-| 2.3 | `sessions.ts` / `tools.ts` / `package.ts` 拆分；复评 `runs.ts` / `host.ts`            | G（服务端部分） | 未开始 |
+| 2.1 | 能力增加审批说明与执行前流程声明，调度器与审批去掉按名特判                            | D               | 已完成 |
+| 2.2 | 10 个直连文件分类，路由里的写操作收进存储模块                                         | F               | 已完成 |
+| 2.3 | `sessions.ts` / `tools.ts` / `package.ts` 拆分；复评 `runs.ts` / `host.ts`            | G（服务端部分） | 进行中 |
 | 2.4 | 前端节点注册表、`RendererRegistry` 支持 nodeType、编辑器表驱动、删 `catalog.elements` | A2、A3          | 未开始 |
 | 2.5 | 侧栏换 react-resizable-panels、参考图排序换 dnd-kit                                   | I2              | 未开始 |
 | 2.6 | 引入 Motion，`Presence` 换 `AnimatePresence`，改写动效规范                            | I6              | 未开始 |
