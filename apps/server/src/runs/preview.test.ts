@@ -351,7 +351,8 @@ describe('实际输入预览', () => {
       expect(p).toMatchObject({ v: 1, status: 'ready', nodeVersion: 1 })
       expect(p.inputHash).toMatch(/^v2:/)
       expect(p.referenceLimit).toBe(3)
-      expect(p.prompt).toContain('林夏 天台 铁盒 钥匙 推门而入')
+      expect(p.prompt).toContain('林夏（图1） 天台（图2） 铁盒 钥匙（图3） 推门而入')
+      expect(p.prompt).not.toContain('参考对应')
       expect(p.prompt).not.toContain('钥匙的设定')
       expect(p.inputs.references?.map((v) => v.assetId)).toEqual([
         asset('a'),
@@ -359,6 +360,22 @@ describe('实际输入预览', () => {
         asset('d'),
       ])
       expect(p.refs.find((r) => r.name === '铁盒')).toMatchObject({ reason: 'over_limit' })
+      expect(p.sent?.map((item) => [item.index, item.assetId, item.origins])).toEqual([
+        [1, asset('a'), ['mention', 'role']],
+        [2, asset('b'), ['mention']],
+        [3, asset('d'), ['mention']],
+      ])
+      expect(p.unsent).toContainEqual(
+        expect.objectContaining({ assetId: asset('c'), name: '铁盒', reason: 'over_limit' }),
+      )
+      expect(p.promptReferences?.map((item) => item.indices)).toEqual([[1], [2], [], [3]])
+      expect(p.promptReferences?.map((item) => [item.start, item.end, item.text])).toEqual([
+        [0, 3, '@林夏'],
+        [4, 7, '@天台'],
+        [8, 11, '@铁盒'],
+        [12, 15, '@钥匙'],
+      ])
+      expect(p.promptReferences?.[2]).toMatchObject({ name: '铁盒', reason: 'over_limit' })
       expect(p.blocked).toEqual([])
       expect(p.params).not.toHaveProperty('prompt')
       expect(p.params).not.toHaveProperty('requiredRefs')
@@ -882,6 +899,67 @@ it('名称引用使用来源当前结果，文件名不会被重复展开，原�
   expect(after.prompt).toContain('@image1 保持构图')
   expect(doc.get(video)!.params?.prompt).toBe(`@${name} 保持构图`)
   expect(after.inputHash).not.toBe(before.inputHash)
+})
+
+it('MiniMax 正文直接编号，绑定与 @ 共用 sent，历史 null 残留只报告不编号', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const bound = createElement(doc, {
+    kind: 'image',
+    name: '桌边.png',
+    assetId: asset('a'),
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  createElement(doc, {
+    kind: 'image',
+    name: '角色.png',
+    assetId: asset('b'),
+    x: 200,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  const stale = createElement(doc, {
+    kind: 'image',
+    name: '旧图.png',
+    assetId: asset('c'),
+    x: 400,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  const video = addNode(doc, 'plein/video', {
+    params: {
+      model: 'minimax/api:MiniMax-H3',
+      mode: 'reference',
+      prompt: '@桌边.png 与 @角色.png',
+      [`referenceNameBinding:${encodeURIComponent('桌边.png')}:${bound}`]: {
+        type: 'image',
+        assetId: asset('a'),
+        source: bound,
+      },
+      [`referenceNameBinding:${encodeURIComponent('旧图.png')}:${stale}`]: null,
+      'referenceNameBinding:%E5%B7%B2%E5%88%A0%E9%99%A4.png:missing': null,
+    },
+  })
+  connect(doc, [bound, 'image'], [video, 'images'])
+  const input = await preview(server, id, video)
+  expect(input.status).toBe('ready')
+  expect(input.prompt).toBe('图片1 与 图片2')
+  expect(input.prompt).not.toContain('参考对应')
+  expect(input.sent?.map((item) => [item.index, item.assetId, item.origins])).toEqual([
+    [1, asset('a'), ['edge', 'binding']],
+    [2, asset('b'), ['mention']],
+  ])
+  expect(
+    input.unsent?.filter((item) => item.reason === 'stale_binding').map((item) => item.name),
+  ).toEqual(['旧图.png', '已删除.png'])
+  expect(input.promptReferences?.map((item) => item.indices)).toEqual([[1], [2]])
+  expect(doc.get(video)?.params?.prompt).toBe('@桌边.png 与 @角色.png')
 })
 
 it('上游文本中的参考编号随素材重排映射，失效身份在预览中阻断', async () => {

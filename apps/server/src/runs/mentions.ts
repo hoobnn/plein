@@ -58,7 +58,7 @@ export interface MentionElement {
 }
 
 /** 列出可被 @ 引用的元素；重名不合并，由 `#序号` 消歧（序号顺序见 sortMentionTargets） */
-function mentionTargets(doc: PleinDoc): MentionElement[] {
+export function mentionTargets(doc: PleinDoc): MentionElement[] {
   const out: MentionElement[] = []
   for (const el of doc.elements()) {
     const name = mentionName(el)
@@ -169,6 +169,10 @@ export async function applyMentions(
   const byId = new Map(targets.map((t) => [t.id, t.el]))
   const hit = new Map<string, Hit>()
   const notices: InputIssue[] = []
+  const numbered =
+    def.capability === 'image.generate' ||
+    (def.capability === 'video.generate' && params.mode === 'reference')
+  const deferred = new Map<string, Array<{ mention: Mention; hit?: Hit }>>()
   for (const [key, value] of Object.entries(params)) {
     if (typeof value !== 'string' || !value.includes('@')) continue
     const found = findMentions(value, targets).filter((m) => m.id !== el.id)
@@ -181,9 +185,15 @@ export async function applyMentions(
     let last = 0
     for (const m of found) {
       const h = checkMention(m, byId)
-      // 写了档案项的换成「林夏（少年·校服）」，同一段里出现两个时期也分得清
-      text += `${value.slice(last, m.start)}${h?.sceneView ? `${m.name}（${h.sceneView.name}）` : pickLabel(m.name, m.pick ?? {})}`
-      last = m.end
+      if (numbered) {
+        const list = deferred.get(key) ?? []
+        list.push({ mention: m, ...(h ? { hit: h } : {}) })
+        deferred.set(key, list)
+      } else {
+        // 非参考模式沿用原行为：只去掉 @，保留参考用途原文，不插入平台编号。
+        text += `${value.slice(last, m.start)}${h?.sceneView ? `${m.name}（${h.sceneView.name}）` : pickLabel(m.name, m.pick ?? {})}`
+        last = m.end
+      }
       if (h) hit.set(hitKey(h), h)
       if (m.profileMiss)
         notices.push({
@@ -198,7 +208,7 @@ export async function applyMentions(
           ...(m.id ? { elementId: m.id } : {}),
         })
     }
-    params[key] = text + value.slice(last)
+    if (!numbered) params[key] = text + value.slice(last)
     for (const b of broken) notices.push(brokenNotice(b.name, b.candidates))
   }
   if (hit.size === 0) return { params, inputs, refs: [], notices, details: [], blocked: [] }
@@ -207,6 +217,7 @@ export async function applyMentions(
   const groups: Group[] = []
   const refList: UsedRef[] = []
   const details: InputRef[] = []
+  const detailByHit = new Map<string, InputRef>()
   const blocked: InputIssue[] = []
   const voices: Array<{ name: string; voice: VoiceRef }> = []
   /** 参考图来自生成失败的上游：和「还没生成或没连」分开提示 */
@@ -233,7 +244,9 @@ export async function applyMentions(
         images: [{ type: 'image', assetId: target.assetId, kind: 'image', source: target.id }],
       })
       refList.push({ name: label(h), elementId: target.id, assetIds: [target.assetId] })
-      details.push(detail(target, label(h), priority, [target.assetId]))
+      const current = detail(target, label(h), priority, [target.assetId])
+      details.push(current)
+      detailByHit.set(hitKey(h), current)
       continue
     }
     const v = pickVoice(h.pick, voiceOf(target.params))
@@ -314,13 +327,13 @@ export async function applyMentions(
       elementId: target.id,
       assetIds: imageIds(images),
     })
-    details.push({
+    const current = {
       ...detail(target, label(h), priority, available),
       ...(selected !== undefined ? { selected } : {}),
-    })
+    }
+    details.push(current)
+    detailByHit.set(hitKey(h), current)
   }
-
-  const prompt = ['prompt', 'text'].find((k) => typeof params[k] === 'string')
 
   if (def.capability === 'audio.speech' && !hasVoice(voiceOf(params)))
     applyVoice(params, voices, notices)
@@ -388,42 +401,50 @@ export async function applyMentions(
         }
       : inputs
   const provider = parseModelRef(String(params.model ?? ''))?.provider
-  const promptKey = video ? (prompt ?? 'prompt') : prompt
-  if (
-    promptKey &&
-    send &&
-    (!video ||
-      provider === 'minimax/api' ||
-      provider === 'volc/ark' ||
-      provider === 'volc/ark-plan')
-  ) {
-    appendReferenceBindings(
-      params,
-      promptKey,
-      details,
-      merged[port] ?? [],
-      video ? (index) => `@image${index + 1}` : (index) => `图${index + 1}`,
-    )
+  if (numbered) {
+    const token = video
+      ? provider === 'minimax/api'
+        ? (index: number) => `图片${index + 1}`
+        : (index: number) => `@image${index + 1}`
+      : (index: number) => `图${index + 1}`
+    rewriteReferenceMentions(params, deferred, detailByHit, merged[port] ?? [], token)
   }
   return { params, inputs: merged, refs: refList, notices, details, blocked }
 }
 
-function appendReferenceBindings(
+/** 正文直接写最终平台编号；画布原文不变，也不再追加一份容易失配的「参考对应」表。 */
+function rewriteReferenceMentions(
   params: Record<string, unknown>,
-  prompt: string,
-  details: InputRef[],
+  deferred: Map<string, Array<{ mention: Mention; hit?: Hit }>>,
+  details: Map<string, InputRef>,
   images: PortValue[],
   token: (index: number) => string,
 ) {
-  const bindings = details.flatMap((d) => {
-    const tokens = [...new Set(d.sent)].flatMap((id) => {
-      const index = images.findIndex((v) => v.type === 'image' && v.assetId === id)
-      return index < 0 ? [] : [token(index)]
-    })
-    return tokens.length ? [`${d.name}：${tokens.join('、')}`] : []
-  })
-  if (bindings.length)
-    params[prompt] = `${params[prompt] ?? ''}\n\n参考对应：\n${bindings.join('\n')}`
+  for (const [key, occurrences] of deferred) {
+    let text = String(params[key] ?? '')
+    for (const { mention, hit } of occurrences.toReversed()) {
+      const current = hit ? details.get(hitKey(hit)) : undefined
+      const tokens = current
+        ? [
+            ...new Set(
+              current.sent.flatMap((id) => {
+                const index = images.findIndex((v) => v.type === 'image' && v.assetId === id)
+                return index < 0 ? [] : [token(index)]
+              }),
+            ),
+          ]
+        : []
+      const name = hit?.sceneView
+        ? `${mention.name}（${hit.sceneView.name}）`
+        : pickLabel(mention.name, mention.pick ?? {})
+      const replacement =
+        hit?.el.kind === 'image'
+          ? tokens.join('、') || name
+          : name + (tokens.length ? `（${tokens.join('、')}）` : '')
+      text = text.slice(0, mention.start) + replacement + text.slice(mention.end)
+    }
+    params[key] = text
+  }
 }
 
 /** 连进卡片参考图端口的上游节点里，有最近一次运行失败的 */

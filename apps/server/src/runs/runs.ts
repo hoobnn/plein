@@ -98,6 +98,7 @@ import {
   parseFrozen,
 } from './frozen'
 import { continuationInputs } from './continuation-inputs'
+import { referencePreview, type ReferencePreview } from './reference-preview'
 import { type GroupRow, type JobRow, type JobStatus, JobStore } from './store'
 import {
   type BatchHost,
@@ -176,6 +177,8 @@ interface Prepared {
   mentions?: Pick<AppliedMentions, 'details' | 'notices' | 'blocked'>
   /** 每个输入值对应的上游结果；按值保留，避免同一节点的多个输出端口相互覆盖 */
   origins?: WeakMap<PortValue, Origin>
+  /** 面板权威参考素材、未送入原因与原文引用范围 */
+  references?: ReferencePreview
 }
 
 interface Origin {
@@ -631,9 +634,18 @@ export class NodeRuns implements BatchHost {
       if (!(err instanceof NodeRunError)) throw err
       const def = el.nodeType ? this.host.registry.latestNode(el.nodeType)?.def : undefined
       const { inputHash: _, ...base } = this.summarize(el, { def, params: el.params, inputs: {} })
+      const references = referencePreview({
+        doc,
+        el,
+        def,
+        params: el.params ?? {},
+        inputs: {},
+        referenceLimit: this.resolveModel(el.params?.model)?.limit,
+      })
       return {
         input: {
           ...base,
+          ...references,
           status: 'unprepared',
           blocked: [{ code: 'prepare_failed', message: err.message }, ...base.blocked],
         },
@@ -788,6 +800,7 @@ export class NodeRuns implements BatchHost {
         ]),
       ),
       refs: p.mentions?.details ?? [],
+      ...p.references,
       ...(def?.capability === 'audio.speech' && hasVoice(voice)
         ? { voice: { provider: voice.provider, voiceId: voice.voiceId } }
         : {}),
@@ -2219,7 +2232,24 @@ export class NodeRuns implements BatchHost {
       ...def.inputs.filter((port) => inputs[port.id]).map((port) => [port.id, inputs[port.id]!]),
       ...Object.entries(inputs).filter(([id]) => !def.inputs.some((port) => port.id === id)),
     ])
-    return { def, params, inputs: orderedInputs, mentions: { details, notices, blocked }, origins }
+    const references = referencePreview({
+      doc,
+      el,
+      def,
+      params,
+      inputs: orderedInputs,
+      collected,
+      details,
+      referenceLimit: limits?.references?.max,
+    })
+    return {
+      def,
+      params,
+      inputs: orderedInputs,
+      mentions: { details, notices, blocked },
+      origins,
+      references,
+    }
   }
 
   /**

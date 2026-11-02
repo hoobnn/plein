@@ -68,7 +68,7 @@ describe('运行前解析 @ 引用', () => {
     const { doc, photo } = setup()
     const n = node(doc, 'plein/image', { prompt: '@林夏站在天台，参考@定妆照' })
     const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))
-    expect(r.params.prompt).toBe('林夏站在天台，参考定妆照\n\n参考对应：\n林夏：图1\n定妆照：图1')
+    expect(r.params.prompt).toBe('林夏（图1）站在天台，参考图1')
     expect(r.inputs.references).toEqual([
       {
         type: 'image',
@@ -79,7 +79,7 @@ describe('运行前解析 @ 引用', () => {
     ])
   })
 
-  it('图片节点：参考对应按最终去重顺序编号，未送入的引用不列出', async () => {
+  it('图片节点：正文按最终去重顺序编号，未送入的引用只保留名字', async () => {
     const { doc, photo, hero } = setup()
     const second = createElement(doc, {
       kind: 'image',
@@ -108,8 +108,8 @@ describe('运行前解析 @ 引用', () => {
       doc.get(photo)!.assetId,
       'b'.repeat(64),
     ])
-    expect(r.params.prompt).toContain('参考对应：\n林夏：图2、图3\n定妆照：图2')
-    expect(r.params.prompt).not.toContain('铁盒：图')
+    expect(r.params.prompt).toBe('林夏（图2、图3）带着铁盒，参考图2')
+    expect(r.params.prompt).not.toContain('参考对应')
   })
 
   it('同一引用重复送入同一资产时只列一个参考图序号', async () => {
@@ -127,8 +127,8 @@ describe('运行前解析 @ 引用', () => {
     const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))
     expect(r.details[0]?.sent).toEqual([doc.get(photo)!.assetId, doc.get(photo)!.assetId])
     expect(r.inputs.references).toHaveLength(1)
-    expect(r.params.prompt).toContain('参考对应：\n林夏：图1')
-    expect(r.params.prompt).not.toContain('林夏：图1、图1')
+    expect(r.params.prompt).toBe('林夏（图1）站在天台')
+    expect(r.params.prompt).not.toContain('图1、图1')
   })
 
   it('实际引用：元素名与真正送进去的 assetId 一并给出', async () => {
@@ -160,7 +160,7 @@ describe('运行前解析 @ 引用', () => {
     })
     const n = node(doc, 'plein/image', { prompt: '@打火机 在@林夏手里' })
     const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))
-    expect(r.params.prompt).toBe('打火机 在林夏手里\n\n参考对应：\n林夏：图1')
+    expect(r.params.prompt).toBe('打火机 在林夏（图1）手里')
     expect(r.refs).toEqual([
       { name: '打火机', elementId: doc.get(prop)!.id, assetIds: [] },
       { name: '林夏', elementId: doc.get(hero)!.id, assetIds: [doc.get(photo)!.assetId] },
@@ -240,7 +240,7 @@ describe('运行前解析 @ 引用', () => {
       'a'.repeat(64),
     ])
     expect(r.params.prompt).not.toContain('铁盒的设定')
-    expect(r.params.prompt).not.toContain('铁盒：图')
+    expect(r.params.prompt).not.toContain('铁盒（图')
     expect(r.refs.find((x) => x.name === '铁盒')!.assetIds).toEqual([])
     expect(msg(r.notices)).toContain(
       '这个模型最多带 2 张参考图，铁盒 的参考图没有送入，仅保留引用名称，不追加文字设定',
@@ -421,9 +421,7 @@ describe('角色档案：@林夏/少年/校服', () => {
     setParams(doc, hero, { profile })
     const n = node(doc, 'plein/image', { prompt: '@林夏/少年/校服站在天台' })
     const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))
-    expect(r.params.prompt).toBe(
-      '林夏（少年·校服）站在天台\n\n参考对应：\n林夏（少年·校服）：图1、图2、图3',
-    )
+    expect(r.params.prompt).toBe('林夏（少年·校服）（图1、图2、图3）站在天台')
     expect(r.inputs.references?.map((v) => ('assetId' in v ? v.assetId : ''))).toEqual([
       '1'.repeat(64),
       '2'.repeat(64),
@@ -447,7 +445,7 @@ describe('角色档案：@林夏/少年/校服', () => {
     setParams(doc, hero, { profile })
     const n = node(doc, 'plein/image', { prompt: '@林夏/学生装' })
     const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))
-    expect(r.params.prompt).toMatch(/^林夏\/学生装/)
+    expect(r.params.prompt).toMatch(/^林夏（图1）\/学生装/)
     expect(msg(r.notices).join()).toContain('学生装')
   })
 })
@@ -472,7 +470,7 @@ it('视频角色绑定以最终去重后的参考图顺序编号，保留手写�
   })
   const own: PortValue = { type: 'image', assetId: 'b'.repeat(64), kind: 'image' }
   const result = await applyMentions(doc, doc.get(n)!, videoNode, { images: [own] }, collect(doc))
-  expect(result.params.prompt).toContain('参考对应：\n林夏：@image2')
+  expect(result.params.prompt).toContain('林夏（@image2）')
   expect(result.params.prompt).toContain('@video1')
   const reversed = await applyMentions(
     doc,
@@ -481,6 +479,6 @@ it('视频角色绑定以最终去重后的参考图顺序编号，保留手写�
     { images: [{ type: 'image', assetId: 'a'.repeat(64), kind: 'image' }, own] },
     collect(doc),
   )
-  expect(reversed.params.prompt).toContain('林夏：@image1')
+  expect(reversed.params.prompt).toContain('林夏（@image1）')
   expect(reversed.inputs.images).toHaveLength(2)
 })

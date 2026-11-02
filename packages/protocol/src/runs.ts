@@ -104,6 +104,52 @@ export interface InputIssue {
   elementId?: string
 }
 
+/** 一张送入图片的来源；同一图片经连线、@、角色选择或绑定去重后会保留全部来源。 */
+export type InputReferenceOrigin = 'edge' | 'mention' | 'role' | 'continuation' | 'binding'
+
+/** 顶部参考素材的唯一数据源：index 与最终提示词里的平台编号一致。 */
+export interface InputSentReference {
+  index: number
+  assetId: string
+  elementId?: string
+  name: string
+  origins: InputReferenceOrigin[]
+}
+
+export type InputUnsentReason =
+  | 'not_sent'
+  | 'mention_broken'
+  | 'mention_ambiguous'
+  | 'over_limit'
+  | 'no_image'
+  | 'failed'
+  | 'unsupported'
+  | 'selection_missing'
+  | 'stale_binding'
+
+/** 连线、@ 或绑定没有变成实际输入的项，以及可以直接展示给用户的原因。 */
+export interface InputUnsentReference {
+  assetId?: string
+  elementId?: string
+  name: string
+  reason: InputUnsentReason
+  message: string
+  origins: InputReferenceOrigin[]
+}
+
+/** 画布原文中的一处引用；start/end 使用 JavaScript 字符串下标，end 不包含在引用内。 */
+export interface InputPromptReference {
+  start: number
+  end: number
+  text: string
+  name: string
+  elementId?: string
+  /** 当前引用实际送入的图片编号；一张资产卡可以对应多张图。 */
+  indices: number[]
+  reason?: InputUnsentReason
+  message?: string
+}
+
 /** PreparedInput 的格式版本；结构变了递增，读旧执行记录时据此兼容 */
 export const PREPARED_INPUT_VERSION = 1
 
@@ -141,6 +187,12 @@ export interface PreparedInput {
   /** 各输入端口实际送入的值 */
   inputs: Record<string, InputValue[]>
   refs: InputRef[]
+  /** 图片生成 / 多模态视频的权威参考素材列表；旧执行记录没有这些字段。 */
+  sent?: InputSentReference[]
+  /** 未送入的连线、@ 引用与残留绑定。 */
+  unsent?: InputUnsentReference[]
+  /** 原始提示词中的引用范围及其最终编号或问题。 */
+  promptReferences?: InputPromptReference[]
   /** 配音实际使用的音色 */
   voice?: { provider: string; voiceId: string }
   /** 降级与需要用户知道的提示，不阻断运行 */
