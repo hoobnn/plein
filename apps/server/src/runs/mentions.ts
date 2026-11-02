@@ -563,10 +563,11 @@ function pickRefs(
     r.assetIds = r.assetIds.filter((id) => kept.has(id) || ownIds.includes(id))
     if (before > 0 && r.assetIds.length === 0) dropped.push(r)
   }
-  // 一条给人看的汇总，按引用各记一条供程序判断时 message 相同
-  const message = `这个模型最多带 ${max} 张参考图，${dropped.map((r) => r.name).join('、')} 的参考图没有送入，仅保留引用名称，不追加文字设定`
-  for (const r of dropped)
-    notices.push({ code: 'optional_dropped', elementId: r.elementId, message })
+  // 同一次取舍只给一条汇总，避免每个被舍弃的引用重复同一段话。
+  if (dropped.length) {
+    const message = `这个模型最多带 ${max} 张参考图，${dropped.map((r) => r.name).join('、')} 的参考图没有送入，仅保留引用名称，不追加文字设定`
+    notices.push({ code: 'optional_dropped', message })
+  }
   return all.filter((v) => kept.has(imageIds([v])[0] ?? ''))
 }
 

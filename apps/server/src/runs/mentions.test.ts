@@ -248,6 +248,29 @@ describe('运行前解析 @ 引用', () => {
     expect(hero).toBeTruthy()
   })
 
+  it('多个可选参考超上限时只汇总一条提示', async () => {
+    const doc = createDoc(undefined, { schedule: () => {} })
+    for (const [index, name] of ['第一张.png', '第二张.png', '第三张.png'].entries())
+      createElement(doc, {
+        kind: 'image',
+        name,
+        assetId: String.fromCharCode(97 + index).repeat(64),
+        x: index * 100,
+        y: 0,
+        w: 10,
+        h: 10,
+      })
+    const n = node(doc, 'plein/image', {
+      prompt: '@第一张.png @第二张.png @第三张.png',
+    })
+    const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc), 1)
+    const dropped = r.notices.filter((notice) => notice.code === 'optional_dropped')
+    expect(dropped).toHaveLength(1)
+    expect(dropped[0]?.message).toBe(
+      '这个模型最多带 1 张参考图，第二张.png、第三张.png 的参考图没有送入，仅保留引用名称，不追加文字设定',
+    )
+  })
+
   it('没有引用时原样返回', async () => {
     const { doc, hero } = setup()
     const r = await applyMentions(doc, doc.get(hero)!, propNode, {}, collect(doc))
