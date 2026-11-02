@@ -20,19 +20,8 @@ test('Popover 碰撞翻转后按实际 side 进退场', async ({ page }) => {
   await trigger.click()
   const popover = page.getByRole('dialog', { name: '视频生成模式', exact: true })
   await expect(popover).toHaveAttribute('data-side', 'bottom')
-  await expect
-    .poll(() =>
-      popover.evaluate((element) =>
-        JSON.stringify(
-          element.getAnimations().flatMap((animation) => {
-            const effect = animation.effect
-            return effect instanceof KeyframeEffect ? effect.getKeyframes() : []
-          }),
-        ),
-      ),
-    )
-    .toContain('translateY(-4px)')
   await page.waitForTimeout(200)
+  await expect(popover).toHaveCSS('opacity', '1')
   await trigger.click()
   await expect(popover).toHaveAttribute('data-plein-exiting', '')
   const keyframes = await popover.evaluate((element) =>
@@ -42,6 +31,33 @@ test('Popover 碰撞翻转后按实际 side 进退场', async ({ page }) => {
     }),
   )
   expect(JSON.stringify(keyframes)).toContain('translateY(-2px)')
+})
+
+test('弹层结束进场与再次打开后保持可见', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await newProject(page)
+  await addNode(page, '生成视频')
+
+  for (let index = 0; index < 2; index++) {
+    await page.getByRole('button', { name: '切换画布', exact: true }).click()
+    const switcher = page.getByRole('dialog', { name: '画布', exact: true })
+    await page.waitForTimeout(1000)
+    await expect(switcher).toHaveCSS('opacity', '1')
+    await page.keyboard.press('Escape')
+    await expect(switcher).toHaveCount(0)
+  }
+
+  await page.getByRole('button', { name: '添加节点', exact: true }).click()
+  const menu = page.getByRole('dialog', { name: '添加节点', exact: true })
+  await page.waitForTimeout(1000)
+  await expect(menu).toHaveCSS('opacity', '1')
+  await page.keyboard.press('Escape')
+
+  await page.getByRole('button', { name: '模型', exact: true }).click()
+  const dropdown = page.getByRole('dialog', { name: '选择模型', exact: true })
+  await page.waitForTimeout(1000)
+  await expect(dropdown).toHaveCSS('opacity', '1')
+  await page.keyboard.press('Escape')
 })
 
 test('冷启动不被 Motion 阻塞，延后浮层与首页提示正常进场', async ({ page }) => {

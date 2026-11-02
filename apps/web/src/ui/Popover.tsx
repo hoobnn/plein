@@ -94,9 +94,6 @@ export function Popover({
                   <m.div
                     {...(domProps as HTMLMotionProps<'div'>)}
                     {...motion}
-                    // 等 Base UI 确定碰撞后的 side 再开始进场，首帧不会沿请求方向。
-                    initial={false}
-                    animate={state.transitionStatus === 'starting' ? 'visible' : 'initial'}
                     custom={state.side === 'top' ? 'above' : 'below'}
                   />
                 )
