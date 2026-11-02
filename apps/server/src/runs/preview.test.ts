@@ -1061,6 +1061,22 @@ it('误留空格的断链 @ 进入未送入，正文编号与 sent 一致、引�
   expect(doc.get(video)?.params?.prompt).toBe(original)
 })
 
+it('@ 后空白接普通文字时不误报断链引用', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const original = '@ 开头和结尾 @'
+  const image = addNode(doc, 'plein/image', {
+    params: { model: 'plein/mock:image', prompt: original },
+  })
+  const input = await preview(server, id, image)
+  expect(input.status).toBe('ready')
+  expect(input.prompt).toBe(original)
+  expect(input.unsent).toEqual([])
+  expect(input.promptReferences).toEqual([])
+  expect(input.notices).toEqual([])
+})
+
 it('原文在 @ 前已写同一个名字时只补编号，引用区间仍指向 @ 文本', async () => {
   const { server } = await bootServer()
   mockSettings(server, {})

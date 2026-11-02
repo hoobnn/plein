@@ -229,6 +229,8 @@ export function referencePreview({
       continue
     const near = broken.find((item) => item.start === start)
     const name = near?.name ?? match[0].slice(1).trim()
+    // @ 后留白时只把文件名样式当作断链；普通句子里的 @ 仍是普通文字。
+    if (/^@[ \t]+/.test(match[0]) && !/\.[a-z0-9]+$/i.test(name)) continue
     const message = near
       ? `提示词里的 @${name} 找不到同名资产，可能已被改名为「${near.candidates.join('」「')}」，请改过来`
       : `提示词里的 @${name} 找不到同名资产，可能已删除或改名，请重新选择`
