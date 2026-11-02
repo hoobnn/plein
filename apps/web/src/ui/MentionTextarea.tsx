@@ -8,6 +8,14 @@ import {
 } from 'react'
 import { mentionParts, type MentionReferences } from '../canvas/mentionText'
 
+/** 文件名去掉常见扩展名，只影响显示，不改原文与引用位置。 */
+function referenceDisplayName(name: string) {
+  return name.replace(
+    /\.(?:png|jpe?g|webp|gif|avif|bmp|tiff?|mp4|m4v|mov|webm|mkv|avi|wav|mp3|m4a|aac|flac|ogg)$/i,
+    '',
+  )
+}
+
 /** 保留原生 textarea 的输入、选择、IME 与复制行为，镜像层显示正文和引用颜色。 */
 export function MentionTextarea({
   ref,
@@ -123,12 +131,19 @@ export function MentionTextarea({
               >
                 {part.badge ? (
                   <>
-                    {/* 原文保留占位宽度，徽标叠在上面，正文不会跟着挪位 */}
+                    {/* 原文保留占位宽度，徽标与名称叠在上面，正文不会跟着挪位 */}
                     <span className="plein-mention-raw">{part.text}</span>
-                    <span className="plein-mention-badge">
-                      {part.badge.labels.length > 1
-                        ? `${part.badge.labels[0]}+${part.badge.labels.length - 1}`
-                        : part.badge.labels[0]}
+                    <span className="plein-mention-tags">
+                      <span className="plein-mention-badge">
+                        {part.badge.labels.length > 1
+                          ? `${part.badge.labels[0]}+${part.badge.labels.length - 1}`
+                          : part.badge.labels[0]}
+                      </span>
+                      {part.badge.name && (
+                        <span className="plein-mention-name">
+                          {referenceDisplayName(part.badge.name)}
+                        </span>
+                      )}
                     </span>
                   </>
                 ) : (

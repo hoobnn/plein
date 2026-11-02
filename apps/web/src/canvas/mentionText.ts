@@ -25,6 +25,13 @@ export interface MentionNumber {
   message?: string
 }
 
+/** 编辑器里一处引用的编号徽标与名称。 */
+export interface MentionBadge {
+  labels: string[]
+  title: string
+  name?: string
+}
+
 /** 面板里要画成标记的一处引用区间。 */
 interface MentionRange {
   start: number
@@ -32,7 +39,7 @@ interface MentionRange {
   id?: string
   missing?: true
   warning?: string
-  badge?: { labels: string[]; title: string }
+  badge?: MentionBadge
 }
 
 /** 有效引用共用生成解析器；找不到目标的 @ 写法单独标为缺失，不绑定到猜测的元素。 */
@@ -57,7 +64,7 @@ export function mentionParts(
     missing?: true
     mention?: true
     /** 送入模型的编号徽标（与服务端给的最终提示词一致） */
-    badge?: { labels: string[]; title: string }
+    badge?: MentionBadge
   }> = []
   let end = 0
   // 服务端 promptReferences 是唯一权威区间：断链、残留绑定与编号都按它画。
@@ -82,6 +89,7 @@ export function mentionParts(
               ? {
                   labels: n.labels,
                   title: [n.name, n.labels.join('、')].filter(Boolean).join(' · '),
+                  ...(n.name ? { name: n.name } : {}),
                 }
               : undefined,
         }))

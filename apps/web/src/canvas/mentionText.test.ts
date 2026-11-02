@@ -70,7 +70,7 @@ test('服务端 promptReferences 的区间直接决定标记：断链 @ .png 也
     ['@叶舒', 'card', false],
   ])
   expect(marks[0]?.warning).toContain('找不到同名资产')
-  expect(marks[1]?.badge).toEqual({ labels: ['图片5'], title: '叶舒 · 图片5' })
+  expect(marks[1]?.badge).toEqual({ labels: ['图片5'], title: '叶舒 · 图片5', name: '叶舒' })
 })
 
 test('服务端区间与当前草稿对不上时退回本地解析，不把旧区间画到新正文上', () => {

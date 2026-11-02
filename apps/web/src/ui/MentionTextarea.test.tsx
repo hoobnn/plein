@@ -40,3 +40,36 @@ it('短引用的编号徽标完整显示，悬停给出名称与编号', () => {
   fireEvent.pointerMove(textarea, { clientX: 10, clientY: 10 })
   expect(textarea.title).toBe('叶 · 图片1')
 })
+
+it('长文件名在编号徽标后显示去扩展名的淡色名称，原文占位保持不变', () => {
+  mockResizeObserver()
+  const file = '03-01-叶舒翻本说明日程_V007.png'
+  const text = `首帧参考图 @${file} ，调度图`
+  renderApp(
+    <MentionTextarea
+      aria-label="提示词"
+      value={text}
+      targets={[{ id: 'card', name: file }]}
+      references={{
+        bindings: {},
+        items: [],
+        numbers: [
+          {
+            start: text.indexOf('@'),
+            end: text.indexOf('@') + file.length + 1,
+            text: `@${file}`,
+            name: file,
+            id: 'card',
+            labels: ['图片1'],
+          },
+        ],
+      }}
+      onChange={() => {}}
+    />,
+  )
+  const mark = document.querySelector('[data-testid="mention-highlights"] mark')!
+  expect(mark.querySelector('.plein-mention-raw')?.textContent).toBe(`@${file}`)
+  expect(mark.querySelector('.plein-mention-name')?.textContent).toBe('03-01-叶舒翻本说明日程_V007')
+  // 名称和徽标都叠在原文占位上，不额外撑开标记宽度。
+  expect(mark.querySelector('.plein-mention-tags')).toBeTruthy()
+})

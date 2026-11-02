@@ -88,6 +88,10 @@ test('只靠 @ 送入的参考图在顶部可见，编号与最终提示词一�
   // 编号与最终提示词里的编号必须是同一个。
   const token = await tile.locator('[data-token]').first().getAttribute('data-token')
   expect(token).toBe('图1')
+  // 徽标后按原文占位宽度补淡色名称；名称固定省略，不再留下看起来像断句的大段空白。
+  const editorName = page.getByTestId('mention-highlights').locator('.plein-mention-name').first()
+  await expect(editorName).toHaveText('a')
+  expect(await editorName.evaluate((el) => getComputedStyle(el).textOverflow)).toBe('ellipsis')
   await page
     .getByTestId('generator')
     .getByRole('button', { name: /实际输入/ })

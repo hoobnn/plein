@@ -23,9 +23,11 @@
   background: var(--accent-soft);
   outline: 1px solid var(--accent);
 }
-/* 引用徽标：只显示送入模型的编号。原文保留占位宽度，徽标叠在上面，正文不会跟着挪位。
-   编号必须完整可读：短名字（如「@叶」）的占位宽度放不下徽标时向外溢出，而不是裁掉数字。 */
-.plein-mention:has(> .plein-mention-badge) {
+/* 引用徽标：只显示送入模型的编号，后面在原占位宽度内补淡色名称。
+   原文保留占位宽度，徽标与名称叠在上面，正文不会跟着挪位。
+   编号必须完整可读：短名字（如「@叶」）的占位宽度放不下徽标时向外溢出，而不是裁掉数字；
+   名称分到宽度时省略显示，绝不撑开正文。 */
+.plein-mention:has(> .plein-mention-tags) {
   position: relative;
   background: transparent;
   color: inherit;
@@ -33,12 +35,19 @@
 .plein-mention-raw {
   visibility: hidden;
 }
-.plein-mention-badge {
+.plein-mention-tags {
   position: absolute;
   inset-block-start: 0;
   inset-inline-start: 0;
   z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+.plein-mention-badge {
   display: inline-flex;
+  flex: none;
   align-items: center;
   width: max-content;
   border-radius: 4px;
@@ -47,6 +56,16 @@
   color: var(--accent);
   font-size: 0.8em;
   line-height: 1.5;
+  white-space: nowrap;
+}
+.plein-mention-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-subtle);
+  font-size: 0.8em;
+  line-height: 1.5;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .plein-mention-input textarea {
