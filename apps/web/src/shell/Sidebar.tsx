@@ -230,6 +230,57 @@ function ResizeHandle({
     [controller, panelWidth, onDragBlur, onDragKey],
   )
   endDragRef.current = endDrag
+  // 库的热区（fine 10px / coarse 20px）比分隔条 DOM 宽：从热区其余位置按下时，
+  // 分隔条上的 React onPointerDown 不会触发，拖拽开始统一以库的 data-separator=active 为准。
+  const pointerIdRef = useRef<number | undefined>(undefined)
+  const beginDrag = useCallback(
+    (pointerId: number | undefined) => {
+      if (!active || controller.active || pointerId === undefined) return
+      controller.begin(pointerId)
+      setDragging(true)
+      document.documentElement.classList.add('plein-resizing')
+      window.addEventListener('blur', onDragBlur)
+      window.addEventListener('keydown', onDragKey, true)
+    },
+    [active, controller, onDragBlur, onDragKey],
+  )
+  useEffect(() => {
+    const el = separatorRef.current
+    if (!el) return
+    const observer = new MutationObserver(() => {
+      if (el.getAttribute('data-separator') === 'active') beginDrag(pointerIdRef.current)
+      // 结束统一由下面的指针监听与 blur / Esc / 收起 / 卸载路径处理
+    })
+    observer.observe(el, { attributes: true, attributeFilter: ['data-separator'] })
+    return () => observer.disconnect()
+  }, [beginDrag])
+  // 拖拽发起的 pointerId 在 window 捕获阶段记录：任何指针事件派发的第一站，
+  // 先于库的事件处理与拖拽状态的同步渲染；拖拽进行中不覆盖（第二触点不换目标）
+  useEffect(() => {
+    const onWindowPointerDown = (e: PointerEvent) => {
+      if (!controller.active) pointerIdRef.current = e.pointerId
+    }
+    window.addEventListener('pointerdown', onWindowPointerDown, true)
+    return () => window.removeEventListener('pointerdown', onWindowPointerDown, true)
+  }, [controller])
+  // 指针起止都挂在面板组（捕获）：热区拖拽的按下/抬起不落在分隔条 DOM 上也能收口
+  useEffect(() => {
+    const group = groupRef.current
+    if (!group) return
+    const onPointerUp = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return
+      endDrag(true)
+    }
+    const onCancel = () => endDrag(false)
+    group.addEventListener('pointerup', onPointerUp, true)
+    group.addEventListener('pointercancel', onCancel, true)
+    group.addEventListener('lostpointercapture', onCancel, true)
+    return () => {
+      group.removeEventListener('pointerup', onPointerUp, true)
+      group.removeEventListener('pointercancel', onCancel, true)
+      group.removeEventListener('lostpointercapture', onCancel, true)
+    }
+  }, [endDrag, groupRef])
   // 收起侧栏或卸载都可能发生在指针松开前：按取消处理，恢复原宽度
   useEffect(() => {
     if (!active) endDrag(false)
@@ -252,19 +303,6 @@ function ResizeHandle({
     return () => el.removeEventListener('keydown', onKeydown, true)
   }, [controller])
 
-  const onPointerDown = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (!active || e.button !== 0 || controller.active) return
-      e.preventDefault()
-      controller.begin(e.pointerId)
-      setDragging(true)
-      document.documentElement.classList.add('plein-resizing')
-      window.addEventListener('blur', onDragBlur)
-      window.addEventListener('keydown', onDragKey, true)
-    },
-    [active, controller, onDragBlur, onDragKey],
-  )
-
   return (
     <Separator
       elementRef={separatorRef}
@@ -272,13 +310,6 @@ function ResizeHandle({
       aria-label="调整侧栏宽度"
       title="拖动调整宽度，双击恢复默认"
       data-dragging={dragging || undefined}
-      onPointerDown={onPointerDown}
-      onPointerUp={(e) => {
-        if (e.button !== 0) return
-        endDrag(true)
-      }}
-      onPointerCancel={() => endDrag(false)}
-      onLostPointerCapture={() => endDrag(false)}
       onDoubleClickCapture={(e) => {
         // 库的双击恢复不写偏好：拦在库的捕获监听前自己处理，与旧行为一致（写回默认宽度的偏好）
         e.preventDefault()

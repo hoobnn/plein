@@ -54,3 +54,64 @@ test(
     expect(await width()).toBe(Math.round(widened) + 8)
   },
 )
+
+test(
+  '热区边缘（分隔条 DOM 之外）起拖：plein-resizing 生效、Esc 取消恢复、松手持久化',
+  { tag: '@core' },
+  async ({ page, browser }) => {
+    await newProject(page)
+    // 库的命中热区比分隔条 DOM（8px）宽（fine 10px / coarse 20px）：从 DOM 左侧 6px 起拖，
+    // 验证接驳层不依赖分隔条自身的 pointerdown 也能收口取消与提交。
+    // 触摸偏移取 -6：实测 coarse 热区左边界在 DOM 左沿外 6px，再往外会被页面滚动意图吞掉。
+    const context = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+      hasTouch: true,
+    })
+    const touchPage = await context.newPage()
+    try {
+      await touchPage.goto(page.url())
+      await waitEngine(touchPage)
+      const sidebar = touchPage.locator('aside[aria-label="侧栏"]')
+      await expect(sidebar).toBeVisible()
+      const handle = touchPage.getByRole('separator', { name: '调整侧栏宽度' })
+      const width = async () => (await sidebar.boundingBox())!.width
+      const before = await width()
+      const box = await handle.boundingBox()
+      const y = box!.y + box!.height / 2
+      const startX = Math.round(box!.x) - 6
+      expect(startX).toBeLessThan(box!.x)
+
+      const session = await touchPage.context().newCDPSession(touchPage)
+      const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', x?: number) =>
+        session.send('Input.dispatchTouchEvent', {
+          type,
+          touchPoints: type === 'touchEnd' ? [] : [{ x: x ?? startX, y }],
+        })
+
+      // 从热区边缘起拖：拖动中 plein-resizing 生效、宽度跟手
+      await touch('touchStart')
+      await touch('touchMove', startX + 40)
+      await touch('touchMove', startX + 70)
+      await expect(touchPage.locator('html')).toHaveClass(/plein-resizing/)
+      await expect.poll(width).toBeGreaterThan(before + 40)
+
+      // Esc 取消：恢复拖拽前宽度，不写偏好；之后的移动与抬手不再改宽度
+      await touchPage.keyboard.press('Escape')
+      await touch('touchEnd')
+      await expect.poll(width).toBe(before)
+      expect(await touchPage.evaluate(() => localStorage.getItem('plein:sidebar-width'))).toBeNull()
+
+      // 同一位置再拖一次并松手：提交偏好
+      await touch('touchStart')
+      await touch('touchMove', startX + 50)
+      await touch('touchEnd')
+      await expect.poll(width).toBeGreaterThan(before + 30)
+      const widened = await width()
+      await expect
+        .poll(() => touchPage.evaluate(() => localStorage.getItem('plein:sidebar-width')))
+        .toBe(String(Math.round(widened)))
+    } finally {
+      await context.close()
+    }
+  },
+)
