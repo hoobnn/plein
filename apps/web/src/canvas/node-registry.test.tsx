@@ -22,7 +22,75 @@ import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { mockFetch } from '../testing/fetch'
 import { act, fireEvent, renderApp, resetStoreAfterEach, screen, waitFor } from '../testing/render'
-import { activateNode } from './node-registry'
+import { CanvasView } from './CanvasView'
+import { activateNode, rendererRegistry } from './node-registry'
+import { RendererRegistry } from '@plein/canvas-core'
+
+// CanvasView 的引擎边界用可观测替身：捕获构造参数，验证渲染器注册表注入
+const h = vi.hoisted(() => ({ engines: [] as Array<{ opts: Record<string, unknown> }> }))
+vi.mock('@plein/canvas-core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@plein/canvas-core')>()
+  class Engine {
+    opts: Record<string, unknown>
+    scene: InstanceType<typeof actual.Scene>
+    state = { tool: 'select' }
+    camera = {
+      viewRect: { x: 0, y: 0, w: 1000, h: 800 },
+      insets: { left: 0, right: 0, top: 0, bottom: 0 },
+      onChange: () => () => {},
+      onInsetsChange: () => () => {},
+    }
+    constructor(opts: Record<string, unknown>) {
+      this.opts = opts
+      this.scene = new actual.Scene(opts.doc as never)
+      h.engines.push(this)
+    }
+    init() {
+      return Promise.resolve()
+    }
+    destroy() {}
+    onActivate() {
+      return () => {}
+    }
+    onStateChange() {
+      return () => {}
+    }
+    onMenu() {
+      return () => {}
+    }
+    onArrange() {
+      return () => {}
+    }
+    zoomToFit() {}
+    setTheme() {}
+  }
+  return { ...actual, Engine }
+})
+vi.mock('./overlays', () => ({
+  CanvasOverlays: class {
+    activate() {}
+    destroy() {}
+  },
+}))
+vi.mock('./shotBadges', () => ({
+  ShotBadges: class {
+    destroy() {}
+  },
+}))
+vi.mock('./nodeCards', () => ({
+  NodeCards: class {
+    destroy() {}
+  },
+}))
+// demo 封面用 canvas 2d 画渐变，happy-dom 拿不到 2d 上下文；种子文档仍用真的
+vi.mock('./demo', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./demo')>()
+  return {
+    ...actual,
+    demoAssetUrls: () => new Map<string, string>(),
+    releaseDemoAssetUrls: () => {},
+  }
+})
 
 resetStoreAfterEach(useCatalog)
 
@@ -112,6 +180,37 @@ function withImageResult(nodeType: string) {
   })
   return { doc, id }
 }
+
+describe('渲染器注册表注入', () => {
+  it('CanvasView 注入由注册表生成的 RendererRegistry', async () => {
+    useCatalog.setState({ catalog })
+    const view = renderApp(<CanvasView source={{ kind: 'demo', count: 1 }} />)
+    await waitFor(() => expect(h.engines.length).toBeGreaterThan(0))
+    expect(h.engines[0]!.opts.renderers).toBeInstanceOf(RendererRegistry)
+    await act(async () => {
+      view.unmount()
+    })
+  })
+
+  it('rendererRegistry() 的 nodeType 层不改变默认渲染路径', () => {
+    const doc = openDoc()
+    docs.push(doc)
+    const id = createElement(doc, {
+      kind: 'node',
+      nodeType: STORYBOARD_TYPE,
+      x: 0,
+      y: 0,
+      w: 200,
+      h: 120,
+      params: {},
+      ports: { inputs: [], outputs: [] },
+    })
+    // 未登记 nodeType 渲染器：走 node 通用渲染器（有预览档位），不是占位卡片
+    const itemView = rendererRegistry().create(doc.get(id)!, {})
+    expect(itemView.previewStatus).not.toBeUndefined()
+    itemView.destroy()
+  })
+})
 
 describe('双击节点的打开行为（activateNode）', () => {
   /** 放一个节点并模拟双击；rAF 是未登记节点聚焦生成器的延迟 */
