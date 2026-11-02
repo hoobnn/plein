@@ -1,146 +1,158 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { Tooltip as Base } from '@base-ui/react/tooltip'
+import { useCallback, useEffect, useRef, useState } from 'react'
+
+interface ActiveTitle {
+  element: HTMLElement
+  text: string
+}
+
+const TRIGGER_ID = 'plein-global-title-tooltip'
+
+function pointerEvent(type: string, relatedTarget?: EventTarget | null) {
+  return new PointerEvent(type, {
+    bubbles: true,
+    pointerType: 'mouse',
+    relatedTarget: relatedTarget as EventTarget | null,
+  })
+}
+
+function mouseEvent(type: string, relatedTarget?: EventTarget | null) {
+  return new MouseEvent(type, {
+    bubbles: true,
+    relatedTarget: relatedTarget as EventTarget | null,
+  })
+}
 
 /**
  * 全局悬停提示：接管页面上所有 `title` 属性，换成与应用一致的提示气泡，不再弹系统原生的黄色小框。
- * 指针移入时把 title 暂存到 data-tip 并留空占位（不弹原生提示），移出时还原，
- * 悬停期间同步 React 对 title 的更新，移出时还原最新说明。
- * 只有第一个提示等待；提示还在时移到相邻按钮，复用同一个气泡滑过去换字，不重新弹出。
+ * 指针移入时把 title 暂存到 data-tip 并留空占位，移出时还原；悬停期间同步 React 对 title 的更新。
+ * Base UI 负责延迟、相邻提示接力、定位与碰撞翻转。
  */
-const SHOW_DELAY = 450
-/** 移出后气泡多留一会儿，指针跨过按钮之间的空隙时还能接上 */
-const HIDE_GRACE = 150
-/** 刚关掉一个提示后，移到相邻按钮时立即显示 */
-const WARM_WINDOW = 400
-
-interface Tip {
-  text: string
-  rect: DOMRect
-}
-
 export function TooltipHost() {
-  const [tip, setTip] = useState<Tip | null>(null)
+  const [handle] = useState(() => Base.createHandle())
+  const [current, setCurrent] = useState<ActiveTitle | null>(null)
+  const currentRef = useRef(current)
+  currentRef.current = current
+  const trigger = useRef<HTMLElement>(null)
+  const forwarded = useRef<HTMLElement | null>(null)
+  const hide = useCallback(() => {
+    if (handle.isOpen) handle.close()
+    setCurrent(null)
+  }, [handle])
+
+  const overTrigger = useCallback((relatedTarget?: EventTarget | null) => {
+    const element = trigger.current
+    if (!element) return
+    element.dispatchEvent(pointerEvent('pointerenter', relatedTarget))
+    element.dispatchEvent(pointerEvent('pointerover', relatedTarget))
+    element.dispatchEvent(mouseEvent('mouseenter', relatedTarget))
+    element.dispatchEvent(mouseEvent('mouseover', relatedTarget))
+    element.dispatchEvent(mouseEvent('mousemove', relatedTarget))
+  }, [])
+  const outTrigger = useCallback((relatedTarget?: EventTarget | null) => {
+    const element = trigger.current
+    if (!element) return
+    element.dispatchEvent(pointerEvent('pointerleave', relatedTarget))
+    element.dispatchEvent(mouseEvent('mouseleave', relatedTarget))
+    element.dispatchEvent(pointerEvent('pointerout', relatedTarget))
+    element.dispatchEvent(mouseEvent('mouseout', relatedTarget))
+  }, [])
+
+  // 新目标先由 Base UI Trigger 接管指针序列；首延迟和相邻目标的即时接力都由它决定。
+  useEffect(() => {
+    const element = current?.element
+    if (!element) return
+    if (forwarded.current === element) {
+      forwarded.current = null
+      return
+    }
+    queueMicrotask(() => {
+      if (currentRef.current?.element === element) overTrigger(element)
+    })
+  }, [current?.element, overTrigger])
+
+  // title 接管只处理属性与无障碍名称，不再计算气泡位置或管理计时器。
+  useEffect(() => {
+    const element = current?.element
+    if (!element) return
+    const initialText = currentRef.current?.text ?? ''
+    let automaticLabel: string | undefined
+    const syncLabel = (text: string) => {
+      if (
+        (!element.hasAttribute('aria-label') && !element.textContent?.trim()) ||
+        automaticLabel === element.getAttribute('aria-label')
+      ) {
+        element.setAttribute('aria-label', text)
+        automaticLabel = text
+      }
+    }
+    element.dataset.tip = element.getAttribute('title') ?? initialText
+    element.setAttribute('title', '')
+    syncLabel(initialText)
+
+    const observer = new MutationObserver((records) => {
+      if (currentRef.current?.element !== element) return
+      if (!element.isConnected) return hide()
+      if (!records.some((record) => record.target === element && record.attributeName === 'title'))
+        return
+      const latest = element.getAttribute('title') ?? ''
+      if (!latest.trim()) {
+        delete element.dataset.tip
+        hide()
+        return
+      }
+      const text = latest.trim()
+      if (automaticLabel === element.getAttribute('aria-label')) syncLabel(text)
+      element.dataset.tip = latest
+      observer.disconnect()
+      element.setAttribute('title', '')
+      observer.observe(element, { attributes: true, attributeFilter: ['title'] })
+      observer.observe(document.body, { childList: true, subtree: true })
+      setCurrent((active) => (active?.element === element ? { ...active, text } : active))
+    })
+    observer.observe(element, { attributes: true, attributeFilter: ['title'] })
+    observer.observe(document.body, { childList: true, subtree: true })
+    return () => {
+      const changed = observer
+        .takeRecords()
+        .some((record) => record.target === element && record.attributeName === 'title')
+      observer.disconnect()
+      if (element.dataset.tip !== undefined) {
+        if (!changed && element.getAttribute('title') === '')
+          element.setAttribute('title', element.dataset.tip)
+        delete element.dataset.tip
+      }
+      if (automaticLabel !== undefined && element.getAttribute('aria-label') === automaticLabel)
+        element.removeAttribute('aria-label')
+    }
+  }, [current?.element, hide])
 
   useEffect(() => {
-    let target: HTMLElement | null = null
-    let timer = 0
-    let leaveTimer = 0
-    let visible = false
-    let lastHidden = 0
-    let observer: MutationObserver | null = null
-    const automaticLabels = new WeakMap<HTMLElement, string>()
-
-    const restore = () => {
-      // 回调前退出悬停时，也要尊重 React 已经清空或移除标题的决定。
-      const changed = observer
-        ?.takeRecords()
-        .some((record) => record.target === target && record.attributeName === 'title')
-      observer?.disconnect()
-      observer = null
-      if (target?.dataset.tip !== undefined) {
-        // React 刚更新、观察回调尚未执行时，也不能用旧提示覆盖新值。
-        if (!changed && target.getAttribute('title') === '')
-          target.setAttribute('title', target.dataset.tip)
-        delete target.dataset.tip
+    const over = (event: PointerEvent) => {
+      if (event.target === trigger.current || event.pointerType === 'touch') return
+      const active = currentRef.current
+      if (active && !active.element.contains(event.target as Node)) outTrigger(event.relatedTarget)
+      const element = (event.target as Element | null)?.closest?.<HTMLElement>('[title]')
+      const text = element?.getAttribute('title')?.trim()
+      if (!element || !text) return hide()
+      if (active?.element === element) {
+        overTrigger(event.relatedTarget)
+        return
       }
-      if (target && automaticLabels.has(target)) {
-        if (target.getAttribute('aria-label') === automaticLabels.get(target))
-          target.removeAttribute('aria-label')
-        automaticLabels.delete(target)
+      if (active) {
+        forwarded.current = element
+        overTrigger(event.relatedTarget)
       }
-      target = null
+      setCurrent({ element, text })
     }
-    const hide = () => {
-      clearTimeout(timer)
-      clearTimeout(leaveTimer)
-      restore()
-      if (visible) lastHidden = performance.now()
-      visible = false
-      setTip(null)
+    const out = (event: PointerEvent) => {
+      if (event.target === trigger.current) return
+      const active = currentRef.current
+      if (!active) return
+      const next = event.relatedTarget as Node | null
+      if (next && active.element.contains(next)) return
+      outTrigger(next)
     }
-    // 指针离开当前目标：还没显示就直接取消，已显示就留出接力的间隙
-    const leave = () => {
-      clearTimeout(timer)
-      if (!visible) return hide()
-      clearTimeout(leaveTimer)
-      leaveTimer = window.setTimeout(hide, HIDE_GRACE)
-    }
-
-    const over = (e: PointerEvent) => {
-      if (e.pointerType === 'touch') return
-      // 悬停目标里的节点被替换（如按钮换图标）时，浏览器不给已移除的节点派发 pointerout，
-      // 只能在指针进入目标以外的元素时收起。
-      if (target && !target.contains(e.target as Node)) leave()
-      const el = (e.target as Element | null)?.closest?.<HTMLElement>('[title]')
-      if (el && el === target) clearTimeout(leaveTimer)
-      if (!el || el === target) return
-      const text = el.getAttribute('title')?.trim()
-      // 气泡还在：换目标但不收起，下面立即显示新说明
-      const hop = visible && !!text
-      if (hop) {
-        clearTimeout(timer)
-        clearTimeout(leaveTimer)
-        restore()
-      } else hide()
-      if (!text) return
-      target = el
-      el.dataset.tip = el.getAttribute('title') ?? ''
-      el.setAttribute('title', '')
-      // 图标按钮常只靠 title 说明用途，移走后补上无障碍名称
-      if (
-        (!el.hasAttribute('aria-label') && !el.textContent?.trim()) ||
-        automaticLabels.get(el) === el.getAttribute('aria-label')
-      ) {
-        el.setAttribute('aria-label', text)
-        automaticLabels.set(el, text)
-      }
-      const show = () => {
-        const latest = el.dataset.tip?.trim()
-        if (target === el && el.isConnected && latest) {
-          visible = true
-          setTip({ text: latest, rect: el.getBoundingClientRect() })
-        }
-      }
-      const observe = () => {
-        observer?.observe(el, { attributes: true, attributeFilter: ['title'] })
-        // 属性观察看不到来源节点被其祖先移除；只在有悬停目标期间检查连接状态。
-        observer?.observe(document.body, { childList: true, subtree: true })
-      }
-      observer = new MutationObserver((records) => {
-        if (target !== el) return
-        if (!el.isConnected) return hide()
-        if (!records.some((record) => record.target === el && record.attributeName === 'title'))
-          return
-        const latest = el.getAttribute('title') ?? ''
-        if (!latest.trim()) {
-          delete el.dataset.tip
-          hide()
-          return
-        }
-        if (automaticLabels.has(el) && el.getAttribute('aria-label') === automaticLabels.get(el)) {
-          el.setAttribute('aria-label', latest.trim())
-          automaticLabels.set(el, latest.trim())
-        }
-        el.dataset.tip = latest
-        // 不观察自己写入的空占位，后续 React 的空值／移除才能被区分出来。
-        observer?.disconnect()
-        el.setAttribute('title', '')
-        observe()
-        setTip((current) =>
-          current ? { text: latest.trim(), rect: el.getBoundingClientRect() } : null,
-        )
-      })
-      observe()
-      if (hop || performance.now() - lastHidden < WARM_WINDOW) show()
-      else timer = window.setTimeout(show, SHOW_DELAY)
-    }
-    const out = (e: PointerEvent) => {
-      if (!target) return
-      const next = e.relatedTarget as Node | null
-      if (next && target.contains(next)) return
-      leave()
-    }
-
     document.addEventListener('pointerover', over, true)
     document.addEventListener('pointerout', out, true)
     document.addEventListener('pointerdown', hide, true)
@@ -156,49 +168,39 @@ export function TooltipHost() {
       document.removeEventListener('wheel', hide, { capture: true })
       window.removeEventListener('blur', hide)
     }
-  }, [])
-
-  return tip ? createPortal(<Bubble tip={tip} />, document.body) : null
-}
-
-function Bubble({ tip }: { tip: Tip }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState<React.CSSProperties>({ visibility: 'hidden' })
-  // 第一次直接就位并弹出，之后换目标时才滑过去
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => ref.current?.setAttribute('data-ready', ''))
-    return () => cancelAnimationFrame(frame)
-  }, [])
-
-  useLayoutEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const { rect } = tip
-    const w = el.offsetWidth
-    const h = el.offsetHeight
-    const gap = 6
-    const left = Math.max(
-      8,
-      Math.min(rect.left + rect.width / 2 - w / 2, window.innerWidth - w - 8),
-    )
-    const below = rect.bottom + gap + h <= window.innerHeight - 8
-    const top = Math.max(
-      8,
-      Math.min(below ? rect.bottom + gap : rect.top - gap - h, window.innerHeight - h - 8),
-    )
-    setPos({ translate: `${left}px ${top}px` })
-    el.style.setProperty('--pop-origin', below ? 'top center' : 'bottom center')
-    el.style.setProperty('--pop-from', `translateY(${below ? -2 : 2}px) scale(0.98)`)
-  }, [tip])
+  }, [hide, outTrigger, overTrigger])
 
   return (
-    <div
-      ref={ref}
-      role="tooltip"
-      style={pos}
-      className="ui-tooltip pointer-events-none fixed top-0 left-0 z-80 inline-flex max-w-[min(280px,calc(100vw-16px))] items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs break-words text-on-primary shadow-none"
-    >
-      {tip.text}
-    </div>
+    <Base.Provider delay={450} closeDelay={150} timeout={400}>
+      <Base.Root handle={handle} onOpenChange={(open) => !open && setCurrent(null)}>
+        <Base.Trigger
+          ref={(element: HTMLButtonElement | null) => {
+            trigger.current = element
+          }}
+          id={TRIGGER_ID}
+          handle={handle}
+          render={<span hidden aria-hidden="true" />}
+        />
+        {current && (
+          <Base.Portal>
+            <Base.Positioner
+              anchor={current.element}
+              side="bottom"
+              align="center"
+              sideOffset={6}
+              collisionPadding={8}
+              className="isolate z-80"
+            >
+              <Base.Popup
+                role="tooltip"
+                className="ui-tooltip pointer-events-none inline-flex max-w-xs origin-(--transform-origin) items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs break-words text-on-primary shadow-none"
+              >
+                {current.text}
+              </Base.Popup>
+            </Base.Positioner>
+          </Base.Portal>
+        )}
+      </Base.Root>
+    </Base.Provider>
   )
 }

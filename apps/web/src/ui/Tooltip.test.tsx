@@ -37,6 +37,33 @@ it('悬停期间更新操作，提示与自动补充的无障碍名称一起更�
   expect(screen.getByRole('button', { name: '再次生成' })).toBe(button)
 })
 
+it('首个提示等待 450ms，相邻按钮立即接力且保留关闭间隙', async () => {
+  vi.useFakeTimers()
+  renderApp(
+    <>
+      <button type="button" title="第一提示" aria-label="第一按钮" />
+      <button type="button" title="第二提示" aria-label="第二按钮" />
+      <TooltipHost />
+    </>,
+  )
+  const first = screen.getByRole('button', { name: '第一按钮' })
+  const second = screen.getByRole('button', { name: '第二按钮' })
+  fireEvent.pointerOver(first, { pointerType: 'mouse' })
+  await act(() => vi.advanceTimersByTimeAsync(449))
+  expect(screen.queryByRole('tooltip')).toBeNull()
+  await act(() => vi.advanceTimersByTimeAsync(1))
+  expect(screen.getByRole('tooltip').textContent).toBe('第一提示')
+
+  fireEvent.pointerOut(first, { relatedTarget: second, pointerType: 'mouse' })
+  fireEvent.pointerOver(second, { pointerType: 'mouse' })
+  expect(screen.getByRole('tooltip').textContent).toBe('第二提示')
+  fireEvent.pointerOut(second, { relatedTarget: document.body, pointerType: 'mouse' })
+  await act(() => vi.advanceTimersByTimeAsync(149))
+  expect(screen.getByRole('tooltip').textContent).toBe('第二提示')
+  await act(() => vi.advanceTimersByTimeAsync(1))
+  expect(screen.queryByRole('tooltip')).toBeNull()
+})
+
 it('显式无障碍名称不被悬停标题覆盖', async () => {
   const button = await setup('生成', true)
   await act(async () => {
