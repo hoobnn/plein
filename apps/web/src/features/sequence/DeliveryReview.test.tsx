@@ -104,6 +104,10 @@ function setup() {
     field: () => screen.getByRole('textbox', { name: '成片时间码意见' }) as HTMLTextAreaElement,
     add: () => screen.getByRole('button', { name: '在当前时间添加意见' }),
     versions: () => screen.getByRole('combobox', { name: '交付版本' }),
+    chooseVersion: async (id: string) => {
+      await view.user.click(screen.getByRole('combobox', { name: '交付版本' }))
+      await view.user.click(screen.getByRole('option', { name: new RegExp(`^${id} ·`) }))
+    },
   }
 }
 
@@ -131,18 +135,18 @@ it('每个版本草稿和播放位置独立，切换视图立即暂停；新导�
   const f = setup()
   f.ready(1.5)
   await f.user.type(f.field(), '旧版草稿')
-  await f.user.selectOptions(f.versions(), 'b')
+  await f.chooseVersion('b')
   expect(HTMLMediaElement.prototype.pause).toHaveBeenCalled()
   f.ready(2.5)
   await f.user.type(f.field(), '新版草稿')
   act(() => f.write([record('c'), ...f.read()]))
-  expect((f.versions() as HTMLSelectElement).value).toBe('b')
+  expect(f.versions().textContent).toContain('b ·')
   f.rerender(<Review engine={f.engine} id={f.id} shown={false} />)
   f.rerender(<Review engine={f.engine} id={f.id} />)
   f.ready(0)
   expect(f.video().currentTime).toBe(2.5)
   expect(f.field().value).toBe('新版草稿')
-  await f.user.selectOptions(f.versions(), 'a')
+  await f.chooseVersion('a')
   f.ready(0)
   expect(f.video().currentTime).toBe(1.5)
   expect(f.field().value).toBe('旧版草稿')
@@ -151,7 +155,7 @@ it('每个版本草稿和播放位置独立，切换视图立即暂停；新导�
     time: 1.5,
     text: '旧版草稿',
   })
-  await f.user.selectOptions(f.versions(), 'b')
+  await f.chooseVersion('b')
   expect(f.field().value).toBe('新版草稿')
 })
 
@@ -269,7 +273,7 @@ it('意见与确认独立撤销，不撤回紧邻改名，切换版本不串写'
   await f.user.click(screen.getByRole('checkbox', { name: '已解决' }))
   await f.user.click(screen.getByRole('button', { name: '确认此版草稿已审阅' }))
   expect(f.read()[0]!.confirmedAt).toBeDefined()
-  await f.user.selectOptions(f.versions(), 'b')
+  await f.chooseVersion('b')
   await f.user.type(f.field(), '新版草稿')
   act(() => {
     f.doc.undo.undo()
@@ -277,7 +281,7 @@ it('意见与确认独立撤销，不撤回紧邻改名，切换版本不串写'
   })
   expect(f.read()[0]!.confirmedAt).toBeUndefined()
   expect(f.field().value).toBe('新版草稿')
-  expect((f.versions() as HTMLSelectElement).value).toBe('b')
+  expect(f.versions().textContent).toContain('b ·')
 })
 
 it('全部版本移除显示空态，恢复后保留会话草稿；同ID新内容不复用旧播放位置', async () => {

@@ -14,6 +14,7 @@ import { assetUrls } from '../../api/client'
 import { AssetDownloadButton } from '../../shell/AssetDownloadButton'
 import { useCanvas } from '../../stores/canvas'
 import { useSession } from '../../stores/session'
+import { Select } from '../../ui/Select'
 import { CreativeReviewForm } from '../storyboard/CreativeReviewForm'
 import { DeliveryCheck } from '../delivery-check/DeliveryCheck'
 import { sequenceTupleLabel } from './instanceModel'
@@ -284,27 +285,23 @@ export function DeliveryReview({
             record={record}
           />
         )}
-        <label className="block text-xs">
+        <div className="block text-xs">
           交付版本
-          <select
+          <Select
             aria-label="交付版本"
             className="ui-input mt-1 w-full"
             value={record.id}
-            onChange={(e) => {
-              setSelected(e.target.value)
-              active.current = e.target.value
+            options={records.map((r) => ({
+              value: r.id,
+              label: `${r.version} · ${r.historical ? '历史范围 · ' : ''}${r.kind === 'animatic' ? '样片草稿' : '成片'} · ${new Date(r.createdAt).toLocaleTimeString()}`,
+            }))}
+            onChange={(value) => {
+              setSelected(value)
+              active.current = value
               setError('')
             }}
-          >
-            {records.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.version} · {r.historical ? '历史范围 · ' : ''}
-                {r.kind === 'animatic' ? '样片草稿' : '成片'} ·{' '}
-                {new Date(r.createdAt).toLocaleTimeString()}
-              </option>
-            ))}
-          </select>
-        </label>
+          />
+        </div>
         <p className="text-sm" aria-label="交付确认状态">
           {record.historical
             ? record.confirmedAt
@@ -357,24 +354,24 @@ export function DeliveryReview({
           )}
         </section>
         {sequenceSourcesAt(record.sources, filmTime).length > 1 && (
-          <label className="block text-xs">
+          <div className="block text-xs">
             意见归属实例
-            <select
+            <Select
               className="ui-input w-full"
               aria-label="意见归属实例"
               value={noteSource}
-              onChange={(event) => setNoteSource(event.target.value)}
-            >
-              <option value="">整片意见（不猜第一来源）</option>
-              {sequenceSourcesAt(record.sources, filmTime)
-                .filter((s) => s.clipInstanceId)
-                .map((s) => (
-                  <option key={s.clipInstanceId} value={s.clipInstanceId}>
-                    {s.clipInstanceId} · 源 {s.sourceTime?.toFixed(3)} 秒
-                  </option>
-                ))}
-            </select>
-          </label>
+              options={[
+                { value: '', label: '整片意见（不猜第一来源）' },
+                ...sequenceSourcesAt(record.sources, filmTime)
+                  .filter((s) => s.clipInstanceId)
+                  .map((s) => ({
+                    value: s.clipInstanceId!,
+                    label: `${s.clipInstanceId} · 源 ${s.sourceTime?.toFixed(3)} 秒`,
+                  })),
+              ]}
+              onChange={setNoteSource}
+            />
+          </div>
         )}
         <AssetDownloadButton
           engine={engine}

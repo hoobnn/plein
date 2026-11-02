@@ -201,10 +201,8 @@ it('模态内编辑独立草稿并请求生成，明确选择候选后只替换�
     })
     const apply = within(modal).getByRole('button', { name: '仅替换此剪辑实例' })
     expect(apply.hasAttribute('disabled')).toBe(true)
-    await view.user.selectOptions(
-      within(modal).getByRole('combobox', { name: '返工视频候选' }),
-      'candidate-2',
-    )
+    await view.user.click(within(modal).getByRole('combobox', { name: '返工视频候选' }))
+    await view.user.click(screen.getByRole('option', { name: '候选 2 · candidate-2' }))
     expect(
       [...modal.querySelectorAll('video')].map((element) => element.getAttribute('src')),
     ).toEqual([`/api/assets/${originalAsset}`, `/api/assets/${'c'.repeat(64)}`])

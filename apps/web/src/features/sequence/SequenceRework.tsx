@@ -9,6 +9,7 @@ import { loadAssetMeta } from '../../stores/assetMeta'
 import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
 import { Modal, ModalHeader } from '../../ui/Modal'
+import { Select } from '../../ui/Select'
 import { GeneratorPanel } from '../generator/Generator'
 import { useStale } from '../runs/stale'
 import { applyReworkCandidate, createReworkDraft, inspectReworkSource } from './rework'
@@ -234,43 +235,44 @@ export function SequenceRework({
                 返工输入或上游参考已变化，已有候选不代表当前设置。请先重新生成，或预览核对后明确选择要保留的候选。
               </p>
             )}
-            <label className="block text-sm">
+            <div className="block text-sm">
               返工视频候选
-              <select
+              <Select
                 className="ui-input w-full"
                 aria-label="返工视频候选"
                 value={candidateId}
-                onChange={(e) => {
+                options={[
+                  { value: '', label: '选择具体候选' },
+                  ...candidates.map((r, i) => ({
+                    value: r.id,
+                    label: `候选 ${i + 1} · ${r.id}`,
+                  })),
+                ]}
+                onChange={(value) => {
                   cancelPendingApply()
-                  setCandidateId(e.target.value)
+                  setCandidateId(value)
                 }}
-              >
-                <option value="">选择具体候选</option>
-                {candidates.map((r, i) => (
-                  <option key={r.id} value={r.id}>
-                    候选 {i + 1} · {r.id}
-                  </option>
-                ))}
-              </select>
-            </label>
+              />
+            </div>
             {raw?.sound === 'legacy' && (
-              <label className="block text-sm">
+              <div className="block text-sm">
                 固定后声音路线
-                <select
+                <Select
                   className="ui-input w-full"
                   aria-label="返工固定声音路线"
                   value={sound}
-                  onChange={(e) => {
+                  options={[
+                    { value: '', label: '请选择声音路线' },
+                    { value: 'native', label: '原生声音' },
+                    { value: 'voice', label: '独立配音' },
+                    { value: 'mix', label: '原生声音与配音混合' },
+                  ]}
+                  onChange={(value) => {
                     cancelPendingApply()
-                    setSound(e.target.value as typeof sound)
+                    setSound(value as typeof sound)
                   }}
-                >
-                  <option value="">请选择声音路线</option>
-                  <option value="native">原生声音</option>
-                  <option value="voice">独立配音</option>
-                  <option value="mix">原生声音与配音混合</option>
-                </select>
-              </label>
+                />
+              </div>
             )}
             <p className="text-xs">
               保留本实例的入出点、变速、对白、音效和字幕设置；替换后字幕需要重新核对。其他实例与来源节点采用项保持原样。

@@ -660,14 +660,10 @@ it('固定历史候选读取中关闭不写入，重试固定只改变实例，�
   const before = f.params().clips
   const choose = async () => {
     await f.user.click(screen.getByRole('button', { name: '选定候选并固定素材' }))
-    await f.user.selectOptions(
-      screen.getByRole('combobox', { name: '固定具体视频候选' }),
-      'history',
-    )
-    await f.user.selectOptions(
-      screen.getByRole('combobox', { name: '明确选择新实例声音路线' }),
-      'native',
-    )
+    await f.user.click(screen.getByRole('combobox', { name: '固定具体视频候选' }))
+    await f.user.click(screen.getByRole('option', { name: '历史候选 · history · video' }))
+    await f.user.click(screen.getByRole('combobox', { name: '明确选择新实例声音路线' }))
+    await f.user.click(screen.getByRole('option', { name: '原生声音' }))
     await f.user.click(screen.getByRole('button', { name: '确认本次实例操作' }))
   }
   await choose()

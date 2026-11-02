@@ -24,6 +24,7 @@ import { useEffect, useRef, useState } from 'react'
 import { loadAssetMeta } from '../../stores/assetMeta'
 import { useCanvas } from '../../stores/canvas'
 import { Modal, ModalHeader } from '../../ui/Modal'
+import { Select } from '../../ui/Select'
 import { sequenceSourceIdentity, sequenceTupleLabel } from './instanceModel'
 
 export const SOUND_LABELS = {
@@ -61,24 +62,24 @@ export function AddFixedInstance({ engine, sequenceId, writable, onSelect }: Con
       className="flex flex-wrap items-center gap-2 px-4 py-2 text-xs"
       aria-label="添加固定素材实例"
     >
-      <select
+      <Select
         className="ui-input max-w-64"
         aria-label="已固定视频素材"
         value={source}
-        onChange={(e) => {
-          const el = engine.doc.get(e.target.value)
-          setSource(e.target.value)
+        options={[
+          { value: '', label: '选择已有固定素材' },
+          ...videos.map((el) => ({
+            value: el.id,
+            label: `${el.name ?? el.id} · ${el.videoSegment!.segmentId.slice(-8)}`,
+          })),
+        ]}
+        onChange={(value) => {
+          const el = engine.doc.get(value)
+          setSource(value)
           setChosenFile(JSON.stringify([el?.assetId, el?.videoSegment]))
         }}
         disabled={!writable()}
-      >
-        <option value="">选择已有固定素材</option>
-        {videos.map((el) => (
-          <option key={el.id} value={el.id}>
-            {el.name ?? el.id} · {el.videoSegment!.segmentId.slice(-8)}
-          </option>
-        ))}
-      </select>
+      />
       <SoundChoice
         value={sound}
         onChange={setSound}
@@ -368,41 +369,41 @@ export function SequenceInstanceTools(props: Context & { row: ArrangedClip }) {
           ))}
         </details>
       )}
-      <label className="block">
+      <div className="block">
         叙事分镜{' '}
-        <select
+        <Select
           aria-label="实例叙事分镜"
           className="ui-input w-full"
           value={boardId}
-          onChange={(e) => {
-            setBoardId(e.target.value)
+          options={[
+            { value: '', label: '未绑定' },
+            ...boards.map((b) => ({
+              value: b.id,
+              label: `${b.name ?? b.id} · ${b.id.slice(-6)}`,
+            })),
+          ]}
+          onChange={(value) => {
+            setBoardId(value)
             setShotId('')
           }}
-        >
-          <option value="">未绑定</option>
-          {boards.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name ?? b.id} · {b.id.slice(-6)}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="block">
+        />
+      </div>
+      <div className="block">
         叙事镜头{' '}
-        <select
+        <Select
           aria-label="实例叙事镜头"
           className="ui-input w-full"
           value={shotId}
-          onChange={(e) => setShotId(e.target.value)}
-        >
-          <option value="">选择确切镜头</option>
-          {shots.map((s) => (
-            <option key={s.id} value={s.id}>
-              镜头 {s.no} · {s.description.slice(0, 32)} · {s.id}
-            </option>
-          ))}
-        </select>
-      </label>
+          options={[
+            { value: '', label: '选择确切镜头' },
+            ...shots.map((s) => ({
+              value: s.id,
+              label: `镜头 ${s.no} · ${s.description.slice(0, 32)} · ${s.id}`,
+            })),
+          ]}
+          onChange={setShotId}
+        />
+      </div>
       <button
         type="button"
         className="ui-btn ui-btn-secondary ui-btn-xs"
@@ -456,20 +457,19 @@ export function SequenceInstanceTools(props: Context & { row: ArrangedClip }) {
                   来源 {source?.name ?? row.source} · 精确端口 {row.port}
                 </p>
                 {source?.kind === 'node' ? (
-                  <select
+                  <Select
                     aria-label="固定具体视频候选"
                     className="ui-input w-full"
                     value={candidateId}
-                    onChange={(e) => setCandidateId(e.target.value)}
-                  >
-                    <option value="">选择具体候选</option>
-                    {candidates.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.id === currentCandidate?.id ? '当前采用' : '历史候选'} · {c.id} ·{' '}
-                        {c.port}
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      { value: '', label: '选择具体候选' },
+                      ...candidates.map((c) => ({
+                        value: c.id,
+                        label: `${c.id === currentCandidate?.id ? '当前采用' : '历史候选'} · ${c.id} · ${c.port}`,
+                      })),
+                    ]}
+                    onChange={setCandidateId}
+                  />
                 ) : (
                   <p>直接视频文件，生成出处保持未知。</p>
                 )}
@@ -487,23 +487,23 @@ export function SequenceInstanceTools(props: Context & { row: ArrangedClip }) {
               />
             )}
             {mode === 'replace' && (
-              <select
+              <Select
                 aria-label="替换固定素材"
                 className="ui-input w-full"
                 value={fixedId}
-                onChange={(e) => {
-                  const el = engine.doc.get(e.target.value)
-                  setFixedId(e.target.value)
+                options={[
+                  { value: '', label: '选择已有固定素材' },
+                  ...fixedVideos.map((v) => ({
+                    value: v.id,
+                    label: `${v.name ?? v.id} · ${v.videoSegment!.segmentId}`,
+                  })),
+                ]}
+                onChange={(value) => {
+                  const el = engine.doc.get(value)
+                  setFixedId(value)
                   setFixedFile(JSON.stringify([el?.assetId, el?.videoSegment]))
                 }}
-              >
-                <option value="">选择已有固定素材</option>
-                {fixedVideos.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.name ?? v.id} · {v.videoSegment!.segmentId}
-                  </option>
-                ))}
-              </select>
+              />
             )}
             {(mode === 'replace' || mode === 'remove') && (
               <label className="flex items-start gap-2">
@@ -572,22 +572,22 @@ function SoundChoice({
   label: string
 }) {
   return (
-    <label className="block text-xs">
+    <div className="block text-xs">
       {label}
-      <select
+      <Select
         className="ui-input"
         aria-label={label}
         value={value}
         disabled={disabled}
-        onChange={(e) => onChange(e.target.value as ExplicitSound | '')}
-      >
-        <option value="">请明确选择声音</option>
-        {(['native', 'voice', 'mix'] as const).map((s) => (
-          <option key={s} value={s}>
-            {SOUND_LABELS[s]}
-          </option>
-        ))}
-      </select>
-    </label>
+        options={[
+          { value: '', label: '请明确选择声音' },
+          ...(['native', 'voice', 'mix'] as const).map((s) => ({
+            value: s as string,
+            label: SOUND_LABELS[s],
+          })),
+        ]}
+        onChange={(value) => onChange(value as ExplicitSound | '')}
+      />
+    </div>
   )
 }
