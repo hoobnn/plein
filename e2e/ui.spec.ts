@@ -60,7 +60,9 @@ test.describe('画布操作浏览器断点', { tag: '@core' }, () => {
     ).toBe(true)
     await rename.press('Escape')
     await expect(rename).toHaveCount(0)
-    if (await compact.isVisible()) await compact.click()
+    // 320px 下设置入口只在这个菜单里；重命名对话框的退场动画里顶栏还没回来，
+    // 不能用瞬时的 isVisible 判断要不要点，交给 click 的自动等待。
+    await compact.click()
     const settings = page.getByRole('menuitem', {
       name: '设置',
       exact: true,
