@@ -182,6 +182,9 @@ export function referencePreview({
   }
   // unsupported 的文案按节点区分：非生成节点是「不送 @ 引用」，文生视频是「不用参考图」。
   const unsentScope: UnsupportedScope = plainMedia ? 'node' : textOnly ? 'text' : 'mode'
+  // 上限按媒体类型取：图片用参考图上限，视频 / 音频用各自的媒体上限（两者不是同一个数）。
+  const limitFor = (kind: ReferenceMediaKind) =>
+    kind === 'image' ? referenceLimit : referenceMediaLimits?.[kind]
   const indexOf = (assetId: string, kind: ReferenceMediaKind = 'image') => {
     if (kind !== 'image') {
       const index = finalMedia[kind].findIndex(
@@ -287,7 +290,7 @@ export function referencePreview({
         : (detail?.reason ?? (detail ? 'no_image' : undefined))
     const message =
       problem ??
-      (reason ? reasonMessage(reason, name, referenceLimit, kind, unsentScope) : undefined)
+      (reason ? reasonMessage(reason, name, limitFor(kind), kind, unsentScope) : undefined)
     promptReferences.push({
       start: mention.start,
       end: mention.end,
@@ -325,7 +328,7 @@ export function referencePreview({
         elementId: detail.elementId,
         name: detail.name,
         reason,
-        message: reasonMessage(reason, detail.name, referenceLimit, kind, unsentScope),
+        message: reasonMessage(reason, detail.name, limitFor(kind), kind, unsentScope),
         origins: detail.kind === 'character' ? ['mention', 'role'] : ['mention'],
       },
       // 解析阶段已把档案项 / 视角身份写在明细上（上游文本里的引用没有原文区间，只能靠它），
@@ -369,15 +372,16 @@ export function referencePreview({
 
   for (const detail of details) {
     if (detail.reason !== 'over_limit') continue
+    const kind = detail.media ?? 'image'
     for (const assetId of detail.available) {
-      if (indexOf(assetId) !== undefined) continue
+      if (indexOf(assetId, kind) !== undefined) continue
       addUnsent(
         {
           assetId,
           elementId: detail.elementId,
           name: detail.name,
           reason: 'over_limit',
-          message: reasonMessage('over_limit', detail.name, referenceLimit),
+          message: reasonMessage('over_limit', detail.name, limitFor(kind), kind),
           origins: detail.kind === 'character' ? ['mention', 'role'] : ['mention'],
         },
         detail.pickIdentity ?? '',
@@ -554,8 +558,13 @@ function reasonMessage(
   kind: ReferenceMediaKind = 'image',
   scope: UnsupportedScope = 'mode',
 ) {
-  if (reason === 'over_limit')
-    return `「${name}」的图片超过模型参考上限${limit === undefined ? '' : ` ${limit} 张`}，未送入`
+  if (reason === 'over_limit') {
+    // 图片说「参考上限 N 张」，视频 / 音频说各自的媒体上限（同一模型里两者不是一回事）。
+    if (kind === 'image')
+      return `「${name}」的图片超过模型参考上限${limit === undefined ? '' : ` ${limit} 张`}，未送入`
+    const media = kind === 'video' ? '参考视频' : '参考音频'
+    return `「${name}」的${media}超过模型上限${limit === undefined ? '' : ` ${limit} 段`}，未送入`
+  }
   if (reason === 'failed') return `「${name}」的参考图生成失败，未送入`
   if (reason === 'unsupported') {
     // 不收参考图的节点（对话、局部重绘、精修、配音、分镜等）：@ 引用只保留名称。
