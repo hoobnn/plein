@@ -275,3 +275,44 @@ it('最终素材编号交给服务端校验，避免误拦由角色软引用补�
   }
   expect(modelProblem(node, params, m, new Map([['images', [{} as Upstream]]]))).toBeNull()
 })
+
+describe('参考视频 / 音频的上限提示按类型区分', () => {
+  const videoModel = (referenceMedia?: {
+    video: number
+    audio: number
+  }): SelectedModel['info'] => ({
+    id: 'm',
+    ref: 'p:m',
+    title: 'M',
+    capabilities: ['video.generate'],
+    limits: { references: { max: 9 }, ...(referenceMedia ? { referenceMedia } : {}) },
+  })
+  const params = { mode: 'reference', aspectRatio: '16:9', duration: 5 }
+  const media = (port: 'videos' | 'audios', n: number) =>
+    new Map([[port, Array.from({ length: n }, () => ({}) as Upstream)]])
+
+  it('模型不支持某类参考时点名说；超过上限时说明上限与实际连了多少', () => {
+    expect(modelProblem(node, params, videoModel(), media('videos', 1))).toBe(
+      '当前模型不支持参考视频',
+    )
+    expect(modelProblem(node, params, videoModel(), media('audios', 1))).toBe(
+      '当前模型不支持参考音频',
+    )
+    expect(modelProblem(node, params, videoModel({ video: 2, audio: 1 }), media('videos', 3))).toBe(
+      '当前模型最多支持 2 段参考视频，现在连了 3 段',
+    )
+    expect(modelProblem(node, params, videoModel({ video: 2, audio: 1 }), media('audios', 2))).toBe(
+      '当前模型最多支持 1 段参考音频，现在连了 2 段',
+    )
+  })
+
+  it('视频先判：两类都超限时先说视频', () => {
+    const ups = new Map([
+      ['videos', Array.from({ length: 3 }, () => ({}) as Upstream)],
+      ['audios', Array.from({ length: 2 }, () => ({}) as Upstream)],
+    ])
+    expect(modelProblem(node, params, videoModel({ video: 2, audio: 1 }), ups)).toBe(
+      '当前模型最多支持 2 段参考视频，现在连了 3 段',
+    )
+  })
+})
