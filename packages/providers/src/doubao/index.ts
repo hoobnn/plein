@@ -448,7 +448,7 @@ export const doubaoProvider = defineProvider({
       id: 'seed-tts-2.0',
       title: '豆包语音合成 2.0',
       capabilities: ['audio.speech'],
-      limits: { speed: { min: 0.5, max: 2 } },
+      limits: { speed: { min: 0.5, max: 2 }, promptMaxLength: 3000 },
       voices: TTS_VOICES,
     },
     {
@@ -456,19 +456,24 @@ export const doubaoProvider = defineProvider({
       title: '豆包声音复刻 1.0（已有音色）',
       description: '历史 V3 接口兼容项；新接入请使用声音复刻 2.0',
       capabilities: ['audio.speech'],
-      limits: { speed: { min: 0.5, max: 2 } },
+      limits: { speed: { min: 0.5, max: 2 }, promptMaxLength: 3000 },
     },
     {
       id: 'seed-icl-2.0',
       title: '豆包声音复刻 2.0（已有音色）',
       capabilities: ['audio.speech'],
-      limits: { speed: { min: 0.5, max: 2 } },
+      limits: { speed: { min: 0.5, max: 2 }, promptMaxLength: 3000 },
     },
     {
       id: 'seed-audio-1.0',
       title: 'Seed Audio 1.0',
       capabilities: ['audio.music', 'audio.sfx'],
-      limits: { duration: { min: 1, max: 120 } },
+      limits: {
+        duration: { min: 1, max: 120 },
+        // 接口限 3000 字；适配器会在描述前拼「类型（最长 16 字）+ 目标时长（最长 11 字）」
+        // 再按 3000 字检查，这里扣掉 27 字，避免预检放行、提交时才被拒绝
+        promptMaxLength: 2973,
+      },
     },
     { id: 'bigmodel', title: '录音文件识别极速版', capabilities: ['audio.transcribe'] },
   ],

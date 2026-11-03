@@ -588,3 +588,11 @@ describe('豆包音色设计及自定义复刻', () => {
     expect(fetch.mock.calls[0]![1]!.headers).toMatchObject({ 'X-Api-Resource-Id': 'seed-icl-2.0' })
   })
 })
+
+it('目录声明语音与 Seed Audio 的有效文本长度上限', () => {
+  const limit = (id: string) =>
+    doubaoProvider.models.find((model) => model.id === id)?.limits?.promptMaxLength
+  for (const id of ['seed-tts-2.0', 'seed-icl-1.0', 'seed-icl-2.0']) expect(limit(id)).toBe(3000)
+  // 适配器会在描述前拼类型与目标时长，声明值已扣掉 27 字前缀
+  expect(limit('seed-audio-1.0')).toBe(2973)
+})
