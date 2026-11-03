@@ -543,6 +543,8 @@ export const bailianProvider = defineProvider({
             count: n,
             resolution: input.resolution,
             aspectRatio: aspect,
+            // 预检与提交用同一个最终 seed：顶层优先，没填才看专属参数
+            seed: input.seed ?? extra.seed,
             options: {
               ...extra,
               ...(input.width !== undefined && !extra.size
@@ -591,6 +593,8 @@ export const bailianProvider = defineProvider({
             count: n,
             resolution: input.resolution,
             aspectRatio: aspect,
+            // 和提交用同一个最终 seed：顶层优先，没填才看专属参数
+            seed: input.seed ?? extra.seed,
             options: { ...extra, size },
           },
           refs,

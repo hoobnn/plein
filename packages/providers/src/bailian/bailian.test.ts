@@ -601,7 +601,7 @@ describe('百炼图片 seed 范围', () => {
       ),
     ).rejects.toMatchObject({
       code: 'invalid_input',
-      message: '百炼图片 seed 须为 0–2147483647 的整数',
+      message: 'qwen-image-3.0-pro 的种子须为 0–2147483647 的整数，现在是 -1',
     })
     expect(bad.fetch).not.toHaveBeenCalled()
     const ok = setup([reply])
@@ -614,5 +614,34 @@ describe('百炼图片 seed 范围', () => {
       ok.ctx,
     )
     expect(ok.body().parameters.seed).toBe(42)
+  })
+})
+
+describe('百炼图片预检与提交使用同一个 seed', () => {
+  it('顶层 seed 优先于专属参数，冲突时按顶层预检并提交', async () => {
+    const { ctx, body } = setup([
+      {
+        output: {
+          choices: [
+            {
+              message: {
+                content: [
+                  { image: 'https://dashscope-result-sz.oss-cn-shenzhen.aliyuncs.com/a.png' },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    ])
+    await bailianProvider.submit(
+      {
+        capability: 'image.generate',
+        model: 'qwen-image-3.0-pro',
+        input: { prompt: 'cat', seed: 7, extra: { seed: -1 } },
+      },
+      ctx,
+    )
+    expect(body().parameters.seed).toBe(7)
   })
 })
