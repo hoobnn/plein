@@ -43,6 +43,8 @@ export interface MediaBatchCheck extends MediaCheckOptions {
   samples: Array<{ sample: MediaSample; name?: string }>
   /** 输出的时长（秒）；与参考视频总时长一起受 totalWithOutputMax 限制 */
   outputDuration?: number
+  /** 输出时长由模型决定（自适应时长或 -1）：这时不与参考素材的总时长相加 */
+  outputDurationByModel?: boolean
 }
 
 const MIME_NAMES: Record<string, string> = {
@@ -82,6 +84,14 @@ const num = (value: number) => String(Math.round(value * 1000) / 1000)
 
 const finite = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value)
+
+/** 宽高范围的文案 */
+const edgeText = (requirement: MediaRequirement) => {
+  const { minEdge, maxEdge } = requirement
+  if (minEdge !== undefined && maxEdge !== undefined) return `${minEdge}–${maxEdge}`
+  if (minEdge !== undefined) return `不小于 ${minEdge}`
+  return `不超过 ${maxEdge}`
+}
 
 /** 宽高比的范围文案 */
 const ratioText = (requirement: MediaRequirement) => {
@@ -153,20 +163,18 @@ export function mediaRequirementProblems(
       const width = sample.width as number
       const height = sample.height as number
       const sizeText = `${width}×${height}`
-      if (
-        requirement.minEdge !== undefined &&
-        (width < requirement.minEdge || height < requirement.minEdge)
-      )
-        problems.push(
-          `${subject} ${sizeText}，${title} 要求宽高不小于 ${requirement.minEdge} 像素，请更换素材`,
-        )
-      if (
-        requirement.maxEdge !== undefined &&
-        (width > requirement.maxEdge || height > requirement.maxEdge)
-      )
-        problems.push(
-          `${subject} ${sizeText}，${title} 要求宽高不超过 ${requirement.maxEdge} 像素，请更换素材`,
-        )
+      if (requirement.minEdge !== undefined || requirement.maxEdge !== undefined) {
+        const tooSmall =
+          requirement.minEdge !== undefined &&
+          (width < requirement.minEdge || height < requirement.minEdge)
+        const tooLarge =
+          requirement.maxEdge !== undefined &&
+          (width > requirement.maxEdge || height > requirement.maxEdge)
+        if (tooSmall || tooLarge)
+          problems.push(
+            `${subject} ${sizeText}，${title} 要求宽高 ${edgeText(requirement)} 像素，请更换素材`,
+          )
+      }
       if (requirement.minRatio !== undefined || requirement.maxRatio !== undefined) {
         const ratio = width / height
         if (
@@ -288,12 +296,18 @@ export function mediaBatchProblems(batch: MediaBatchCheck): string[] {
     )
   if (
     requirement.totalWithOutputMax !== undefined &&
-    finite(batch.outputDuration) &&
-    total + batch.outputDuration > requirement.totalWithOutputMax
-  )
-    problems.push(
-      `${batch.label}总时长 ${num(total)} 秒，加输出时长 ${num(batch.outputDuration)} 秒，超过 ${batch.title} 的 ${requirement.totalWithOutputMax} 秒上限，请缩短素材或减少输出时长`,
-    )
+    batch.samples.length > 0 &&
+    batch.outputDurationByModel !== true &&
+    (finite(batch.outputDuration) || requirement.outputDurationDefault !== undefined)
+  ) {
+    const output = finite(batch.outputDuration)
+      ? batch.outputDuration
+      : (requirement.outputDurationDefault as number)
+    if (total + output > requirement.totalWithOutputMax)
+      problems.push(
+        `${batch.label}总时长 ${num(total)} 秒，加输出时长 ${num(output)} 秒，超过 ${batch.title} 的 ${requirement.totalWithOutputMax} 秒上限，请缩短素材或减少输出时长`,
+      )
+  }
   return problems
 }
 

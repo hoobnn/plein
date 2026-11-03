@@ -4,8 +4,8 @@ import {
   mediaRequirementOf,
   mediaRequirementProblems,
   mergeMediaRequirement,
-  type MediaRequirement,
 } from './media-requirements'
+import type { MediaRequirement } from './provider'
 
 const title = '示例模型'
 

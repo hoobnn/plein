@@ -246,6 +246,8 @@ export interface MediaRequirement {
   totalDurationMax?: number
   /** 参考视频总时长加输出时长之和的上限（秒） */
   totalWithOutputMax?: number
+  /** 节点没有给出输出时长时按这个值算（秒）；只在 totalWithOutputMax 生效时用得上 */
+  outputDurationDefault?: number
   /** 接受的视频编码（ffprobe 的 codec_name） */
   videoCodecs?: string[]
   /** 帧率下限 */
