@@ -1140,7 +1140,11 @@ const planModels: ModelSpec[] = [
     ...(['minimax-m3', 'kimi-k2.7-code'].includes(id) ? { deprecated: true as const } : {}),
     capabilities: ['text.chat'],
     agentOnly: true,
-    features: ['tools', 'structured', ...(PLAN_VISION_CHAT_IDS.includes(id) ? ['vision' as const] : [])],
+    features: [
+      'tools',
+      'structured',
+      ...(PLAN_VISION_CHAT_IDS.includes(id) ? ['vision' as const] : []),
+    ],
     description: 'Agent Plan 套餐文本模型，仅用于内置 Agent；可用性取决于套餐档位',
   })),
   {
