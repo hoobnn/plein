@@ -79,6 +79,16 @@ export function videoModelProblem(
   const mode = params.mode ?? 'text'
   if (model.limits?.videoModes && !model.limits.videoModes.some((m) => m === mode))
     return `${model.title} 不支持「${VIDEO_MODE_LABELS[String(mode)] ?? String(mode)}」模式，请更换模式或模型`
+  const extra = (params.options as Record<string, Record<string, unknown>> | undefined)?.[
+    String(params.model)
+  ]
+  // Seedance 2.5 的草稿模式只支持 480p 输出：Agent / 批量路径不经前端，这里按同一规则预检
+  if (
+    model.id.startsWith('doubao-seedance-2-5-') &&
+    extra?.draft === true &&
+    String(params.resolution ?? '') !== '480p'
+  )
+    return `草稿模式只支持 480p，当前是 ${params.resolution ? String(params.resolution) : '默认分辨率'}`
   const refs = mode === 'reference'
   const total = counts.image + counts.video + counts.audio
   const media = model.limits?.referenceMedia
@@ -112,9 +122,6 @@ export function videoModelProblem(
     !(model.limits?.optionalVideoPrompt && total && mode !== 'text')
   )
     return '视频提示词为空'
-  const extra = (params.options as Record<string, Record<string, unknown>> | undefined)?.[
-    String(params.model)
-  ]
   if (extra?.omni_reference_task_type && !refs) return '参考任务类型需要使用多模态参考模式'
   if (['edit', 'extend'].includes(String(extra?.omni_reference_task_type)) && !counts.video)
     return '编辑或延长任务需要参考视频'

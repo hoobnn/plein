@@ -98,6 +98,30 @@ it('模型声明的输入模式在运行前阻断；服务端仍校验最终编�
   ).toBeNull()
 })
 
+it.each(['volc/ark', 'volc/ark-plan'])('%s 的 Seedance 2.5 草稿模式只允许 480p', (provider) => {
+  const seedance: ModelInfo = {
+    ...model,
+    id: 'doubao-seedance-2-5-260628',
+  }
+  const params = (resolution: unknown, draft = true) => ({
+    mode: 'text',
+    model: `${provider}:doubao-seedance-2-5-260628`,
+    resolution,
+    options: { [`${provider}:doubao-seedance-2-5-260628`]: { draft } },
+  })
+  expect(videoModelProblem(seedance, params('720p'), counts, '预览')).toBe(
+    '草稿模式只支持 480p，当前是 720p',
+  )
+  // 留空表示跟平台默认，也不是 480p
+  expect(videoModelProblem(seedance, params(''), counts, '预览')).toBe(
+    '草稿模式只支持 480p，当前是 默认分辨率',
+  )
+  expect(videoModelProblem(seedance, params('480p'), counts, '预览')).toBeNull()
+  // 未勾草稿时不拦；非 Seedance 2.5 模型不做这项预检（运行时由平台原始报错说明）
+  expect(videoModelProblem(seedance, params('720p', false), counts, '预览')).toBeNull()
+  expect(videoModelProblem(model, params('720p'), counts, '预览')).toBeNull()
+})
+
 it.each(['volc/ark', 'volc/ark-plan'])(
   '%s 的 Seedance 2.5 首帧跟随画幅、自动时长取 -1',
   (provider) => {

@@ -240,11 +240,23 @@ export function GeneratorPanel({
           value: optionRecord(allOptions[model.ref]),
           readValue: () =>
             optionRecord(optionRecord(engine.doc.get(el.id)?.params?.[optionsKey])[model.ref]),
-          onChange: (next: Record<string, unknown>) =>
-            set(
-              optionsKey,
-              replaceModelOptions(engine.doc.get(el.id)?.params?.[optionsKey], model.ref, next),
-            ),
+          onChange: (next: Record<string, unknown>) => {
+            const value = replaceModelOptions(
+              engine.doc.get(el.id)?.params?.[optionsKey],
+              model.ref,
+              next,
+            )
+            // 勾选草稿模式时把分辨率收敛到 480p：平台只接受这一组合，别等运行才被挡下
+            const { patch, notes: fixed } = adaptToModel(
+              node,
+              { ...params, [optionsKey]: value },
+              model.info,
+              imageReferences,
+            )
+            for (const [k, v] of Object.entries(patch)) if (k !== optionsKey) set(k, v)
+            if (fixed.length) setNotes((current) => [...current, ...fixed])
+            set(optionsKey, value)
+          },
         }
       : undefined
   const main = fields.filter(([k, f]) => k !== pk && f.widget !== 'videoMode' && isMainField(k, f))

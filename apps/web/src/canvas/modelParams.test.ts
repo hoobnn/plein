@@ -352,4 +352,46 @@ describe('参考视频 / 音频的上限提示按类型区分', () => {
     )
     expect(modelProblem(node, { ...params, mode: 'text' }, modes(['text']), new Map())).toBeNull()
   })
+
+  it('Seedance 2.5 勾选草稿模式时分辨率收敛到 480p，提交前给出提示', () => {
+    const seedance: SelectedModel['info'] = {
+      ref: 'volc/ark:doubao-seedance-2-5-260628',
+      id: 'doubao-seedance-2-5-260628',
+      title: 'Seedance 2.5',
+      capabilities: ['video.generate'],
+      limits: { resolutions: ['480p', '720p', '1080p'] },
+    }
+    const draft = (resolution: unknown) => ({
+      model: seedance.ref,
+      mode: 'text',
+      resolution,
+      options: { [seedance.ref]: { draft: true } },
+    })
+    expect(adaptToModel(node, draft('1080p'), seedance)).toEqual({
+      patch: { resolution: '480p' },
+      notes: ['草稿模式固定 480p'],
+    })
+    // 分辨率留空（跟平台默认）也拦：默认不是 480p
+    expect(adaptToModel(node, draft(''), seedance).patch).toEqual({ resolution: '480p' })
+    // 已是 480p 就不动；没勾草稿不收敛；非 Seedance 2.5 不收敛
+    expect(adaptToModel(node, draft('480p'), seedance)).toEqual({ patch: {}, notes: [] })
+    expect(adaptToModel(node, { ...draft('1080p'), options: {} }, seedance)).toEqual({
+      patch: {},
+      notes: [],
+    })
+    expect(
+      adaptToModel(node, draft('1080p'), {
+        ...seedance,
+        id: 'doubao-seedance-2-0-260128',
+        ref: 'volc/ark:doubao-seedance-2-0-260128',
+      }),
+    ).toEqual({ patch: {}, notes: [] })
+    expect(modelProblem(node, draft('1080p'), seedance, new Map())).toBe(
+      '草稿模式只支持 480p，当前是 1080p',
+    )
+    expect(modelProblem(node, draft(''), seedance, new Map())).toBe(
+      '草稿模式只支持 480p，当前是 默认分辨率',
+    )
+    expect(modelProblem(node, draft('480p'), seedance, new Map())).toBeNull()
+  })
 })

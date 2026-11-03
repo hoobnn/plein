@@ -139,6 +139,22 @@ export function constrainFields(
 
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
 
+/** Seedance 2.5 的草稿模式只支持 480p 输出：分辨率要提前收敛，别等运行期才被平台挡下。 */
+const draftOn = (params: Record<string, unknown>, model: SelectedModel['info'] | undefined) => {
+  if (!model?.id.startsWith('doubao-seedance-2-5-')) return false
+  const options = params.options
+  const extra =
+    options && typeof options === 'object' && !Array.isArray(options)
+      ? (options as Record<string, unknown>)[String(params.model)]
+      : undefined
+  return (
+    !!extra &&
+    typeof extra === 'object' &&
+    !Array.isArray(extra) &&
+    (extra as Record<string, unknown>).draft === true
+  )
+}
+
 /**
  * 换到新模型时需要改的参数和对应说明：分辨率不支持改回默认，画幅换成第一个支持的，
  * 时长、张数夹到范围内。种子留着（隐藏且不会传给平台），换回来还在。
@@ -173,6 +189,9 @@ export function adaptToModel(
     ) {
       patch[k] = limits.imageOperations[0]
       notes.push('已切换为所选模型支持的精修操作')
+    } else if (f.widget === 'resolution' && draftOn(params, model) && String(v ?? '') !== '480p') {
+      patch[k] = '480p'
+      notes.push('草稿模式固定 480p')
     } else if (f.widget === 'resolution' && v && !limits.resolutions?.includes(String(v))) {
       patch[k] = ''
       notes.push(`分辨率已改回默认（${name} 不支持 ${String(v)}）`)
@@ -293,6 +312,8 @@ export function modelProblem(
     if (!(k in patch)) continue
     const v = params[k] ?? f.default
     if (f.widget === 'resolution') {
+      if (draftOn(params, model))
+        return `草稿模式只支持 480p，当前是 ${v ? String(v) : '默认分辨率'}`
       const options = limits.resolutions ?? []
       return `${name} 不支持分辨率 ${String(v)}；${
         options.length ? `请选择 ${options.join('、')}，` : ''
