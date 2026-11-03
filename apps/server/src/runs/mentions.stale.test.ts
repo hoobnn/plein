@@ -150,7 +150,7 @@ describe('配音节点换平台不复用音色', () => {
     })
     const run = server.runs.start(id, line, 'local')
     expect(await server.runs.wait(run)).toBe('failed')
-    expect(doc.get(line)!.run?.error).toContain('音色属于 plein/other-speech')
+    expect(doc.get(line)!.run?.error).toContain('音色属于 其他平台')
     expect(doc.get(line)!.results).toBeUndefined()
   })
 

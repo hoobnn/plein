@@ -720,6 +720,24 @@ describe('实际输入预览', () => {
   }, 30_000)
 })
 
+it('声音复刻模型在预览时拒绝预置音色并点名模型', async () => {
+  const { server } = await bootServer()
+  const { id, doc } = await createCanvas(server)
+  const node = addNode(doc, 'plein/speech', {
+    params: {
+      model: 'doubao/speech:seed-icl-2.0',
+      text: '你来了',
+      voice: { provider: 'doubao/speech', voiceId: 'BV001_streaming' },
+    },
+  })
+  const input = await preview(server, id, node)
+  expect(input.blocked).toContainEqual({
+    code: 'prepare_failed',
+    message:
+      '豆包声音复刻 2.0（已有音色） 只能用已创建的复刻或设计音色，当前是预置音色 BV001_streaming',
+  })
+})
+
 it('音乐和独立识别预览明确当前模型权限未知，检查本身不发生成请求', async () => {
   const { server } = await bootServer()
   mockSettings(server, {})

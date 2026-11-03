@@ -2110,7 +2110,10 @@ export class NodeRuns implements BatchHost {
       },
       limits?.referenceMedia ?? { video: 0, audio: 0 },
       // 对话模型只有自己声明了 vision（支持看图）才把 @ 引用的图并进 images
-      { acceptsImages: spec?.features?.includes('vision') === true },
+      {
+        acceptsImages: spec?.features?.includes('vision') === true,
+        providerTitle: (provider) => this.host.registry.providers.get(provider)?.def.title,
+      },
     )
     if (continuation.issue) blocked.push(continuation.issue)
     if (referenceMode) {
@@ -2239,7 +2242,10 @@ export class NodeRuns implements BatchHost {
       if (issue) blocked.push({ code: 'prepare_failed', message: issue })
     }
     if (def.capability === 'audio.speech') {
-      const check = speechVoice(String(effective.model ?? ''), voiceOf(effective))
+      const check = speechVoice(String(effective.model ?? ''), voiceOf(effective), {
+        spec: spec || undefined,
+        providerTitle: (provider) => this.host.registry.providers.get(provider)?.def.title,
+      })
       if (check.problem) blocked.push({ code: 'prepare_failed', message: check.problem })
       if (check.notice && !notices.some((n) => n.code === 'voice_unverified'))
         notices.push({ code: 'voice_unverified', message: check.notice })

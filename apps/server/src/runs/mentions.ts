@@ -29,6 +29,7 @@ import {
 import type { InputIssue, InputRef, InputRefKind } from '@plein/protocol'
 
 import { NodeRunError } from '../plugins/provider-protocol'
+import { speechProviderTitle } from '../executors/audio'
 
 type Inputs = Record<string, PortValue[]>
 
@@ -189,6 +190,8 @@ export async function applyMentions(
   opts?: {
     /** 对话模型（LLM）是否支持看图：模型声明了 vision 才把 @ 引用的图并入 images */
     acceptsImages?: boolean
+    /** 当前注册表的平台显示名，用于跨平台音色提醒。 */
+    providerTitle?: (provider: string) => string | undefined
   },
 ): Promise<AppliedMentions> {
   const params = { ...el.params }
@@ -403,7 +406,7 @@ export async function applyMentions(
   }
 
   if (def.capability === 'audio.speech' && !hasVoice(voiceOf(params)))
-    applyVoice(params, voices, notices)
+    applyVoice(params, voices, notices, opts?.providerTitle)
 
   // 参考图并到哪个输入：图片节点等是 references；生成视频只有「多模态参考」模式才把图当参考主体；
   // 对话模型（LLM）的图片端口是 images：模型声明了 vision（支持看图）才并入
@@ -785,6 +788,7 @@ function applyVoice(
   params: Record<string, unknown>,
   voices: Array<{ name: string; voice: VoiceRef }>,
   notices: InputIssue[],
+  providerTitle?: (provider: string) => string | undefined,
 ) {
   if (voices.length === 0) return
   if (voices.length > 1) {
@@ -808,7 +812,7 @@ function applyVoice(
   }
   throw new NodeRunError(
     'invalid_input',
-    `「${name}」的音色属于 ${voice.provider}，当前配音模型是 ${provider}，音色不能跨平台使用，请重新选择音色`,
+    `「${name}」的音色属于 ${speechProviderTitle(voice.provider, providerTitle)}，当前配音模型是 ${speechProviderTitle(provider, providerTitle)}，音色不能跨平台使用，请重新选择音色`,
   )
 }
 

@@ -467,12 +467,12 @@ describe('音色按平台沿用', () => {
   })
 
   it('换平台：不沿用，并说清是哪一家、要做什么', async () => {
-    const { doc, n } = setup('plein/mock:echo-speech', {
-      provider: 'plein/doubao-speech',
+    const { doc, n } = setup('volc/ark:speech', {
+      provider: 'minimax/api',
       voiceId: 'v_linxia',
     })
     await expect(applyMentions(doc, doc.get(n)!, speechNode, {}, collect(doc))).rejects.toThrow(
-      '「林夏」的音色属于 plein/doubao-speech，当前配音模型是 plein/mock，音色不能跨平台使用，请重新选择音色',
+      '「林夏」的音色属于 MiniMax，当前配音模型是 火山方舟，音色不能跨平台使用，请重新选择音色',
     )
   })
 
