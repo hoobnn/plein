@@ -108,7 +108,12 @@ export function imageModelProblem(model: ModelInfo, params: ImageParams, referen
   const negative = negativePromptValue(params)
   if (limits.negativePrompt === false && negative)
     return `${model.title} 不支持反向提示词，请把内容合并到提示词里`
-  const seedProblem = seedRangeProblem(limits.seed, params.seed, model.title)
+  // 种子和适配器一样：顶层取值优先，没填才看专属参数里的 seed
+  const seedProblem = seedRangeProblem(
+    limits.seed,
+    params.seed ?? params.options?.seed,
+    model.title,
+  )
   if (seedProblem) return seedProblem
   const custom = customSizeProblem(model, params)
   if (custom) return custom

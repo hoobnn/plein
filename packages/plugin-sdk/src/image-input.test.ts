@@ -144,5 +144,14 @@ describe('自定义宽高、反向提示词与种子范围', () => {
       '万相图片 的种子须为 0–2147483647 的整数，现在是 -1',
     )
     expect(imageModelProblem(seeded, { seed: 7 }, 0)).toBeNull()
+    // 专属参数里的种子同样检查，和适配器的 input.seed ?? extra.seed 一致
+    expect(imageModelProblem(seeded, { options: { seed: 2147483648 } }, 0)).toBe(
+      '万相图片 的种子须为 0–2147483647 的整数，现在是 2147483648',
+    )
+    // 顶层取值优先：合法的顶层值不再看专属参数，越界的顶层值也压过合法专属参数
+    expect(imageModelProblem(seeded, { seed: 7, options: { seed: -1 } }, 0)).toBeNull()
+    expect(imageModelProblem(seeded, { seed: -1, options: { seed: 7 } }, 0)).toBe(
+      '万相图片 的种子须为 0–2147483647 的整数，现在是 -1',
+    )
   })
 })
