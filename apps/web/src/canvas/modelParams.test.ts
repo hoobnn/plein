@@ -87,7 +87,7 @@ describe('按模型处理参数', () => {
 
   it('分辨率、张数超限的说法与服务端一致：点名可选值、视频按条图片按张', () => {
     const m = selectedModel(catalog, node, { model: 'p/a:fast' })!.info
-    expect(modelProblem(node, { resolution: '1080p' }, m, new Map())).toBe(
+    expect(modelProblem(node, { prompt: '海边日落', resolution: '1080p' }, m, new Map())).toBe(
       'Fast 不支持分辨率 1080p；请选择 480p、720p，或使用默认分辨率',
     )
     // 模型没声明可选分辨率时只让用户恢复默认
@@ -98,11 +98,13 @@ describe('按模型处理参数', () => {
       capabilities: ['video.generate'],
       limits: {},
     }
-    expect(modelProblem(node, { resolution: '4k' }, plain, new Map())).toBe(
+    expect(modelProblem(node, { prompt: '海边日落', resolution: '4k' }, plain, new Map())).toBe(
       'Free 不支持分辨率 4k；或使用默认分辨率',
     )
     const two = { ...m, limits: { ...m.limits, count: { max: 2 } } }
-    expect(modelProblem(node, { count: 3 }, two, new Map())).toBe('Fast 一次最多生成 2 条')
+    expect(modelProblem(node, { prompt: '海边日落', count: 3 }, two, new Map())).toBe(
+      'Fast 一次最多生成 2 条',
+    )
   })
 })
 
@@ -410,7 +412,14 @@ describe('参考视频 / 音频的上限提示按类型区分', () => {
     expect(modelProblem(node, { ...params, mode: 'frames' }, modes(['text']), new Map())).toBe(
       'M 不支持「首尾帧」模式，请更换模式或模型',
     )
-    expect(modelProblem(node, { ...params, mode: 'text' }, modes(['text']), new Map())).toBeNull()
+    expect(
+      modelProblem(
+        node,
+        { ...params, mode: 'text', prompt: '海边日落' },
+        modes(['text']),
+        new Map(),
+      ),
+    ).toBeNull()
   })
 
   it('Seedance 2.5 勾选草稿模式时分辨率收敛到 480p，提交前给出提示', () => {
@@ -424,6 +433,7 @@ describe('参考视频 / 音频的上限提示按类型区分', () => {
     const draft = (resolution: unknown) => ({
       model: seedance.ref,
       mode: 'text',
+      prompt: '海边日落',
       resolution,
       options: { [seedance.ref]: { draft: true } },
     })
