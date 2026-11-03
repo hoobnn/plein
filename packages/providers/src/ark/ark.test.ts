@@ -261,13 +261,13 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
   })
 
   it.each([
-    [IMAGE, '16:9', '2048x1152'],
-    [IMAGE, '9:16', '1152x2048'],
+    [IMAGE, '16:9', '2720x1536'],
+    [IMAGE, '9:16', '1536x2720'],
     [IMAGE, '1:1', '2048x2048'],
-    [IMAGE, '4:3', '2048x1536'],
-    [IMAGE, '3:4', '1536x2048'],
-    ['doubao-seedream-5-0-flash-260915', '16:9', '2048x1152'],
-    ['doubao-seedream-5-0-260128', '16:9', '2560x1440'],
+    [IMAGE, '4:3', '2352x1760'],
+    [IMAGE, '3:4', '1760x2352'],
+    ['doubao-seedream-5-0-flash-260915', '16:9', '2720x1536'],
+    ['doubao-seedream-5-0-260128', '16:9', '2720x1536'],
   ])(
     '核心 image executor payload 的 %s / %s 映射为官方 size %s',
     async (model, aspectRatio, size) => {
@@ -284,6 +284,27 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
       expect(body()).not.toHaveProperty('aspectRatio')
     },
   )
+
+  it('16:9 留空分辨率与显式 2K 提交同一尺寸', async () => {
+    const submit = async (resolution?: string) => {
+      const { ctx, body } = harness([{ data: [{ b64_json: 'AQID' }] }])
+      await arkProvider.submit(
+        {
+          capability: 'image.generate',
+          model: IMAGE,
+          input: {
+            prompt: 'cat',
+            ...(resolution ? { resolution } : {}),
+            extra: { aspectRatio: '16:9' },
+          },
+        },
+        ctx,
+      )
+      return body().size
+    }
+    expect(await submit()).toBe('2720x1536')
+    expect(await submit('2K')).toBe('2720x1536')
+  })
 
   it('智能画幅未选分辨率时使用模型声明的默认档位', async () => {
     for (const id of [

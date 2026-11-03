@@ -657,55 +657,16 @@ async function image(
   }
   const aspectRatio = body.aspectRatio
   delete body.aspectRatio
-  // 分辨率档位按画幅换成像素尺寸，保证画幅不丢
-  if (
-    input.resolution !== undefined &&
-    body.size === undefined &&
-    input.width === undefined &&
-    input.height === undefined
-  ) {
+  // 未选分辨率时使用模型默认档位；固定画幅与显式选择走同一尺寸换算。
+  if (body.size === undefined && input.width === undefined && input.height === undefined) {
+    const resolution = input.resolution ?? defaultResolution
     const tokens = lite ? ['2K', '3K', '4K'] : ['1K', '1.5K', '2K']
-    const edge = tierEdge(input.resolution)
-    if (!model.startsWith('doubao-seedream-5-') || !tokens.includes(input.resolution) || !edge)
+    const edge = tierEdge(resolution)
+    if (!model.startsWith('doubao-seedream-5-') || !tokens.includes(resolution) || !edge)
       invalid('所选 Seedream 模型不支持该分辨率')
     const { width, height } = sizeByArea(String(aspectRatio ?? '1:1'), edge * edge)
     // 智能画幅只给档位，比例由模型按提示词决定
-    body.size = aspectRatio === 'auto' ? input.resolution : `${width}x${height}`
-  }
-  // Core image nodes express their frame through extra.aspectRatio. Translate it
-  // into official pixel dimensions; an explicit platform size takes precedence.
-  if (
-    body.size === undefined &&
-    input.width === undefined &&
-    input.height === undefined &&
-    aspectRatio !== undefined
-  ) {
-    const small: Record<string, string> = {
-      '16:9': '2048x1152',
-      '9:16': '1152x2048',
-      '1:1': '2048x2048',
-      '4:3': '2048x1536',
-      '3:4': '1536x2048',
-      '21:9': '3120x1328',
-      '3:2': '2496x1664',
-      '2:3': '1664x2496',
-    }
-    const large: Record<string, string> = {
-      '16:9': '2560x1440',
-      '9:16': '1440x2560',
-      '1:1': '2048x2048',
-      '4:3': '2304x1728',
-      '3:4': '1728x2304',
-      '21:9': '3120x1328',
-      '3:2': '2496x1664',
-      '2:3': '1664x2496',
-    }
-    const dimensions =
-      aspectRatio === 'auto'
-        ? defaultResolution
-        : (model.startsWith('doubao-seedream-5-') && !lite ? small : large)[String(aspectRatio)]
-    if (!dimensions) invalid('Seedream 不支持该图片画幅')
-    body.size = dimensions
+    body.size = aspectRatio === 'auto' ? resolution : `${width}x${height}`
   }
   if (body.size === undefined && (input.width !== undefined || input.height !== undefined)) {
     if (
