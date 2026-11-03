@@ -303,6 +303,33 @@ it('最终素材编号交给服务端校验，避免误拦由角色软引用补�
   expect(modelProblem(node, params, m, new Map([['images', [{} as Upstream]]]))).toBeNull()
 })
 
+describe('对话模型看图', () => {
+  const llmNode = {
+    type: 'plein/llm',
+    capability: 'text.chat',
+    defaults: { model: '' },
+    paramsSchema: { properties: { model: { type: 'string', widget: 'model' } } },
+  } as unknown as NodeInfo
+  const blind: SelectedModel['info'] = {
+    ref: 'p:blind',
+    id: 'blind',
+    title: 'Blind',
+    capabilities: ['text.chat'],
+    features: [],
+  }
+  const images = [{} as Upstream]
+
+  it('连了图片但模型未声明 vision 时先说明；支持看图或没连图不拦', () => {
+    expect(modelProblem(llmNode, {}, blind, new Map([['images', images]]))).toBe(
+      'Blind 不支持看图，请换支持图片的模型或断开图片输入',
+    )
+    expect(
+      modelProblem(llmNode, {}, { ...blind, features: ['vision'] }, new Map([['images', images]])),
+    ).toBeNull()
+    expect(modelProblem(llmNode, {}, blind, new Map())).toBeNull()
+  })
+})
+
 describe('对话模型温度', () => {
   const llm = {
     type: 'plein/llm',

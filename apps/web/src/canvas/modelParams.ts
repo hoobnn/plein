@@ -300,6 +300,14 @@ export function modelProblem(
     }
   }
   if (!model) return null
+  // 对话模型不支持看图：图送进去也读不出来，前端先拦一次（服务端 prepare 对同一组合再挡一次）。
+  // 这里能拿到 images 端口的连线，不用等实际输入预览。
+  if (
+    node.capability === 'text.chat' &&
+    (ups.get('images')?.length ?? 0) > 0 &&
+    !model.features?.includes('vision')
+  )
+    return `${model.title} 不支持看图，请换支持图片的模型或断开图片输入`
   if (node.capability === 'image.generate') {
     const issue = imageModelProblem(
       model,
