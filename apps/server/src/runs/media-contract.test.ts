@@ -181,6 +181,29 @@ describe('F6/F8 实际输入、阻断与有效参数合同', () => {
     expect(submit).not.toHaveBeenCalled()
   })
 
+  it('精修倍数越界时在预览阶段按声明阻断，不调 Provider', async () => {
+    const f = await boot()
+    processSpec.limits = {
+      ...processLimits,
+      process: { scale: { min: 1, max: 4 }, expansion: { min: 1, max: 2 } },
+    }
+    const submit = vi.spyOn(mockProvider, 'submit')
+    const source = f.asset('image', 'a')
+    const target = addNode(f.doc, 'plein/image-process', {
+      params: { operation: 'upscale', scale: 5 },
+    })
+    connect(f.doc, [source, 'image'], [target, 'image'])
+    const input = await f.preview(target)
+    expect(input.status).toBe('blocked')
+    expect(
+      input.blocked.some((issue) =>
+        issue.message.includes('Mock 图片精修 放大倍数须为 1–4，现在是 5'),
+      ),
+    ).toBe(true)
+    expect((await f.run(target, input)).status).toBe('failed')
+    expect(submit).not.toHaveBeenCalled()
+  })
+
   it('只显示并缓存当前精修操作真正使用的字段，调用 Provider 不夹带无效参数', async () => {
     const f = await boot()
     const source = f.asset('image', 'a')

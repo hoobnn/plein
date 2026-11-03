@@ -1,5 +1,6 @@
 import {
   imageModelProblem,
+  imageProcessProblem,
   modelParamsProblem,
   selectedImageOptions,
   boundReferenceTokens,
@@ -2342,6 +2343,11 @@ export class NodeRuns implements BatchHost {
       inputs.image?.filter((v) => v.type === 'image').length !== 1
     )
       blocked.push({ code: 'prepare_failed', message: '图片精修需要连入一张原图' })
+    // 精修的倍数、扩图比例按模型声明再挡一次：走 Agent / MCP / 批量时参数没经过前端表单
+    if (def.capability === 'image.process' && spec) {
+      const issue = imageProcessProblem(spec, effective)
+      if (issue) blocked.push({ code: 'prepare_failed', message: issue })
+    }
     const orderedInputs = Object.fromEntries([
       ...def.inputs.filter((port) => inputs[port.id]).map((port) => [port.id, inputs[port.id]!]),
       ...Object.entries(inputs).filter(([id]) => !def.inputs.some((port) => port.id === id)),

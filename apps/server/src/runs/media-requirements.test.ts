@@ -347,3 +347,39 @@ describe('实际输入预览按模型声明挡住不合要求的素材', () => {
     expect(preparedOk.blocked ?? []).toEqual([])
   })
 })
+
+describe('语音识别的音频在运行前按声明检查', () => {
+  const transcribeModel: ModelSpec = {
+    id: 'bigmodel',
+    title: '录音文件识别极速版',
+    capabilities: ['audio.transcribe'],
+    limits: { media: { audio: { mime: ['audio/wav'], maxMB: 100, minBytes: 1 } } },
+  }
+
+  const transcribe = async (over: Partial<Asset>) => {
+    const { doc, element } = scene()
+    const audio: PortValue = { type: 'audio', assetId, kind: 'audio', source: element } as PortValue
+    return mediaRequirementIssues({
+      host: stubHost({
+        [assetId]: asset({ kind: 'audio', mime: 'audio/wav', ...over }),
+      }),
+      ownerId: 'local',
+      doc,
+      capability: 'audio.transcribe',
+      model: transcribeModel,
+      params: {},
+      inputs: { audio: [audio] },
+      signal: new AbortController().signal,
+    })
+  }
+
+  it('超限与空文件都点名模型、文件与当前值，合规文件不报', async () => {
+    expect(await transcribe({ size: 120 * 1024 * 1024 })).toEqual([
+      '录音文件识别极速版 要求音频不超过 100 MB，「片头」是 120 MB，请压缩后再运行',
+    ])
+    expect(await transcribe({ size: 0 })).toEqual([
+      '录音文件识别极速版 要求音频不小于 1 字节，「片头」是 0 字节，请更换素材',
+    ])
+    expect(await transcribe({ size: 1024 })).toEqual([])
+  })
+})

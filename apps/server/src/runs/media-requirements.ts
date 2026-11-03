@@ -6,6 +6,7 @@ import {
   type MediaSample,
   type ModelSpec,
   type PortValue,
+  transcribeAudioProblem,
   videoTaskOverrides,
 } from '@plein/plugin-sdk'
 import { corePlugin } from '@plein/nodes'
@@ -193,6 +194,14 @@ export async function mediaRequirementIssues(input: MediaRequirementsInput): Pro
   }
   if (input.capability === 'image.process')
     await check('process', materialsOf(input.inputs.image, 'image'), '精修原图')
+  if (input.capability === 'audio.transcribe' && input.model) {
+    // 识别音频：用资产记录里的格式与大小判断，说清是哪个模型、上限多少、当前文件叫什么
+    for (const material of materialsOf(input.inputs.audio, 'audio')) {
+      const name = nameOf(input, material)
+      const problem = transcribeAudioProblem(input.model, await sampleOf(material, false), name)
+      if (problem) issues.push(problem)
+    }
+  }
 
   return issues
 }
