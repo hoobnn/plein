@@ -1,5 +1,6 @@
 import {
   imageModelProblem,
+  modelParamsProblem,
   selectedImageOptions,
   boundReferenceTokens,
   referenceLabelStyle,
@@ -2209,6 +2210,19 @@ export class NodeRuns implements BatchHost {
         { ...effective, options: selectedImageOptions(effective) },
         inputs.references?.length ?? 0,
       )
+      if (issue) blocked.push({ code: 'prepare_failed', message: issue })
+    }
+    // 模型声明的参数范围：前端提交前按模型收窄表单，走 Agent / MCP / 批量或分镜展开时
+    // 参数没经过前端，越界值会直达平台，这里按同一份声明再挡一次
+    if (
+      spec &&
+      (def.capability === 'video.generate' ||
+        def.capability === 'audio.music' ||
+        def.capability === 'audio.sfx' ||
+        def.capability === 'audio.speech' ||
+        def.capability === 'image.edit')
+    ) {
+      const issue = modelParamsProblem(spec, def.capability, effective)
       if (issue) blocked.push({ code: 'prepare_failed', message: issue })
     }
     if (def.capability === 'audio.speech') {

@@ -34,6 +34,7 @@ import {
   imageModelProblem,
   inputAssets,
   inputText,
+  modelParamsProblem,
   ProviderError,
   videoTaskOverrides,
 } from '@plein/plugin-sdk'
@@ -147,7 +148,11 @@ const imageEdit = defineExecutor(imageEditNode, async (ctx) => {
   if (mask.sourceAssetId && mask.sourceAssetId !== source.assetId)
     throw new ProviderError('invalid_input', '原图换过了，重绘区域对不上：点「画区域」重新画')
   sayProgress(ctx)
-  const res = await ctx.providers.call('image.edit', pickModel(ctx, '局部重绘'), {
+  const model = pickModel(ctx, '局部重绘')
+  const spec = ctx.providers.models('image.edit').find((m) => m.ref === model)
+  const issue = spec && modelParamsProblem(spec, 'image.edit', params)
+  if (issue) throw new ProviderError('invalid_input', issue)
+  const res = await ctx.providers.call('image.edit', model, {
     image: source,
     mask: { assetId: mask.assetId, kind: 'image', mime: 'image/png' },
     prompt: requireText(joinText(params.prompt, inputText(inputs, 'prompt')), '提示词'),
