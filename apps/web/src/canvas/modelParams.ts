@@ -190,6 +190,10 @@ export function adaptToModel(
           )
         }
       }
+    } else if (k === 'speed' && limits.speed === false && typeof v === 'number' && v !== 1) {
+      // 模型不支持调节语速：表单已隐藏该字段，旧值要恢复默认，否则执行器会照传给平台
+      patch[k] = 1
+      notes.push(`语速已恢复默认（${name} 不支持调节语速）`)
     } else if (isRanged(k) && typeof v === 'number' && rangeOf(k, limits)) {
       const r = rangeOf(k, limits)!
       const n = clamp(v, r.min, r.max)
@@ -276,10 +280,13 @@ export function modelProblem(
     if (!(k in patch)) continue
     const v = params[k] ?? f.default
     if (f.widget === 'resolution') return `${name} 不支持分辨率 ${String(v)}`
+    if (k === 'speed' && limits.speed === false) return `${name} 不支持调节语速，请把语速恢复为 1`
     if (isRanged(k)) {
-      const r = rangeOf(k, limits)!
-      const label = f.title?.replace(/（.*）/, '') ?? k
-      return `${name} 的${label}须为 ${r.min}–${r.max} ${RANGED[k]}`
+      const r = rangeOf(k, limits)
+      if (r) {
+        const label = f.title?.replace(/（.*）/, '') ?? k
+        return `${name} 的${label}须为 ${r.min}–${r.max} ${RANGED[k]}`
+      }
     }
     if (k === 'count') return `${name} 一次最多生成 ${limits.count!.max} 张`
     return `${name} 不支持${f.title ?? k} ${String(v)}`
