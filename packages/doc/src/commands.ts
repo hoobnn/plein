@@ -438,6 +438,39 @@ export function setText(doc: PleinDoc, id: string, text: string) {
 /** 每个节点最多保留的结果数，超出时丢弃最旧的 */
 export const MAX_RESULTS = 48
 
+/**
+ * 删除生成历史里的结果记录（可撤销，一次调用一步）。
+ * 只删文档里的记录，不删除资产文件；被删的是节点当前显式采用的结果时，
+ * 节点回到「尚未采用」，不自动换成别的候选。节点或结果不存在时跳过。
+ */
+export function removeResults(
+  doc: PleinDoc,
+  items: ReadonlyArray<{ elementId: string; resultId: string }>,
+): number {
+  if (doc.readOnly || items.length === 0) return 0
+  const byElement = new Map<string, Set<string>>()
+  for (const { elementId, resultId } of items) {
+    const ids = byElement.get(elementId)
+    if (ids) ids.add(resultId)
+    else byElement.set(elementId, new Set([resultId]))
+  }
+  return write(doc, () => {
+    let removed = 0
+    for (const [elementId, resultIds] of byElement) {
+      const m = doc.mutable(elementId)
+      if (!m) continue
+      const old = Array.isArray(m.get('results')) ? (m.get('results') as NodeResult[]) : []
+      const list = old.filter((r) => !resultIds.has(r.id))
+      removed += old.length - list.length
+      if (list.length === old.length) continue
+      m.set('results', snapshotResultEvidence(list))
+      const adopted = m.get('adopted')
+      if (typeof adopted === 'string' && resultIds.has(adopted)) m.set('adopted', null)
+    }
+    return removed
+  })
+}
+
 /** 采用某个结果（可撤销）；resultId=null 沿用旧约定，清除显式选择并回到最新结果。 */
 export function adoptResult(doc: PleinDoc, id: string, resultId: string | null) {
   write(doc, () => {

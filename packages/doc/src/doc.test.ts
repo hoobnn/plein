@@ -22,6 +22,7 @@ import {
   importElements,
   moveElements,
   ReadOnlyDocError,
+  removeResults,
   SCHEMA_VERSION,
   sendToBack,
   setParams,
@@ -1016,6 +1017,109 @@ describe('节点结果与端口', () => {
     expect(h.find((e) => e.result.id === 'a2')).toMatchObject({ elementId: a, adopted: true })
     expect(h.find((e) => e.result.id === 'a1')!.adopted).toBe(false)
     expect(h[0]).toMatchObject({ elementId: b, adopted: true })
+  })
+
+  describe('删除结果', () => {
+    const media = (id: string, at = 1) => ({
+      id,
+      port: 'images',
+      runId: id,
+      at,
+      value: { type: 'image' as const, assetId: `${id}-asset` },
+    })
+    const makeNode = (doc: ReturnType<typeof open>, results = ['a1', 'a2']) => {
+      const id = createElement(doc, {
+        kind: 'node',
+        x: 0,
+        y: 0,
+        w: 200,
+        h: 200,
+        ports: nodePorts,
+      })
+      addResults(
+        doc,
+        id,
+        results.map((resultId) => media(resultId)),
+      )
+      return id
+    }
+
+    it('删除普通候选只移除记录，当前采用和其他候选不动', () => {
+      const doc = open()
+      const id = makeNode(doc)
+      adoptResult(doc, id, 'a2')
+      doc.undo.stopCapturing()
+      expect(removeResults(doc, [{ elementId: id, resultId: 'a1' }])).toBe(1)
+      expect(doc.get(id)!.results!.map((r) => r.id)).toEqual(['a2'])
+      expect(doc.get(id)!.adopted).toBe('a2')
+      expect(currentResult(doc.get(id)!)?.id).toBe('a2')
+    })
+
+    it('删除显式采用的结果后节点回到未采用，不自动换候选', () => {
+      const doc = open()
+      const id = makeNode(doc)
+      adoptResult(doc, id, 'a2')
+      doc.undo.stopCapturing()
+      expect(removeResults(doc, [{ elementId: id, resultId: 'a2' }])).toBe(1)
+      expect(doc.get(id)!.adopted).toBeNull()
+      expect(currentResult(doc.get(id)!)).toBeUndefined()
+      expect(doc.get(id)!.results!.map((r) => r.id)).toEqual(['a1'])
+    })
+
+    it('隐式采用（adopted 未指定）时删除最新结果不改 adopted', () => {
+      const doc = open()
+      const id = makeNode(doc)
+      doc.mutable(id)!.delete('adopted')
+      doc.flush()
+      doc.undo.stopCapturing()
+      expect(removeResults(doc, [{ elementId: id, resultId: 'a1' }])).toBe(1)
+      expect(doc.mutable(id)!.has('adopted')).toBe(false)
+      expect(currentResult(doc.get(id)!)?.id).toBe('a2')
+    })
+
+    it('多节点批量删除，跳过不存在的节点和结果', () => {
+      const doc = open()
+      const a = makeNode(doc)
+      const b = makeNode(doc, ['b1', 'b2'])
+      doc.undo.stopCapturing()
+      expect(
+        removeResults(doc, [
+          { elementId: a, resultId: 'a1' },
+          { elementId: b, resultId: 'b2' },
+          { elementId: 'missing', resultId: 'x' },
+          { elementId: a, resultId: 'nope' },
+        ]),
+      ).toBe(2)
+      expect(doc.get(a)!.results!.map((r) => r.id)).toEqual(['a2'])
+      expect(doc.get(b)!.results!.map((r) => r.id)).toEqual(['b1'])
+    })
+
+    it('一次调用是一步撤销，撤销后全部恢复', () => {
+      const doc = open()
+      const a = makeNode(doc)
+      const b = makeNode(doc, ['b1', 'b2'])
+      doc.undo.stopCapturing()
+      removeResults(doc, [
+        { elementId: a, resultId: 'a1' },
+        { elementId: b, resultId: 'b2' },
+      ])
+      doc.undo.stopCapturing()
+      doc.undo.undo()
+      expect(doc.get(a)!.results!.map((r) => r.id)).toEqual(['a1', 'a2'])
+      expect(doc.get(b)!.results!.map((r) => r.id)).toEqual(['b1', 'b2'])
+    })
+
+    it('只读文档什么都不做也不抛错', () => {
+      const doc = open()
+      const id = makeNode(doc)
+      adoptResult(doc, id, 'a2')
+      doc.undo.stopCapturing()
+      const before = doc.get(id)!.results!.map((r) => r.id)
+      doc.readOnly = true
+      expect(removeResults(doc, [{ elementId: id, resultId: 'a2' }])).toBe(0)
+      expect(doc.get(id)!.results!.map((r) => r.id)).toEqual(before)
+      expect(doc.get(id)!.adopted).toBe('a2')
+    })
   })
 })
 
