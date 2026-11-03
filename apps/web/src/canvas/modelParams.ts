@@ -233,12 +233,19 @@ export function modelProblem(
     ].join('\n')
     const softReferences = mode === 'reference' && prompt.includes('@')
     if (mode !== 'reference' && (videos || audios)) return '视频或音频参考需要选择多模态参考模式'
-    if (
-      model &&
-      (videos > (model.limits?.referenceMedia?.video ?? 0) ||
-        audios > (model.limits?.referenceMedia?.audio ?? 0))
-    )
-      return '当前模型不支持这些参考素材或数量超过上限'
+    // 视频 / 音频分开说：模型不支持某类参考时直接点名，超过上限时说明上限与实际连了多少。
+    if (model) {
+      const videoLimit = model.limits?.referenceMedia?.video ?? 0
+      const audioLimit = model.limits?.referenceMedia?.audio ?? 0
+      if (videos > videoLimit)
+        return videoLimit > 0
+          ? `当前模型最多支持 ${videoLimit} 段参考视频，现在连了 ${videos} 段`
+          : '当前模型不支持参考视频'
+      if (audios > audioLimit)
+        return audioLimit > 0
+          ? `当前模型最多支持 ${audioLimit} 段参考音频，现在连了 ${audios} 段`
+          : '当前模型不支持参考音频'
+    }
     const problem = videoModeProblem(
       mode,
       mode === 'reference' ? imageCount + videos + audios : imageCount,
