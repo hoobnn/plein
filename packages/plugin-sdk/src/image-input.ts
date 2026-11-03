@@ -179,15 +179,24 @@ function negativePromptValue(params: ImageParams) {
   return undefined
 }
 
-/** 种子范围：声明范围时只接受范围内的整数 */
+/**
+ * 种子范围：声明范围时只接受范围内的整数。
+ * 填了值就必须是整数数字（字符串、布尔、NaN 都按不合法报），没填才跳过。
+ */
 function seedRangeProblem(
   range: boolean | { min: number; max: number } | undefined,
   value: unknown,
   title: string,
 ) {
-  if (!range || typeof range === 'boolean' || typeof value !== 'number') return null
-  if (Number.isInteger(value) && value >= range.min && value <= range.max) return null
-  return `${title} 的种子须为 ${range.min}–${range.max} 的整数，现在是 ${value}`
+  if (!range || typeof range === 'boolean' || value === undefined || value === null) return null
+  if (
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= range.min &&
+    value <= range.max
+  )
+    return null
+  return `${title} 的种子须为 ${range.min}–${range.max} 的整数，现在是 ${String(value)}`
 }
 
 /** 自定义宽高：声明了范围或明确不支持时，运行前就能说清有没有问题 */
@@ -237,9 +246,19 @@ export function imageProcessProblem(
   if (operation === 'upscale') {
     if (rules.scale === false) return `${model.title} 不支持 AI 高清放大，请更换操作或模型`
     const scale = rules.scale
-    const value = params.scale
-    if (scale && typeof value === 'number' && (value < scale.min || value > scale.max))
-      return `${model.title} 放大倍数须为 ${scale.min}–${scale.max}，现在是 ${value}`
+    if (scale) {
+      const value = params.scale
+      if (value !== undefined && value !== null) {
+        // 填了值就必须是有限数字，字符串、NaN 也要挡住
+        if (
+          typeof value !== 'number' ||
+          !Number.isFinite(value) ||
+          value < scale.min ||
+          value > scale.max
+        )
+          return `${model.title} 放大倍数须为 ${scale.min}–${scale.max}，现在是 ${String(value)}`
+      }
+    }
   }
   if (operation === 'outpaint') {
     if (rules.expansion === false) return `${model.title} 不支持扩图，请更换操作或模型`
@@ -247,8 +266,14 @@ export function imageProcessProblem(
     if (expansion)
       for (const side of ['top', 'bottom', 'left', 'right'] as const) {
         const value = params[side]
-        if (typeof value === 'number' && (value < expansion.min || value > expansion.max))
-          return `${model.title} 扩图${EXPANSION_LABELS[side]}比例须为 ${expansion.min}–${expansion.max}，现在是 ${value}`
+        if (value === undefined || value === null) continue
+        if (
+          typeof value !== 'number' ||
+          !Number.isFinite(value) ||
+          value < expansion.min ||
+          value > expansion.max
+        )
+          return `${model.title} 扩图${EXPANSION_LABELS[side]}比例须为 ${expansion.min}–${expansion.max}，现在是 ${String(value)}`
       }
   }
   return null

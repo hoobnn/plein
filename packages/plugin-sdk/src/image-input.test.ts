@@ -65,11 +65,19 @@ describe('图片精修范围预检', () => {
     },
   }
 
-  it('放大倍数写出模型、范围和当前值', () => {
+  it('放大倍数写出模型、范围和当前值，非数字与 NaN 也挡住', () => {
     expect(imageProcessProblem(process, { operation: 'upscale', scale: 5 })).toBe(
       '万相图像编辑 放大倍数须为 1–4，现在是 5',
     )
     expect(imageProcessProblem(process, { operation: 'upscale', scale: 3 })).toBeNull()
+    expect(imageProcessProblem(process, { operation: 'upscale', scale: '3' })).toBe(
+      '万相图像编辑 放大倍数须为 1–4，现在是 3',
+    )
+    expect(imageProcessProblem(process, { operation: 'upscale', scale: Number.NaN })).toContain(
+      '现在是 NaN',
+    )
+    // 没填就跳过，保持原来的默认语义
+    expect(imageProcessProblem(process, { operation: 'upscale' })).toBeNull()
   })
 
   it('扩图各边比例逐边检查', () => {
@@ -85,6 +93,24 @@ describe('图片精修范围预检', () => {
     expect(
       imageProcessProblem(process, { operation: 'outpaint', top: 2, bottom: 1, left: 1, right: 1 }),
     ).toBeNull()
+    expect(
+      imageProcessProblem(process, {
+        operation: 'outpaint',
+        top: '1',
+        bottom: 1,
+        left: 1,
+        right: 1,
+      }),
+    ).toBe('万相图像编辑 扩图向上比例须为 1–2，现在是 1')
+    expect(
+      imageProcessProblem(process, {
+        operation: 'outpaint',
+        top: 1,
+        bottom: Number.NaN,
+        left: 1,
+        right: 1,
+      }),
+    ).toContain('扩图向下比例须为 1–2，现在是 NaN')
   })
 
   it('不支持的操作不在本地判，交给模型声明的操作列表', () => {
@@ -153,5 +179,13 @@ describe('自定义宽高、反向提示词与种子范围', () => {
     expect(imageModelProblem(seeded, { seed: -1, options: { seed: 7 } }, 0)).toBe(
       '万相图片 的种子须为 0–2147483647 的整数，现在是 -1',
     )
+    // 填了值就必须是整数数字：字符串、布尔、NaN 都不放行
+    expect(imageModelProblem(seeded, { options: { seed: '7' } }, 0)).toBe(
+      '万相图片 的种子须为 0–2147483647 的整数，现在是 7',
+    )
+    expect(imageModelProblem(seeded, { seed: true }, 0)).toBe(
+      '万相图片 的种子须为 0–2147483647 的整数，现在是 true',
+    )
+    expect(imageModelProblem(seeded, { seed: Number.NaN }, 0)).toContain('现在是 NaN')
   })
 })
