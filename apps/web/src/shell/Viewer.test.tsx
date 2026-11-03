@@ -230,6 +230,30 @@ it('图片失败两侧独立重试、忽略旧事件且恢复键盘操作焦点'
   expect(screen.queryByRole('alert')).toBeNull()
   expect(f.doc.get(f.id)!.adopted).toBe(f.results[0]!.id)
 })
+it('视频关闭时在移除原生控件前暂停并释放来源', async () => {
+  const f = setup('video')
+  const media = document.querySelector('video')!
+  const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause')
+  const load = vi.spyOn(HTMLMediaElement.prototype, 'load')
+  const cleanups: Array<{ connected: boolean; inViewer: boolean; src: string | null }> = []
+  pause.mockImplementation(function (this: HTMLMediaElement) {
+    if (this !== media) return
+    cleanups.push({
+      connected: this.isConnected,
+      inViewer: !!screen.queryByRole('dialog')?.contains(this),
+      src: this.getAttribute('src'),
+    })
+  })
+  await f.user.click(screen.getByRole('button', { name: '关闭' }))
+  expect(cleanups[0]).toEqual({
+    connected: true,
+    inViewer: true,
+    src: `/api/assets/${f.id}-asset-0`,
+  })
+  expect(media.getAttribute('src')).toBeNull()
+  expect(load).toHaveBeenCalled()
+})
+
 it.each(['audio', 'video'] as const)(
   '%s 本地预览使用本地 URL，重试恢复焦点，类型切换与关闭释放旧播放器',
   async (kind) => {

@@ -1,5 +1,12 @@
 import { creativeReviewTarget, currentResult, type NodeResult } from '@plein/doc'
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import { assetUrls } from '../api/client'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
@@ -8,8 +15,7 @@ import { Icon } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
 import { Select } from '../ui/Select'
 import { Slider } from '../ui/Slider'
-import { LazyMotion } from '../ui/LazyMotion'
-import { useOverlayClosing } from '../ui/motion'
+import { AnimatePresence, useOverlayClosing } from '../ui/motion'
 import { CreativeReviewForm } from '../features/storyboard/CreativeReviewForm'
 import { useStale } from '../features/runs/stale'
 import { currentReviewCandidates, isCurrentReview, runReviewAction } from './reviewActions'
@@ -18,18 +24,19 @@ import { currentReviewCandidates, isCurrentReview, runReviewAction } from './rev
  * 审片状态只在浮层里；只有明确采用才写文档。
  * 浮层里用的是 m 组件，必须在打开处给出 Motion 特性来源：缺了这一层，m 拿不到渲染器，
  * 只能把初始帧（opacity 0）留在面板上，浮层看不见却还在播放和挡点击。
+ * AnimatePresence 自带 LazyMotion 宿主，同时提供关闭态，让媒体在移除前先停下。
  */
 export function Viewer() {
   const viewer = useCanvas((s) => s.viewer)
   return (
-    <LazyMotion>
+    <AnimatePresence>
       {viewer && (
         <Review
           key={`${viewer.nodeId ?? ''}/${viewer.resultId ?? viewer.assetId}`}
           viewer={viewer}
         />
       )}
-    </LazyMotion>
+    </AnimatePresence>
   )
 }
 
@@ -542,8 +549,9 @@ function ReviewMedia({
   const current = useRef(attempt)
   current.current = attempt
   const closing = useOverlayClosing()
-  useEffect(() => {
+  useLayoutEffect(() => {
     const media = ref.current
+    // 必须在原生控件从 DOM 移除前暂停并释放，避免关闭时仍持有媒体焦点。
     // StrictMode 会保留 DOM 并重放 effect，清理后需要恢复来源。
     if (closing) media?.pause()
     else if (media && !media.getAttribute('src')) media.src = src

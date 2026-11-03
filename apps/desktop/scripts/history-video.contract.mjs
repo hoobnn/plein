@@ -281,6 +281,14 @@ async function runCase({ item, record, data, dist, scratch, expect, _electron, r
     else if (viewerExit === 'backdrop') await page.mouse.click(3, 3)
     else await viewer.getByRole('button', { name: '关闭', exact: true }).click()
     await expect(viewer).toHaveCount(0)
+    record.closing = await page.evaluate(() => ({
+      paused: window.__historyVideo.paused,
+      src: window.__historyVideo.getAttribute('src'),
+      connected: window.__historyVideo.isConnected,
+    }))
+    expect(record.closing.paused).toBe(true)
+    expect(record.closing.src).toBeNull()
+    await expect.poll(() => page.evaluate(() => window.__historyVideo.isConnected)).toBe(false)
     record.released = await page.evaluate(() => ({
       paused: window.__historyVideo.paused,
       src: window.__historyVideo.getAttribute('src'),
