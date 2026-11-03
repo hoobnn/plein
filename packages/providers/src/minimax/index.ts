@@ -265,6 +265,7 @@ export const minimaxProvider = defineProvider({
         image: { resolutionsByAspectRatio: { '21:9': ['2K'] } },
         count: { max: 9 },
         references: { max: 1 },
+        promptMaxLength: 1500,
       },
     },
     {
@@ -277,6 +278,7 @@ export const minimaxProvider = defineProvider({
         aspectRatios: ['16:9', '3:2', '4:3', '1:1', '3:4', '2:3', '9:16'],
         count: { max: 9 },
         references: { max: 1 },
+        promptMaxLength: 1500,
       },
     },
     ...['MiniMax-H3', 'MiniMax-H3-Highspeed', 'MiniMax-H3-Lite', 'MiniMax-H3-Max'].map((id) => ({
@@ -303,7 +305,7 @@ export const minimaxProvider = defineProvider({
       id,
       title: id,
       capabilities: ['audio.speech' as const],
-      limits: { speed: { min: 0.5, max: 2 }, instruction: false },
+      limits: { speed: { min: 0.5, max: 2 }, instruction: false, promptMaxLength: 9999 },
       options: z.object({
         emotion: z
           .enum(['happy', 'sad', 'angry', 'fearful', 'disgusted', 'surprised', 'calm'])
@@ -328,7 +330,7 @@ export const minimaxProvider = defineProvider({
       description: '官方已退役；仅保留旧画布引用',
       deprecated: true,
       capabilities: ['audio.music'],
-      limits: { duration: false },
+      limits: { duration: false, promptMaxLength: 2000 },
     },
   ],
   limits: { concurrency: 2 },

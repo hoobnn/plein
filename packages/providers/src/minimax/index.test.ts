@@ -541,3 +541,13 @@ describe('MiniMax 音色设计与增强参考', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 })
+
+it('目录声明图片、语音与音乐的文本长度上限', () => {
+  const limit = (id: string) =>
+    minimaxProvider.models.find((model) => model.id === id)?.limits?.promptMaxLength
+  expect(limit('image-01')).toBe(1500)
+  expect(limit('image-01-live')).toBe(1500)
+  expect(limit('speech-2.8-hd')).toBe(9999)
+  expect(limit('speech-2.8-turbo')).toBe(9999)
+  expect(limit('music-3.0')).toBe(2000)
+})
