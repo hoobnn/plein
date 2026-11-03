@@ -422,13 +422,15 @@ export async function applyMentions(
 
   for (const d of details) {
     if (!d.required) continue
+    // 视频、音频、特效卡说「参考视频 / 参考音频」，别都说参考图
+    const media = d.media === 'video' ? '参考视频' : d.media === 'audio' ? '参考音频' : '参考图'
     if (!send)
       blocked.push({
         code: 'required_unsupported',
         elementId: d.elementId,
         message: video
-          ? `「${d.name}」是必需参考，当前模式不送参考图，请切到「多模态参考」或取消必需`
-          : `「${d.name}」是必需参考，这个节点不收参考图`,
+          ? `「${d.name}」是必需参考，当前模式不送${media}，请切到「多模态参考」或取消必需`
+          : `「${d.name}」是必需参考，这个节点不收${media}`,
       })
     else if (d.selected?.length === 0 || d.available.length === 0)
       blocked.push(
@@ -441,13 +443,13 @@ export async function applyMentions(
           : {
               code: 'required_no_image',
               elementId: d.elementId,
-              message: `「${d.name}」是必需参考，但还没有可用的参考图（未生成或没连）`,
+              message: `「${d.name}」是必需参考，但还没有可用的${media}（未生成或没连）`,
             },
       )
   }
 
   const own = send ? (inputs[port] ?? []) : []
-  const refs = send ? pickRefs(own, groups, refList, details, maxRefs, notices, blocked) : []
+  const refs = send ? pickRefs(own, groups, refList, imageDetails, maxRefs, notices, blocked) : []
   for (const [i, d] of imageDetails.entries()) {
     d.sent = send ? refList[i]!.assetIds : []
     if (d.selected?.some((id) => !d.available.includes(id))) d.reason = 'selection_missing'
@@ -643,7 +645,8 @@ function pickRefs(
   own: PortValue[],
   groups: Group[],
   refList: UsedRef[],
-  details: InputRef[],
+  /** 与 groups 同步下标（只含图片参考）：details 还含视频、音频与特效卡，按 details 下标取会错位 */
+  imageDetails: InputRef[],
   max: number | undefined,
   notices: InputIssue[],
   blocked: InputIssue[],
@@ -671,8 +674,8 @@ function pickRefs(
     if (take(g.images[0]) || g.priority < 0 || !g.images.length) continue
     blocked.push({
       code: 'required_over_limit',
-      elementId: details[g.i]!.elementId,
-      message: `「${details[g.i]!.name}」是必需参考，但这个模型最多带 ${max} 张参考图，放不下了，请减少必需参考或换模型`,
+      elementId: imageDetails[g.i]!.elementId,
+      message: `「${imageDetails[g.i]!.name}」是必需参考，但这个模型最多带 ${max} 张参考图，放不下了，请减少必需参考或换模型`,
     })
   }
   for (const g of order) for (const v of g.images.slice(1)) take(v)
