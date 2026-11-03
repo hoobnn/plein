@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { type HistoryEntry, type NewElement, resultHistory } from '@plein/doc'
+import { type HistoryEntry, type NewElement, removeResults, resultHistory } from '@plein/doc'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { assetUrls } from '../api/client'
 import { useBatchDownload } from './useBatchDownload'
@@ -9,6 +9,7 @@ import { beginImport } from '../canvas/importProgress'
 import { importLocation, watchImportView } from '../canvas/importView'
 import { loadAssetMeta } from '../stores/assetMeta'
 import { type NoticeAction, useCanvas } from '../stores/canvas'
+import { confirmDialog } from '../ui/Dialog'
 import { shortTime } from '../ui/format'
 import { Icon, type IconName } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
@@ -125,6 +126,34 @@ function HistoryPanel({ engine }: { engine: Engine }) {
         return { assetId: entry.result.value.assetId, name }
       }),
     )
+  }
+
+  const remove = async (entries: HistoryEntry[]) => {
+    if (!entries.length || doc.readOnly) return
+    const inUse = entries.filter((e) => e.adopted).length
+    if (inUse > 0) {
+      const ok = await confirmDialog({
+        title: '删除生成结果？',
+        message: `其中 ${inUse} 项正在节点上使用，删除后这些节点会变为未采用。`,
+        confirmLabel: '删除',
+        danger: true,
+      })
+      if (!ok || !mounted.current) return
+    }
+    if (useCanvas.getState().engine !== engine || doc.readOnly) return
+    // 确认期间结果可能已被别处改动；只删仍在文档里的记录
+    const items = entries
+      .filter((e) => doc.get(e.elementId)?.results?.some((r) => r.id === e.result.id))
+      .map((e) => ({ elementId: e.elementId, resultId: e.result.id }))
+    if (!items.length) return
+    const removed = removeResults(doc, items)
+    if (!removed) return
+    useCanvas.getState().notify(`已删除 ${removed} 项，可撤销（⌘Z）`, {
+      label: '撤销',
+      run: () => {
+        if (!doc.readOnly) doc.undo.undo()
+      },
+    })
   }
 
   const place = async () => {
@@ -271,8 +300,10 @@ function HistoryPanel({ engine }: { engine: Engine }) {
                 thumb={thumbOf(e, size)}
                 picked={retained.has(keyOf(e))}
                 selecting={selected.length > 0}
+                readOnly={doc.readOnly}
                 onPick={() => togglePick(e)}
                 onOpen={() => locate(e)}
+                onRemove={() => void remove([e])}
               />
             ))}
           </ul>
@@ -311,6 +342,15 @@ function HistoryPanel({ engine }: { engine: Engine }) {
                 {downloads.cancelled ? '继续下载' : '重试未下载'}（{downloads.remaining.length}）
               </button>
             )}
+            <button
+              type="button"
+              className="ui-btn ui-btn-sm ui-btn-danger"
+              disabled={doc.readOnly || !selected.length}
+              onClick={() => void remove(selected)}
+            >
+              <Icon name="trash" size={14} />
+              删除
+            </button>
             <button
               type="button"
               className="ui-btn ui-btn-secondary"
@@ -360,8 +400,10 @@ function Card(props: {
   thumb: string
   picked: boolean
   selecting: boolean
+  readOnly: boolean
   onPick(): void
   onOpen(): void
+  onRemove(): void
 }) {
   const { entry, picked } = props
   const { type } = entry.result.value
@@ -424,20 +466,35 @@ function Card(props: {
             </span>
           )}
         </button>
-        {current.broken && (
+        <div className="absolute right-2 bottom-2 flex flex-col items-end gap-1">
+          {current.broken && (
+            <button
+              type="button"
+              aria-label={`重新加载「${props.name}」缩略图`}
+              title="只重新加载缩略图，不改变选择或采用结果"
+              className="ui-btn ui-btn-xs ui-btn-quiet"
+              onClick={() => {
+                preview.current?.focus()
+                setLoad((old) => ({ ...old, attempt: old.attempt + 1, broken: false }))
+              }}
+            >
+              重试
+            </button>
+          )}
           <button
             type="button"
-            aria-label={`重新加载「${props.name}」缩略图`}
-            title="只重新加载缩略图，不改变选择或采用结果"
-            className="ui-btn ui-btn-xs ui-btn-quiet absolute right-2 bottom-2"
-            onClick={() => {
-              preview.current?.focus()
-              setLoad((old) => ({ ...old, attempt: old.attempt + 1, broken: false }))
+            aria-label={`删除「${props.name}」`}
+            title={props.readOnly ? '当前画布只读，不能删除' : '删除这项结果'}
+            disabled={props.readOnly}
+            className="ui-btn ui-btn-xs ui-btn-quiet ui-btn-danger opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+            onClick={(event) => {
+              event.stopPropagation()
+              props.onRemove()
             }}
           >
-            重试
+            <Icon name="trash" size={14} />
           </button>
-        )}
+        </div>
       </div>
       <input
         type="checkbox"

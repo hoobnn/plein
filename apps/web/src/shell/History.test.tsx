@@ -11,13 +11,14 @@ import { History } from './History'
 import { Viewer } from './Viewer'
 import { shellFixture, mediaAsset } from './testing'
 
-function setup() {
+function setup({ readOnly = false } = {}) {
   const f = shellFixture()
   const ids = ['甲', '乙', '丙'].map((name, i) =>
     f.add(i === 2 ? 'speech' : 'image', name, { x: i * 500 }),
   )
   const results = ids.map((id, i) => f.results(id, i === 2 ? 'audio' : 'image', 1)[0]!)
   results.forEach((result, i) => f.doc.mutable(ids[i]!)!.set('results', [{ ...result, at: i + 1 }]))
+  f.doc.readOnly = readOnly
   useCanvas.setState({ history: true })
   mockFetch((request) => {
     if (request.url.endsWith('/meta')) {
@@ -163,6 +164,61 @@ it.each(['escape', 'edit', 'reopen'] as const)('历史读取期间 %s 完成后�
     expect(f.selection.values()).toEqual([f.imported()[0]!.id])
   }
 })
+
+it('批量删除所选结果，提示可撤销且撤销后全部恢复', async () => {
+  const f = setup()
+  await f.selectAll()
+  act(() => f.doc.undo.stopCapturing())
+  await f.user.click(screen.getByRole('button', { name: '删除' }))
+  const dialog = within(await screen.findByRole('dialog', { name: '删除生成结果？' }))
+  expect(dialog.getByText('其中 3 项正在节点上使用，删除后这些节点会变为未采用。')).toBeTruthy()
+  await f.user.click(dialog.getByRole('button', { name: '删除' }))
+  act(() => f.doc.flush())
+  for (const id of f.ids) expect(f.doc.get(id)!.results).toEqual([])
+  await waitFor(() => expect(screen.queryAllByRole('checkbox')).toHaveLength(0))
+  expect(useCanvas.getState().notice).toBe('已删除 3 项，可撤销（⌘Z）')
+  act(() => useCanvas.getState().noticeAction!.run())
+  expect(f.doc.get(f.ids[0]!)!.results!.map((result) => result.id)).toEqual([f.results[0]!.id])
+})
+
+it('单项删除不弹确认，也不触发预览或勾选', async () => {
+  const f = setup()
+  act(() => {
+    f.doc.mutable(f.ids[0]!)!.set('adopted', null)
+    f.doc.flush()
+  })
+  expect(f.check('甲').checked).toBe(false)
+  await f.user.click(screen.getByRole('button', { name: '删除「甲」' }))
+  expect(screen.queryByRole('dialog', { name: '删除生成结果？' })).toBeNull()
+  expect(f.doc.get(f.ids[0]!)!.results).toEqual([])
+  act(() => f.doc.flush())
+  expect(screen.queryByRole('checkbox', { name: '选择「甲」' })).toBeNull()
+  expect(useCanvas.getState().viewer).toBeNull()
+  expect(useCanvas.getState().history).toBe(true)
+  expect(useCanvas.getState().notice).toBe('已删除 1 项，可撤销（⌘Z）')
+})
+
+it('删除采用中的结果先确认，取消后不删', async () => {
+  const f = setup()
+  await f.user.click(f.check('甲'))
+  await f.user.click(screen.getByRole('button', { name: '删除' }))
+  const dialog = within(await screen.findByRole('dialog', { name: '删除生成结果？' }))
+  expect(dialog.getByText('其中 1 项正在节点上使用，删除后这些节点会变为未采用。')).toBeTruthy()
+  await f.user.click(dialog.getByRole('button', { name: '取消' }))
+  expect(screen.queryByRole('dialog', { name: '删除生成结果？' })).toBeNull()
+  expect(f.doc.get(f.ids[0]!)!.results).toHaveLength(1)
+  expect(f.check('甲').checked).toBe(true)
+  expect(useCanvas.getState().notice).toBeNull()
+})
+
+it('只读画布禁用批量与单项删除', async () => {
+  const f = setup({ readOnly: true })
+  await f.user.click(f.check('甲'))
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: '删除' }).disabled).toBe(true)
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: '删除「甲」' }).disabled).toBe(true)
+  expect(f.doc.get(f.ids[0]!)!.results).toHaveLength(1)
+})
+
 it('同帧重复放入只写入一批素材', async () => {
   const f = setup()
   let release!: (response: Response) => void
@@ -349,7 +405,7 @@ it('历史采用旧尾帧后主视频同步采用，验收备注按端口独立�
   const adopted = screen
     .getAllByRole('listitem')
     .find((row) => row.textContent?.includes('采用中'))!
-  await user.click(within(adopted).getByRole('button'))
+  await user.click(within(adopted).getByRole('button', { name: '预览「视频与尾帧」' }))
   expect(document.querySelector('video')!.getAttribute('src')).toBe('/api/assets/old-video')
   await user.click(screen.getByText('创作验收：待审'))
   expect(note().value).toBe('')
