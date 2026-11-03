@@ -18,6 +18,7 @@ const node = {
     properties: {
       model: { type: 'string', widget: 'model' },
       duration: { type: 'integer', minimum: 1, maximum: 30, title: '时长' },
+      count: { type: 'integer', minimum: 1, maximum: 4, title: '数量' },
       aspectRatio: { type: 'string', enum: ['16:9', '9:16', '1:1'], title: '画幅' },
       resolution: { type: 'string', widget: 'resolution' },
       seed: { type: 'integer' },
@@ -80,8 +81,28 @@ describe('按模型处理参数', () => {
     const { patch, notes } = adaptToModel(node, params, m)
     expect(patch).toEqual({ duration: 4, aspectRatio: '16:9', resolution: '' })
     expect(notes).toHaveLength(3)
-    expect(modelProblem(node, params, m, new Map())).toBe('Fast 的时长须为 4–15 秒')
+    expect(modelProblem(node, params, m, new Map())).toBe('Fast 的时长须为 4–15 秒，现在是 3 秒')
     expect(modelProblem(node, { ...params, ...patch }, m, new Map())).toBeNull()
+  })
+
+  it('分辨率、张数超限的说法与服务端一致：点名可选值、视频按条图片按张', () => {
+    const m = selectedModel(catalog, node, { model: 'p/a:fast' })!.info
+    expect(modelProblem(node, { resolution: '1080p' }, m, new Map())).toBe(
+      'Fast 不支持分辨率 1080p；请选择 480p、720p，或使用默认分辨率',
+    )
+    // 模型没声明可选分辨率时只让用户恢复默认
+    const plain: SelectedModel['info'] = {
+      ref: 'p:free',
+      id: 'free',
+      title: 'Free',
+      capabilities: ['video.generate'],
+      limits: {},
+    }
+    expect(modelProblem(node, { resolution: '4k' }, plain, new Map())).toBe(
+      'Free 不支持分辨率 4k；或使用默认分辨率',
+    )
+    const two = { ...m, limits: { ...m.limits, count: { max: 2 } } }
+    expect(modelProblem(node, { count: 3 }, two, new Map())).toBe('Fast 一次最多生成 2 条')
   })
 })
 

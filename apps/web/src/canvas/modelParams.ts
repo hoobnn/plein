@@ -207,7 +207,10 @@ export function adaptToModel(
       }
     } else if (k === 'count' && limits.count && typeof v === 'number' && v > limits.count.max) {
       patch[k] = limits.count.max
-      notes.push(`张数已改为 ${limits.count.max}（${name} 最多 ${limits.count.max} 张）`)
+      const label = f.title?.replace(/（.*）/, '') ?? '张数'
+      notes.push(
+        `${label}已改为 ${limits.count.max}（${name} 最多 ${limits.count.max} ${node.capability === 'video.generate' ? '条' : '张'}）`,
+      )
     }
   }
   return { patch, notes }
@@ -286,16 +289,22 @@ export function modelProblem(
   for (const [k, f] of fieldsOf(node)) {
     if (!(k in patch)) continue
     const v = params[k] ?? f.default
-    if (f.widget === 'resolution') return `${name} 不支持分辨率 ${String(v)}`
+    if (f.widget === 'resolution') {
+      const options = limits.resolutions ?? []
+      return `${name} 不支持分辨率 ${String(v)}；${
+        options.length ? `请选择 ${options.join('、')}，` : ''
+      }或使用默认分辨率`
+    }
     if (k === 'speed' && limits.speed === false) return `${name} 不支持调节语速，请把语速恢复为 1`
     if (isRanged(k)) {
       const r = rangeOf(k, limits)
       if (r) {
         const label = f.title?.replace(/（.*）/, '') ?? k
-        return `${name} 的${label}须为 ${r.min}–${r.max} ${RANGED[k]}`
+        return `${name} 的${label}须为 ${r.min}–${r.max} ${RANGED[k]}，现在是 ${String(v)} ${RANGED[k]}`
       }
     }
-    if (k === 'count') return `${name} 一次最多生成 ${limits.count!.max} 张`
+    // 与服务端同一说法：视频按条、图片按张
+    if (k === 'count') return `${name} 一次最多生成 ${limits.count!.max} ${video ? '条' : '张'}`
     return `${name} 不支持${f.title ?? k} ${String(v)}`
   }
   // 参考图：图片节点的 references；生成视频只有图片参考模式才把图当参考
