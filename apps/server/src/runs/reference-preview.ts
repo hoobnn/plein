@@ -458,7 +458,7 @@ export function referencePreview({
       ...(source ? { elementId: source } : {}),
       name,
       reason: 'stale_binding',
-      message: `残留绑定 @${name} 已忽略（元素已删除，或既未连线也未被 @）`,
+      message: `残留绑定 @${name} 已忽略（元素已删除，或既未连线也未被 @ 引用）`,
       origins: ['binding'],
     })
   }

@@ -739,7 +739,7 @@ it('音乐和独立识别预览明确当前模型权限未知，检查本身不�
     const input = await preview(server, id, node)
     expect(input.notices).toContainEqual({
       code: 'model_access_unverified',
-      message: expect.stringContaining('plein/mock:audio 的当前账户权限尚未验证'),
+      message: expect.stringContaining('Mock 音频 的当前账户权限尚未验证'),
     })
     expect(input.blocked).not.toContainEqual(
       expect.objectContaining({ code: 'model_access_unverified' }),
@@ -856,7 +856,7 @@ it('仅尾帧在不支持它的平台预览阶段即阻断', async () => {
     connect(doc, [image, 'image'], [node, 'images'])
     const result = await server.runs.preview(id, node, 'local')
     expect(result.status).toBe('blocked')
-    expect(result.blocked.some((p) => p.message.includes('不支持此视频生成模式'))).toBe(true)
+    expect(result.blocked.some((p) => p.message.includes('不支持「仅尾帧」模式'))).toBe(true)
   }
 })
 

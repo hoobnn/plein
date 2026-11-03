@@ -137,6 +137,11 @@ import {
 
 /** 就地计算纯上游节点的最大递归深度（防环） */
 const MAX_DEPTH = 8
+const IMAGE_OPERATION_LABELS: Record<string, string> = {
+  upscale: 'AI 高清放大',
+  outpaint: '扩图',
+  cutout: '主体抠图（透明图层）',
+}
 export type VerifiedSequenceMedia = Map<string, Promise<{ kind: string; info: MediaInfo }>>
 
 /** 进度写回文档的最小间隔，避免高频同步 */
@@ -820,7 +825,7 @@ export class NodeRuns implements BatchHost {
           ? [
               {
                 code: 'model_access_unverified' as const,
-                message: `${def.capability === 'audio.transcribe' ? '语音识别' : '配乐生成'}模型 ${model.ref} 的当前账户权限尚未验证；配置或连接检查不能证明该模型可用。执行可能计费。`,
+                message: `${def.capability === 'audio.transcribe' ? '语音识别' : '配乐生成'}模型 ${model.title} 的当前账户权限尚未验证；配置或连接检查不能证明该模型可用。执行可能计费。`,
               },
             ]
           : []),
@@ -2192,13 +2197,8 @@ export class NodeRuns implements BatchHost {
     )
     if (optionProblem) blocked.push({ code: 'prepare_failed', message: optionProblem })
     if (
-      (def.capability === 'image.generate' || def.capability === 'video.generate') &&
+      def.capability === 'video.generate' &&
       effective.resolution &&
-      !(
-        def.capability === 'image.generate' &&
-        limits?.image?.size &&
-        selectedImageOptions(effective).size
-      ) &&
       limits?.resolutions?.length &&
       !limits.resolutions.includes(String(effective.resolution))
     )
@@ -2316,7 +2316,10 @@ export class NodeRuns implements BatchHost {
         limits.imageOperations?.includes(effective.operation as 'upscale' | 'outpaint' | 'cutout')
       )
     )
-      blocked.push({ code: 'prepare_failed', message: '当前模型不支持这项精修操作' })
+      blocked.push({
+        code: 'prepare_failed',
+        message: `${spec?.title ?? '当前模型'} 不支持「${IMAGE_OPERATION_LABELS[String(effective.operation)] ?? String(effective.operation)}」，请更换模型`,
+      })
     if (
       def.capability === 'image.process' &&
       inputs.image?.filter((v) => v.type === 'image').length !== 1

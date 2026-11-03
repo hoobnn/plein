@@ -171,7 +171,7 @@ describe('F6/F8 实际输入、阻断与有效参数合同', () => {
     connect(f.doc, [source, 'image'], [unsupported, 'image'])
     for (const [target, reason] of [
       [missing, '一张原图'],
-      [unsupported, '不支持这项精修操作'],
+      [unsupported, 'Mock 图片精修 不支持「扩图」，请更换模型'],
     ]) {
       const input = await f.preview(target!)
       expect(input.status).toBe('blocked')

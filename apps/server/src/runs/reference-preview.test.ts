@@ -15,12 +15,16 @@ const detail = (over: Partial<InputRef> & Pick<InputRef, 'name' | 'kind'>): Inpu
   ...over,
 })
 
-const preview = (details: InputRef[], referenceMediaLimits?: { video: number; audio: number }) => {
+const preview = (
+  details: InputRef[],
+  referenceMediaLimits?: { video: number; audio: number },
+  params: Record<string, unknown> = {},
+) => {
   const doc = createDoc(undefined, { schedule: () => {} })
   const elId = createElement(doc, {
     kind: 'node',
     nodeType: 'plein/video',
-    params: { prompt: '', mode: 'reference' },
+    params: { prompt: '', mode: 'reference', ...params },
     x: 0,
     y: 0,
     w: 10,
@@ -32,7 +36,7 @@ const preview = (details: InputRef[], referenceMediaLimits?: { video: number; au
     doc,
     el,
     def: videoNode,
-    params: { mode: 'reference' },
+    params: { mode: 'reference', ...params },
     inputs: {},
     details,
     referenceLimit: 9,
@@ -87,5 +91,12 @@ describe('参考素材超限文案按媒体类型区分', () => {
     expect(r.unsent?.map((item) => item.message)).toEqual([
       '「预告片」的参考视频超过模型上限，未送入',
     ])
+  })
+
+  it('残留绑定统一说明既未连线也未被引用', () => {
+    const r = preview([], undefined, { 'referenceBinding:旧图:missing': null })
+    expect(r.unsent?.map((item) => item.message)).toContain(
+      '残留绑定 @旧图 已忽略（元素已删除，或既未连线也未被 @ 引用）',
+    )
   })
 })
