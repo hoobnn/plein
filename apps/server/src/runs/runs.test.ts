@@ -9,8 +9,7 @@ import {
   writeRun,
 } from '@plein/doc'
 import type { Canvas, PreparedInput } from '@plein/protocol'
-import { mockProvider } from '@plein/providers'
-import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test'
+import { beforeAll, describe, expect, it } from 'vite-plus/test'
 import { addNode, startTestServer, until } from '../testing'
 
 /** 等节点的运行状态满足条件 */
@@ -20,15 +19,9 @@ const waitFor = (doc: PleinDoc, id: string, done: (s?: string) => boolean) =>
 describe('节点运行接口', () => {
   let base: string
   let server: Awaited<ReturnType<typeof startTestServer>>['server']
-  const chat = mockProvider.models.find((model) => model.id === 'agent')!
-  const features = chat.features
 
   beforeAll(async () => {
-    chat.features = [...(features ?? []), 'structured']
     ;({ base, server } = await startTestServer())
-  })
-  afterAll(() => {
-    chat.features = features
   })
 
   /** 新建画布，返回 id 和服务端房间的文档 */

@@ -398,14 +398,19 @@ export const mockProvider = defineProvider({
   ],
   models: [
     // 排第一的是默认对话模型：开发时开箱就能驱动内置智能体，不带工具时和普通对话一样
-    { id: 'agent', title: 'Mock 智能体', capabilities: ['text.chat'], features: ['tools'] },
+    {
+      id: 'agent',
+      title: 'Mock 智能体',
+      capabilities: ['text.chat'],
+      features: ['tools', 'structured'],
+    },
     {
       id: 'agent-vision',
       title: 'Mock 视觉智能体',
       capabilities: ['text.chat'],
-      features: ['tools', 'vision'],
+      features: ['tools', 'vision', 'structured'],
     },
-    { id: 'chat', title: 'Mock 对话', capabilities: ['text.chat'] },
+    { id: 'chat', title: 'Mock 对话', capabilities: ['text.chat'], features: ['structured'] },
     {
       id: 'image',
       title: 'Mock 图片',

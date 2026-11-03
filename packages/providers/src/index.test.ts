@@ -6,10 +6,19 @@ import {
   bailianPlugin,
   doubaoPlugin,
   minimaxPlugin,
+  mockProvider,
   openaiPlugin,
 } from './index'
 
 describe('内置平台插件的权限声明', () => {
+  it('开发对话模型声明可返回结构化 JSON', () => {
+    const chatModels = mockProvider.models.filter((model) =>
+      model.capabilities.includes('text.chat'),
+    )
+    expect(chatModels.map((model) => model.id)).toEqual(['agent', 'agent-vision', 'chat'])
+    for (const model of chatModels) expect(model.features).toContain('structured')
+  })
+
   it.each([
     ['OpenAI', openaiPlugin, ['OPENAI_API_KEY'], ['openai.com'], ['api.openai.com']],
     [
