@@ -148,10 +148,24 @@ function HistoryPanel({ engine }: { engine: Engine }) {
     if (!items.length) return
     const removed = removeResults(doc, items)
     if (!removed) return
+    // 记下这次删除的撤销项；期间有新操作时不误撤栈顶的其他命令。
+    const undo = doc.undo
+    const item = undo.undoStack.at(-1)
+    const canvasId = useCanvas.getState().canvasId
     useCanvas.getState().notify(`已删除 ${removed} 项，可撤销（⌘Z）`, {
       label: '撤销',
       run: () => {
-        if (!doc.readOnly) doc.undo.undo()
+        const state = useCanvas.getState()
+        if (
+          doc.readOnly ||
+          state.engine !== engine ||
+          state.canvasId !== canvasId ||
+          undo.undoStack.at(-1) !== item
+        ) {
+          state.notify('删除之后已有其他操作，请用 ⌘Z 逐步撤销')
+          return
+        }
+        undo.undo()
       },
     })
   }

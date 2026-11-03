@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { deleteElements } from '@plein/doc'
+import { deleteElements, updateElement } from '@plein/doc'
 import { expect, it, vi } from 'vite-plus/test'
 import * as importProgress from '../canvas/importProgress'
 import * as importView from '../canvas/importView'
@@ -196,6 +196,21 @@ it('单项删除不弹确认，也不触发预览或勾选', async () => {
   expect(useCanvas.getState().viewer).toBeNull()
   expect(useCanvas.getState().history).toBe(true)
   expect(useCanvas.getState().notice).toBe('已删除 1 项，可撤销（⌘Z）')
+})
+
+it('删除后又有新操作时，撤销按钮不误撤其他操作', async () => {
+  const f = setup()
+  act(() => {
+    f.doc.mutable(f.ids[0]!)!.set('adopted', null)
+    f.doc.flush()
+  })
+  await f.user.click(screen.getByRole('button', { name: '删除「甲」' }))
+  expect(f.doc.get(f.ids[0]!)!.results).toEqual([])
+  act(() => updateElement(f.doc, f.ids[1]!, { name: '后来改名' }))
+  act(() => useCanvas.getState().noticeAction!.run())
+  expect(f.doc.get(f.ids[1]!)!.name).toBe('后来改名')
+  expect(f.doc.get(f.ids[0]!)!.results).toEqual([])
+  expect(useCanvas.getState().notice).toBe('删除之后已有其他操作，请用 ⌘Z 逐步撤销')
 })
 
 it('删除采用中的结果先确认，取消后不删', async () => {
