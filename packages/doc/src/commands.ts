@@ -454,21 +454,27 @@ export function removeResults(
     if (ids) ids.add(resultId)
     else byElement.set(elementId, new Set([resultId]))
   }
-  return write(doc, () => {
-    let removed = 0
-    for (const [elementId, resultIds] of byElement) {
-      const m = doc.mutable(elementId)
-      if (!m) continue
-      const old = Array.isArray(m.get('results')) ? (m.get('results') as NodeResult[]) : []
-      const list = old.filter((r) => !resultIds.has(r.id))
-      removed += old.length - list.length
-      if (list.length === old.length) continue
-      m.set('results', snapshotResultEvidence(list))
-      const adopted = m.get('adopted')
-      if (typeof adopted === 'string' && resultIds.has(adopted)) m.set('adopted', null)
-    }
-    return removed
-  })
+  // 单次调用独立成一步撤销，不与相邻的删除或编辑合并。
+  doc.undo.stopCapturing()
+  try {
+    return write(doc, () => {
+      let removed = 0
+      for (const [elementId, resultIds] of byElement) {
+        const m = doc.mutable(elementId)
+        if (!m) continue
+        const old = Array.isArray(m.get('results')) ? (m.get('results') as NodeResult[]) : []
+        const list = old.filter((r) => !resultIds.has(r.id))
+        removed += old.length - list.length
+        if (list.length === old.length) continue
+        m.set('results', snapshotResultEvidence(list))
+        const adopted = m.get('adopted')
+        if (typeof adopted === 'string' && resultIds.has(adopted)) m.set('adopted', null)
+      }
+      return removed
+    })
+  } finally {
+    doc.undo.stopCapturing()
+  }
 }
 
 /** 采用某个结果（可撤销）；resultId=null 沿用旧约定，清除显式选择并回到最新结果。 */

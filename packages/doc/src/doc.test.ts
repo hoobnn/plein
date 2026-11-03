@@ -1094,19 +1094,16 @@ describe('节点结果与端口', () => {
       expect(doc.get(b)!.results!.map((r) => r.id)).toEqual(['b1'])
     })
 
-    it('一次调用是一步撤销，撤销后全部恢复', () => {
+    it('连续两次删除各是一步撤销，一次撤销只恢复第二次', () => {
       const doc = open()
-      const a = makeNode(doc)
-      const b = makeNode(doc, ['b1', 'b2'])
-      doc.undo.stopCapturing()
-      removeResults(doc, [
-        { elementId: a, resultId: 'a1' },
-        { elementId: b, resultId: 'b2' },
-      ])
-      doc.undo.stopCapturing()
+      const id = makeNode(doc)
+      removeResults(doc, [{ elementId: id, resultId: 'a1' }])
+      removeResults(doc, [{ elementId: id, resultId: 'a2' }])
+      expect(doc.get(id)!.results).toEqual([])
       doc.undo.undo()
-      expect(doc.get(a)!.results!.map((r) => r.id)).toEqual(['a1', 'a2'])
-      expect(doc.get(b)!.results!.map((r) => r.id)).toEqual(['b1', 'b2'])
+      expect(doc.get(id)!.results!.map((r) => r.id)).toEqual(['a2'])
+      doc.undo.undo()
+      expect(doc.get(id)!.results!.map((r) => r.id)).toEqual(['a1', 'a2'])
     })
 
     it('只读文档什么都不做也不抛错', () => {
