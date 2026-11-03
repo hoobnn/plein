@@ -22,6 +22,7 @@ import {
   importElements,
   moveElements,
   ReadOnlyDocError,
+  removalChangesCurrent,
   removeResults,
   SCHEMA_VERSION,
   sendToBack,
@@ -1104,6 +1105,78 @@ describe('节点结果与端口', () => {
       expect(doc.get(id)!.results!.map((r) => r.id)).toEqual(['a2'])
       doc.undo.undo()
       expect(doc.get(id)!.results!.map((r) => r.id)).toEqual(['a1', 'a2'])
+    })
+
+    const videoNode = (doc: ReturnType<typeof open>) =>
+      createElement(doc, {
+        kind: 'node',
+        x: 0,
+        y: 0,
+        w: 200,
+        h: 200,
+        ports: {
+          inputs: [{ id: 'prompt', label: '提示词', type: 'text' as const }],
+          outputs: [
+            { id: 'video', label: '视频', type: 'video' as const },
+            { id: 'lastFrame', label: '尾帧', type: 'image' as const },
+          ],
+        },
+      })
+    const videoResult = (id: string, port: 'video' | 'lastFrame', at: number) => ({
+      id,
+      port,
+      runId: 'run',
+      at,
+      value:
+        port === 'video'
+          ? { type: 'video' as const, assetId: `${id}-asset` }
+          : { type: 'image' as const, assetId: `${id}-asset` },
+    })
+    const videoNodeWithPair = (doc: ReturnType<typeof open>) => {
+      const id = videoNode(doc)
+      addResults(doc, id, [
+        videoResult('v1', 'video', 3),
+        videoResult('v2', 'video', 2),
+        videoResult('t2', 'lastFrame', 1),
+      ])
+      adoptResult(doc, id, 'v1')
+      return id
+    }
+
+    it('删除会改变当前输出的未采用候选时返回 true', () => {
+      const doc = open()
+      const id = videoNodeWithPair(doc)
+      const el = doc.get(id)!
+      // 旧数据没有 outputGroup：两条视频同属一次运行时，尾帧暂时无法配对。
+      expect(currentResult(el, 'lastFrame')).toBeUndefined()
+      expect(removalChangesCurrent(el, new Set(['v2']))).toBe(true)
+    })
+
+    it('删除与当前输出无关的候选时返回 false', () => {
+      const doc = open()
+      const id = videoNodeWithPair(doc)
+      addResults(
+        doc,
+        id,
+        [
+          {
+            id: 'unrelated',
+            port: 'video',
+            runId: 'other-run',
+            at: 0,
+            value: { type: 'video', assetId: 'unrelated' },
+          },
+        ],
+        { adopt: false },
+      )
+      expect(doc.get(id)!.adopted).toBe('v1')
+      expect(removalChangesCurrent(doc.get(id)!, new Set(['unrelated']))).toBe(false)
+    })
+
+    it('删除显式采用的结果时返回 true', () => {
+      const doc = open()
+      const id = videoNodeWithPair(doc)
+      expect(removalChangesCurrent(doc.get(id)!, new Set(['v1']))).toBe(true)
     })
 
     it('只读文档什么都不做也不抛错', () => {

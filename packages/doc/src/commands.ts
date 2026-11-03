@@ -551,6 +551,25 @@ export function currentResult(el: CanvasElement, port?: string): NodeResult | un
 }
 
 /**
+ * 删除这些结果后，节点各输出端口的当前结果是否会改变。
+ * 删除显式采用项，或拆除旧数据里按运行推断的唯一配对时返回 true。
+ */
+export function removalChangesCurrent(el: CanvasElement, resultIds: ReadonlySet<string>): boolean {
+  const all = el.results ?? []
+  const removed = new Set(all.filter((r) => resultIds.has(r.id)).map((r) => r.id))
+  if (removed.size === 0) return false
+  const after: CanvasElement = {
+    ...el,
+    results: all.filter((r) => !removed.has(r.id)),
+    adopted: typeof el.adopted === 'string' && removed.has(el.adopted) ? null : el.adopted,
+  }
+  for (const port of new Set(all.map((r) => r.port))) {
+    if (currentResult(el, port)?.id !== currentResult(after, port)?.id) return true
+  }
+  return false
+}
+
+/**
  * 同组关联：按候选关联键（outputGroup）取同次运行的指定端口结果；
  * 旧数据没有关联键时只有跨端口唯一配对才兼容，不猜第一条。
  */

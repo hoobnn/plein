@@ -171,7 +171,9 @@ it('批量删除所选结果，提示可撤销且撤销后全部恢复', async (
   act(() => f.doc.undo.stopCapturing())
   await f.user.click(screen.getByRole('button', { name: '删除' }))
   const dialog = within(await screen.findByRole('dialog', { name: '删除生成结果？' }))
-  expect(dialog.getByText('其中 3 项正在节点上使用，删除后这些节点会变为未采用。')).toBeTruthy()
+  expect(
+    dialog.getByText('其中 3 个节点当前使用的结果会改变（变为未采用或改用其他输出），确定删除？'),
+  ).toBeTruthy()
   await f.user.click(dialog.getByRole('button', { name: '删除' }))
   act(() => f.doc.flush())
   for (const id of f.ids) expect(f.doc.get(id)!.results).toEqual([])
@@ -213,12 +215,57 @@ it('删除后又有新操作时，撤销按钮不误撤其他操作', async () =
   expect(useCanvas.getState().notice).toBe('删除之后已有其他操作，请用 ⌘Z 逐步撤销')
 })
 
+it('删除未采用但会改变当前输出的候选也先确认', async () => {
+  const f = setup()
+  const id = f.ids[0]!
+  act(() => {
+    f.doc.mutable(id)!.set('results', [
+      {
+        id: 'v1',
+        port: 'video',
+        runId: 'run',
+        at: 3,
+        value: { type: 'video', assetId: 'v1-asset' },
+      },
+      {
+        id: 'v2',
+        port: 'video',
+        runId: 'run',
+        at: 2,
+        value: { type: 'video', assetId: 'v2-asset' },
+      },
+      {
+        id: 't2',
+        port: 'lastFrame',
+        runId: 'run',
+        at: 1,
+        value: { type: 'image', assetId: 't2-asset' },
+      },
+    ])
+    f.doc.mutable(id)!.set('adopted', 'v1')
+    f.doc.flush()
+  })
+  // 按新到旧：v1、v2、t2；v2 不是采用中的结果，但删除后尾帧会配对到 v1。
+  const deletes = screen.getAllByRole('button', { name: '删除「甲」' })
+  expect(deletes).toHaveLength(3)
+  await f.user.click(deletes[1]!)
+  const dialog = within(await screen.findByRole('dialog', { name: '删除生成结果？' }))
+  expect(
+    dialog.getByText('其中 1 个节点当前使用的结果会改变（变为未采用或改用其他输出），确定删除？'),
+  ).toBeTruthy()
+  await f.user.click(dialog.getByRole('button', { name: '删除' }))
+  act(() => f.doc.flush())
+  expect(f.doc.get(id)!.results!.map((result) => result.id)).toEqual(['v1', 't2'])
+})
+
 it('删除采用中的结果先确认，取消后不删', async () => {
   const f = setup()
   await f.user.click(f.check('甲'))
   await f.user.click(screen.getByRole('button', { name: '删除' }))
   const dialog = within(await screen.findByRole('dialog', { name: '删除生成结果？' }))
-  expect(dialog.getByText('其中 1 项正在节点上使用，删除后这些节点会变为未采用。')).toBeTruthy()
+  expect(
+    dialog.getByText('其中 1 个节点当前使用的结果会改变（变为未采用或改用其他输出），确定删除？'),
+  ).toBeTruthy()
   await f.user.click(dialog.getByRole('button', { name: '取消' }))
   expect(screen.queryByRole('dialog', { name: '删除生成结果？' })).toBeNull()
   expect(f.doc.get(f.ids[0]!)!.results).toHaveLength(1)

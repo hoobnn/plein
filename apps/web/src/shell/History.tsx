@@ -1,5 +1,11 @@
 import type { Engine } from '@plein/canvas-core'
-import { type HistoryEntry, type NewElement, removeResults, resultHistory } from '@plein/doc'
+import {
+  type HistoryEntry,
+  type NewElement,
+  removalChangesCurrent,
+  removeResults,
+  resultHistory,
+} from '@plein/doc'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { assetUrls } from '../api/client'
 import { useBatchDownload } from './useBatchDownload'
@@ -128,13 +134,29 @@ function HistoryPanel({ engine }: { engine: Engine }) {
     )
   }
 
+  /** 删除后当前输出会改变（变为未采用或改用其他输出）的节点数 */
+  const changingNodes = (entries: HistoryEntry[]) => {
+    const byElement = new Map<string, Set<string>>()
+    for (const e of entries) {
+      const ids = byElement.get(e.elementId)
+      if (ids) ids.add(e.result.id)
+      else byElement.set(e.elementId, new Set([e.result.id]))
+    }
+    let count = 0
+    for (const [elementId, ids] of byElement) {
+      const el = doc.get(elementId)
+      if (el && removalChangesCurrent(el, ids)) count++
+    }
+    return count
+  }
+
   const remove = async (entries: HistoryEntry[]) => {
     if (!entries.length || doc.readOnly) return
-    const inUse = entries.filter((e) => e.adopted).length
-    if (inUse > 0) {
+    const changed = changingNodes(entries)
+    if (changed > 0) {
       const ok = await confirmDialog({
         title: '删除生成结果？',
-        message: `其中 ${inUse} 项正在节点上使用，删除后这些节点会变为未采用。`,
+        message: `其中 ${changed} 个节点当前使用的结果会改变（变为未采用或改用其他输出），确定删除？`,
         confirmLabel: '删除',
         danger: true,
       })
