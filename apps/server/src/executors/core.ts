@@ -97,6 +97,13 @@ const llm = defineExecutor(llmNode, async (ctx) => {
   const { params, inputs } = ctx
   const prompt = requireText(joinText(params.prompt, inputText(inputs, 'prompt')), '提示词')
   const images = inputAssets(inputs, 'images')
+  // 模型不支持看图：图送进去读不出来，不如直接说清楚
+  const spec = ctx.providers.models('text.chat').find((m) => m.ref === params.model)
+  if (images.length && spec && !spec.features?.includes('vision'))
+    throw new ProviderError(
+      'invalid_input',
+      '当前对话模型不支持看图，请换支持图片的模型或断开图片输入',
+    )
   sayProgress(ctx)
   const messages: ChatMessage[] = []
   if (params.system.trim()) messages.push({ role: 'system', content: params.system })

@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream'
 import {
   addResults,
   adoptResult,
@@ -21,6 +22,7 @@ import {
 } from '@plein/plugin-sdk'
 import type { JobList, PreparedInput } from '@plein/protocol'
 import { arkProvider, minimaxProvider, mockProvider } from '@plein/providers'
+import { solidPng } from '../../../../packages/providers/src/mock/media'
 import { MOCK_WEBM_BASE64 } from '../../../../packages/providers/src/mock/video-fixture'
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import * as Y from 'yjs'
@@ -2237,25 +2239,33 @@ it('不收参考图的节点也给出 sent / unsent：@ 有图的卡明确说明
     expect(input.prompt).not.toMatch(/图\d|@image\d|图片\d/)
   }
 
-  // LLM 连了图：sent 如实列出，并与执行器实际送入模型的一致
+  // LLM 连了图：sent 如实列出，并与执行器实际送入模型的一致（模型要支持看图才收图）
+  const photo = await server.assets.ingest(
+    'local',
+    Readable.from([solidPng(32, 24, [80, 90, 100])]),
+    {
+      mime: 'image/png',
+      name: 'a.png',
+    },
+  )
   const llm = addNode(doc, 'plein/llm', {
-    params: { model: 'plein/mock:chat', prompt: '看图说话' },
+    params: { model: 'plein/mock:agent-vision', prompt: '看图说话' },
     y: 800,
   })
-  const image = imgEl(doc, 'a.png', asset('b'), 300)
+  const image = imgEl(doc, 'a.png', photo.id, 300)
   connect(doc, [image, 'image'], [llm, 'images'])
   const connected = await preview(server, id, llm)
   expect(connected.sent).toEqual([
     expect.objectContaining({
       index: 1,
       token: '图1',
-      assetId: asset('b'),
+      assetId: photo.id,
       elementId: image,
       name: 'a.png',
       origins: ['edge'],
     }),
   ])
-  expect(connected.inputs.images?.map((value) => value.assetId)).toEqual([asset('b')])
+  expect(connected.inputs.images?.map((value) => value.assetId)).toEqual([photo.id])
   const seen: Array<{ messages?: Array<{ content: unknown }> }> = []
   const submit = mockProvider.submit
   vi.spyOn(mockProvider, 'submit').mockImplementation(async (req, ctx) => {
@@ -2272,7 +2282,7 @@ it('不收参考图的节点也给出 sent / unsent：@ 有图的卡明确说明
   }>
   expect(
     content.filter((part) => part.type === 'image').map((part) => part.image?.assetId),
-  ).toEqual([asset('b')])
+  ).toEqual([photo.id])
 }, 30_000)
 
 it('上游文本引用同一张卡的不同档案项 / 视角：未送入逐条列出', async () => {

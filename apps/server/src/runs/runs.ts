@@ -2214,6 +2214,17 @@ export class NodeRuns implements BatchHost {
       )
       if (issue) blocked.push({ code: 'prepare_failed', message: issue })
     }
+    // 对话模型不支持看图：图送进去也读不出来，直接挡住，别让人以为模型看了图
+    if (
+      def.capability === 'text.chat' &&
+      spec &&
+      !spec.features?.includes('vision') &&
+      (inputs.images?.length ?? 0) > 0
+    )
+      blocked.push({
+        code: 'prepare_failed',
+        message: '当前对话模型不支持看图，请换支持图片的模型或断开图片输入',
+      })
     // 模型声明的参数范围：前端提交前按模型收窄表单，走 Agent / MCP / 批量或分镜展开时
     // 参数没经过前端，越界值会直达平台，这里按同一份声明再挡一次
     if (
