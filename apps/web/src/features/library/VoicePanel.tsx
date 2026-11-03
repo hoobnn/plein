@@ -1,4 +1,5 @@
 import { LIBRARY_KINDS } from '@plein/nodes'
+import { mediaRequirementProblems } from '@plein/plugin-sdk'
 import type { CreateVoice, Voice } from '@plein/protocol'
 import { createContext, type ReactNode, useContext, useLayoutEffect, useRef, useState } from 'react'
 import { api, assetUrls } from '../../api/client'
@@ -324,11 +325,25 @@ function VoiceForm({
   const spec = mode === 'design' ? selected?.voiceDesign : selected?.voiceClone
   const design = selected?.voiceDesign
   const clone = selected?.voiceClone
+  // 复刻样本的要求是平台声明的一部分：选文件后先按声明检查格式与大小，不用等到提交
+  const sampleProblems =
+    mode === 'clone' && file && clone?.sample
+      ? mediaRequirementProblems(
+          clone.sample,
+          { mime: file.type, size: file.size },
+          {
+            title: selected?.title ?? '当前平台',
+            label: '复刻样本',
+            ...(file.name ? { name: file.name } : {}),
+          },
+        )
+      : []
   const needsId =
     mode === 'register' || (spec?.voiceId === 'slot' && (mode === 'design' || idMode === 'slot'))
   const ready =
     !!provider &&
     !!name.trim() &&
+    sampleProblems.length === 0 &&
     (!needsId || !!voiceId.trim()) &&
     (mode === 'register' ||
       (mode === 'clone'
@@ -520,6 +535,11 @@ function VoiceForm({
         {mode === 'clone' && (
           <>
             <VoiceFile label="样本音频" accept="audio/*" file={file} onChange={setFile} />
+            {sampleProblems.map((problem) => (
+              <p key={problem} role="alert" className="ui-help text-danger">
+                {problem}
+              </p>
+            ))}
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"

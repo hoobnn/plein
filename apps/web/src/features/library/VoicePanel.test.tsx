@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { expect, it } from 'vite-plus/test'
 import { mockFetch } from '../../testing/fetch'
-import { renderApp, resetStoreAfterEach, screen, waitFor } from '../../testing/render'
+import { fireEvent, renderApp, resetStoreAfterEach, screen, waitFor } from '../../testing/render'
 import { useCatalog } from '../../stores/catalog'
 import { VoicePanel } from './VoicePanel'
 import { voiceCatalog, designedVoice } from './voiceFixtures'
@@ -161,4 +161,40 @@ it('没记录所属 Key 或平台组数不明的音色不显示标签', async ()
   // 目录没返回组数时同样保持安静，不猜
   useCatalog.setState({ catalog: voiceCatalog })
   await waitFor(() => expect(screen.queryByText('团队')).toBeNull())
+})
+
+it('复刻样本不符合平台声明时在提交前提示，且不能提交', async () => {
+  const { user, writes } = setup()
+  useCatalog.setState({
+    catalog: {
+      ...voiceCatalog,
+      providers: voiceCatalog.providers.map((provider) =>
+        provider.id === 'doubao/speech'
+          ? {
+              ...provider,
+              voiceClone: {
+                ...provider.voiceClone,
+                sample: { mime: ['audio/wav'], maxMB: 1, minBytes: 1 },
+              },
+            }
+          : provider,
+      ),
+    } as Catalog,
+  })
+  await user.click(screen.getByRole('button', { name: '上传声音复刻' }))
+  await user.click(screen.getByRole('combobox', { name: '平台' }))
+  await user.click(screen.getByRole('option', { name: '豆包语音' }))
+  await user.type(screen.getByRole('textbox', { name: '名称' }), '测试音色')
+  await user.type(screen.getByRole('textbox', { name: '音色 ID' }), 'S_abc')
+  const big = new File([new Uint8Array(2 * 1024 * 1024)], '样本.wav', { type: 'audio/wav' })
+  fireEvent.change(screen.getByLabelText('选择样本音频'), { target: { files: [big] } })
+  expect(
+    await screen.findByText(
+      '复刻样本「样本.wav」大小 2 MB，超过 豆包语音 的 1 MB 上限，请压缩后再运行',
+    ),
+  ).toBeTruthy()
+  expect((screen.getByRole('button', { name: '开始复刻' }) as HTMLButtonElement).disabled).toBe(
+    true,
+  )
+  expect(writes).toEqual([])
 })
