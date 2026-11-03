@@ -9,14 +9,74 @@ import {
   type TranscriptSegment,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
+import {
+  arkPlanProvider,
+  arkProvider,
+  bailianProvider,
+  doubaoProvider,
+  minimaxProvider,
+  mockProvider,
+  openaiProvider,
+} from '@plein/providers'
+
+const PROVIDER_TITLES = new Map(
+  [
+    arkPlanProvider,
+    arkProvider,
+    bailianProvider,
+    doubaoProvider,
+    minimaxProvider,
+    mockProvider,
+    openaiProvider,
+  ].map((provider) => [provider.id, provider.title]),
+)
+
+/** 优先使用当前注册表中的平台名；独立执行器没有注册表时使用内置平台声明。 */
+export function speechProviderTitle(
+  provider: string,
+  registryTitle?: (id: string) => string | undefined,
+) {
+  return registryTitle?.(provider) ?? PROVIDER_TITLES.get(provider) ?? '其他平台'
+}
+
+/** 与声音复刻平台一致的音色 ID 判定；预置音色不能误当成已创建的音色。 */
+function createdVoiceId(value: string) {
+  return (
+    /^[A-Za-z][A-Za-z0-9_-]{6,254}[A-Za-z0-9]$/.test(value) &&
+    !/^((?:S_|ICL_|MIX_|DiT_|BV)|[a-z]{2}_|(?:wvae|moon|mercury|venus|earth|mars|jupiter|saturn|uranus|neptune|pluto|umm)_)/i.test(
+      value,
+    ) &&
+    !/_(?:bigtts|bigtts_cc|tob|cs_tob|streaming)$/i.test(value)
+  )
+}
 
 /** 预检与执行共用音色的平台约束；旧音色仍允许使用，但先说明无法校验。 */
-export function speechVoice(model: string, voice: VoiceRef) {
-  const provider = parseModelRef(model)?.provider ?? ''
+export function speechVoice(
+  model: string,
+  voice: VoiceRef,
+  options: {
+    spec?: ModelSpec
+    providerTitle?: (provider: string) => string | undefined
+  } = {},
+) {
+  const parsed = parseModelRef(model)
+  const provider = parsed?.provider ?? ''
   if (voice.voiceId && voice.provider && provider && voice.provider !== provider)
     return {
-      problem: `音色 ${voice.voiceId} 属于 ${voice.provider}，当前配音模型是 ${provider} 的，请换成同一平台的音色或模型`,
+      problem: `音色 ${voice.voiceId} 属于 ${speechProviderTitle(voice.provider, options.providerTitle)}，当前配音模型是 ${speechProviderTitle(provider, options.providerTitle)} 的，请换成同一平台的音色或模型`,
     }
+  if (voice.voiceId && parsed?.model.startsWith('seed-icl-')) {
+    const cloned = voice.voiceId.startsWith('S_') || createdVoiceId(voice.voiceId)
+    if (!cloned) {
+      const title =
+        options.spec?.title ??
+        doubaoProvider.models.find((spec) => spec.id === parsed.model)?.title ??
+        '当前声音复刻模型'
+      return {
+        problem: `${title} 只能用已创建的复刻或设计音色，当前是预置音色 ${voice.voiceId}`,
+      }
+    }
+  }
   if (voice.voiceId && !voice.provider)
     return { notice: `音色 ${voice.voiceId} 未标明所属平台，请确认它适用于当前模型` }
   return {}

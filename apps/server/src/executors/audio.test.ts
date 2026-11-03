@@ -1,7 +1,7 @@
 import { sfxNode, speechNode, transcribeNode } from '@plein/nodes'
 import type { ExecutorContext, ModelSpec, ProviderCallResult } from '@plein/plugin-sdk'
 import { describe, expect, it, vi } from 'vite-plus/test'
-import { sfx, transcription } from './audio'
+import { sfx, speechVoice, transcription } from './audio'
 import { coreServerPlugin } from './core'
 
 const audio = { assetId: 'audio-one', kind: 'audio' as const, mime: 'audio/wav' }
@@ -113,6 +113,39 @@ describe('分镜语气与配音模型能力', () => {
       supported.model,
       expect.objectContaining({ instruction: '低声哭腔' }),
     )
+  })
+})
+
+describe('配音音色预检', () => {
+  it('跨平台提醒使用平台显示名，不暴露内部平台 ID', () => {
+    expect(speechVoice('volc/ark:speech', { provider: 'minimax/api', voiceId: 'voice-1' })).toEqual(
+      {
+        problem:
+          '音色 voice-1 属于 MiniMax，当前配音模型是 火山方舟 的，请换成同一平台的音色或模型',
+      },
+    )
+  })
+
+  it('声音复刻模型提前拒绝预置音色，已创建音色仍可执行', () => {
+    const spec: ModelSpec = {
+      id: 'seed-icl-2.0',
+      title: '豆包声音复刻 2.0（已有音色）',
+      capabilities: ['audio.speech'],
+    }
+    expect(
+      speechVoice(
+        'doubao/speech:seed-icl-2.0',
+        { provider: 'doubao/speech', voiceId: 'BV001_streaming' },
+        { spec },
+      ),
+    ).toEqual({
+      problem:
+        '豆包声音复刻 2.0（已有音色） 只能用已创建的复刻或设计音色，当前是预置音色 BV001_streaming',
+    })
+    for (const voiceId of ['S_created', 'created-voice'])
+      expect(
+        speechVoice('doubao/speech:seed-icl-2.0', { provider: 'doubao/speech', voiceId }, { spec }),
+      ).toEqual({})
   })
 })
 
