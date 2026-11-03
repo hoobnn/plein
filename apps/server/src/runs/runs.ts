@@ -2288,13 +2288,25 @@ export class NodeRuns implements BatchHost {
         })
       if (mode !== 'reference' && (videos || audios))
         blocked.push({ code: 'prepare_failed', message: '视频和音频参考需要选择多模态参考模式' })
-      if (
-        videos > ((limits && limits.referenceMedia?.video) || 0) ||
-        audios > ((limits && limits.referenceMedia?.audio) || 0)
-      )
+      // @ 引用的视频 / 音频已在 mentions 里按名额取舍过；这里只剩节点自己连进来的素材，
+      // 超名额时说清楚是哪种素材、超了多少。
+      const videoLimit = limits?.referenceMedia?.video ?? 0
+      const audioLimit = limits?.referenceMedia?.audio ?? 0
+      if (videos > videoLimit)
         blocked.push({
           code: 'prepare_failed',
-          message: '当前模型不支持这些参考素材或数量超过上限',
+          message:
+            videoLimit > 0
+              ? `当前模型最多支持 ${videoLimit} 段参考视频，现在连了 ${videos} 段`
+              : '当前模型不支持参考视频',
+        })
+      if (audios > audioLimit)
+        blocked.push({
+          code: 'prepare_failed',
+          message:
+            audioLimit > 0
+              ? `当前模型最多支持 ${audioLimit} 段参考音频，现在连了 ${audios} 段`
+              : '当前模型不支持参考音频',
         })
     }
     if (

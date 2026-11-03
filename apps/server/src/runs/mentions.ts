@@ -502,25 +502,71 @@ export async function applyMentions(
     const referenced = mediaDetails.filter((d) => d.media === kind)
     if (!referenced.length) continue
     const mediaPort = kind === 'video' ? 'videos' : 'audios'
+    const limit = mediaLimits[kind]
     const supported =
       video &&
       params.mode === 'reference' &&
       def.inputs.some((p) => p.id === mediaPort && p.type === kind) &&
-      mediaLimits[kind] > 0
-    const requested = referenced.flatMap((d) =>
-      d.available.map((assetId): PortValue => ({ type: kind, assetId, kind, source: d.elementId })),
-    )
-    if (supported && requested.length)
-      merged = {
-        ...merged,
-        [mediaPort]: dedupe([...(merged[mediaPort] ?? []), ...requested]),
+      limit > 0
+    // 节点自己连线进来的同类素材先占名额：它们不被舍弃，超出上限由 runs.ts 阻断。
+    const ownMedia = merged[mediaPort] ?? []
+    const ownIds = mediaIds(ownMedia, kind)
+    if (!supported) {
+      for (const d of referenced) {
+        d.sent = []
+        if (d.available.length === 0) d.reason = 'no_image'
+        else d.reason = 'unsupported'
       }
-    const finalIds = supported ? mediaIds(merged[mediaPort] ?? [], kind) : []
+      continue
+    }
+    // 名额分配：必需参考按 requiredRefs 的先后在前，可选参考保持出现顺序在后；
+    // 每个引用先放第一条，有余量再放其余的（与参考图的取舍同思路）。
+    const seen = new Set(ownIds)
+    const kept = new Set<string>()
+    const take = (assetId: string) => {
+      if (seen.has(assetId)) return true
+      if (seen.size >= limit) return false
+      seen.add(assetId)
+      kept.add(assetId)
+      return true
+    }
+    const order = referenced
+      .map((d, i) => ({ d, i }))
+      .sort((a, b) => mediaPriority(a.d, required) - mediaPriority(b.d, required) || a.i - b.i)
+    for (const { d } of order) {
+      const first = d.available[0]
+      if (!first || take(first)) continue
+      if (d.required)
+        blocked.push({
+          code: 'required_over_limit',
+          elementId: d.elementId,
+          message: `「${d.name}」是必需参考，但这个模型最多带 ${limit} 段参考${kind === 'video' ? '视频' : '音频'}，放不下了，请减少必需参考或换模型`,
+        })
+    }
+    for (const { d } of order) for (const assetId of d.available.slice(1)) take(assetId)
+    const picked = referenced.flatMap((d) =>
+      d.available
+        .filter((assetId) => kept.has(assetId))
+        .map((assetId): PortValue => ({ type: kind, assetId, kind, source: d.elementId })),
+    )
+    if (ownMedia.length || picked.length)
+      merged = { ...merged, [mediaPort]: dedupe([...ownMedia, ...picked]) }
+    const finalIds = mediaIds(merged[mediaPort] ?? [], kind)
+    const dropped: string[] = []
     for (const d of referenced) {
       d.sent = d.available.filter((id) => finalIds.includes(id))
       if (d.available.length === 0) d.reason = 'no_image'
-      else if (!supported) d.reason = 'unsupported'
+      else if (d.sent.length < d.available.length) {
+        d.reason = 'over_limit'
+        if (!d.required) dropped.push(d.name)
+      }
     }
+    // 同一次取舍只给一条汇总，避免每个被舍弃的引用重复同一段话。
+    if (dropped.length)
+      notices.push({
+        code: 'optional_dropped',
+        message: `这个模型最多带 ${limit} 段参考${kind === 'video' ? '视频' : '音频'}，${dropped.join('、')} 的参考${kind === 'video' ? '视频' : '音频'}没有送入`,
+      })
   }
   const provider = parseModelRef(String(params.model ?? ''))?.provider
   if (numbered) {
@@ -653,6 +699,15 @@ function detail(
 
 /** 参考图放不下时的取舍顺序：角色最要紧（同一个人），其次场景、道具；直接 @ 的图片元素排最后 */
 const RANK = ['plein/character', 'plein/scene', 'plein/prop', 'plein/style']
+
+/**
+ * 视频 / 音频引用的取舍顺序：必需参考按 requiredRefs 里的先后在前，可选参考排最后（保持出现顺序）。
+ * 与参考图的 RANK 不同，媒体没有「角色更重要」这一层，只看必需与否。
+ */
+const mediaPriority = (d: InputRef, required: Map<string, number>) => {
+  const order = required.get(d.elementId)
+  return order === undefined ? Number.MAX_SAFE_INTEGER : order
+}
 
 /**
  * 在参考图上限内挑出 @ 引用要送的图：必需参考按设定的先后先放，再按角色、场景、道具的顺序；
