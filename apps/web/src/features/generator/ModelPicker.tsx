@@ -1,3 +1,4 @@
+import { AI_SCENE_TYPE, AI_SUMMARY_TYPE, STORYBOARD_TYPE } from '@plein/nodes'
 import type { ModelInfo } from '@plein/plugin-sdk'
 import type { Catalog } from '@plein/protocol'
 import { useEffect, useState } from 'react'
@@ -11,7 +12,7 @@ import { useSession } from '../../stores/session'
 import { pushRecentModel, readRecentModels, recentModelsKey } from './recentModels'
 import { deprecatedLast } from './deprecatedLast'
 
-const STRUCTURED_OUTPUT_NODES = new Set(['plein/storyboard', 'plein/ai-scene', 'plein/ai-summary'])
+const STRUCTURED_OUTPUT_NODES = new Set([STORYBOARD_TYPE, AI_SCENE_TYPE, AI_SUMMARY_TYPE])
 
 /** 模型选择：左栏选平台、右栏列该平台的模型。不替用户挑，没选时按钮提示去选 */
 export function ModelPicker({
