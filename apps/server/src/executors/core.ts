@@ -267,9 +267,12 @@ ${DIRECTION_RULES}`
 const storyboard = defineExecutor(storyboardNode, async (ctx) => {
   const { params, inputs } = ctx
   const script = requireText(inputText(inputs, 'script') ?? '', '剧本（请连入剧本文本）')
+  const style = typeof params.visualStyle === 'string' ? params.visualStyle.trim() : ''
   const user = [
     `请拆成大约 ${params.shotCount} 个镜头。`,
     params.prompt.trim() && `补充要求：${params.prompt.trim()}`,
+    // 全局视觉风格要进模型，否则产出的提示词整表都不带风格
+    style && `全局视觉风格：${style}。每个镜头的画面提示词和运动提示词都要体现这一风格。`,
     `<剧本>\n${script}\n</剧本>`,
   ]
     .filter(Boolean)
