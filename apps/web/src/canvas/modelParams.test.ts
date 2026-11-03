@@ -69,7 +69,13 @@ describe('按模型处理参数', () => {
   })
 
   it('换模型时校正不合法的取值并说明，提交前同样检查', () => {
-    const params = { model: 'p/a:fast', duration: 3, aspectRatio: '1:1', resolution: '1080p' }
+    const params = {
+      model: 'p/a:fast',
+      prompt: '测试',
+      duration: 3,
+      aspectRatio: '1:1',
+      resolution: '1080p',
+    }
     const m = selectedModel(catalog, node, params)!.info
     const { patch, notes } = adaptToModel(node, params, m)
     expect(patch).toEqual({ duration: 4, aspectRatio: '16:9', resolution: '' })
@@ -223,7 +229,7 @@ describe('张数、参考图与画幅', () => {
 
   it('生成视频：连入图片数要和模式对得上；只有图片参考模式按参考图计数', () => {
     const m = { ...model({ references: { max: 1 } }), capabilities: ['video.generate' as const] }
-    const params = { model: '', duration: 5, aspectRatio: '16:9' }
+    const params = { model: '', prompt: '测试', duration: 5, aspectRatio: '16:9' }
     // 没选到模型也先查模式
     expect(modelProblem(node, { ...params, mode: 'image' }, undefined, new Map())).toBe(
       '图生视频需要连入 1 张图作首帧',
