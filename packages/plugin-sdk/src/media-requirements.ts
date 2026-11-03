@@ -143,6 +143,15 @@ export function mediaRequirementProblems(
       )
   }
 
+  if (
+    finite(sample.size) &&
+    requirement.minBytes !== undefined &&
+    sample.size < requirement.minBytes
+  )
+    problems.push(
+      `${subject}只有 ${sample.size} 字节，${title} 要求不小于 ${requirement.minBytes} 字节，请更换素材`,
+    )
+
   const hasSize =
     finite(sample.width) &&
     finite(sample.height) &&

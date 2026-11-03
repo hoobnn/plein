@@ -347,6 +347,7 @@ const CLONE_SAMPLE: MediaRequirement = {
     'audio/aac',
   ],
   maxMB: 10,
+  minBytes: 1,
 }
 
 /** 复刻接口的响应：HTTP 200 也可能在 code / message 里带错误 */
@@ -511,6 +512,7 @@ export const doubaoProvider = defineProvider({
               'audio/mp4',
             ],
             maxMB: 100,
+            minBytes: 1,
           },
         },
       },
@@ -554,9 +556,7 @@ export const doubaoProvider = defineProvider({
     if (req.capability === 'audio.transcribe') {
       const input = req.input as CapabilityInput<'audio.transcribe'>
       const asset = await ctx.files.read(input.audio)
-      if (!asset.data.length)
-        throw new ProviderError('invalid_input', '识别音频须为 1 字节至 100 MB')
-      // 格式与大小以模型声明为准，宿主在运行前读的是同一份声明
+      // 格式与大小（含空文件）以模型声明为准，宿主在运行前读的是同一份声明
       const problems = mediaRequirementProblems(
         supported.limits?.media?.audio,
         { mime: asset.mime, size: asset.data.length },
@@ -661,8 +661,7 @@ export const doubaoProvider = defineProvider({
           '请填写有效的音色槽位 ID 或符合官方规则的自定义音色 ID',
         )
       const asset = await ctx.files.read(sample)
-      if (!asset.data.length) throw new ProviderError('invalid_input', '复刻样本不能是空文件')
-      // 格式与大小以样本声明为准，宿主能在运行前读到资产记录时读同一份声明
+      // 格式与大小（含空文件）以样本声明为准，宿主能在运行前读到资产记录时读同一份声明
       const problems = mediaRequirementProblems(
         CLONE_SAMPLE,
         { mime: asset.mime, size: asset.data.length },

@@ -226,6 +226,8 @@ export interface MediaRequirement {
   maxMB?: number
   /** 大小必须严格小于上限（MB） */
   maxMBExclusive?: boolean
+  /** 文件大小下限（字节）；用来拒绝空文件 */
+  minBytes?: number
   /** 宽高下限（像素） */
   minEdge?: number
   /** 宽高上限（像素） */

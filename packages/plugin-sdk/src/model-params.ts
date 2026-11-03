@@ -94,6 +94,12 @@ export function transcribeAudioProblem(
 ): string | null {
   const requirement = model.limits?.media?.audio
   if (!requirement) return null
+  if (
+    typeof sample.size === 'number' &&
+    requirement.minBytes !== undefined &&
+    sample.size < requirement.minBytes
+  )
+    return `${model.title} 要求音频不小于 ${requirement.minBytes} 字节，${name ? `「${name}」` : '当前音频'}是 ${sample.size} 字节，请更换素材`
   if (typeof sample.size === 'number' && requirement.maxMB !== undefined) {
     const mb = sample.size / 1024 / 1024
     const over = requirement.maxMBExclusive ? mb >= requirement.maxMB : mb > requirement.maxMB

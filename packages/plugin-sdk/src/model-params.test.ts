@@ -148,7 +148,9 @@ describe('语音识别音频预检', () => {
     id: 'bigmodel',
     title: '录音文件识别极速版',
     capabilities: ['audio.transcribe'],
-    limits: { media: { audio: { mime: ['audio/mpeg', 'audio/wav'], maxMB: 100 } } },
+    limits: {
+      media: { audio: { mime: ['audio/mpeg', 'audio/wav'], maxMB: 100, minBytes: 1 } },
+    },
   }
 
   it('按资产记录的大小给出模型、上限、名字和当前值', () => {
@@ -157,6 +159,13 @@ describe('语音识别音频预检', () => {
     )
     expect(transcribeAudioProblem(model, { size: 100 * 1024 * 1024 })).toBeNull()
     expect(transcribeAudioProblem(model, { size: 90 * 1024 * 1024 }, '旁白')).toBeNull()
+  })
+
+  it('空文件按最小大小拒绝，1 字节放行', () => {
+    expect(transcribeAudioProblem(model, { size: 0 }, '旁白')).toBe(
+      '录音文件识别极速版 要求音频不小于 1 字节，「旁白」是 0 字节，请更换素材',
+    )
+    expect(transcribeAudioProblem(model, { size: 1 }, '旁白')).toBeNull()
   })
 
   it('格式不对时用媒体的统一说法；没声明音频要求的模型不判', () => {

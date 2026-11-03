@@ -667,3 +667,25 @@ describe('豆包媒体声明的运行前约束', () => {
     expect(ctx.fetch).not.toHaveBeenCalled()
   })
 })
+
+it('识别音频是空文件时按声明的最小大小拒绝，不联网', async () => {
+  const ctx = context()
+  vi.mocked(ctx.files.read).mockResolvedValue({
+    data: new Uint8Array(0),
+    mime: 'audio/wav',
+  })
+  await expect(
+    doubaoProvider.submit(
+      {
+        capability: 'audio.transcribe',
+        model: 'bigmodel',
+        input: { audio: { assetId: 'empty', kind: 'audio' } },
+      },
+      ctx,
+    ),
+  ).rejects.toMatchObject({
+    code: 'invalid_input',
+    message: '识别音频只有 0 字节，录音文件识别极速版 要求不小于 1 字节，请更换素材',
+  })
+  expect(ctx.fetch).not.toHaveBeenCalled()
+})

@@ -60,6 +60,12 @@ describe('素材要求的判定', () => {
     ])
   })
 
+  it('小于最小大小时按字节说清下限', () => {
+    expect(
+      mediaRequirementProblems({ minBytes: 1 }, { size: 0 }, { title, label: '识别音频' }),
+    ).toEqual(['识别音频只有 0 字节，示例模型 要求不小于 1 字节，请更换素材'])
+  })
+
   it('编码与音轨不符时按容器判断 PCM 是否允许', () => {
     expect(check({ videoCodec: 'vp9' })[0]).toContain('编码 VP9')
     expect(check({ audioCodecs: ['opus'] })[0]).toContain('音轨编码 Opus')
