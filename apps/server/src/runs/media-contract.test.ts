@@ -55,7 +55,7 @@ describe('F6/F8 实际输入、阻断与有效参数合同', () => {
     const cases = [
       { mode: 'reference', refs: [], text: '至少 1 份' },
       { mode: 'text', refs: [['video', 'videos']], text: '需要选择多模态参考模式' },
-      { mode: 'reference', refs: [['audio', 'audios']], text: '数量超过上限' },
+      { mode: 'reference', refs: [['audio', 'audios']], text: '当前模型不支持参考音频' },
       {
         mode: 'reference',
         refs: [
@@ -136,6 +136,25 @@ describe('F6/F8 实际输入、阻断与有效参数合同', () => {
         .map((r) => r.assetId),
     )
     expect(f.server.runs.store.get(result.runId)?.cache_key).toBe(input.inputHash)
+  })
+
+  it('节点自己连进来的参考视频超过上限：阻断并说明上限与实际数量', async () => {
+    const f = await boot()
+    videoSpec.limits = {
+      ...videoLimits,
+      referenceMedia: { video: 1, audio: 1 },
+    }
+    const target = addNode(f.doc, 'plein/video', {
+      params: { mode: 'reference', prompt: '跟着运动' },
+    })
+    connect(f.doc, [f.asset('video', 'a'), 'video'], [target, 'videos'])
+    connect(f.doc, [f.asset('video', 'b'), 'video'], [target, 'videos'])
+    const input = await f.preview(target)
+    expect(input.status).toBe('blocked')
+    expect(
+      input.blocked.some((issue) => issue.message.includes('当前模型最多支持 1 段参考视频')),
+    ).toBe(true)
+    expect(input.blocked.some((issue) => issue.message.includes('现在连了 2 段'))).toBe(true)
   })
 
   it('默认精修操作按模型能力选择；缺原图或不支持操作在 API 预览和运行都阻断', async () => {
