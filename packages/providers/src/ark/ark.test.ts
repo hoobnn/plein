@@ -285,6 +285,28 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
     },
   )
 
+  it('智能画幅未选分辨率时使用模型声明的默认档位', async () => {
+    for (const id of [
+      IMAGE,
+      'doubao-seedream-5-0-flash-260915',
+      'doubao-seedream-5-0-260128',
+      'custom-image',
+    ])
+      expect(arkProvider.models.find((model) => model.id === id)?.limits?.defaultResolution).toBe(
+        '2K',
+      )
+    const { ctx, body } = harness([{ data: [{ b64_json: 'AQID' }] }])
+    await arkProvider.submit(
+      {
+        capability: 'image.generate',
+        model: IMAGE,
+        input: { prompt: 'cat', extra: { aspectRatio: 'auto' } },
+      },
+      ctx,
+    )
+    expect(body().size).toBe('2K')
+  })
+
   it.each([
     [IMAGE, '1K', '16:9', '1360x768'],
     [IMAGE, '2K', '9:16', '1536x2720'],

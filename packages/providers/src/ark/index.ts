@@ -280,6 +280,7 @@ const models: ModelSpec[] = [
       imageOperations: ['cutout'],
       aspectRatios: SEEDREAM_ASPECTS,
       resolutions: ['1K', '1.5K', '2K'],
+      defaultResolution: '2K',
       count: { max: 1 },
       references: { max: 10 },
       seed: false,
@@ -304,6 +305,7 @@ const models: ModelSpec[] = [
       imageOperations: ['cutout'],
       aspectRatios: SEEDREAM_ASPECTS,
       resolutions: ['1K', '1.5K', '2K'],
+      defaultResolution: '2K',
       count: { max: 1 },
       references: { max: 10 },
       seed: false,
@@ -330,6 +332,7 @@ const models: ModelSpec[] = [
     limits: {
       aspectRatios: SEEDREAM_ASPECTS,
       resolutions: ['2K', '3K', '4K'],
+      defaultResolution: '2K',
       references: { max: 14 },
       count: { max: 15 },
       seed: false,
@@ -432,6 +435,7 @@ const models: ModelSpec[] = [
     id: 'custom-image',
     title: '自定义图片模型（设置中填写）',
     capabilities: ['image.generate'],
+    limits: { defaultResolution: '2K' },
   },
   {
     id: 'custom-video',
@@ -622,7 +626,9 @@ async function image(
   model: string,
   input: CapabilityInput<'image.generate'>,
   ctx: Context,
+  defaultResolution: string | undefined,
 ) {
+  if (!defaultResolution) invalid('所选图片模型未声明默认分辨率')
   if (!input.prompt.trim()) invalid('图片提示词不能为空')
   if (input.negativePrompt) invalid('Seedream 不支持独立 negativePrompt，请合并到 prompt')
   if (input.seed !== undefined && model.startsWith('doubao-seedream-5-'))
@@ -696,7 +702,7 @@ async function image(
     }
     const dimensions =
       aspectRatio === 'auto'
-        ? '2K'
+        ? defaultResolution
         : (model.startsWith('doubao-seedream-5-') && !lite ? small : large)[String(aspectRatio)]
     if (!dimensions) invalid('Seedream 不支持该图片画幅')
     body.size = dimensions
@@ -1021,7 +1027,13 @@ async function submitTo(
     return chat(plane, model, req.input as CapabilityInput<'text.chat'>, ctx)
   }
   if (req.capability === 'image.generate')
-    return image(plane, model, req.input as CapabilityInput<'image.generate'>, ctx)
+    return image(
+      plane,
+      model,
+      req.input as CapabilityInput<'image.generate'>,
+      ctx,
+      spec?.limits?.defaultResolution,
+    )
   if (req.capability === 'image.process')
     return cutout(plane, model, req.input as CapabilityInput<'image.process'>, ctx)
   if (req.capability === 'video.generate')

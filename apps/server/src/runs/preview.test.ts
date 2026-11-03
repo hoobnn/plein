@@ -178,6 +178,22 @@ it('未选分辨率时实际输入显示模型默认，显式选择保持原值'
   expect((await preview(server, id, explicit)).params.resolution).toBe('768P')
 })
 
+it('图片智能画幅未选分辨率时实际输入显示模型默认', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const node = addNode(doc, 'plein/image', {
+    params: {
+      model: 'volc/ark:doubao-seedream-5-0-pro-260628',
+      prompt: '雨后天台',
+      aspectRatio: 'auto',
+    },
+  })
+  const input = await preview(server, id, node)
+  expect(input.status).toBe('ready')
+  expect(input.params.resolution).toBe('2K（模型默认）')
+})
+
 it('需要结构化输出的节点在准备阶段阻断不支持的模型，声明后放行执行', async () => {
   const { server } = await bootServer()
   mockSettings(server, {})
