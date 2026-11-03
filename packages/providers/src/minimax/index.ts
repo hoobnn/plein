@@ -333,6 +333,7 @@ export const minimaxProvider = defineProvider({
             : id === 'MiniMax-H3-Highspeed'
               ? ['480P', '768P']
               : ['480P', '768P'],
+        defaultResolution: id === 'MiniMax-H3' ? '2K' : '768P',
         duration: { min: id === 'MiniMax-H3-Max' ? 5 : 4, max: 15 },
         seed: false,
         audio: false,
@@ -579,7 +580,9 @@ export const minimaxProvider = defineProvider({
         const spec = minimaxProvider.models.find((item) => item.id === req.model)
         const max = req.model === 'MiniMax-H3-Max'
         const duration = input.duration ?? 5
-        const resolution = input.resolution ?? (req.model === 'MiniMax-H3' ? '2K' : '768P')
+        const defaultResolution = spec?.limits?.defaultResolution
+        if (!defaultResolution) throw new ProviderError('unknown', '所选 H3 模型未声明默认分辨率')
+        const resolution = input.resolution ?? defaultResolution
         if (!Number.isInteger(duration) || duration < (max ? 5 : 4) || duration > 15)
           throw new ProviderError(
             'invalid_input',

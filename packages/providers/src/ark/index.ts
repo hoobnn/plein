@@ -244,31 +244,31 @@ const models: ModelSpec[] = [
   // 官方模型列表标注这批 Seed 2.1 / Evolving 模型支持「多模态理解」（图片内容理解），故声明 vision
   {
     id: 'doubao-seed-2-1-pro-260628',
-    features: ['tools', 'vision'],
+    features: ['tools', 'vision', 'structured'],
     title: 'Doubao Seed 2.1 Pro（260628）',
     capabilities: ['text.chat'],
   },
   {
     id: 'doubao-seed-2-1-pro-260915',
-    features: ['tools', 'vision'],
+    features: ['tools', 'vision', 'structured'],
     title: 'Doubao Seed 2.1 Pro（260915）',
     capabilities: ['text.chat'],
   },
   {
     id: 'doubao-seed-2-1-lite-260915',
-    features: ['tools', 'vision'],
+    features: ['tools', 'vision', 'structured'],
     title: 'Doubao Seed 2.1 Lite',
     capabilities: ['text.chat'],
   },
   {
     id: 'doubao-seed-2-1-turbo-260628',
-    features: ['tools', 'vision'],
+    features: ['tools', 'vision', 'structured'],
     title: 'Doubao Seed 2.1 Turbo',
     capabilities: ['text.chat'],
   },
   {
     id: 'doubao-seed-evolving',
-    features: ['tools', 'vision'],
+    features: ['tools', 'vision', 'structured'],
     title: 'Doubao Seed Evolving（快速迭代）',
     capabilities: ['text.chat'],
   },
@@ -353,6 +353,7 @@ const models: ModelSpec[] = [
     limits: {
       aspectRatios: SEEDANCE_ASPECTS,
       resolutions: ['480p', '720p', '1080p'],
+      defaultResolution: '720p',
       duration: { min: 4, max: 30 },
       seed: false,
       references: { max: 30 },
@@ -374,6 +375,7 @@ const models: ModelSpec[] = [
     limits: {
       aspectRatios: SEEDANCE_ASPECTS,
       resolutions: ['480p', '720p', '1080p', '4k'],
+      defaultResolution: '720p',
       duration: { min: 4, max: 15 },
       seed: false,
       references: { max: 9 },
@@ -391,6 +393,7 @@ const models: ModelSpec[] = [
     limits: {
       aspectRatios: SEEDANCE_ASPECTS,
       resolutions: ['480p', '720p'],
+      defaultResolution: '720p',
       duration: { min: 4, max: 15 },
       seed: false,
       references: { max: 9 },
@@ -408,6 +411,7 @@ const models: ModelSpec[] = [
     limits: {
       aspectRatios: SEEDANCE_ASPECTS,
       resolutions: ['480p', '720p'],
+      defaultResolution: '720p',
       duration: { min: 4, max: 15 },
       seed: false,
       references: { max: 9 },
@@ -422,6 +426,7 @@ const models: ModelSpec[] = [
     id: 'custom-chat',
     title: '自定义对话模型（设置中填写）',
     capabilities: ['text.chat'],
+    features: ['structured'],
   },
   {
     id: 'custom-image',
@@ -432,7 +437,7 @@ const models: ModelSpec[] = [
     id: 'custom-video',
     title: '自定义视频模型（设置中填写）',
     capabilities: ['video.generate'],
-    limits: { videoModes: ['text', 'image', 'frames', 'reference'] },
+    limits: { videoModes: ['text', 'image', 'frames', 'reference'], defaultResolution: '720p' },
   },
 ]
 
@@ -854,9 +859,11 @@ async function video(
   model: string,
   input: CapabilityInput<'video.generate'>,
   ctx: Context,
+  defaultResolution: string | undefined,
 ) {
   // 参考素材的格式要求以模型声明为准，宿主在运行前读的是同一份声明
   const spec = models.find((item) => item.id === model)
+  if (!defaultResolution) invalid('所选视频模型未声明默认分辨率')
   if (!input.prompt.trim() && !input.firstFrame && !input.references?.length)
     invalid('视频需要提示词或图片参考')
   if (input.lastFrame && !input.firstFrame) invalid('尾帧需要同时提供首帧')
@@ -878,7 +885,7 @@ async function video(
     ...(input.audio !== undefined ? { generate_audio: input.audio } : {}),
     model: wireModel(plane, model),
     content: [],
-    resolution: input.resolution ?? '720p',
+    resolution: input.resolution ?? defaultResolution,
     ratio:
       input.aspectRatio === 'auto'
         ? 'adaptive'
@@ -1018,7 +1025,13 @@ async function submitTo(
   if (req.capability === 'image.process')
     return cutout(plane, model, req.input as CapabilityInput<'image.process'>, ctx)
   if (req.capability === 'video.generate')
-    return video(plane, model, req.input as CapabilityInput<'video.generate'>, ctx)
+    return video(
+      plane,
+      model,
+      req.input as CapabilityInput<'video.generate'>,
+      ctx,
+      spec?.limits?.defaultResolution,
+    )
   return invalid('火山方舟不支持此能力')
 }
 
@@ -1150,14 +1163,14 @@ const planModels: ModelSpec[] = [
     ...(['minimax-m3', 'kimi-k2.7-code'].includes(id) ? { deprecated: true as const } : {}),
     capabilities: ['text.chat'],
     agentOnly: true,
-    features: ['tools', ...(PLAN_VISION_CHAT_IDS.includes(id) ? ['vision' as const] : [])],
+    features: ['tools', 'structured', ...(PLAN_VISION_CHAT_IDS.includes(id) ? ['vision' as const] : [])],
     description: 'Agent Plan 套餐文本模型，仅用于内置 Agent；可用性取决于套餐档位',
   })),
   {
     id: 'custom-chat',
     title: '自定义套餐对话模型',
     capabilities: ['text.chat'],
-    features: ['tools'],
+    features: ['tools', 'structured'],
     agentOnly: true,
   },
   {

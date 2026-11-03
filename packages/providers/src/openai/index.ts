@@ -43,7 +43,7 @@ const models: ModelSpec[] = [
     id,
     title: id,
     capabilities: ['text.chat'],
-    features: ['vision', 'tools'],
+    features: ['vision', 'tools', 'structured'],
     limits: { temperature: false },
     options: z.object({
       reasoning_effort: z.enum(['low', 'medium', 'high']).optional().meta({ title: '思考强度' }),

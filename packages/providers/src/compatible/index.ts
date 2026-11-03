@@ -127,6 +127,7 @@ export function createCompatiblePlugin(raw: Record<string, unknown> = {}) {
             features: [
               ...(config.vision ? ['vision' as const] : []),
               ...(config.tools ? ['tools' as const] : []),
+              ...(config.structured !== 'none' ? ['structured' as const] : []),
             ],
             version: modelId,
           },

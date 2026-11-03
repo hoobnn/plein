@@ -431,6 +431,7 @@ export const bailianProvider = defineProvider({
       limits: {
         aspectRatios: VIDEO_ASPECTS,
         resolutions: ['480P', '720P', '1080P'],
+        defaultResolution: '720P',
         duration: { min: 2, max: 30 },
         references: { max: 10 },
         referenceMedia: { video: 5, audio: 5 },
@@ -750,7 +751,10 @@ export const bailianProvider = defineProvider({
             throw new ProviderError('invalid_input', `万相 ${kind} 参考数量超过 ${limit}`)
         }
         const spec = bailianProvider.models.find((m) => m.id === req.model)!
-        const resolution = input.resolution ?? '720P'
+        const defaultResolution = spec.limits?.defaultResolution
+        if (!defaultResolution)
+          throw new ProviderError('unknown', '所选万相视频模型未声明默认分辨率')
+        const resolution = input.resolution ?? defaultResolution
         const ratio = input.aspectRatio === 'auto' ? 'adaptive' : (input.aspectRatio ?? '16:9')
         if (!spec.limits?.resolutions?.includes(resolution))
           throw new ProviderError('invalid_input', '万相不支持该视频分辨率')
