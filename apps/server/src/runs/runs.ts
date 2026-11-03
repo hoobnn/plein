@@ -2327,18 +2327,40 @@ export class NodeRuns implements BatchHost {
    * 有效参数（迁移到最新版本后）和输入内容的哈希，带算法版本前缀
    */
   private cacheKey(el: CanvasElement, p: Prepared, omit: string[]) {
-    const model = this.resolveModel(this.latestParams(el, p)?.model)
     return (
       CACHE_KEY_VERSION +
-      this.hashKey(el, p, omit, NOT_CONTENT, {
-        model: model ? { ref: model.ref, version: model.version, plugin: model.plugin } : null,
-        ...(el.nodeType === MOTION_TYPE ||
-        (el.nodeType === 'plein/sequence' &&
-          this.latestParams(el, p)?.subtitleRender === 'animated')
-          ? { renderer: this.host.compositionRendererIdentity() }
-          : {}),
-      })
+      this.hashKey(el, p, omit, NOT_CONTENT, this.cacheExtra(el, p), this.contentParams(el, p))
     )
+  }
+
+  /** 缓存键里除参数以外的部分：所选模型与版本、平台插件版本、渲染器身份 */
+  private cacheExtra(el: CanvasElement, p: Prepared) {
+    const model = this.resolveModel(this.latestParams(el, p)?.model)
+    return {
+      model: model ? { ref: model.ref, version: model.version, plugin: model.plugin } : null,
+      ...(this.isAnimatedRenderer(el, p)
+        ? { renderer: this.host.compositionRendererIdentity() }
+        : {}),
+    }
+  }
+
+  /** 序列的字幕按动画渲染时，渲染器不同内容也不同，算进缓存键 */
+  private isAnimatedRenderer(el: CanvasElement, p: Prepared) {
+    return (
+      el.nodeType === MOTION_TYPE ||
+      (el.nodeType === 'plein/sequence' && this.latestParams(el, p)?.subtitleRender === 'animated')
+    )
+  }
+
+  /**
+   * 计入缓存键的参数：视频节点按平台实际收到的值算，
+   * 被自动控制项覆盖过的键（画幅、时长等）用覆盖后的值，
+   * 改这些设置不影响生成内容，不必重跑
+   */
+  private contentParams(el: CanvasElement, p: Prepared, params = this.latestParams(el, p) ?? {}) {
+    const isVideo = p.def?.capability === 'video.generate' || el.nodeType === 'plein/video'
+    if (!isVideo) return params
+    return { ...params, ...videoTaskOverrides(params) }
   }
 
   /**
@@ -2360,7 +2382,40 @@ export class NodeRuns implements BatchHost {
     if (!model) return false
     const extra = { model: { ref: model.ref, version: model.version, plugin: model.plugin } }
     const auto = { ...params, model: '' }
-    return CACHE_KEY_VERSION + this.hashKey(el, p, omit, NOT_CONTENT, extra, auto) === job.cache_key
+    if (CACHE_KEY_VERSION + this.hashKey(el, p, omit, NOT_CONTENT, extra, auto) === job.cache_key)
+      return true
+    // 升级前的算法：characterAssetTarget 计入键、视频节点也不套用自动控制项覆盖
+    return this.previousCacheKey(el, p, omit).includes(job.cache_key)
+  }
+
+  /**
+   * 升级前的缓存键：characterAssetTarget 还计入键，视频节点也不套用自动控制项覆盖。
+   * 只用来认升级前的旧任务，避免升级后所有旧结果都被判过期
+   */
+  private previousCacheKey(el: CanvasElement, p: Prepared, omit: string[]) {
+    const params = this.latestParams(el, p)
+    const model = this.resolveModel(params?.model)
+    const keys = [
+      // 升级前 cacheKey 的算法
+      CACHE_KEY_VERSION +
+        this.hashKey(el, p, omit, PREV_NOT_CONTENT, this.cacheExtra(el, p), params ?? {}),
+    ]
+    if (model)
+      // 升级前「模型留空」的回退算法
+      keys.push(
+        CACHE_KEY_VERSION +
+          this.hashKey(
+            el,
+            p,
+            omit,
+            PREV_NOT_CONTENT,
+            {
+              model: { ref: model.ref, version: model.version, plugin: model.plugin },
+            },
+            { ...params, model: '' },
+          ),
+      )
+    return keys
   }
 
   /** 加前缀之前的缓存键：不含实际模型与插件版本，usedRefs 计入；只用来认旧任务的结果 */
@@ -2662,9 +2717,19 @@ function jobInfo(j: JobRow): JobInfo {
 const NEUTRAL: Record<string, unknown> = { resolution: '', speed: 1 }
 /**
  * 不影响送进模型内容的设置：必需参考只决定怎么取舍，usedRefs 是取舍结果的描述，
- * 两者的效果都已经体现在实际输入里
+ * 两者的效果都已经体现在实际输入里。角色图片归档目标只决定结果存到角色库的哪个槽位，
+ * 不影响生成内容，也不算进键
  */
 const NOT_CONTENT: ReadonlySet<string> = new Set([
+  'requiredRefs',
+  'referenceImagePicks',
+  'usedRefs',
+  'continuesFrom',
+  'shotPresets',
+  'characterAssetTarget',
+])
+/** 升级前的算法：角色图片归档目标还计入键。只用来认升级前的旧任务 */
+const PREV_NOT_CONTENT: ReadonlySet<string> = new Set([
   'requiredRefs',
   'referenceImagePicks',
   'usedRefs',
