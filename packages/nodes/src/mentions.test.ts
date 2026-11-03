@@ -132,6 +132,54 @@ describe('改名断链', () => {
   })
 })
 
+describe('改名断链：文件名式的资产名', () => {
+  // 真实场景：提示词里写的是改名前的文件名，画布上已经是新名字
+  const files: MentionTarget[] = [
+    { id: '1', name: '01-01-叶舒办公安可走近_V007.png' },
+    { id: '2', name: '01-03-叶舒左侧机位_V001.png' },
+    { id: '3', name: '01-03-叶舒左侧机位_V002.png' },
+    { id: '4', name: '001-010_女生宿舍夜间调度图.png' },
+  ]
+
+  it('去掉编号后主体相同的才算像，只共享编号的 `0`/`01` 不算', () => {
+    const broken = findBrokenMentions('@012-015_女生宿舍清晨调度图.png', files)
+    expect(broken).toHaveLength(1)
+    expect(broken[0]?.candidates).toEqual(['001-010_女生宿舍夜间调度图.png'])
+  })
+
+  it('长名字完整显示，不截成十几个字', () => {
+    const full = '012-015_女生宿舍清晨调度图_v2_高机位远景.png'
+    const broken = findBrokenMentions(`@${full}`, [
+      { id: '1', name: '001-010_女生宿舍夜间调度图_v2_高机位远景.png' },
+    ])
+    // 名字取到标点为止（`.png` 按标点断开，和原来一致），正文里的部分一个不落
+    expect(broken[0]?.name).toBe('012-015_女生宿舍清晨调度图_v2_高机位远景')
+    expect(broken[0]?.name.length).toBeGreaterThan(12)
+    expect(broken[0]?.candidates).toEqual(['001-010_女生宿舍夜间调度图_v2_高机位远景.png'])
+  })
+
+  it('正常改名仍然提示：中文名改一个字、文件名改版本号', () => {
+    expect(findBrokenMentions('@林夏', [{ id: '1', name: '林夏（成年）' }])[0]?.candidates).toEqual(
+      ['林夏（成年）'],
+    )
+    expect(
+      findBrokenMentions('@叶舒_V001.png', [{ id: '1', name: '叶舒_V002.png' }])[0]?.candidates,
+    ).toEqual(['叶舒_V002.png'])
+    expect(findBrokenMentions('@林夏', [{ id: '1', name: '林小夏' }])[0]?.candidates).toEqual([
+      '林小夏',
+    ])
+  })
+
+  it('没有足够像的候选时照旧不提示', () => {
+    expect(
+      findBrokenMentions('@012-015_女生宿舍清晨调度图.png', [
+        { id: '1', name: '01-01-叶舒办公安可走近_V007.png' },
+        { id: '2', name: '01-03-叶舒左侧机位_V001.png' },
+      ]),
+    ).toEqual([])
+  })
+})
+
 describe('能被 @ 引用的元素', () => {
   it.each([
     [{ kind: 'node', nodeType: 'plein/character', name: ' 林夏 ' }, '林夏'],

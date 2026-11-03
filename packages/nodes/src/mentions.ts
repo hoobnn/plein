@@ -12,8 +12,21 @@ import { videoReferenceTokens } from '@plein/plugin-sdk'
 import { type CharacterProfile, matchProfile, type ProfilePick } from './profile'
 import { type SceneView, matchSceneView } from './sceneViews'
 
+/** @ 后面名字里不能出现的字符：空白与常见标点 */
+const NAME_STOP = '\\s@，。,.!！?？:：;；、（）()【】\\[\\]「」"\'“”'
+
 /** @ 后到这些字符为止 */
-const STOP = /[\s@，。,.!！?？:：;；、（）()【】[\]「」"'“”]/
+const STOP = new RegExp(`[${NAME_STOP}]`)
+
+/**
+ * @ 后面取名字用的最长字数。
+ * 文件名式的资产名常见 20–40 字（`012-015_女生宿舍清晨调度图.png`），截成十几个字
+ * 用户根本认不出说的是哪个资产，提醒也就没用了。
+ */
+const NAME_MAX = 64
+
+/** @ 后面一整串名字（到空白或标点为止，`#序号` 不算名字） */
+const NAME = new RegExp(`^[^${NAME_STOP}#]{1,${NAME_MAX}}`)
 
 /** 序号：`@林夏#2`，一到三位数字 */
 const INDEX = /^#(\d{1,3})/
@@ -152,7 +165,7 @@ export function mentionProblem(m: Mention): string | undefined {
 
 /**
  * 找出对不上名字的 @ 引用：多半是资产卡被改名了。
- * 中文没有词边界，`@林夏站在天台` 会整串当成名字，所以只有首字相同的候选才提示，
+ * 中文没有词边界，`@林夏站在天台` 会整串当成名字，所以只有像的候选才提示，
  * 否则 `@所有人`、`@someone` 这类普通写法会天天误报。
  */
 export function findBrokenMentions(
@@ -165,9 +178,8 @@ export function findBrokenMentions(
   const reserved = new Set(videoReferenceTokens(text).map((t) => t.start))
   for (let i = text.indexOf('@'); i >= 0; i = text.indexOf('@', i + 1)) {
     if (hit.has(i) || !isMentionStart(text, i) || reserved.has(i)) continue
-    const word = text
-      .slice(i + 1)
-      .match(/^[^\s@#，。,.!！?？:：;；、（）()【】[\]「」"'“”]{1,12}/)?.[0]
+    // 名字取全（文件名式的资产名有二十几个字），提示里才看得出说的是哪个资产
+    const word = text.slice(i + 1).match(NAME)?.[0]
     if (!word) continue
     const candidates = similarNames(word, names)
     if (candidates.length === 0) continue
@@ -176,19 +188,90 @@ export function findBrokenMentions(
   return out
 }
 
+/** 文件名末尾的扩展名：`.png`、`.mp4` */
+const EXTENSION = /\.[A-Za-z0-9]{1,8}$/
+
+/** 名字开头的编号：`012-015_`、`01-01-` 这类序号，改名前后常变，不算名字本身 */
+const COUNTER = /^[\d][\d._-]*/
+
+/** 名字里真正的字（汉字、字母都算）：公共前缀里只有数字和符号的不算像 */
+const WORD = /\p{L}/u
+
+/** 去掉扩展名：`012-015_女生宿舍清晨调度图.png` → `012-015_女生宿舍清晨调度图` */
+function stemOf(name: string): string {
+  return name.replace(EXTENSION, '')
+}
+
+/** 去掉开头的编号：`012-015_女生宿舍清晨调度图` → `女生宿舍清晨调度图` */
+function coreOf(name: string): string {
+  return stemOf(name).replace(COUNTER, '')
+}
+
+/** 最后一个分隔符之后的部分：`001-010_女生宿舍夜间调度图` → `女生宿舍夜间调度图` */
+function tailOf(name: string): string {
+  const stem = stemOf(name)
+  const at = Math.max(stem.lastIndexOf('_'), stem.lastIndexOf('-'), stem.lastIndexOf(' '))
+  return at >= 0 ? stem.slice(at + 1) : stem
+}
+
+/** 两个名字的公共前缀有多长 */
+function commonPrefix(a: string, b: string): number {
+  let i = 0
+  while (i < a.length && i < b.length && a[i] === b[i]) i++
+  return i
+}
+
+/**
+ * 两个名字有多像：0 = 不像（不该提示）。
+ *
+ * 文件名式的资产名（`012-015_女生宿舍清晨调度图.png`）改名前后常常只差编号或时段，
+ * 公共前缀只有一两个字符；中文名字（`林夏` → `林夏（成年）`）改一个字前缀就断了。
+ * 所以分几路比：
+ * - 去掉扩展名后比：公共前缀 ≥ min(4, 较短者长度) 个字才算像；
+ * - 再去掉开头的编号、或只取最后一个分隔符之后的部分比：应对编号不同的改名；
+ * - 公共前缀里只有数字和符号（`01-`、`001-`）的一律不算像——那是序号，不是名字；
+ * - 短中文名的一两个字之差按占比兜住（`林小` → `林夏`）。
+ */
+function similarity(query: string, name: string): number {
+  const qStem = stemOf(query)
+  const nStem = stemOf(name)
+  if (!qStem || !nStem) return 0
+  const pairs: Array<[string, string]> = [
+    [qStem, nStem],
+    [coreOf(query), coreOf(name)],
+    [tailOf(query), tailOf(name)],
+  ]
+  let score = 0
+  for (const [a, b] of pairs) {
+    if (!a || !b) continue
+    const prefix = commonPrefix(a, b)
+    if (prefix === 0) continue
+    // 只共享序号（`01-`、`001-`）不算像：那是编号，不是名字
+    if (!WORD.test(a.slice(0, prefix))) continue
+    const shorter = Math.min(a.length, b.length)
+    // 公共前缀够长：文件名式的改名（`女生宿舍清晨调度图` → `女生宿舍夜间调度图`）
+    if (prefix >= Math.min(4, shorter)) {
+      score = Math.max(score, prefix)
+      continue
+    }
+    // 短中文名改了一两个字：`林小` → `林夏`、`林夏` → `林夏（成年）`
+    if (prefix / shorter >= 0.3) score = Math.max(score, prefix)
+  }
+  return score
+}
+
 /**
  * 和这个名字像的候选：改名通常留着姓或首字，按公共前缀的长度排序。
  * 首字不同的一律不算像——中文单字重合太常见（「天台」和「林夏站在天台」），
  * 报出来只会变成噪音，用户也就不会看这类提示了。
+ * 只共享编号（`01-`）的同样不算像，见 `similarity`。
  */
 function similarNames(query: string, names: readonly string[], limit = 4): string[] {
   if (!query) return []
   const scored: Array<{ name: string; score: number }> = []
   for (const name of names) {
-    let prefix = 0
-    while (prefix < name.length && name[prefix] === query[prefix]) prefix++
-    if (prefix === 0) continue
-    scored.push({ name, score: prefix })
+    const score = similarity(query, name)
+    if (score > 0) scored.push({ name, score })
   }
   return scored
     .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
