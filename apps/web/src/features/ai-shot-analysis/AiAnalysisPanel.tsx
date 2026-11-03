@@ -7,7 +7,7 @@ import {
   isAiAnalysisType,
   type AiDraftReference,
 } from '@plein/nodes'
-import type { PreparedInput } from '@plein/protocol'
+import type { Catalog, PreparedInput } from '@plein/protocol'
 import { useEffect, useRef, useState } from 'react'
 import { api, assetUrls } from '../../api/client'
 import { useDocVersion } from '../../canvas/hooks'
@@ -30,6 +30,12 @@ import {
 } from './model'
 
 const wait = () => new Promise((resolve) => setTimeout(resolve, 250))
+const supportsStructured = (catalog: Catalog | null, ref: string) =>
+  catalog?.providers.some((provider) =>
+    provider.models.some(
+      (model) => `${provider.id}:${model.id}` === ref && model.features?.includes('structured'),
+    ),
+  ) === true
 type Preview = { id: string; input: PreparedInput; snapshot: string }
 export function AiAnalysisPanel({
   engine,
@@ -332,7 +338,10 @@ export function AiAnalysisPanel({
                       { value: '', label: '请明确选择模型' },
                       ...aiModels(catalog, true).map((item) => ({
                         value: item.ref,
-                        label: item.title,
+                        label: supportsStructured(catalog, item.ref)
+                          ? item.title
+                          : `${item.title}（不支持结构化输出）`,
+                        disabled: !supportsStructured(catalog, item.ref),
                       })),
                     ]}
                     onChange={(value) => {
@@ -482,7 +491,10 @@ export function AiAnalysisPanel({
                 { value: '', label: '请明确选择模型' },
                 ...aiModels(catalog, false).map((item) => ({
                   value: item.ref,
-                  label: item.title,
+                  label: supportsStructured(catalog, item.ref)
+                    ? item.title
+                    : `${item.title}（不支持结构化输出）`,
+                  disabled: !supportsStructured(catalog, item.ref),
                 })),
               ]}
               onChange={setSummaryModel}

@@ -1,3 +1,4 @@
+import type { ModelInfo } from '@plein/plugin-sdk'
 import type { Catalog } from '@plein/protocol'
 import { useEffect, useState } from 'react'
 import type { NodeInfo } from '../../canvas/nodes'
@@ -9,6 +10,8 @@ import { SlidePill, SlideSwap } from '../../ui/Slide'
 import { useSession } from '../../stores/session'
 import { pushRecentModel, readRecentModels, recentModelsKey } from './recentModels'
 import { deprecatedLast } from './deprecatedLast'
+
+const STRUCTURED_OUTPUT_NODES = new Set(['plein/storyboard', 'plein/ai-scene', 'plein/ai-summary'])
 
 /** 模型选择：左栏选平台、右栏列该平台的模型。不替用户挑，没选时按钮提示去选 */
 export function ModelPicker({
@@ -110,35 +113,51 @@ export function ModelPicker({
     v: string,
     title: string,
     description?: string,
-    model?: { deprecated?: true; remoteOnly?: boolean; description?: string },
-  ) => (
-    <button
-      key={v}
-      type="button"
-      role="option"
-      aria-selected={v === value}
-      title={model?.description ?? description}
-      onClick={() => pick(v)}
-      className="ui-menu-item items-start"
-    >
-      <ProviderIcon provider={v.slice(0, v.indexOf(':'))} />
-      <span className="ui-menu-text">
-        <span className="flex min-w-0 items-center gap-1">
-          <span className="truncate">
-            {title}
-            {v === fallback ? ' · 默认' : ''}
+    model?: {
+      title: string
+      deprecated?: true
+      remoteOnly?: boolean
+      description?: string
+      features?: ModelInfo['features']
+    },
+  ) => {
+    const structuredProblem =
+      STRUCTURED_OUTPUT_NODES.has(node.type) && !model?.features?.includes('structured')
+        ? `${model?.title ?? title} 不支持结构化输出，${node.title} 需要它，请换模型或在渠道设置里开启`
+        : null
+    return (
+      <button
+        key={v}
+        type="button"
+        role="option"
+        aria-selected={v === value}
+        disabled={!!structuredProblem}
+        title={structuredProblem ?? model?.description ?? description}
+        onClick={() => pick(v)}
+        className="ui-menu-item items-start"
+      >
+        <ProviderIcon provider={v.slice(0, v.indexOf(':'))} />
+        <span className="ui-menu-text">
+          <span className="flex min-w-0 items-center gap-1">
+            <span className="truncate">
+              {title}
+              {v === fallback ? ' · 默认' : ''}
+            </span>
+            {model?.remoteOnly && remoteOnlyTag()}
+            {model?.deprecated && deprecatedTag(model.description)}
           </span>
-          {model?.remoteOnly && remoteOnlyTag()}
-          {model?.deprecated && deprecatedTag(model.description)}
+          <span className="ui-menu-desc truncate">
+            {model?.remoteOnly ? '平台新发现 · 参数为通用默认' : v}
+          </span>
+          {description && <span className="ui-menu-desc line-clamp-2">{description}</span>}
+          {structuredProblem && (
+            <span className="ui-menu-desc line-clamp-2">{structuredProblem}</span>
+          )}
         </span>
-        <span className="ui-menu-desc truncate">
-          {model?.remoteOnly ? '平台新发现 · 参数为通用默认' : v}
-        </span>
-        {description && <span className="ui-menu-desc line-clamp-2">{description}</span>}
-      </span>
-      {v === value && <Icon name="check" size={14} />}
-    </button>
-  )
+        {v === value && <Icon name="check" size={14} />}
+      </button>
+    )
+  }
 
   return (
     <>

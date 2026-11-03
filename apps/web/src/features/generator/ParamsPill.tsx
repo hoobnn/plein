@@ -28,7 +28,7 @@ export const countUnit = (f: FieldSchema) => (f.title?.includes('张') ? '张' :
 
 /** 参数值的简写：画幅原样、张数“1 张”、时长“5s”；音频开关在摘要末尾画成图标 */
 function shortValue(key: string, f: FieldSchema, v: unknown) {
-  if (f.widget === 'resolution') return v ? String(v) : '默认画质'
+  if (f.widget === 'resolution') return v ? String(v) : (f.labels?.[''] ?? '默认画质')
   if (f.widget === 'audio') return null
   if (v === undefined || v === '') return null
   if (key === 'count') return `${v} ${countUnit(f)}`
@@ -265,7 +265,7 @@ function ParamControl({
             String(o),
             String(value ?? '') === String(o),
             () => onChange(o),
-            String(o) || '默认',
+            field.labels?.[String(o)] ?? (String(o) || '默认'),
           ),
         )}
       </fieldset>

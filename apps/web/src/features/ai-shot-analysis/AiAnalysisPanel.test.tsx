@@ -32,8 +32,14 @@ const catalog = {
       enabled: true,
       configured: true,
       models: [
-        { id: 'vision', title: 'Vision', capabilities: ['text.chat'], features: ['vision'] },
-        { id: 'text', title: 'Text', capabilities: ['text.chat'] },
+        {
+          id: 'vision',
+          title: 'Vision',
+          capabilities: ['text.chat'],
+          features: ['vision', 'structured'],
+        },
+        { id: 'text', title: 'Text', capabilities: ['text.chat'], features: ['structured'] },
+        { id: 'plain', title: 'Plain', capabilities: ['text.chat'], features: ['vision'] },
       ],
     },
   ],
@@ -141,6 +147,15 @@ function addSceneResult(doc: PleinDoc, nodeId: string, resultId: string) {
     },
   ])
 }
+
+it('逐镜分析禁用未声明结构化输出的视觉模型', async () => {
+  const { engine, target } = fixture()
+  const { user } = renderApp(<AiAnalysisPanel engine={engine} target={target} onClose={vi.fn()} />)
+  await user.click(screen.getByRole('combobox', { name: '逐镜视觉模型' }))
+  const unsupported = await screen.findByRole('option', { name: /Plain/ })
+  expect(unsupported.getAttribute('aria-disabled')).toBe('true')
+  expect(unsupported.textContent).toContain('不支持结构化输出')
+})
 
 it('建立计划和预检零调用，确认前不提交模型', async () => {
   const { doc, engine, target } = fixture()

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { useState } from 'react'
 import { expect, it, vi } from 'vite-plus/test'
+import type { FieldSchema } from '../../canvas/nodes'
 import { renderApp, screen } from '../../testing/render'
 import { ParamsPill } from './ParamsPill'
 
@@ -41,4 +42,27 @@ it('历史字符串布尔值原样展示，显式选择写入布尔，默认与�
   await user.click(screen.getByRole('option', { name: '开' }))
   await user.click(screen.getByRole('button', { name: '恢复模型默认参数' }))
   expect(changes).toHaveBeenLastCalledWith({})
+})
+
+it('分辨率未选时在摘要和选项里显示模型默认值', async () => {
+  const resolution: [string, FieldSchema] = [
+    'resolution',
+    {
+      type: 'string',
+      title: '分辨率',
+      widget: 'resolution',
+      enum: ['', '720p', '1080p'],
+      labels: { '': '默认（720p）' },
+      default: '',
+    },
+  ]
+  const { user } = renderApp(
+    <ParamsPill fields={[resolution]} rest={{}} params={{ resolution: '' }} onChange={() => {}} />,
+  )
+  const trigger = screen.getByRole('button', { name: '参数' })
+  expect(trigger.textContent).toContain('默认（720p）')
+  await user.click(trigger)
+  expect(screen.getByRole('button', { name: '默认（720p）' }).getAttribute('aria-pressed')).toBe(
+    'true',
+  )
 })

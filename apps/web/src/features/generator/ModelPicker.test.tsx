@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import type { Catalog } from '@plein/protocol'
-import { expect, it } from 'vite-plus/test'
+import { expect, it, vi } from 'vite-plus/test'
 import type { NodeInfo } from '../../canvas/nodes'
 import { renderApp, screen, within } from '../../testing/render'
 import { ModelPicker } from './ModelPicker'
@@ -58,4 +58,41 @@ it('弃用模型在选项和当前按钮上显示弱化标签及模型说明', a
   expect(deprecated.title).toBe(description)
   expect(deprecated.textContent).toContain(description)
   expect(screen.getByRole('option', { name: /当前模型/ }).textContent).not.toContain('已弃用')
+})
+
+it('分镜节点禁用未声明结构化输出的模型并说明原因', async () => {
+  const structuredCatalog = {
+    ...catalog,
+    providers: [
+      {
+        ...catalog.providers[0]!,
+        models: [
+          { id: 'plain', title: '普通对话', capabilities: ['text.chat' as const], features: [] },
+          {
+            id: 'json',
+            title: '结构化对话',
+            capabilities: ['text.chat' as const],
+            features: ['structured' as const],
+          },
+        ],
+      },
+    ],
+  } as Catalog
+  const onChange = vi.fn()
+  const { user } = renderApp(
+    <ModelPicker
+      value="test/platform:plain"
+      node={{ type: 'plein/storyboard', title: '分镜', capability: 'text.chat' } as NodeInfo}
+      catalog={structuredCatalog}
+      onChange={onChange}
+    />,
+  )
+  await user.click(screen.getByRole('button', { name: '模型' }))
+  const unsupported = await screen.findByRole('option', { name: /普通对话/ })
+  expect((unsupported as HTMLButtonElement).disabled).toBe(true)
+  expect(unsupported.textContent).toContain(
+    '普通对话 不支持结构化输出，分镜 需要它，请换模型或在渠道设置里开启',
+  )
+  await user.click(screen.getByRole('option', { name: /结构化对话/ }))
+  expect(onChange).toHaveBeenCalledWith('test/platform:json')
 })
