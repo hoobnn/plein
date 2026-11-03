@@ -202,6 +202,7 @@ const models: ModelSpec[] = [
       resolutions: ['1K', '1.5K', '2K'],
       count: { max: 1 },
       references: { max: 10 },
+      seed: false,
     },
     options: seedreamOptions,
   },
@@ -215,6 +216,7 @@ const models: ModelSpec[] = [
       resolutions: ['1K', '1.5K', '2K'],
       count: { max: 1 },
       references: { max: 10 },
+      seed: false,
     },
     options: seedreamOptions,
   },
@@ -231,6 +233,7 @@ const models: ModelSpec[] = [
       references: { max: 14 },
       count: { max: 15 },
       image: { maxTotalImages: 15 },
+      seed: false,
     },
     options: seedreamOptions,
   },
@@ -1010,10 +1013,20 @@ const PLAN_VISION_CHAT_IDS = [
   'doubao-seed-2.1-pro',
   'doubao-seed-evolving',
 ]
+/** 套餐视频接口必然拒绝草稿模式；套餐目录不要把 draft 展示成可选项 */
+function withoutDraft(model: ModelSpec): ModelSpec {
+  const options = model.options
+  return options && 'draft' in options.shape
+    ? { ...model, options: options.omit({ draft: true }) }
+    : model
+}
 const planModels: ModelSpec[] = [
-  ...models.filter(
-    (model) => PLAN_MODELS[model.id] || model.id === 'custom-image' || model.id === 'custom-video',
-  ),
+  ...models
+    .filter(
+      (model) =>
+        PLAN_MODELS[model.id] || model.id === 'custom-image' || model.id === 'custom-video',
+    )
+    .map(withoutDraft),
   ...PLAN_CHAT_IDS.map((id): ModelSpec => ({
     id,
     title: id === 'ark-code-latest' ? 'Auto（套餐自动路由）' : id,
@@ -1034,7 +1047,7 @@ const planModels: ModelSpec[] = [
     id: 'doubao-seed-tts-2.0',
     title: '豆包语音合成 2.0',
     capabilities: ['audio.speech'],
-    limits: { speed: { min: 0.5, max: 2 } },
+    limits: { speed: { min: 0.5, max: 2 }, promptMaxLength: 3000 },
     voices: TTS_VOICES,
   },
   { id: 'doubao-seed-asr-2.0', title: '豆包语音识别 2.0', capabilities: ['audio.transcribe'] },

@@ -1,8 +1,20 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { arkPlanProvider } from './index'
+import { arkPlanProvider, arkProvider } from './index'
 import { fakeContext } from '../testing'
 
 afterEach(() => vi.useRealTimers())
+
+it('套餐视频模型不提供草稿选项，按量平台仍保留，语音声明文本上限', () => {
+  const plan = arkPlanProvider.models.find((model) => model.id === 'doubao-seedance-2-5-260628')!
+  const api = arkProvider.models.find((model) => model.id === 'doubao-seedance-2-5-260628')!
+  expect(plan.options?.shape).not.toHaveProperty('draft')
+  expect(plan.options?.shape).toHaveProperty('adaptive_duration')
+  expect(api.options?.shape).toHaveProperty('draft')
+  expect(
+    arkPlanProvider.models.find((model) => model.id === 'doubao-seed-tts-2.0')?.limits
+      ?.promptMaxLength,
+  ).toBe(3000)
+})
 it('目录查询只使用独立 AK/SK 签名，归一化并去重，不泄露套餐 Key', async () => {
   vi.useFakeTimers()
   vi.setSystemTime(new Date('2026-11-01T00:00:00Z'))

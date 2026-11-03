@@ -479,6 +479,16 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
     expect(seedance.limits).toMatchObject({ duration: { min: 4, max: 30 }, seed: false })
   })
 
+  it('Seedream 5.0 全系声明不支持 seed', () => {
+    const models = describeProvider(arkProvider, 'volc/ark').models
+    for (const id of [
+      'doubao-seedream-5-0-pro-260628',
+      'doubao-seedream-5-0-flash-260915',
+      'doubao-seedream-5-0-260128',
+    ])
+      expect(models.find((model) => model.id === id)?.limits?.seed).toBe(false)
+  })
+
   it('取消仅删除 queued 任务，避免 DELETE 成功任务导致产物记录丢失', async () => {
     const { ctx, fetch } = harness([
       { status: 'queued' },
