@@ -479,14 +479,25 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
     expect(seedance.limits).toMatchObject({ duration: { min: 4, max: 30 }, seed: false })
   })
 
-  it('Seedream 5.0 全系声明不支持 seed', () => {
+  it('Seedream 5.0 全系声明不支持 seed，并声明自定义尺寸范围', () => {
     const models = describeProvider(arkProvider, 'volc/ark').models
-    for (const id of [
-      'doubao-seedream-5-0-pro-260628',
-      'doubao-seedream-5-0-flash-260915',
-      'doubao-seedream-5-0-260128',
-    ])
-      expect(models.find((model) => model.id === id)?.limits?.seed).toBe(false)
+    for (const id of ['doubao-seedream-5-0-pro-260628', 'doubao-seedream-5-0-flash-260915']) {
+      expect(models.find((model) => model.id === id)?.limits).toMatchObject({
+        seed: false,
+        image: {
+          size: { minPixels: 921600, maxPixels: 4624220, minRatio: 1 / 16, maxRatio: 16 },
+        },
+      })
+    }
+    expect(models.find((model) => model.id === 'doubao-seedream-5-0-260128')?.limits).toMatchObject(
+      {
+        seed: false,
+        image: {
+          maxTotalImages: 15,
+          size: { minPixels: 3686400, maxPixels: 16777216 },
+        },
+      },
+    )
   })
 
   it('取消仅删除 queued 任务，避免 DELETE 成功任务导致产物记录丢失', async () => {
