@@ -93,3 +93,56 @@ describe('图片精修范围预检', () => {
     )
   })
 })
+
+describe('自定义宽高、反向提示词与种子范围', () => {
+  const minimax: ModelInfo = {
+    id: 'image-01',
+    title: 'image-01',
+    capabilities: ['image.generate'],
+    limits: { customSize: { min: 512, max: 2048, multiple: 8 }, negativePrompt: false },
+  }
+
+  it('自定义宽高按声明判断范围与步长', () => {
+    expect(imageModelProblem(minimax, { width: 500, height: 512 }, 0)).toBe(
+      'image-01 的自定义宽高须为 512–2048 像素且为 8 的倍数，现在是 500×512',
+    )
+    expect(imageModelProblem(minimax, { width: 1024, height: 1004 }, 0)).toContain('8 的倍数')
+    expect(imageModelProblem(minimax, { width: 1024, height: 768 }, 0)).toBeNull()
+    expect(imageModelProblem(minimax, { width: 1024 }, 0)).toBe('image-01 的自定义宽高须一起填写')
+  })
+
+  it('不允许自定义宽高的模型说清改用画幅和分辨率', () => {
+    const live: ModelInfo = {
+      id: 'image-01-live',
+      title: 'image-01-live',
+      capabilities: ['image.generate'],
+      limits: { customSize: false },
+    }
+    expect(imageModelProblem(live, { width: 1024, height: 1024 }, 0)).toBe(
+      'image-01-live 不支持自定义宽高，请改用画幅和分辨率',
+    )
+  })
+
+  it('不支持反向提示词时提示合并到提示词', () => {
+    expect(imageModelProblem(minimax, { negativePrompt: '不要文字' }, 0)).toBe(
+      'image-01 不支持反向提示词，请把内容合并到提示词里',
+    )
+    expect(imageModelProblem(minimax, { options: { negative_prompt: '不要文字' } }, 0)).toBe(
+      'image-01 不支持反向提示词，请把内容合并到提示词里',
+    )
+    expect(imageModelProblem(minimax, { negativePrompt: '  ' }, 0)).toBeNull()
+  })
+
+  it('种子超出声明范围时报范围和当前值', () => {
+    const seeded: ModelInfo = {
+      id: 'wan-image',
+      title: '万相图片',
+      capabilities: ['image.generate'],
+      limits: { seed: { min: 0, max: 2147483647 } },
+    }
+    expect(imageModelProblem(seeded, { seed: -1 }, 0)).toBe(
+      '万相图片 的种子须为 0–2147483647 的整数，现在是 -1',
+    )
+    expect(imageModelProblem(seeded, { seed: 7 }, 0)).toBeNull()
+  })
+})
