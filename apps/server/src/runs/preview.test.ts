@@ -158,6 +158,64 @@ it('分辨率按实际模型提前校验，修正后的预览和提交一致', a
   expect(submit.mock.calls[0]![0].input).toMatchObject({ resolution: '1080p' })
 }, 30_000)
 
+it('未选分辨率时实际输入显示模型默认，显式选择保持原值', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  for (const [model, resolution] of [
+    ['minimax/api:MiniMax-H3', '2K'],
+    ['minimax/api:MiniMax-H3-Lite', '768P'],
+    ['volc/ark:doubao-seedance-2-5-260628', '720p'],
+    ['aliyun/bailian:wan3.0-video', '720P'],
+  ]) {
+    const node = addNode(doc, 'plein/video', { params: { model, prompt: '水杯特写' } })
+    const input = await preview(server, id, node)
+    expect(input.params.resolution).toBe(`${resolution}（模型默认）`)
+  }
+  const explicit = addNode(doc, 'plein/video', {
+    params: { model: 'minimax/api:MiniMax-H3', prompt: '水杯特写', resolution: '768P' },
+  })
+  expect((await preview(server, id, explicit)).params.resolution).toBe('768P')
+})
+
+it('需要结构化输出的节点在准备阶段阻断不支持的模型，声明后放行执行', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const chat = mockProvider.models.find((model) => model.id === 'agent')!
+  const features = chat.features
+  try {
+    chat.features = features?.filter((feature) => feature !== 'structured')
+    const script = createElement(doc, {
+      kind: 'markdown',
+      text: '雨夜，林夏推开天台的门。',
+      x: 0,
+      y: 0,
+      w: 200,
+      h: 100,
+    })
+    const board = addNode(doc, 'plein/storyboard', {
+      params: { model: 'plein/mock:agent', shots: [] },
+    })
+    connect(doc, [script, 'text'], [board, 'script'])
+    const blocked = await preview(server, id, board)
+    expect(blocked.status).toBe('blocked')
+    expect(blocked.blocked).toContainEqual({
+      code: 'prepare_failed',
+      message: 'Mock 智能体 不支持结构化输出，分镜 需要它，请换模型或在渠道设置里开启',
+    })
+    chat.features = [...(features ?? []), 'structured']
+    const ready = await preview(server, id, board)
+    expect(ready.status).toBe('ready')
+    const res = await run(server, id, board, ready.inputHash)
+    expect(res.status).toBe(202)
+    const { runId } = (await res.json()) as { runId: string }
+    expect(await server.runs.wait(runId)).toBe('succeeded')
+  } finally {
+    chat.features = features
+  }
+})
+
 it('时长超出模型上限时在准备阶段阻断，不把越界值送给平台', async () => {
   const { server } = await bootServer()
   mockSettings(server, {})

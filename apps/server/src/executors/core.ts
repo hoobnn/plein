@@ -1,5 +1,7 @@
 import { imageProcess } from './image-process'
 import {
+  aiSceneNode,
+  aiSummaryNode,
   characterNode,
   effectNode,
   corePlugin,
@@ -31,6 +33,7 @@ import {
   defineExecutor,
   defineServerPlugin,
   type ExecutorContext,
+  type ModelSpec,
   imageModelProblem,
   inputAssets,
   inputText,
@@ -47,6 +50,20 @@ import { aiSceneExecutor, aiSummaryExecutor } from './ai-shot-analysis'
 import { deliveryCheckExecutor } from './delivery-check'
 import { freezeSubtitleEvidence } from './subtitle-evidence'
 import { sfx, transcription, speechDirection, speechVoice } from './audio'
+
+const STRUCTURED_OUTPUT_NODES = new Map(
+  [storyboardNode, aiSceneNode, aiSummaryNode].map((node) => [node.type, node.title]),
+)
+
+/** 必须在运行前确认模型支持结构化输出的节点。 */
+export function structuredOutputProblem(
+  spec: Pick<ModelSpec, 'title' | 'features'> | undefined,
+  nodeType: string | undefined,
+) {
+  const node = nodeType ? STRUCTURED_OUTPUT_NODES.get(nodeType) : undefined
+  if (!spec || !node || spec.features?.includes('structured')) return null
+  return `${spec.title} 不支持结构化输出，${node} 需要它，请换模型或在渠道设置里开启`
+}
 
 /** 节点选的模型：不替用户挑，没选就报错 */
 function pickModel(ctx: ExecutorContext<{ model: string }>, label: string) {
@@ -295,7 +312,11 @@ const storyboard = defineExecutor(storyboardNode, async (ctx) => {
   ]
     .filter(Boolean)
     .join('\n\n')
-  const res = await ctx.providers.call('text.chat', pickModel(ctx, '对话'), {
+  const model = pickModel(ctx, '对话')
+  const spec = ctx.providers.models('text.chat').find((m) => m.ref === model)
+  const structuredProblem = structuredOutputProblem(spec, storyboardNode.type)
+  if (structuredProblem) throw new ProviderError('invalid_input', structuredProblem)
+  const res = await ctx.providers.call('text.chat', model, {
     messages: [
       { role: 'system', content: STORYBOARD_SYSTEM },
       { role: 'user', content: user },

@@ -27,6 +27,7 @@ import { aiAnalysisProblem, aiAnalysisUnit } from './ai-analysis'
 import { speechDirection, speechVoice } from '../executors/audio'
 import { modelOptionsProblem } from './model-options'
 import { appendDeliveryRecord, freezeDeliveryOrigins } from '../executors/delivery'
+import { structuredOutputProblem } from '../executors/core'
 import { newId } from '../ids'
 import { createHash } from 'node:crypto'
 import {
@@ -779,6 +780,12 @@ export class NodeRuns implements BatchHost {
     const voice = voiceOf(params)
     const model = this.resolveModel(params.model)
     const limit = model?.limit
+    if (
+      model?.defaultResolution &&
+      (def?.capability === 'image.generate' || def?.capability === 'video.generate') &&
+      !params.resolution
+    )
+      shown.resolution = `${model.defaultResolution}（模型默认）`
     const blocked = dedupeIssues([...(p.mentions?.blocked ?? [])])
     const promptLimit = model?.promptLimit
     if (promptLimit !== undefined && prompt && prompt.length > promptLimit) {
@@ -852,6 +859,7 @@ export class NodeRuns implements BatchHost {
       version: spec?.version,
       limit: spec?.limits?.references?.max,
       promptLimit: spec?.limits?.promptMaxLength,
+      defaultResolution: spec?.limits?.defaultResolution,
       plugin: entry ? this.host.registry.plugin(entry.plugin)?.manifest.version : undefined,
     }
   }
@@ -2229,6 +2237,8 @@ export class NodeRuns implements BatchHost {
         code: 'prepare_failed',
         message: '当前对话模型不支持看图，请换支持图片的模型或断开图片输入',
       })
+    const structuredProblem = structuredOutputProblem(spec || undefined, el.nodeType)
+    if (structuredProblem) blocked.push({ code: 'prepare_failed', message: structuredProblem })
     // 模型声明的参数范围：前端提交前按模型收窄表单，走 Agent / MCP / 批量或分镜展开时
     // 参数没经过前端，越界值会直达平台，这里按同一份声明再挡一次
     if (
