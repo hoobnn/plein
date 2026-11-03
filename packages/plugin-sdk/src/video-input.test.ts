@@ -135,3 +135,39 @@ it.each(['volc/ark', 'volc/ark-plan'])(
     ).toEqual({ duration: -1, aspectRatio: 'auto' })
   },
 )
+
+describe('视频输出格式', () => {
+  const v25: ModelInfo = {
+    id: 'doubao-seedance-2-5-260628',
+    title: 'Seedance 2.5',
+    capabilities: ['video.generate'],
+    limits: { outputFormats: ['mp4', 'mov'] },
+  }
+  const v20: ModelInfo = {
+    id: 'doubao-seedance-2-0-260128',
+    title: 'Seedance 2.0',
+    capabilities: ['video.generate'],
+    limits: { outputFormats: ['mp4'] },
+  }
+  const params = (format: string) => ({
+    model: v20.id,
+    options: { [v20.id]: { output_format: format } },
+  })
+
+  it('只有声明了的格式能提交，其余在运行前说清可选值', () => {
+    expect(videoModelProblem(v20, params('mov'), { image: 0, video: 0, audio: 0 }, '海边')).toBe(
+      'Seedance 2.0 不支持 mov 输出，请改用 mp4',
+    )
+    expect(
+      videoModelProblem(v20, params('mp4'), { image: 0, video: 0, audio: 0 }, '海边'),
+    ).toBeNull()
+    expect(
+      videoModelProblem(
+        v25,
+        { model: v25.id, options: { [v25.id]: { output_format: 'mov' } } },
+        { image: 0, video: 0, audio: 0 },
+        '海边',
+      ),
+    ).toBeNull()
+  })
+})

@@ -473,6 +473,11 @@ export interface VoiceCloneSpec<Ctx> {
   previewModel?: string
   /** 样本要求，表单里给用户看 */
   hint: string
+  /**
+   * 样本的格式与大小要求（时长类建议仍写在 hint 里）。
+   * 声明式：宿主能读到资产记录里的格式、大小时先挡一次，适配器提交前按同一份声明再挡一次。
+   */
+  sample?: MediaRequirement
   clone(input: VoiceCloneInput, ctx: Ctx): Promise<VoiceCreationResult>
   /** 查训练状态；clone 直接返回 ready / failed 的平台可以不实现 */
   status?(voiceId: string, ctx: Ctx): Promise<VoiceCreationResult>
@@ -668,7 +673,7 @@ export interface ProviderDescriptor {
   /** 支持声音复刻时的表单说明 */
   voiceClone?: Pick<
     VoiceCloneSpec<never>,
-    'voiceId' | 'hint' | 'customId' | 'promptSample' | 'previewModel'
+    'voiceId' | 'hint' | 'customId' | 'promptSample' | 'previewModel' | 'sample'
   >
   voiceDesign?: Omit<VoiceDesignSpec<never>, 'design'>
   plugin: string
@@ -719,6 +724,7 @@ export function describeProvider(def: ProviderDefinition, plugin: string): Provi
             customId: def.voiceClone.customId,
             promptSample: def.voiceClone.promptSample,
             previewModel: def.voiceClone.previewModel,
+            ...(def.voiceClone.sample ? { sample: def.voiceClone.sample } : {}),
           },
         }
       : {}),

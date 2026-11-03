@@ -122,6 +122,11 @@ export function videoModelProblem(
     !(model.limits?.optionalVideoPrompt && total && mode !== 'text')
   )
     return '视频提示词为空'
+  // 输出格式：只有声明的模型能选（如 MOV 仅部分 Seedance 版本支持）
+  const formats = model.limits?.outputFormats
+  const format = extra?.output_format
+  if (formats && typeof format === 'string' && !formats.includes(format))
+    return `${model.title} 不支持 ${format} 输出，请改用 ${formats.join(' 或 ')}`
   if (extra?.omni_reference_task_type && !refs) return '参考任务类型需要使用多模态参考模式'
   if (['edit', 'extend'].includes(String(extra?.omni_reference_task_type)) && !counts.video)
     return '编辑或延长任务需要参考视频'

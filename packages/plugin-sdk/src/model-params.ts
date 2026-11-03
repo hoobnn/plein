@@ -1,3 +1,4 @@
+import { mediaRequirementProblems, type MediaSample } from './media-requirements'
 import type { Capability, ModelInfo } from './provider'
 import { videoTaskOverrides } from './video-input'
 
@@ -76,4 +77,34 @@ export function modelParamsProblem(
     return `${title} 一次最多生成 ${limits.count.max} 张`
 
   return null
+}
+
+/** 字节换算成 MB，最多留两位小数 */
+const mbText = (bytes: number) => String(Math.round((bytes / 1024 / 1024) * 100) / 100)
+
+/**
+ * 语音识别素材的预检：按模型声明的音频要求（格式、大小、时长），
+ * 用资产记录里的信息就能判断，不用等平台报错。返回第一条问题，null 表示满足。
+ * 宿主在运行前拿到资产记录后调用（见 apps/server/src/runs/media-requirements.ts 的 audio 分支）。
+ */
+export function transcribeAudioProblem(
+  model: ModelInfo,
+  sample: MediaSample,
+  name?: string,
+): string | null {
+  const requirement = model.limits?.media?.audio
+  if (!requirement) return null
+  if (typeof sample.size === 'number' && requirement.maxMB !== undefined) {
+    const mb = sample.size / 1024 / 1024
+    const over = requirement.maxMBExclusive ? mb >= requirement.maxMB : mb > requirement.maxMB
+    if (over)
+      return `${model.title} 要求音频不超过 ${requirement.maxMB} MB，${name ? `「${name}」` : '当前音频'}是 ${mbText(sample.size)} MB，请压缩后再运行`
+  }
+  return (
+    mediaRequirementProblems(requirement, sample, {
+      title: model.title,
+      label: '识别音频',
+      ...(name ? { name } : {}),
+    })[0] ?? null
+  )
 }
