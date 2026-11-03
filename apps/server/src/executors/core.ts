@@ -202,12 +202,23 @@ const video = defineExecutor(videoNode, async (ctx) => {
     ...videoTaskOverrides(params),
   }
   // 平台一次只出一条视频：要几条就并行提交几次
-  const results = await Promise.all(
+  // 一条失败不影响已经出片（已经计费）的其他条：只把失败的条丢掉
+  const settled = await Promise.allSettled(
     Array.from({ length: params.count }, () => ctx.providers.call('video.generate', model, input)),
   )
-  const assets = results.flatMap((r, index) =>
-    r.assets.map((asset) => ({ ...asset, outputGroup: String(index) })),
+  const failures = settled.filter((r) => r.status === 'rejected')
+  // 全都失败：按第一条失败的原因报错
+  if (settled.length && failures.length === settled.length) throw failures[0]!.reason
+  const assets = settled.flatMap((r, index) =>
+    r.status === 'fulfilled'
+      ? r.value.assets.map((asset) => ({ ...asset, outputGroup: String(index) }))
+      : [],
   )
+  if (failures.length) {
+    const first = failures[0]!.reason
+    const message = first instanceof Error ? first.message : String(first)
+    ctx.progress(0, `共 ${params.count} 条，${failures.length} 条失败：${message}`)
+  }
   return {
     video: assets.filter((a) => a.kind === 'video').map((a) => ({ type: 'video' as const, ...a })),
     // 开了「返回尾帧」的模型多给一张图
