@@ -207,13 +207,6 @@ function coreOf(name: string): string {
   return stemOf(name).replace(COUNTER, '')
 }
 
-/** 最后一个分隔符之后的部分：`001-010_女生宿舍夜间调度图` → `女生宿舍夜间调度图` */
-function tailOf(name: string): string {
-  const stem = stemOf(name)
-  const at = Math.max(stem.lastIndexOf('_'), stem.lastIndexOf('-'), stem.lastIndexOf(' '))
-  return at >= 0 ? stem.slice(at + 1) : stem
-}
-
 /** 两个名字的公共前缀有多长 */
 function commonPrefix(a: string, b: string): number {
   let i = 0
@@ -226,11 +219,14 @@ function commonPrefix(a: string, b: string): number {
  *
  * 文件名式的资产名（`012-015_女生宿舍清晨调度图.png`）改名前后常常只差编号或时段，
  * 公共前缀只有一两个字符；中文名字（`林夏` → `林夏（成年）`）改一个字前缀就断了。
- * 所以分几路比：
+ * 所以分两路比：
  * - 去掉扩展名后比：公共前缀 ≥ min(4, 较短者长度) 个字才算像；
- * - 再去掉开头的编号、或只取最后一个分隔符之后的部分比：应对编号不同的改名；
+ * - 再去掉开头的编号比：应对编号不同的改名（`012-015_女生宿舍清晨调度图` → `001-010_女生宿舍夜间调度图`）；
  * - 公共前缀里只有数字和符号（`01-`、`001-`）的一律不算像——那是序号，不是名字；
  * - 短中文名的一两个字之差按占比兜住（`林小` → `林夏`）。
+ *
+ * 不按末段（最后一个分隔符之后）比：那样两个毫无关系的文件只要共用版本号
+ * （`女生宿舍清晨调度图_V001.png` 与 `叶舒左侧机位_V001.png`）就会被当成改名候选。
  */
 function similarity(query: string, name: string): number {
   const qStem = stemOf(query)
@@ -239,7 +235,6 @@ function similarity(query: string, name: string): number {
   const pairs: Array<[string, string]> = [
     [qStem, nStem],
     [coreOf(query), coreOf(name)],
-    [tailOf(query), tailOf(name)],
   ]
   let score = 0
   for (const [a, b] of pairs) {
