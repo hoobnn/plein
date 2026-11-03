@@ -36,7 +36,7 @@ import {
   type SubmitResult,
 } from '@plein/plugin-sdk'
 import { mockProvider } from '@plein/providers'
-import { afterAll, afterEach, describe, expect, it, vi } from 'vite-plus/test'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test'
 import {
   addNode,
   bootServer,
@@ -50,6 +50,13 @@ import { ffmpegBin, hasFfmpeg } from '../assets/media'
 import { documentReferences } from '../media-index/references'
 
 const available = await hasFfmpeg()
+const structuredMocks = ['agent', 'agent-vision', 'chat'].map((id) =>
+  mockProvider.models.find((model) => model.id === id)!,
+)
+const mockFeatures = structuredMocks.map((model) => model.features)
+beforeAll(() => {
+  for (const model of structuredMocks) model.features = [...(model.features ?? []), 'structured']
+})
 const metrics: Array<{
   scenario: string
   events: unknown[]
@@ -58,6 +65,9 @@ const metrics: Array<{
 }> = []
 afterEach(() => vi.restoreAllMocks())
 afterAll(async () => {
+  structuredMocks.forEach((model, index) => {
+    model.features = mockFeatures[index]
+  })
   const directory = process.env.PLEIN_AI_SHOT_EVIDENCE_DIR
   if (!directory) return
   if (!isAbsolute(directory)) throw new Error('PLEIN_AI_SHOT_EVIDENCE_DIR must be absolute')
