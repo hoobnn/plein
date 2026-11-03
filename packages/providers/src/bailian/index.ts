@@ -279,6 +279,7 @@ const WAN_REFERENCE_MEDIA: MediaRequirements = {
     minDuration: 0,
     totalDurationMax: 15,
     totalWithOutputMax: 30,
+    outputDurationDefault: 5,
   },
   audio: {
     mime: ['audio/wav', 'audio/x-wav', 'audio/mpeg'],
@@ -766,12 +767,6 @@ export const bailianProvider = defineProvider({
           const source = await ctx.files.read(ref)
           sources.set(ref.assetId, source)
         }
-        const totals = { video: 0, audio: 0 }
-        for (const ref of input.references ?? []) {
-          if (ref.kind !== 'video' && ref.kind !== 'audio') continue
-          const duration = sources.get(ref.assetId)?.duration
-          totals[ref.kind] += typeof duration === 'number' ? duration : 0
-        }
         for (const kind of ['image', 'video', 'audio'] as const) {
           const samples = (input.references ?? [])
             .filter((ref) => ref.kind === kind)
@@ -792,11 +787,11 @@ export const bailianProvider = defineProvider({
             label: kind === 'video' ? '参考视频' : kind === 'audio' ? '参考音频' : '参考图片',
             strict: true,
             // 自适应时长与 -1 由模型决定输出时长，这时不与输出时长相加
-            ...(kind === 'video' &&
-            adaptive_duration !== true &&
-            input.duration !== -1 &&
-            totals.video
-              ? { outputDuration: input.duration ?? 5 }
+            ...(kind === 'video'
+              ? {
+                  outputDuration: input.duration,
+                  outputDurationByModel: adaptive_duration === true || input.duration === -1,
+                }
               : {}),
           })
           if (problems.length) throw new ProviderError('invalid_input', problems[0]!)
