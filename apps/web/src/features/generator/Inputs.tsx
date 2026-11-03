@@ -32,8 +32,10 @@ import { useRef, useState } from 'react'
 import { assetUrls } from '../../api/client'
 import { importFiles } from '../../canvas/import'
 import { beginImport } from '../../canvas/importProgress'
+import { selectedModel } from '../../canvas/modelParams'
 import { fieldsOf, upstreams, type NodeInfo, type Upstream } from '../../canvas/nodes'
 import { useCanvas } from '../../stores/canvas'
+import { useCatalog } from '../../stores/catalog'
 import { Icon } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
 import { AnimatePresence } from '../../ui/motion'
@@ -57,6 +59,15 @@ const ORIGIN_LABEL: Record<InputReferenceOrigin, string> = {
 const FRAME_ROLE_LABEL: Record<NonNullable<InputSentReference['role']>, string> = {
   firstFrame: '首帧',
   lastFrame: '尾帧',
+}
+
+const MEDIA_KIND_LABELS = { image: '图片', video: '视频', audio: '音频' } as const
+
+/** 顶部列表按媒体类型分别计数，和各类上限各自对比。 */
+function countByKind(items: InputSentReference[]) {
+  const counts = { image: 0, video: 0, audio: 0 }
+  for (const item of items) counts[item.kind ?? 'image']++
+  return counts
 }
 
 /**
@@ -372,6 +383,26 @@ export function Inputs({
     : fallbackSent()
   const unsentItems: InputUnsentReference[] = prepared?.unsent ?? []
   const limit = prepared?.referenceLimit
+  // 图片 / 视频 / 音频分开计数，各自对比模型上限；没声明上限的类型只写数量
+  const counts = countByKind(sentItems)
+  const catalog = useCatalog((s) => s.catalog)
+  // 没有参数表的节点选不了模型，也就没有上限可对照
+  const modelLimits = node.paramsSchema
+    ? selectedModel(catalog, node, el.params)?.info.limits
+    : undefined
+  const kindLimits = {
+    image: limit ?? modelLimits?.references?.max,
+    video: modelLimits?.referenceMedia?.video,
+    audio: modelLimits?.referenceMedia?.audio,
+  }
+  const countsText = (['image', 'video', 'audio'] as const)
+    .filter((kind) => counts[kind] > 0 || kindLimits[kind] !== undefined)
+    .map((kind) =>
+      kindLimits[kind] === undefined
+        ? `${MEDIA_KIND_LABELS[kind]} ${counts[kind]}`
+        : `${MEDIA_KIND_LABELS[kind]} ${counts[kind]}/${kindLimits[kind]}`,
+    )
+    .join(' · ')
 
   const tiles: React.ReactNode[] = []
   const sortableIds: string[] = []
@@ -591,7 +622,7 @@ export function Inputs({
           <div className="flex items-baseline gap-2 px-0.5 text-2xs text-ink-subtle">
             <span className="font-medium text-ink-muted">参考素材</span>
             <span>
-              送入 {sentItems.length} 项{limit !== undefined ? `（参考图上限 ${limit}）` : ''}
+              送入 {sentItems.length} 项{countsText ? `（${countsText}）` : ''}
             </span>
           </div>
           {/* 主行可排序的 edgeId：按送入顺序排列 */}

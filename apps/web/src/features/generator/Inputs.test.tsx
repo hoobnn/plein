@@ -11,6 +11,7 @@ import { importFiles } from '../../canvas/import'
 import { upstreams, type NodeInfo } from '../../canvas/nodes'
 import { mediaTestEngine } from '../../shell/media-tools/testEngine'
 import { useCanvas } from '../../stores/canvas'
+import { useCatalog } from '../../stores/catalog'
 import { act, fireEvent, renderApp, screen, waitFor, within } from '../../testing/render'
 import { Inputs } from './Inputs'
 
@@ -55,9 +56,13 @@ describe('多模态参考名称', () => {
             ]),
       ],
       outputs: [],
-      ...(options.requirable
-        ? { paramsSchema: { properties: { requiredRefs: { type: 'array' } } } }
-        : {}),
+      // 模型字段必须真的能从参数表里选出来，顶部计数才知道该对照哪个模型的上限
+      paramsSchema: {
+        properties: {
+          model: { type: 'string', widget: 'model' },
+          ...(options.requirable ? { requiredRefs: { type: 'array' } } : {}),
+        },
+      },
     } as unknown as NodeInfo
     const id = createElement(doc, {
       kind: 'node',
@@ -254,6 +259,38 @@ describe('多模态参考名称', () => {
     ).toHaveLength(0)
     expect(screen.getByText('未送入 · 1')).toBeTruthy()
     expect(screen.getByText('当前节点不送参考图，仅保留引用名称')).toBeTruthy()
+  })
+
+  it('顶部计数按图片/视频/音频分开，各自对比模型上限；未声明的只写数量', () => {
+    useCatalog.setState({
+      catalog: {
+        providers: [
+          {
+            id: 'minimax/api',
+            enabled: true,
+            configured: true,
+            models: [
+              {
+                id: 'MiniMax-H3',
+                title: 'MiniMax-H3',
+                capabilities: ['video.generate'],
+                limits: { references: { max: 30 }, referenceMedia: { video: 3, audio: 3 } },
+              },
+            ],
+          },
+        ],
+      },
+    } as never)
+    try {
+      // 连了 2 图、1 视频、1 音频，服务端 sent 只包含图片
+      setup()
+      expect(screen.getByText('送入 4 项（图片 2/30 · 视频 1/3 · 音频 1/3）')).toBeTruthy()
+      // 模型没声明任何上限：只写各类数量
+      act(() => useCatalog.setState({ catalog: null }))
+      expect(screen.getByText('送入 4 项（图片 2 · 视频 1 · 音频 1）')).toBeTruthy()
+    } finally {
+      useCatalog.setState({ catalog: null })
+    }
   })
 
   it('没有媒体端口的节点也显示服务端报告的未送入引用', () => {
