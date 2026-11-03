@@ -186,6 +186,48 @@ describe('运行前按模型声明检查送入的素材', () => {
     ])
   })
 
+  it('多模态参考的图片按参考图要求检查，首尾帧按首尾帧要求', async () => {
+    const seedance: ModelSpec = {
+      id: 'doubao-seedance-2-5-260628',
+      title: 'Seedance 2.5',
+      capabilities: ['video.generate'],
+      limits: {
+        media: {
+          image: {
+            mime: ['image/png'],
+            maxMB: 30,
+            minEdge: 300,
+            maxEdge: 6000,
+            minRatio: 0.4,
+            maxRatio: 2.5,
+          },
+          frame: { mime: ['image/png'], maxMB: 30 },
+        },
+      },
+    }
+    const small = asset({ kind: 'image', mime: 'image/png', width: 100, height: 100 })
+    const images = [{ type: 'image', assetId, kind: 'image' } as PortValue]
+    const issuesFor = async (mode: string) => {
+      const { doc, element } = scene()
+      return mediaRequirementIssues({
+        host: stubHost({ [assetId]: small }),
+        ownerId: 'local',
+        doc,
+        capability: 'video.generate',
+        model: seedance,
+        params: { mode },
+        inputs: { images: images.map((value) => ({ ...value, source: element })) },
+        signal: new AbortController().signal,
+      })
+    }
+    // 参考模式的图片按参考图的要求：100×100 不满足宽高 300–6000
+    expect(await issuesFor('reference')).toEqual([
+      '参考图片「片头」 100×100，Seedance 2.5 要求宽高 300–6000 像素，请更换素材',
+    ])
+    // 同一张图当首帧时按首尾帧的要求，只看格式与大小，放行
+    expect(await issuesFor('image')).toEqual([])
+  })
+
   it('首尾帧按首尾帧的要求检查，不套用参考图的尺寸限制', async () => {
     const withFrame: ModelSpec = {
       ...videoModel,

@@ -180,8 +180,11 @@ export async function mediaRequirementIssues(input: MediaRequirementsInput): Pro
 
   if (input.capability === 'video.generate') {
     const mode = String(params.mode ?? 'text')
-    // 图片：多模态参考模式是参考图，其余模式是首尾帧，两者按各自的要求检查
-    if (mode !== 'text') await check('frame', materialsOf(input.inputs.images, 'image'), '参考图片')
+    // 图片：多模态参考模式是参考图（按参考图的要求），其余模式是首尾帧（按首尾帧的要求）
+    if (mode === 'reference')
+      await check('image', materialsOf(input.inputs.images, 'image'), '参考图片')
+    else if (mode !== 'text')
+      await check('frame', materialsOf(input.inputs.images, 'image'), '参考图片')
     if (mode === 'reference') {
       const task = videoTaskOf(params)
       await check('video', materialsOf(input.inputs.videos, 'video'), '参考视频', task)
