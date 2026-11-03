@@ -407,16 +407,26 @@ export async function applyMentions(
   const send =
     def.inputs.some((p) => p.id === port && p.type === 'image') &&
     (!video || params.mode === 'reference')
-  if (video && !send && groups.some((g) => g.images.length)) {
-    const framed = new Set(imageIds(inputs[port] ?? []))
-    const ignored = refList.flatMap((r) =>
-      r.assetIds.length && !r.assetIds.some((id) => framed.has(id)) ? [r.name] : [],
-    )
-    if (ignored.length)
-      notices.push({
-        code: 'unsupported_refs',
-        message: `@ 引用的参考图（${ignored.join('、')}）只在「多模态参考」模式下送入模型；当前模式未送入，仅保留提示词中的引用名称，不追加文字设定`,
-      })
+  if (!send && groups.some((g) => g.images.length)) {
+    if (video) {
+      const framed = new Set(imageIds(inputs[port] ?? []))
+      const ignored = refList.flatMap((r) =>
+        r.assetIds.length && !r.assetIds.some((id) => framed.has(id)) ? [r.name] : [],
+      )
+      if (ignored.length)
+        notices.push({
+          code: 'unsupported_refs',
+          message: `@ 引用的参考图（${ignored.join('、')}）只在「多模态参考」模式下送入模型；当前模式未送入，仅保留提示词中的引用名称，不追加文字设定`,
+        })
+    } else {
+      // 这个节点不收参考图：@ 引用的图只留下名字，不能让人以为图送进去了
+      const ignored = refList.flatMap((r) => (r.assetIds.length ? [r.name] : []))
+      if (ignored.length)
+        notices.push({
+          code: 'unsupported_refs',
+          message: `@ 引用的参考图（${ignored.join('、')}）这个节点不送入模型，仅保留提示词中的引用名称，不追加文字设定`,
+        })
+    }
     for (const r of refList) r.assetIds = []
   }
 

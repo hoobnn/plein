@@ -167,6 +167,19 @@ describe('运行前解析 @ 引用', () => {
     ])
   })
 
+  it('不收参考图的节点：@ 引用的图不算送入，并说明没送进模型', async () => {
+    const { doc, photo, hero } = setup()
+    const n = node(doc, 'plein/speech', { text: '@林夏 你来了' })
+    const r = await applyMentions(doc, doc.get(n)!, speechNode, {}, collect(doc))
+    // 这个节点没有参考图端口：引用的图不能算送入，refs 里也不留图
+    expect(r.refs).toEqual([{ name: '林夏', elementId: doc.get(hero)!.id, assetIds: [] }])
+    expect(r.details[0]?.sent).toEqual([])
+    expect(msg(r.notices)).toContain(
+      '@ 引用的参考图（林夏）这个节点不送入模型，仅保留提示词中的引用名称，不追加文字设定',
+    )
+    expect(doc.get(photo)!.assetId).toBeTruthy()
+  })
+
   it('视频节点：多模态参考模式把 @ 角色的参考图并入图片；其他模式不送图并提示', async () => {
     const { doc, photo } = setup()
     const n = node(doc, 'plein/video', { prompt: '@林夏回头', mode: 'reference' })
