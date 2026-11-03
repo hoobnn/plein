@@ -186,6 +186,30 @@ describe('运行前按模型声明检查送入的素材', () => {
     ])
   })
 
+  it('首尾帧按首尾帧的要求检查，不套用参考图的尺寸限制', async () => {
+    const withFrame: ModelSpec = {
+      ...videoModel,
+      limits: {
+        media: {
+          ...videoModel.limits!.media!,
+          frame: { mime: ['image/png'], maxMB: 30 },
+        },
+      },
+    }
+    const { doc } = scene()
+    const issues = await mediaRequirementIssues({
+      host: stubHost({ [assetId]: asset({ mime: 'image/png', width: 100, height: 100 }) }),
+      ownerId: 'local',
+      doc,
+      capability: 'video.generate',
+      model: withFrame,
+      params: { mode: 'lastFrame' },
+      inputs: { images: [{ type: 'image', assetId, kind: 'image' } as PortValue] },
+      signal: new AbortController().signal,
+    })
+    expect(issues).toEqual([])
+  })
+
   it('符合声明时放行', async () => {
     expect(
       await check({

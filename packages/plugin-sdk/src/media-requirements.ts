@@ -328,11 +328,12 @@ export function mergeMediaRequirement(
 /** 取某类素材的要求；带上任务模式的追加要求（如编辑参考视频的最短时长） */
 export function mediaRequirementOf(
   requirements: MediaRequirements | undefined,
-  kind: 'image' | 'video' | 'audio' | 'process',
+  kind: 'image' | 'video' | 'audio' | 'process' | 'frame',
   task?: string,
 ): MediaRequirement | undefined {
   if (!requirements) return undefined
-  const base = requirements[kind]
+  // 首尾帧没单独声明时按参考图的要求
+  const base = kind === 'frame' ? (requirements.frame ?? requirements.image) : requirements[kind]
   if (kind !== 'video' || !task) return base
   return mergeMediaRequirement(base, requirements.videoTasks?.[task])
 }

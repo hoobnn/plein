@@ -168,6 +168,21 @@ const seedanceOptions = (v25: boolean) =>
  * 参考音频 15 MB 以内。宿主在运行前读的是同一份声明。
  */
 const ARK_REFERENCE_MEDIA = (duration: number): MediaRequirements => ({
+  // 首尾帧走平台自己的图片通道，只认格式与大小，不限尺寸
+  frame: {
+    mime: [
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'image/bmp',
+      'image/tiff',
+      'image/gif',
+      'image/heic',
+      'image/heif',
+    ],
+    maxMB: 30,
+    maxMBExclusive: true,
+  },
   image: {
     mime: [
       'image/jpeg',

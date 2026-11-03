@@ -131,6 +131,13 @@ describe('要求声明的合并', () => {
     expect(mediaRequirementOf({ video: videoRequirement }, 'video', 'edit')?.minDuration).toBe(2)
   })
 
+  it('首尾帧没单独声明时按参考图的要求', () => {
+    expect(mediaRequirementOf({ image: videoRequirement }, 'frame')?.minEdge).toBe(300)
+    expect(
+      mediaRequirementOf({ image: videoRequirement, frame: { maxMB: 30 } }, 'frame')?.minEdge,
+    ).toBeUndefined()
+  })
+
   it('合并时以覆盖项为准', () => {
     expect(mergeMediaRequirement({ minDuration: 2, maxMB: 30 }, { minDuration: 8 })).toEqual({
       minDuration: 8,

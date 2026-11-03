@@ -264,6 +264,8 @@ export interface MediaRequirement {
 export interface MediaRequirements {
   /** 参考图 */
   image?: MediaRequirement
+  /** 首尾帧；不声明时按参考图的要求 */
+  frame?: MediaRequirement
   /** 参考视频 */
   video?: MediaRequirement
   /** 参考音频 */
