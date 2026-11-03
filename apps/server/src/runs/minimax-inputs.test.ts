@@ -72,7 +72,7 @@ describe.skipIf(!available)('MiniMax 真实素材经过宿主到 HTTP 请求的�
     const good = await clip('good', 30, h264)
     const slow = await clip('slow', 10, h264)
     const unsupported = await clip('unsupported', 30, ['-c:v', 'mpeg4'])
-    const run = async (mode: string, assets: Array<typeof frame>) => {
+    const prepare = async (mode: string, assets: Array<typeof frame>) => {
       const target = addNode(doc, 'plein/video', {
         params: { mode, model: 'minimax/api:MiniMax-H3', prompt: '缓慢移动并以参考画面结束' },
       })
@@ -90,7 +90,10 @@ describe.skipIf(!available)('MiniMax 真实素材经过宿主到 HTTP 请求的�
           asset.kind === 'video' ? 'videos' : asset.kind === 'audio' ? 'audios' : 'images'
         connect(doc, [source, asset.kind], [target, port])
       }
-      const preview = await server.runs.preview(id, target, 'local')
+      return { target, preview: await server.runs.preview(id, target, 'local') }
+    }
+    const run = async (mode: string, assets: Array<typeof frame>) => {
+      const { target, preview } = await prepare(mode, assets)
       expect(preview.status).toBe('ready')
       return server.runs.wait(server.runs.start(id, target, 'local'))
     }
@@ -112,9 +115,22 @@ describe.skipIf(!available)('MiniMax 真实素材经过宿主到 HTTP 请求的�
       'reference_video',
       'reference_audio',
     ])
-    expect(await run('lastFrame', [small])).toBe('failed')
-    expect(await run('reference', [slow])).toBe('failed')
-    expect(await run('reference', [unsupported])).toBe('failed')
+    // 尺寸、帧率与编码不合要求的素材在运行前就被挡住，用户不用等上游报错
+    const smallFrame = await prepare('lastFrame', [small])
+    expect(smallFrame.preview.status).toBe('blocked')
+    expect(smallFrame.preview.blocked?.map((issue) => issue.message).join('；')).toContain(
+      '128×128',
+    )
+    const slowVideo = await prepare('reference', [slow])
+    expect(slowVideo.preview.status).toBe('blocked')
+    expect(slowVideo.preview.blocked?.map((issue) => issue.message).join('；')).toContain(
+      '帧率 10 fps',
+    )
+    const unsupportedVideo = await prepare('reference', [unsupported])
+    expect(unsupportedVideo.preview.status).toBe('blocked')
+    expect(unsupportedVideo.preview.blocked?.map((issue) => issue.message).join('；')).toContain(
+      '编码',
+    )
     expect(http).toHaveBeenCalledTimes(2)
   }, 30_000)
 })

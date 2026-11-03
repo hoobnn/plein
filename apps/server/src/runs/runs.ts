@@ -109,6 +109,7 @@ import {
 } from './frozen'
 import { continuationInputs } from './continuation-inputs'
 import { referencePreview, type ReferencePreview } from './reference-preview'
+import { mediaRequirementIssues } from './media-requirements'
 import { type GroupRow, type JobRow, type JobStatus, JobStore } from './store'
 import {
   type BatchHost,
@@ -2335,6 +2336,19 @@ export class NodeRuns implements BatchHost {
       ...def.inputs.filter((port) => inputs[port.id]).map((port) => [port.id, inputs[port.id]!]),
       ...Object.entries(inputs).filter(([id]) => !def.inputs.some((port) => port.id === id)),
     ])
+    // 实际送入模型的素材是否符合模型声明的格式要求：这里挡住，用户不用等到上游报错
+    const mediaIssues = await mediaRequirementIssues({
+      host: this.host,
+      ownerId,
+      doc,
+      capability: def.capability!,
+      model: spec ?? undefined,
+      params: effective,
+      inputs: orderedInputs,
+      details,
+      signal,
+    })
+    for (const message of mediaIssues) blocked.push({ code: 'prepare_failed', message })
     const references = referencePreview({
       doc,
       el,
