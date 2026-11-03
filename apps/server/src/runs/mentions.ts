@@ -701,15 +701,6 @@ function detail(
 const RANK = ['plein/character', 'plein/scene', 'plein/prop', 'plein/style']
 
 /**
- * 视频 / 音频引用的取舍顺序：必需参考按 requiredRefs 里的先后在前，可选参考排最后（保持出现顺序）。
- * 与参考图的 RANK 不同，媒体没有「角色更重要」这一层，只看必需与否。
- */
-const mediaPriority = (d: InputRef, required: Map<string, number>) => {
-  const order = required.get(d.elementId)
-  return order === undefined ? Number.MAX_SAFE_INTEGER : order
-}
-
-/**
  * 在参考图上限内挑出 @ 引用要送的图：必需参考按设定的先后先放，再按角色、场景、道具的顺序；
  * 每张卡先放第一张（主图），有余量再按顺序放其余的。
  * 必需参考的主图放不下时记为阻断；可选参考放不下的从 refList 里去掉对应的图，并提示用户
@@ -813,6 +804,15 @@ const imageIds = (values: PortValue[]) => mediaIds(values, 'image')
 
 const mediaIds = (values: PortValue[], kind: ReferenceMediaKind) =>
   values.flatMap((v) => (v.type === kind && 'assetId' in v ? [v.assetId] : []))
+
+/**
+ * 视频 / 音频引用的取舍顺序：必需参考按 requiredRefs 里的先后在前，可选参考排最后（保持出现顺序）。
+ * 与参考图的 RANK 不同，媒体没有「角色更重要」这一层，只看必需与否。
+ */
+const mediaPriority = (d: InputRef, required: Map<string, number>) => {
+  const order = required.get(d.elementId)
+  return order === undefined ? Number.MAX_SAFE_INTEGER : order
+}
 
 /** 参考图去重：同一张图经多个引用进来只送一次 */
 function dedupe(values: PortValue[]): PortValue[] {
