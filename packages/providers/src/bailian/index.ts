@@ -380,7 +380,12 @@ export const bailianProvider = defineProvider({
       title: '万相图像编辑（局部重绘）',
       description: 'Legacy，仅华北2（北京）地域；按蒙版只重绘白色区域，原生蒙版能力',
       capabilities: ['image.edit' as const, 'image.process' as const],
-      limits: { count: { max: 1 }, imageOperations: ['upscale' as const, 'outpaint' as const] },
+      limits: {
+        count: { max: 1 },
+        // 精修（image.process）提示词上限 800 字；同一模型的局部重绘共用此上限
+        promptMaxLength: 800,
+        imageOperations: ['upscale' as const, 'outpaint' as const],
+      },
     },
     ...['wan3.0-video', 'wan3.0-video-prime'].map((id) => ({
       id,
@@ -410,7 +415,7 @@ export const bailianProvider = defineProvider({
       id: 'qwen3-tts-flash',
       title: 'qwen3-tts-flash',
       capabilities: ['audio.speech' as const],
-      limits: { speed: false as const, instruction: false },
+      limits: { speed: false as const, instruction: false, promptMaxLength: 600 },
     },
     {
       id: 'qwen3-tts-instruct-flash',
@@ -418,7 +423,7 @@ export const bailianProvider = defineProvider({
       description: '已于 2026-10-10 下线；仅保留旧画布引用，请改用 qwen3-tts-flash 或豆包语音',
       deprecated: true,
       capabilities: ['audio.speech' as const],
-      limits: { speed: false as const },
+      limits: { speed: false as const, promptMaxLength: 600 },
     },
   ],
   async test(ctx) {

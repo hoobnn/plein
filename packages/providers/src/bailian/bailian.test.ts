@@ -560,3 +560,11 @@ it.each([408, 500, 502, 503, 504])(
     }
   },
 )
+
+it('目录声明语音与精修的文本长度上限，与适配器的运行期检查一致', () => {
+  const limit = (id: string) =>
+    bailianProvider.models.find((model) => model.id === id)?.limits?.promptMaxLength
+  expect(limit('qwen3-tts-flash')).toBe(600)
+  expect(limit('qwen3-tts-instruct-flash')).toBe(600)
+  expect(limit('wanx2.1-imageedit')).toBe(800)
+})
