@@ -319,7 +319,10 @@ export const openaiProvider = defineProvider({
   // /models 不提供接口与能力信息，目录外条目仅展示，不自动当作对话模型提交。
   remoteModelsScope: [],
   async listRemoteModels(ctx) {
-    return openAiModelList(await request(ctx, '/models'))
+    return openAiModelList(await request(ctx, '/models')).map((model) => ({
+      ...model,
+      features: ['structured' as const],
+    }))
   },
   async test(ctx) {
     await request(ctx, '/models')

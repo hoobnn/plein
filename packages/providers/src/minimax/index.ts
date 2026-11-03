@@ -421,7 +421,10 @@ export const minimaxProvider = defineProvider({
       )
       throw new ProviderError(errorCode(code), `MiniMax：${message}`)
     }
-    return minimaxModelList(data)
+    return minimaxModelList(data).map((model) => ({
+      ...model,
+      features: [...(model.features ?? []), 'structured' as const],
+    }))
   },
   async submit(req, ctx) {
     // remoteOnly 是宿主核对过覆盖范围后放开的远端新模型：只限对话，不用未确认的能力

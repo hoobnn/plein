@@ -942,7 +942,10 @@ export const bailianProvider = defineProvider({
         'invalid_input',
         '业务空间模式暂不支持拉取远端模型列表；可清空业务空间 ID 后使用 DashScope 兼容端点拉取',
       )
-    return openAiModelList(await request(ctx, '/compatible-mode/v1/models'))
+    return openAiModelList(await request(ctx, '/compatible-mode/v1/models')).map((model) => ({
+      ...model,
+      features: ['structured' as const],
+    }))
   },
 })
 async function requestWithOss(ctx: Context, path: string, body: Json) {

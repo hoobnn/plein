@@ -94,8 +94,8 @@ describe('OpenAI 官方平台', () => {
   it('连接检查只读模型列表，目录外模型不假定可对话', async () => {
     const f = fakeContext(openaiProvider, [{ data: [{ id: 'whisper-1' }, { id: 'gpt-6.1-sol' }] }])
     expect(await openaiProvider.listRemoteModels!(f.ctx)).toEqual([
-      { id: 'whisper-1' },
-      { id: 'gpt-6.1-sol' },
+      { id: 'whisper-1', features: ['structured'] },
+      { id: 'gpt-6.1-sol', features: ['structured'] },
     ])
     expect(f.fetch.mock.calls[0]?.[0]).toBe('https://api.openai.com/v1/models')
     expect(f.fetch.mock.calls[0]?.[1]).toMatchObject({

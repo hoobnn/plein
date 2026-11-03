@@ -123,7 +123,9 @@ export function ModelPicker({
     },
   ) => {
     const structuredProblem =
-      STRUCTURED_OUTPUT_NODES.has(node.type) && !model?.features?.includes('structured')
+      STRUCTURED_OUTPUT_NODES.has(node.type) &&
+      !model?.remoteOnly &&
+      !model?.features?.includes('structured')
         ? `${model?.title ?? title} 不支持结构化输出，${node.title} 需要它，请换模型或在渠道设置里开启`
         : null
     return (

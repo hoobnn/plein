@@ -42,7 +42,7 @@ it('目录查询只使用独立 AK/SK 签名，归一化并去重，不泄露套
   )
   const models = await arkPlanProvider.listRemoteModels!(ctx)
   expect(models).toEqual([
-    { id: 'new-chat', kind: 'llm', agentOnly: true, features: ['tools'] },
+    { id: 'new-chat', kind: 'llm', agentOnly: true, features: ['tools', 'structured'] },
     { id: 'doubao-seedance-2-5-260628' },
   ])
   expect(body()).toEqual({ Edition: 'personal' })

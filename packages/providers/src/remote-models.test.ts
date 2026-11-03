@@ -42,8 +42,8 @@ describe('listRemoteModels', () => {
     expect(result.url).toBe('https://api.minimax.cn/v1/models')
     expect(result.auth).toBe('Bearer test-secret')
     expect(result.models).toEqual([
-      { id: 'MiniMax-M3', ownedBy: 'minimax', created: 1700000000 },
-      { id: 'music-3.0' },
+      { id: 'MiniMax-M3', ownedBy: 'minimax', created: 1700000000, features: ['structured'] },
+      { id: 'music-3.0', features: ['structured'] },
     ])
   })
 
@@ -65,13 +65,16 @@ describe('listRemoteModels', () => {
       list([{ id: 'doubao-seed-2-1-pro-260628', owned_by: 'volcengine' }, { object: 'model' }]),
     ])
     expect(result.url).toBe('https://ark.cn-beijing.volces.com/api/v3/models')
-    expect(result.models).toEqual([{ id: 'doubao-seed-2-1-pro-260628', ownedBy: 'volcengine' }])
+    expect(result.models).toEqual([
+      { id: 'doubao-seed-2-1-pro-260628', ownedBy: 'volcengine', features: ['structured'] },
+    ])
   })
 
   it('bailian：走 DashScope 兼容模式列表', async () => {
     const result = await pull(bailianProvider, [list([{ id: 'qwen3.8-max' }])])
     expect(result.url).toBe('https://dashscope.aliyuncs.com/compatible-mode/v1/models')
     expect(result.models.map((m) => m.id)).toEqual(['qwen3.8-max'])
+    expect(result.models[0]?.features).toContain('structured')
   })
 
   it('bailian：业务空间模式不支持拉取', async () => {

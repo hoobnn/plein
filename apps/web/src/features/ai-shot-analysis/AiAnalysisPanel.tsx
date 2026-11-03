@@ -33,7 +33,9 @@ const wait = () => new Promise((resolve) => setTimeout(resolve, 250))
 const supportsStructured = (catalog: Catalog | null, ref: string) =>
   catalog?.providers.some((provider) =>
     provider.models.some(
-      (model) => `${provider.id}:${model.id}` === ref && model.features?.includes('structured'),
+      (model) =>
+        `${provider.id}:${model.id}` === ref &&
+        (model.remoteOnly || model.features?.includes('structured')),
     ),
   ) === true
 type Preview = { id: string; input: PreparedInput; snapshot: string }

@@ -1110,7 +1110,11 @@ export const arkProvider = defineProvider({
   remoteModelsScope: ['text.chat'],
   // 按量数据面地址固定北京，列表与设置无关
   // 按量使用 OpenAI 兼容模型列表；套餐使用独立管控面目录接口
-  listRemoteModels: async (ctx) => openAiModelList(await request('api', ctx, '/models')),
+  listRemoteModels: async (ctx) =>
+    openAiModelList(await request('api', ctx, '/models')).map((model) => ({
+      ...model,
+      features: ['structured' as const],
+    })),
   ...tasks('api'),
   submit: (req, ctx) => submitTo('api', models, req, ctx),
 })
@@ -1216,7 +1220,11 @@ export const arkPlanProvider = defineProvider({
           ...entry,
           id,
           ...(!media
-            ? { kind: 'llm' as const, agentOnly: true, features: ['tools' as const] }
+            ? {
+                kind: 'llm' as const,
+                agentOnly: true,
+                features: ['tools' as const, 'structured' as const],
+              }
             : {}),
         }
       })

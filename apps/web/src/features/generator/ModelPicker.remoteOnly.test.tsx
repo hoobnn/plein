@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import type { Catalog } from '@plein/protocol'
-import { describe, expect, it } from 'vite-plus/test'
+import { describe, expect, it, vi } from 'vite-plus/test'
 import { renderApp, screen } from '../../testing/render'
 import type { NodeInfo } from '../../canvas/nodes'
 import { ModelPicker } from './ModelPicker'
@@ -68,6 +68,23 @@ describe('ModelPicker 的 remote-only 模型', () => {
     expect(chat.textContent).toContain('新')
     expect(chat.textContent).toContain('参数为通用默认')
     expect(screen.getByRole('option', { name: /内置对话/ })).toBeTruthy()
+  })
+
+  it('没有静态特性声明的 remote-only 对话模型仍可选用于分镜', async () => {
+    const onChange = vi.fn()
+    const view = renderApp(
+      <ModelPicker
+        value=""
+        node={{ type: 'plein/storyboard', title: '分镜', capability: 'text.chat' } as NodeInfo}
+        catalog={catalog()}
+        onChange={onChange}
+      />,
+    )
+    await view.user.click(screen.getByRole('button', { name: '模型' }))
+    const remote = screen.getByRole('option', { name: /远端新对话/ })
+    expect((remote as HTMLButtonElement).disabled).toBe(false)
+    await view.user.click(remote)
+    expect(onChange).toHaveBeenCalledWith('acme/x:brand-new')
   })
 
   it('非对话类的 remote-only 只在设置里展示，不进生成器', async () => {
