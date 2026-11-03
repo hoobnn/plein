@@ -232,6 +232,21 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
     })
   })
 
+  it('参考图超限时说明所选模型的实际上限', async () => {
+    const { ctx, fetch } = harness([])
+    await expect(
+      arkProvider.submit(
+        {
+          capability: 'image.generate',
+          model: IMAGE,
+          input: { prompt: 'cat', references: Array.from({ length: 11 }, () => ref) },
+        },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_input', message: '所选模型最多接受 10 张参考图' })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
   it.each([true, false])('图片保留显式水印设置 %s', async (watermark) => {
     const { ctx, body } = harness([{ data: [{ b64_json: 'AQID' }] }])
     await arkProvider.submit(

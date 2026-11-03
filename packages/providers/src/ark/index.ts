@@ -538,8 +538,8 @@ async function image(
   if (count > 1 && model.startsWith('doubao-seedream-5-') && !lite)
     invalid('Seedream Pro / Flash 仅支持单图；多图请选 Seedream Lite')
   const refs = input.references ?? []
-  if (refs.length > (lite ? 14 : 10) || (count > 1 && refs.length + count > 15))
-    invalid('参考图与生成图片数量超出所选 Seedream 模型限制')
+  if (refs.length > (lite ? 14 : 10)) invalid(`所选模型最多接受 ${lite ? 14 : 10} 张参考图`)
+  if (count > 1 && refs.length + count > 15) invalid('所选模型的参考图与生成图片合计最多 15 张')
   const body: Json = {
     // 云端默认开启；作为下游视频参考的图片默认不叠加可见水印。
     watermark: false,
