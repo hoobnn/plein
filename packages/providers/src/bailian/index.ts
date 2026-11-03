@@ -279,11 +279,12 @@ export const bailianProvider = defineProvider({
     },
   ],
   models: [
+    // 官方文档标注 qwen3.8-max / qwen3.8-flash / qwen3.7-plus 支持图像与视频理解，故声明 vision
     ...['qwen3.8-max', 'qwen3.7-plus', 'qwen3.8-flash'].map((id) => ({
       id,
       title: id,
       capabilities: ['text.chat' as const],
-      features: ['tools' as const],
+      features: ['tools' as const, 'vision' as const],
     })),
     ...['qwen-image-3.0-pro', 'qwen-image-3.0'].map((id) => ({
       id,

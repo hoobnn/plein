@@ -111,6 +111,18 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
     })
   })
 
+  it('Seed 2.1 与 Evolving 声明 vision，图片输入不再被误挡', () => {
+    for (const id of [
+      'doubao-seed-2-1-pro-260628',
+      'doubao-seed-2-1-pro-260915',
+      'doubao-seed-2-1-lite-260915',
+      'doubao-seed-2-1-turbo-260628',
+      'doubao-seed-evolving',
+    ]) {
+      expect(arkProvider.models.find((m) => m.id === id)?.features).toContain('vision')
+    }
+  })
+
   it('豆包对话模型声明工具能力：工具声明随请求发送，模型的工具调用原样交回', async () => {
     expect(arkProvider.models.find((m) => m.id === CHAT)?.features).toContain('tools')
     const { ctx, body } = harness([

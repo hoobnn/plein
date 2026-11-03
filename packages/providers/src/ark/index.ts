@@ -161,33 +161,34 @@ const seedanceOptions = (v25: boolean) =>
   })
 
 const models: ModelSpec[] = [
+  // 官方模型列表标注这批 Seed 2.1 / Evolving 模型支持「多模态理解」（图片内容理解），故声明 vision
   {
     id: 'doubao-seed-2-1-pro-260628',
-    features: ['tools'],
+    features: ['tools', 'vision'],
     title: 'Doubao Seed 2.1 Pro（260628）',
     capabilities: ['text.chat'],
   },
   {
     id: 'doubao-seed-2-1-pro-260915',
-    features: ['tools'],
+    features: ['tools', 'vision'],
     title: 'Doubao Seed 2.1 Pro（260915）',
     capabilities: ['text.chat'],
   },
   {
     id: 'doubao-seed-2-1-lite-260915',
-    features: ['tools'],
+    features: ['tools', 'vision'],
     title: 'Doubao Seed 2.1 Lite',
     capabilities: ['text.chat'],
   },
   {
     id: 'doubao-seed-2-1-turbo-260628',
-    features: ['tools'],
+    features: ['tools', 'vision'],
     title: 'Doubao Seed 2.1 Turbo',
     capabilities: ['text.chat'],
   },
   {
     id: 'doubao-seed-evolving',
-    features: ['tools'],
+    features: ['tools', 'vision'],
     title: 'Doubao Seed Evolving（快速迭代）',
     capabilities: ['text.chat'],
   },
@@ -1000,6 +1001,15 @@ const PLAN_CHAT_IDS = [
   'kimi-k3',
   'kimi-k3.1-pro',
 ]
+/** 套餐侧支持看图的对话模型：官方模型列表标注「多模态理解」的同款模型 */
+const PLAN_VISION_CHAT_IDS = [
+  'glm-5.3-flash',
+  'deepseek-v4.1-flash',
+  'deepseek-v4.1-flash-economy',
+  'doubao-seed-2.1-lite',
+  'doubao-seed-2.1-pro',
+  'doubao-seed-evolving',
+]
 const planModels: ModelSpec[] = [
   ...models.filter(
     (model) => PLAN_MODELS[model.id] || model.id === 'custom-image' || model.id === 'custom-video',
@@ -1010,12 +1020,7 @@ const planModels: ModelSpec[] = [
     ...(['minimax-m3', 'kimi-k2.7-code'].includes(id) ? { deprecated: true as const } : {}),
     capabilities: ['text.chat'],
     agentOnly: true,
-    features: [
-      'tools',
-      ...(['glm-5.3-flash', 'deepseek-v4.1-flash', 'deepseek-v4.1-flash-economy'].includes(id)
-        ? ['vision' as const]
-        : []),
-    ],
+    features: ['tools', ...(PLAN_VISION_CHAT_IDS.includes(id) ? ['vision' as const] : [])],
     description: 'Agent Plan 套餐文本模型，仅用于内置 Agent；可用性取决于套餐档位',
   })),
   {

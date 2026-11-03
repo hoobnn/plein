@@ -107,6 +107,18 @@ describe('MiniMax 官方 HTTP 契约', () => {
     })
   })
 
+  it('能看图的对话模型在目录里声明 vision，声明范围与适配器一致', () => {
+    const visionModels = minimaxProvider.models
+      .filter((model) => model.features?.includes('vision'))
+      .map((model) => model.id)
+    expect(visionModels).toContain('MiniMax-M3')
+    expect(visionModels).toContain('MiniMax-M3.1-Flash')
+    // 纯文本模型不声明 vision
+    expect(visionModels).not.toContain('MiniMax-M2.7')
+    // 声明范围与 CHAT_IMAGE_MODELS 一致：适配器放行的图，目录也得放行
+    expect(visionModels.sort()).toEqual(['MiniMax-M3', 'MiniMax-M3.1-Flash'])
+  })
+
   it('M2.7 保留迁移标记并拒绝图片，在计费请求前失败', async () => {
     expect(minimaxProvider.models.find((model) => model.id === 'MiniMax-M2.7')).toMatchObject({
       deprecated: true,

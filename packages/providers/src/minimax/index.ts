@@ -32,7 +32,12 @@ const settings = z.object({
   voice: z.string().min(1).default('male-qn-qingse').meta({ title: '默认音色 ID' }),
 })
 type Context = ProviderContext<z.output<typeof settings>>
+/** 支持看图的对话模型：spec 的 vision 声明直接由这里推出，避免两处不一致 */
 const CHAT_IMAGE_MODELS = ['MiniMax-M3', 'MiniMax-M3.1-Flash']
+const CHAT_IMAGE_TITLES: Record<string, string> = {
+  'MiniMax-M3': 'MiniMax M3',
+  'MiniMax-M3.1-Flash': 'MiniMax M3.1 Flash',
+}
 const responseSchema = z
   .object({
     base_resp: z
@@ -235,8 +240,12 @@ export const minimaxProvider = defineProvider({
     },
   ],
   models: [
-    { id: 'MiniMax-M3', title: 'MiniMax M3', capabilities: ['text.chat'] },
-    { id: 'MiniMax-M3.1-Flash', title: 'MiniMax M3.1 Flash', capabilities: ['text.chat'] },
+    ...CHAT_IMAGE_MODELS.map((id) => ({
+      id,
+      title: CHAT_IMAGE_TITLES[id] ?? id,
+      capabilities: ['text.chat' as const],
+      features: ['vision' as const],
+    })),
     {
       id: 'MiniMax-M2.7',
       title: 'MiniMax M2.7（纯文本）',
