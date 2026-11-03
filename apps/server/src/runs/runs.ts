@@ -2104,6 +2104,8 @@ export class NodeRuns implements BatchHost {
         }
       },
       limits?.referenceMedia ?? { video: 0, audio: 0 },
+      // 对话模型只有自己声明了 vision（支持看图）才把 @ 引用的图并进 images
+      { acceptsImages: spec?.features?.includes('vision') === true },
     )
     if (continuation.issue) blocked.push(continuation.issue)
     if (referenceMode) {

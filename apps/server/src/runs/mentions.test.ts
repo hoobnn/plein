@@ -1,4 +1,4 @@
-import { imageNode, propNode, speechNode, videoNode } from '@plein/nodes'
+import { imageNode, llmNode, propNode, speechNode, videoNode } from '@plein/nodes'
 import {
   connect,
   createDoc,
@@ -174,6 +174,40 @@ describe('运行前解析 @ 引用', () => {
     // 这个节点没有参考图端口：引用的图不能算送入，refs 里也不留图
     expect(r.refs).toEqual([{ name: '林夏', elementId: doc.get(hero)!.id, assetIds: [] }])
     expect(r.details[0]?.sent).toEqual([])
+    expect(msg(r.notices)).toContain(
+      '@ 引用的参考图（林夏）这个节点不送入模型，仅保留提示词中的引用名称，不追加文字设定',
+    )
+    expect(doc.get(photo)!.assetId).toBeTruthy()
+  })
+
+  it('LLM 节点：模型支持看图时把 @ 引用的图并入 images', async () => {
+    const { doc, photo, hero } = setup()
+    const n = node(doc, 'plein/llm', { model: 'plein/mock:agent-vision', prompt: '@林夏是谁' })
+    const r = await applyMentions(
+      doc,
+      doc.get(n)!,
+      llmNode,
+      {},
+      collect(doc),
+      undefined,
+      undefined,
+      undefined,
+      { acceptsImages: true },
+    )
+    expect(r.inputs.images?.map((v) => ('assetId' in v ? v.assetId : ''))).toEqual([
+      doc.get(photo)!.assetId,
+    ])
+    expect(r.refs).toEqual([
+      { name: '林夏', elementId: doc.get(hero)!.id, assetIds: [doc.get(photo)!.assetId] },
+    ])
+  })
+
+  it('LLM 节点：模型不支持看图时不并图，只保留引用名称并说明', async () => {
+    const { doc, photo, hero } = setup()
+    const n = node(doc, 'plein/llm', { model: 'plein/mock:chat', prompt: '@林夏是谁' })
+    const r = await applyMentions(doc, doc.get(n)!, llmNode, {}, collect(doc))
+    expect(r.inputs.images).toBeUndefined()
+    expect(r.refs).toEqual([{ name: '林夏', elementId: doc.get(hero)!.id, assetIds: [] }])
     expect(msg(r.notices)).toContain(
       '@ 引用的参考图（林夏）这个节点不送入模型，仅保留提示词中的引用名称，不追加文字设定',
     )

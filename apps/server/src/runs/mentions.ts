@@ -186,6 +186,10 @@ export async function applyMentions(
     video: Number.MAX_SAFE_INTEGER,
     audio: Number.MAX_SAFE_INTEGER,
   },
+  opts?: {
+    /** 对话模型（LLM）是否支持看图：模型声明了 vision 才把 @ 引用的图并入 images */
+    acceptsImages?: boolean
+  },
 ): Promise<AppliedMentions> {
   const params = { ...el.params }
   const targets = mentionTargets(doc)
@@ -401,12 +405,16 @@ export async function applyMentions(
   if (def.capability === 'audio.speech' && !hasVoice(voiceOf(params)))
     applyVoice(params, voices, notices)
 
-  // 参考图并到哪个输入：图片节点等是 references；生成视频只有「多模态参考」模式才把图当参考主体
+  // 参考图并到哪个输入：图片节点等是 references；生成视频只有「多模态参考」模式才把图当参考主体；
+  // 对话模型（LLM）的图片端口是 images：模型声明了 vision（支持看图）才并入
   const video = def.capability === 'video.generate'
-  const port = video ? 'images' : 'references'
+  const chat = def.capability === 'text.chat'
+  const chatImages = chat && def.inputs.some((p) => p.id === 'images' && p.type === 'image')
+  const port = video || chatImages ? 'images' : 'references'
   const send =
     def.inputs.some((p) => p.id === port && p.type === 'image') &&
-    (!video || params.mode === 'reference')
+    (!video || params.mode === 'reference') &&
+    (!chatImages || opts?.acceptsImages === true)
   if (!send && groups.some((g) => g.images.length)) {
     if (video) {
       const framed = new Set(imageIds(inputs[port] ?? []))
