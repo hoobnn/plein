@@ -4,6 +4,7 @@ import {
   definePlugin,
   defineProvider,
   defineServerPlugin,
+  type MediaRequirements,
   PLUGIN_API_VERSION,
   type ProviderContext,
   ProviderError,
@@ -11,7 +12,7 @@ import {
   type ProviderUsage,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
-import { imageModelProblem } from '@plein/plugin-sdk'
+import { imageModelProblem, mediaBatchProblems, mediaRequirementProblems } from '@plein/plugin-sdk'
 import { sizeByArea, tierEdge } from '../size'
 import {
   asJson,
@@ -263,6 +264,40 @@ const IMAGE_ASPECTS = ['auto', '21:9', '16:9', '3:2', '4:3', '1:1', '3:4', '2:3'
 // 万相视频的 ratio；auto 即 adaptive，跟随素材或由模型决定
 const VIDEO_ASPECTS = ['auto', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16']
 
+/**
+ * 万相视频的参考素材要求：参考视频与参考音频各自总时长不超过 15 秒，
+ * 参考视频加输出时长不超过 30 秒。宿主在运行前读的是同一份声明。
+ */
+const WAN_REFERENCE_MEDIA: MediaRequirements = {
+  image: {
+    mime: ['image/png', 'image/jpeg', 'image/webp', 'image/bmp', 'image/tiff'],
+    maxMB: 20,
+  },
+  video: {
+    mime: ['video/mp4', 'video/quicktime'],
+    maxMB: 100,
+    minDuration: 0,
+    totalDurationMax: 15,
+    totalWithOutputMax: 30,
+  },
+  audio: {
+    mime: ['audio/wav', 'audio/x-wav', 'audio/mpeg'],
+    maxMB: 15,
+    minDuration: 0,
+    totalDurationMax: 15,
+  },
+}
+
+/** 万相精修原图的要求：JPEG/PNG/BMP/TIFF/WEBP、10 MB 以内、宽高 512–4096 */
+const WAN_PROCESS_MEDIA: MediaRequirements = {
+  process: {
+    mime: ['image/jpeg', 'image/png', 'image/bmp', 'image/tiff', 'image/webp'],
+    maxMB: 10,
+    minEdge: 512,
+    maxEdge: 4096,
+  },
+}
+
 export const bailianProvider = defineProvider({
   testScope: 'configuration',
   id: 'aliyun/bailian',
@@ -385,6 +420,7 @@ export const bailianProvider = defineProvider({
         // 精修（image.process）提示词上限 800 字；同一模型的局部重绘共用此上限
         promptMaxLength: 800,
         imageOperations: ['upscale' as const, 'outpaint' as const],
+        media: WAN_PROCESS_MEDIA,
       },
     },
     ...['wan3.0-video', 'wan3.0-video-prime'].map((id) => ({
@@ -398,6 +434,7 @@ export const bailianProvider = defineProvider({
         references: { max: 10 },
         referenceMedia: { video: 5, audio: 5 },
         videoModes: ['text', 'image', 'frames', 'reference'] as const,
+        media: WAN_REFERENCE_MEDIA,
       },
       options: z.object({
         adaptive_duration: z
@@ -613,31 +650,21 @@ export const bailianProvider = defineProvider({
           }
         }
         const source = await ctx.files.read(input.image)
-        if (
-          !['image/jpeg', 'image/png', 'image/bmp', 'image/tiff', 'image/webp'].includes(
-            source.mime,
-          ) ||
-          !source.data.length ||
-          source.data.length > 10 * 1024 * 1024
+        if (!source.data.length)
+          throw new ProviderError('invalid_input', '万相精修原图不能是空文件')
+        // 原图的格式要求以模型声明为准，宿主在运行前读的是同一份声明
+        const spec = bailianProvider.models.find((m) => m.id === req.model)
+        const problems = mediaRequirementProblems(
+          spec?.limits?.media?.process,
+          {
+            mime: source.mime,
+            size: source.data.length,
+            width: source.width,
+            height: source.height,
+          },
+          { title: spec?.title ?? '当前模型', label: '万相精修原图', strict: true },
         )
-          throw new ProviderError(
-            'invalid_input',
-            '万相精修原图格式须为 JPEG/PNG/BMP/TIFF/WEBP，非空且不超过 10 MB',
-          )
-        if (
-          typeof source.width !== 'number' ||
-          typeof source.height !== 'number' ||
-          !Number.isInteger(source.width) ||
-          !Number.isInteger(source.height) ||
-          source.width < 512 ||
-          source.width > 4096 ||
-          source.height < 512 ||
-          source.height > 4096
-        )
-          throw new ProviderError(
-            'invalid_input',
-            '万相精修原图需要可读取的尺寸，宽高须为 512–4096 像素',
-          )
+        if (problems.length) throw new ProviderError('invalid_input', problems[0]!)
         const data = await requestWithOss(
           ctx,
           '/api/v1/services/aigc/image2image/image-synthesis',
@@ -732,30 +759,48 @@ export const bailianProvider = defineProvider({
         if (!parsed.success) throw new ProviderError('invalid_input', '万相视频专属参数无效')
         const { adaptive_duration, ...extra } = parsed.data
         const sources = new Map<string, Awaited<ReturnType<Context['files']['read']>>>()
-        const totals = { audio: 0, video: 0 }
+        const mediaLimits = spec.limits?.media
         for (const ref of input.references ?? []) {
           if (ref.kind !== 'image' && ref.kind !== 'audio' && ref.kind !== 'video')
             throw new ProviderError('invalid_input', '视频参考素材须为图片、音频或视频')
-          if (ref.kind === 'image') continue
           const source = await ctx.files.read(ref)
           sources.set(ref.assetId, source)
-          if (
-            typeof source.duration !== 'number' ||
-            !Number.isFinite(source.duration) ||
-            source.duration <= 0
-          )
-            throw new ProviderError('invalid_input', '万相参考视频 / 音频需要可读取的有效时长')
-          totals[ref.kind] += source.duration
-          if (totals[ref.kind] > 15)
-            throw new ProviderError('invalid_input', '万相参考视频与音频各自总时长不能超过 15 秒')
         }
-        if (
-          totals.video &&
-          adaptive_duration !== true &&
-          input.duration !== -1 &&
-          totals.video + (input.duration ?? 5) > 30
-        )
-          throw new ProviderError('invalid_input', '万相输入视频加输出总时长不能超过 30 秒')
+        const totals = { video: 0, audio: 0 }
+        for (const ref of input.references ?? []) {
+          if (ref.kind !== 'video' && ref.kind !== 'audio') continue
+          const duration = sources.get(ref.assetId)?.duration
+          totals[ref.kind] += typeof duration === 'number' ? duration : 0
+        }
+        for (const kind of ['image', 'video', 'audio'] as const) {
+          const samples = (input.references ?? [])
+            .filter((ref) => ref.kind === kind)
+            .map((ref) => {
+              const source = sources.get(ref.assetId)
+              return {
+                sample: {
+                  mime: source?.mime,
+                  size: source?.data.length,
+                  duration: source?.duration,
+                },
+              }
+            })
+          const problems = mediaBatchProblems({
+            requirement: mediaLimits?.[kind],
+            samples,
+            title: spec.title,
+            label: kind === 'video' ? '参考视频' : kind === 'audio' ? '参考音频' : '参考图片',
+            strict: true,
+            // 自适应时长与 -1 由模型决定输出时长，这时不与输出时长相加
+            ...(kind === 'video' &&
+            adaptive_duration !== true &&
+            input.duration !== -1 &&
+            totals.video
+              ? { outputDuration: input.duration ?? 5 }
+              : {}),
+          })
+          if (problems.length) throw new ProviderError('invalid_input', problems[0]!)
+        }
         const media: Json[] = []
         if (input.firstFrame)
           media.push({ type: 'first_frame', url: await upload(input.firstFrame, req.model, ctx) })

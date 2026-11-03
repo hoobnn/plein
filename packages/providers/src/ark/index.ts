@@ -3,6 +3,7 @@ import { speechSettings, synthesizeSpeech, TTS_VOICES } from '../doubao'
 import { transcribePlan } from './plan-speech'
 import { listPlanModels } from './plan-models'
 import { videoReferenceProblem, videoReferencePrompt } from '@plein/plugin-sdk'
+import { mediaRequirementProblems } from '@plein/plugin-sdk'
 import { referenceStorageHost, referenceUploader } from './reference-upload'
 import { videoReferences } from '../shared/video-references'
 import {
@@ -13,6 +14,7 @@ import {
   defineProvider,
   defineServerPlugin,
   domainAllowed,
+  type MediaRequirements,
   PLUGIN_API_VERSION,
   ProviderError,
   type ModelSpec,
@@ -160,6 +162,69 @@ const seedanceOptions = (v25: boolean) =>
       : {}),
   })
 
+/**
+ * 方舟的参考素材要求：参考图 30 MB 以内、宽高 300–6000、比例 0.4–2.5；
+ * 参考视频 200 MB 以内、H.264/HEVC、24–60 fps、音轨 AAC/MP3（MOV 允许 PCM）；
+ * 参考音频 15 MB 以内。宿主在运行前读的是同一份声明。
+ */
+const ARK_REFERENCE_MEDIA = (duration: number): MediaRequirements => ({
+  image: {
+    mime: [
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'image/bmp',
+      'image/tiff',
+      'image/gif',
+      'image/heic',
+      'image/heif',
+    ],
+    maxMB: 30,
+    maxMBExclusive: true,
+    minEdge: 300,
+    maxEdge: 6000,
+    minRatio: 0.4,
+    maxRatio: 2.5,
+  },
+  video: {
+    mime: ['video/mp4', 'video/quicktime'],
+    maxMB: 200,
+    minEdge: 300,
+    maxEdge: 6000,
+    minRatio: 0.4,
+    maxRatio: 2.5,
+    minPixels: 407696,
+    maxPixels: 8295044,
+    minDuration: 2,
+    maxDuration: duration,
+    totalDurationMax: duration,
+    videoCodecs: ['h264', 'hevc'],
+    minFrameRate: 24,
+    maxFrameRate: 60,
+    audioCodecs: ['aac', 'mp3'],
+    pcmAudioMimes: ['video/quicktime'],
+  },
+  audio: {
+    mime: ['audio/wav', 'audio/x-wav', 'audio/mpeg', 'audio/mp3'],
+    maxMB: 15,
+    minDuration: 2,
+    maxDuration: duration,
+    totalDurationMax: duration,
+  },
+})
+
+/** Seedream 5.0 抠图原图的要求：PNG/JPEG、30 MB 以内、比例 1/16–16、总像素 262144–36000000 */
+const ARK_CUTOUT_MEDIA: MediaRequirements = {
+  process: {
+    mime: ['image/png', 'image/jpeg'],
+    maxMB: 30,
+    minRatio: 1 / 16,
+    maxRatio: 16,
+    minPixels: 262144,
+    maxPixels: 36000000,
+  },
+}
+
 const models: ModelSpec[] = [
   // 官方模型列表标注这批 Seed 2.1 / Evolving 模型支持「多模态理解」（图片内容理解），故声明 vision
   {
@@ -212,6 +277,7 @@ const models: ModelSpec[] = [
           tiers: ['1K', '1.5K', '2K'],
         },
       },
+      media: ARK_CUTOUT_MEDIA,
     },
     options: seedreamOptions,
   },
@@ -235,6 +301,7 @@ const models: ModelSpec[] = [
           tiers: ['1K', '1.5K', '2K'],
         },
       },
+      media: ARK_CUTOUT_MEDIA,
     },
     options: seedreamOptions,
   },
@@ -277,6 +344,11 @@ const models: ModelSpec[] = [
       referenceMedia: { video: 10, audio: 10, audioOnly: true },
       optionalVideoPrompt: true,
       videoModes: ['text', 'image', 'frames', 'reference'],
+      media: {
+        ...ARK_REFERENCE_MEDIA(30),
+        // 「编辑参考视频」任务要求参考视频至少 4 秒
+        videoTasks: { edit: { minDuration: 4 } },
+      },
     },
     options: seedanceOptions(true),
   },
@@ -293,6 +365,7 @@ const models: ModelSpec[] = [
       referenceMedia: { video: 3, audio: 3, audioOnly: false },
       optionalVideoPrompt: true,
       videoModes: ['text', 'image', 'frames', 'reference'],
+      media: ARK_REFERENCE_MEDIA(15),
     },
     options: seedanceOptions(false),
   },
@@ -309,6 +382,7 @@ const models: ModelSpec[] = [
       referenceMedia: { video: 3, audio: 3, audioOnly: false },
       optionalVideoPrompt: true,
       videoModes: ['text', 'image', 'frames', 'reference'],
+      media: ARK_REFERENCE_MEDIA(15),
     },
     options: seedanceOptions(false),
   },
@@ -325,6 +399,7 @@ const models: ModelSpec[] = [
       referenceMedia: { video: 3, audio: 3, audioOnly: false },
       optionalVideoPrompt: true,
       videoModes: ['text', 'image', 'frames', 'reference'],
+      media: ARK_REFERENCE_MEDIA(15),
     },
     options: seedanceOptions(false),
   },
@@ -678,23 +753,20 @@ async function cutout(
   if (input.operation !== 'cutout') invalid('当前 Seedream 精修仅支持透明图层抠图')
   if (input.image.kind !== 'image') invalid('图层抠图需要图片原图')
   const source = await ctx.files.read(input.image)
-  if (!['image/png', 'image/jpeg'].includes(source.mime)) invalid('图层抠图需要 PNG 或 JPEG 原图')
-  const { width, height } = source
-  if (!source.data.length || source.data.length > 30 * 1024 * 1024)
-    invalid('图层抠图原图必须非空且不超过 30 MB')
-  if (
-    typeof width !== 'number' ||
-    typeof height !== 'number' ||
-    !Number.isInteger(width) ||
-    !Number.isInteger(height) ||
-    width <= 0 ||
-    height <= 0 ||
-    width / height < 1 / 16 ||
-    width / height > 16 ||
-    width * height < 262144 ||
-    width * height > 36000000
+  if (!source.data.length) invalid('图层抠图原图不能是空文件')
+  // 原图的格式要求以模型声明为准，宿主在运行前读的是同一份声明
+  const spec = models.find((item) => item.id === model)
+  const problems = mediaRequirementProblems(
+    spec?.limits?.media?.process,
+    {
+      mime: source.mime,
+      size: source.data.length,
+      width: source.width,
+      height: source.height,
+    },
+    { title: spec?.title ?? '当前模型', label: '图层抠图原图', strict: true },
   )
-    invalid('图层抠图原图需要有效尺寸，宽高比为 1/16–16，总像素为 262144–36000000')
+  if (problems.length) invalid(problems[0]!)
   const data = await request(plane, ctx, '/images/generations', {
     model: wireModel(plane, model),
     image: `data:${source.mime};base64,${Buffer.from(source.data).toString('base64')}`,
@@ -768,6 +840,8 @@ async function video(
   input: CapabilityInput<'video.generate'>,
   ctx: Context,
 ) {
+  // 参考素材的格式要求以模型声明为准，宿主在运行前读的是同一份声明
+  const spec = models.find((item) => item.id === model)
   if (!input.prompt.trim() && !input.firstFrame && !input.references?.length)
     invalid('视频需要提示词或图片参考')
   if (input.lastFrame && !input.firstFrame) invalid('尾帧需要同时提供首帧')
@@ -871,10 +945,11 @@ async function video(
         image: v25 ? 30 : 9,
         video: current ? (v25 ? 10 : 3) : 0,
         audio: current ? (v25 ? 10 : 3) : 0,
-        duration: v25 ? 30 : 15,
         allowAudioOnly: v25,
         platform: 'ark',
-        ...(taskType === 'edit' ? { minVideoDuration: 4 } : {}),
+        requirements: spec?.limits?.media,
+        title: spec?.title ?? '当前模型',
+        ...(taskType === 'edit' ? { videoTask: 'edit' } : {}),
         ...(input.references.some((ref) => ref.kind === 'video')
           ? { uploadVideo: referenceUploader(ctx) }
           : {}),

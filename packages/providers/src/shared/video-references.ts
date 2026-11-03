@@ -1,9 +1,78 @@
-import { type AssetRef, type ProviderContext, ProviderError } from '@plein/plugin-sdk'
+import {
+  type AssetRef,
+  type MediaRequirements,
+  type ProviderContext,
+  ProviderError,
+  mediaRequirementOf,
+  mediaRequirementProblems,
+} from '@plein/plugin-sdk'
 
 /** 平台按 data URL 的子类型认格式（只认 wav / mp3），MP3 的标准 MIME audio/mpeg 会被当成 .mpeg */
 const AUDIO_FORMAT: Record<string, string> = {
   'audio/x-wav': 'audio/wav',
   'audio/mpeg': 'audio/mp3',
+}
+
+/** 素材类别的称呼；文案里要能看出是哪种素材 */
+const LABELS = { image: '参考图片', video: '参考视频', audio: '参考音频' } as const
+
+/**
+ * 平台默认的参考素材要求。模型在 `limits.media` 里声明了要求时以模型声明为准，
+ * 声明与这里的默认值是同一份规则的两种来源，运行期与运行前检查读的都是它。
+ * 未声明平台的通用用法不做编码检查：那时拿不到可靠的编码信息。
+ */
+const platformRequirements = (platform: 'minimax' | 'ark' | undefined): MediaRequirements => {
+  const ark = platform === 'ark'
+  return {
+    image: {
+      mime: ark
+        ? [
+            'image/jpeg',
+            'image/png',
+            'image/webp',
+            'image/bmp',
+            'image/tiff',
+            'image/gif',
+            'image/heic',
+            'image/heif',
+          ]
+        : ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'],
+      maxMB: 30,
+      ...(ark ? { maxMBExclusive: true } : {}),
+      minEdge: ark ? 300 : 256,
+      maxEdge: ark ? 6000 : 5760,
+      minRatio: 0.4,
+      maxRatio: 2.5,
+    },
+    video: {
+      mime: ['video/mp4', 'video/quicktime'],
+      maxMB: ark ? 200 : 50,
+      minEdge: ark ? 300 : 256,
+      maxEdge: ark ? 6000 : 5760,
+      minRatio: 0.4,
+      maxRatio: 2.5,
+      ...(ark ? { minPixels: 407696, maxPixels: 8295044 } : {}),
+      minDuration: 2,
+      maxDuration: 15,
+      totalDurationMax: 15,
+      ...(platform
+        ? {
+            videoCodecs: ['h264', 'hevc'],
+            minFrameRate: ark ? 24 : 23.976,
+            maxFrameRate: 60,
+            audioCodecs: ['aac', 'mp3'],
+            ...(ark ? { pcmAudioMimes: ['video/quicktime'] } : {}),
+          }
+        : {}),
+    },
+    audio: {
+      mime: ['audio/wav', 'audio/x-wav', 'audio/mpeg', 'audio/mp3'],
+      maxMB: 15,
+      minDuration: 2,
+      maxDuration: 15,
+      totalDurationMax: 15,
+    },
+  }
 }
 
 /** Encode local references through the host, never exposing a local path or secret URL. */
@@ -14,10 +83,14 @@ export async function videoReferences(
     image: number
     video: number
     audio: number
-    duration: number
     allowAudioOnly?: boolean
     platform?: 'minimax' | 'ark'
-    minVideoDuration?: number
+    /** 模型声明的素材要求；缺省时用平台默认 */
+    requirements?: MediaRequirements
+    /** 模型显示名，文案里要说清是哪个模型的要求 */
+    title?: string
+    /** 参考视频按哪种任务模式检查（如编辑参考视频的最短时长） */
+    videoTask?: string
     uploadVideo?: (
       ref: AssetRef,
       file: Awaited<ReturnType<ProviderContext['files']['read']>>,
@@ -43,6 +116,8 @@ export async function videoReferences(
   }
   if (counts.audio && !counts.image && !counts.video && !limits.allowAudioOnly)
     throw new ProviderError('invalid_input', '当前模型的音频参考需要搭配图片或视频')
+  const requirements = limits.requirements ?? platformRequirements(limits.platform)
+  const title = limits.title ?? '当前模型'
   const totals = { video: 0, audio: 0 }
   const content: Array<Record<string, unknown>> = []
   const uploads: Array<{
@@ -53,101 +128,35 @@ export async function videoReferences(
   let bytes = 0
   for (const ref of refs) {
     const file = await ctx.files.read(ref)
-    const mime = file.mime.toLowerCase()
     const kind = ref.kind as keyof typeof counts
-    const accepted =
-      kind === 'image'
-        ? (ark
-            ? /^image\/(jpeg|png|webp|bmp|tiff|gif|heic|heif)$/
-            : /^image\/(jpeg|png|webp|heic|heif)$/
-          ).test(mime)
-        : kind === 'video'
-          ? ['video/mp4', 'video/quicktime'].includes(mime)
-          : ['audio/wav', 'audio/x-wav', 'audio/mpeg', 'audio/mp3'].includes(mime)
-    const max = kind === 'image' ? 30 : kind === 'video' ? (ark ? 200 : 50) : 15
-    if (!accepted || !file.data.length || file.data.length > max * 1024 * 1024)
-      throw new ProviderError(
-        'invalid_input',
-        `参考素材格式或大小不符合要求（${kind}，最多 ${max} MB）`,
-      )
-    if (kind === 'video' && limits.platform) {
-      if (!file.videoCodec || !['h264', 'hevc'].includes(file.videoCodec))
-        throw new ProviderError(
-          'invalid_input',
-          '参考视频编码须为 H.264/AVC 或 H.265/HEVC，且编码信息可读取',
-        )
-      if (
-        typeof file.frameRate !== 'number' ||
-        !Number.isFinite(file.frameRate) ||
-        file.frameRate < (ark ? 24 : 23.976) ||
-        file.frameRate > 60
-      )
-        throw new ProviderError(
-          'invalid_input',
-          `参考视频帧率须为 ${ark ? '24' : '23.976'}–60 fps，且帧率可读取`,
-        )
-      if (
-        !Array.isArray(file.audioCodecs) ||
-        file.audioCodecs.some(
-          (codec) =>
-            !(
-              ['aac', 'mp3'].includes(codec) ||
-              (ark && mime === 'video/quicktime' && codec.startsWith('pcm_'))
-            ),
-        )
-      )
-        throw new ProviderError('invalid_input', '参考视频音轨编码不符合要求，或音轨信息无法读取')
-    }
-    if (kind === 'image' && ark && file.data.length === max * 1024 * 1024)
-      throw new ProviderError('invalid_input', '火山方舟参考图片必须小于 30 MB')
-    if (kind !== 'audio') {
-      const { width, height } = file
-      const min = ark ? 300 : 256
-      const maxEdge = ark ? 6000 : 5760
-      if (
-        typeof width !== 'number' ||
-        typeof height !== 'number' ||
-        !Number.isInteger(width) ||
-        !Number.isInteger(height) ||
-        width < min ||
-        height < min ||
-        width > maxEdge ||
-        height > maxEdge ||
-        width / height < 0.4 ||
-        width / height > 2.5
-      )
-        throw new ProviderError(
-          'invalid_input',
-          `参考素材需要可读取的尺寸，宽高须为 ${min}–${maxEdge} 像素，宽高比为 0.4–2.5`,
-        )
-    }
+    const label = LABELS[kind]
+    if (!file.data.length) throw new ProviderError('invalid_input', `${label}不能是空文件`)
+    // 与宿主运行前检查同一份声明：格式、大小、尺寸、时长、编码都在这里判。
+    const problems = mediaRequirementProblems(
+      mediaRequirementOf(requirements, kind, kind === 'video' ? limits.videoTask : undefined),
+      {
+        mime: file.mime,
+        size: file.data.length,
+        width: file.width,
+        height: file.height,
+        duration: file.duration,
+        videoCodec: file.videoCodec,
+        frameRate: file.frameRate,
+        audioCodecs: file.audioCodecs,
+      },
+      { title, label, strict: true },
+    )
+    if (problems.length) throw new ProviderError('invalid_input', problems[0]!)
     if (kind !== 'image') {
-      if (
-        typeof file.duration !== 'number' ||
-        !Number.isFinite(file.duration) ||
-        file.duration < 2 ||
-        file.duration > limits.duration
-      )
+      totals[kind] += file.duration ?? 0
+      const total = mediaRequirementOf(requirements, kind)
+      if (total?.totalDurationMax !== undefined && totals[kind] > total.totalDurationMax)
         throw new ProviderError(
           'invalid_input',
-          `参考素材需要可读取的时长，范围为 2–${limits.duration} 秒`,
-        )
-      if (kind === 'video' && file.duration < (limits.minVideoDuration ?? 2))
-        throw new ProviderError(
-          'invalid_input',
-          `当前任务参考视频至少需要 ${limits.minVideoDuration} 秒`,
-        )
-      totals[kind] += file.duration
-      if (totals[kind] > limits.duration)
-        throw new ProviderError(
-          'invalid_input',
-          `参考${kind === 'video' ? '视频' : '音频'}总时长不能超过 ${limits.duration} 秒`,
+          `${label}总时长 ${totals[kind]} 秒，超过 ${title} 的 ${total.totalDurationMax} 秒上限，请缩短素材`,
         )
     }
     if (ark && kind === 'video') {
-      const pixels = file.width! * file.height!
-      if (pixels < 407696 || pixels > 8295044)
-        throw new ProviderError('invalid_input', '火山参考视频总像素须为 407696–8295044')
       uploads.push({ index: content.length, ref, file })
       content.push({ type: 'video_url', role: 'reference_video' })
       continue
@@ -157,6 +166,7 @@ export async function videoReferences(
     if (bytes > 63 * 1024 * 1024)
       throw new ProviderError('invalid_input', '参考素材编码后超过请求上限，请缩短或压缩素材')
     const type = `${kind}_url`
+    const mime = file.mime.toLowerCase()
     content.push({
       type,
       [type]: { url: `data:${AUDIO_FORMAT[mime] ?? mime};base64,${encoded}` },

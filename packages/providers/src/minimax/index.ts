@@ -7,6 +7,7 @@ import {
   definePlugin,
   defineProvider,
   defineServerPlugin,
+  type MediaRequirements,
   PLUGIN_API_VERSION,
   type ProviderContext,
   ProviderError,
@@ -37,6 +38,44 @@ const CHAT_IMAGE_MODELS = ['MiniMax-M3', 'MiniMax-M3.1-Flash']
 const CHAT_IMAGE_TITLES: Record<string, string> = {
   'MiniMax-M3': 'MiniMax M3',
   'MiniMax-M3.1-Flash': 'MiniMax M3.1 Flash',
+}
+
+/**
+ * H3 参考素材的要求：图片 30 MB 以内、宽高 256–5760、比例 0.4–2.5；
+ * 视频 50 MB 以内、H.264/HEVC、23.976–60 fps、音轨 AAC/MP3；音频 15 MB 以内。
+ * 宿主在运行前读的是同一份声明。
+ */
+const H3_REFERENCE_MEDIA: MediaRequirements = {
+  image: {
+    mime: ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'],
+    maxMB: 30,
+    minEdge: 256,
+    maxEdge: 5760,
+    minRatio: 0.4,
+    maxRatio: 2.5,
+  },
+  video: {
+    mime: ['video/mp4', 'video/quicktime'],
+    maxMB: 50,
+    minEdge: 256,
+    maxEdge: 5760,
+    minRatio: 0.4,
+    maxRatio: 2.5,
+    minDuration: 2,
+    maxDuration: 15,
+    totalDurationMax: 15,
+    videoCodecs: ['h264', 'hevc'],
+    minFrameRate: 23.976,
+    maxFrameRate: 60,
+    audioCodecs: ['aac', 'mp3'],
+  },
+  audio: {
+    mime: ['audio/wav', 'audio/x-wav', 'audio/mpeg', 'audio/mp3'],
+    maxMB: 15,
+    minDuration: 2,
+    maxDuration: 15,
+    totalDurationMax: 15,
+  },
 }
 const responseSchema = z
   .object({
@@ -299,6 +338,7 @@ export const minimaxProvider = defineProvider({
         audio: false,
         references: { max: 9 },
         referenceMedia: { video: 3, audio: 3, audioOnly: true },
+        media: H3_REFERENCE_MEDIA,
       },
     })),
     ...['speech-2.8-hd', 'speech-2.8-turbo'].map((id) => ({
@@ -535,6 +575,8 @@ export const minimaxProvider = defineProvider({
       case 'video.generate': {
         const input = req.input as CapabilityInput<'video.generate'>
         required(input.prompt, 7000, '视频提示词')
+        // 参考素材的格式要求以模型声明为准，宿主在运行前读的是同一份声明
+        const spec = minimaxProvider.models.find((item) => item.id === req.model)
         const max = req.model === 'MiniMax-H3-Max'
         const duration = input.duration ?? 5
         const resolution = input.resolution ?? (req.model === 'MiniMax-H3' ? '2K' : '768P')
@@ -591,8 +633,9 @@ export const minimaxProvider = defineProvider({
               image: 1,
               video: 0,
               audio: 0,
-              duration: 15,
               platform: 'minimax',
+              requirements: spec?.limits?.media,
+              title: spec?.title,
             })
             content.push({ ...frame, role })
           }
@@ -603,9 +646,10 @@ export const minimaxProvider = defineProvider({
               image: 9,
               video: 3,
               audio: 3,
-              duration: 15,
               allowAudioOnly: true,
               platform: 'minimax',
+              requirements: spec?.limits?.media,
+              title: spec?.title,
             })),
           )
         const result = await request(ctx, '/v2/video_generation', {
