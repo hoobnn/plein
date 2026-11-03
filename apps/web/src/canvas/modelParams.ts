@@ -7,7 +7,7 @@ import {
   type ModelInfo,
   type ModelLimits,
 } from '@plein/plugin-sdk'
-import { type VideoMode, videoModeProblem } from '@plein/nodes'
+import { VIDEO_MODE_LABELS, type VideoMode, videoModeProblem } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import {
   aspectKey,
@@ -238,6 +238,9 @@ export function modelProblem(
     if (mode !== 'reference' && (videos || audios)) return '视频或音频参考需要选择多模态参考模式'
     // 视频 / 音频分开说：模型不支持某类参考时直接点名，超过上限时说明上限与实际连了多少。
     if (model) {
+      const allowed = model.limits?.videoModes
+      if (allowed && !allowed.some((m) => m === mode))
+        return `${model.title} 不支持「${VIDEO_MODE_LABELS[mode] ?? mode}」模式，请更换模式或模型`
       const videoLimit = model.limits?.referenceMedia?.video ?? 0
       const audioLimit = model.limits?.referenceMedia?.audio ?? 0
       if (videos > videoLimit)

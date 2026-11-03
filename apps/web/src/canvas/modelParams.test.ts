@@ -342,4 +342,14 @@ describe('参考视频 / 音频的上限提示按类型区分', () => {
       '当前模型最多支持 2 段参考视频，现在连了 3 段',
     )
   })
+
+  it('模型声明之外的视频模式先点名模式：写清模型、模式中文名和怎么办', () => {
+    const modes = (
+      list: Array<'text' | 'image' | 'lastFrame' | 'frames' | 'reference'>,
+    ): SelectedModel['info'] => ({ ...videoModel(), limits: { videoModes: list } })
+    expect(modelProblem(node, { ...params, mode: 'frames' }, modes(['text']), new Map())).toBe(
+      'M 不支持「首尾帧」模式，请更换模式或模型',
+    )
+    expect(modelProblem(node, { ...params, mode: 'text' }, modes(['text']), new Map())).toBeNull()
+  })
 })
