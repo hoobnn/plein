@@ -279,6 +279,35 @@ describe('Doubao Speech HTTP contracts', () => {
     })
   })
 
+  it('Seed Audio 的小数时长仍按 3000 字上限提交', async () => {
+    for (const duration of [12.5, 119.5]) {
+      const ctx = context(new Response('{"code":20000000,"audio":"AQI="}'))
+      await doubaoProvider.submit(
+        {
+          capability: 'audio.sfx',
+          model: 'seed-audio-1.0',
+          input: { prompt: '音'.repeat(2971), duration },
+        },
+        ctx,
+      )
+      const sent = JSON.parse(String(vi.mocked(ctx.fetch).mock.calls[0]![1]?.body))
+      expect(sent.text_prompt).toContain(`目标时长 ${duration} 秒。`)
+      expect(sent.text_prompt.length).toBeLessThanOrEqual(3000)
+    }
+    const ctx = context()
+    await expect(
+      doubaoProvider.submit(
+        {
+          capability: 'audio.sfx',
+          model: 'seed-audio-1.0',
+          input: { prompt: '音'.repeat(2972), duration: 119.5 },
+        },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_input' })
+    expect(ctx.fetch).not.toHaveBeenCalled()
+  })
+
   it('reads the asset and uploads inline base64 for flash ASR', async () => {
     const ctx = context(
       new Response('{"result":{"text":"你好"}}', { headers: { 'X-Api-Status-Code': '20000000' } }),
@@ -593,6 +622,6 @@ it('目录声明语音与 Seed Audio 的有效文本长度上限', () => {
   const limit = (id: string) =>
     doubaoProvider.models.find((model) => model.id === id)?.limits?.promptMaxLength
   for (const id of ['seed-tts-2.0', 'seed-icl-1.0', 'seed-icl-2.0']) expect(limit(id)).toBe(3000)
-  // 适配器会在描述前拼类型与目标时长，声明值已扣掉 27 字前缀
-  expect(limit('seed-audio-1.0')).toBe(2973)
+  // 适配器会在描述前拼类型与目标时长（小数保留 1 位），声明值已扣掉最长 29 字前缀
+  expect(limit('seed-audio-1.0')).toBe(2971)
 })

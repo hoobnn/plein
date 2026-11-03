@@ -470,9 +470,9 @@ export const doubaoProvider = defineProvider({
       capabilities: ['audio.music', 'audio.sfx'],
       limits: {
         duration: { min: 1, max: 120 },
-        // 接口限 3000 字；适配器会在描述前拼「类型（最长 16 字）+ 目标时长（最长 11 字）」
-        // 再按 3000 字检查，这里扣掉 27 字，避免预检放行、提交时才被拒绝
-        promptMaxLength: 2973,
+        // 接口限 3000 字；适配器会在描述前拼「类型（最长 16 字）+ 目标时长（最长 13 字，
+        // 含 1 位小数，如「目标时长 119.5 秒。」）」，扣掉 29 字后按 3000 字检查
+        promptMaxLength: 2971,
       },
     },
     { id: 'bigmodel', title: '录音文件识别极速版', capabilities: ['audio.transcribe'] },
@@ -505,7 +505,7 @@ export const doubaoProvider = defineProvider({
       const response = await post(ctx, '/api/v3/tts/create', {
         model: req.model,
         text_prompt: text(
-          `${kind}${input.duration ? `目标时长 ${input.duration} 秒。` : ''}${prompt}`,
+          `${kind}${input.duration ? `目标时长 ${Number(input.duration.toFixed(1))} 秒。` : ''}${prompt}`,
           '完整音频描述',
         ),
         audio_config: { format: ctx.settings.format, sample_rate: Number(ctx.settings.sampleRate) },
