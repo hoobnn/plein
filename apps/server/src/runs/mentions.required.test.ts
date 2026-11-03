@@ -153,6 +153,78 @@ describe('必需参考与取舍', () => {
     expect(r.blocked[0]?.message).toContain('「林夏」是必需参考，但这个模型最多带 2 张参考图')
   })
 
+  it('必需参考超过模型上限：指向真正放不下的那个引用（明细里有视频元素也不串位）', async () => {
+    const { doc, hero, roof } = scene()
+    createElement(doc, {
+      kind: 'video',
+      assetId: asset('v'),
+      name: '预告片',
+      x: 0,
+      y: 200,
+      w: 10,
+      h: 10,
+    })
+    const n = shot(doc, 'plein/image', {
+      prompt: '@预告片 @林夏 @天台',
+      requiredRefs: [hero, roof],
+    })
+    const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc), 1)
+    expect(r.blocked).toHaveLength(1)
+    // 林夏先放（必需参考的先后顺序），放不下的是天台
+    expect(r.blocked[0]).toMatchObject({ code: 'required_over_limit', elementId: roof })
+    expect(r.blocked[0]?.message).toContain('「天台」是必需参考，但这个模型最多带 1 张参考图')
+  })
+
+  it('必需参考是视频或音频：文案按媒体类型说「参考视频 / 参考音频」', async () => {
+    const doc = createDoc(undefined, { schedule: () => {} })
+    const trailer = createElement(doc, {
+      kind: 'video',
+      assetId: asset('v'),
+      name: '预告片',
+      x: 0,
+      y: 0,
+      w: 10,
+      h: 10,
+    })
+    const voice = createElement(doc, {
+      kind: 'audio',
+      assetId: asset('m'),
+      name: '旁白',
+      x: 20,
+      y: 0,
+      w: 10,
+      h: 10,
+    })
+    const n = shot(doc, 'plein/video', {
+      prompt: '@预告片 @旁白',
+      mode: 'text',
+      requiredRefs: [trailer, voice],
+    })
+    const r = await applyMentions(doc, doc.get(n)!, videoNode, {}, collect(doc))
+    const unsupported = r.blocked.filter((b) => b.code === 'required_unsupported')
+    expect(unsupported).toHaveLength(2)
+    expect(unsupported.find((b) => b.elementId === trailer)?.message).toContain(
+      '当前模式不送参考视频',
+    )
+    expect(unsupported.find((b) => b.elementId === voice)?.message).toContain(
+      '当前模式不送参考音频',
+    )
+  })
+
+  it('特效卡是必需参考但没有参考视频：提示说「参考视频」', async () => {
+    const doc = createDoc(undefined, { schedule: () => {} })
+    const fx = addNode(doc, 'plein/effect', { name: '雨', x: 0, y: 0 })
+    const n = shot(doc, 'plein/video', {
+      prompt: '@雨',
+      mode: 'reference',
+      requiredRefs: [fx],
+    })
+    const r = await applyMentions(doc, doc.get(n)!, videoNode, {}, collect(doc))
+    expect(r.blocked).toHaveLength(1)
+    expect(r.blocked[0]).toMatchObject({ code: 'required_no_image', elementId: fx })
+    expect(r.blocked[0]?.message).toContain('还没有可用的参考视频')
+  })
+
   it('生成视频不在「多模态参考」模式：可选参考记为 unsupported，必需参考阻断', async () => {
     const { doc, box } = scene()
     const optional = shot(doc, 'plein/video', { prompt: '@林夏 @铁盒', mode: 'text' })
