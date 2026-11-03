@@ -30,7 +30,10 @@ describe('视频参考编号和预检', () => {
       '图片2 跟随 视频1，使用 音频1；@林夏 a@image1.com \\@image1 @@video1',
     )
     expect(videoReferenceProblem('@image2 @video1 @audio1', counts)).toBeNull()
-    expect(videoReferenceProblem('@image3', counts)).toContain('超出')
+    expect(videoReferenceProblem('@video3', { ...counts, video: 2 }, 'minimax-video')).toBe(
+      '引用 视频3 超出当前视频数量（2 段）',
+    )
+    expect(videoReferenceProblem('@image3', counts)).toBe('引用 @image3 超出当前图片数量（2 张）')
   })
   it('音频单独参考、编辑模式、空提示词与具体画幅按模型前置校验', () => {
     const params = { mode: 'reference', model: 'p:m' }
@@ -39,6 +42,11 @@ describe('视频参考编号和预检', () => {
     )
     expect(videoModelProblem(model, params, counts, '')).toBeNull()
     expect(videoModelProblem(model, { mode: 'text' }, counts, '')).toContain('提示词为空')
+    const promptRequired = { ...model, limits: { referenceMedia: model.limits!.referenceMedia! } }
+    expect(videoModelProblem(promptRequired, params, counts, '')).toContain('提示词为空')
+    expect(
+      videoModelProblem(promptRequired, { mode: 'text' }, { image: 0, video: 0, audio: 0 }, ''),
+    ).toContain('提示词为空')
     expect(
       videoModelProblem(
         model,
@@ -69,12 +77,20 @@ describe('视频参考编号和预检', () => {
 
 it('模型声明的输入模式在运行前阻断；服务端仍校验最终编号', () => {
   const limits = { ...model.limits, videoModes: ['text', 'image', 'frames', 'reference'] as const }
-  expect(videoModelProblem({ ...model, limits }, { mode: 'lastFrame' }, counts, '结束')).toContain(
-    '不支持此视频生成模式',
+  expect(videoModelProblem({ ...model, limits }, { mode: 'lastFrame' }, counts, '结束')).toBe(
+    'Seedance 不支持「仅尾帧」模式，请更换模式或模型',
   )
   expect(
     videoModelProblem(model, { mode: 'reference' }, { image: 0, video: 1, audio: 0 }, '@image1'),
   ).toContain('超出')
+  expect(
+    videoModelProblem(
+      { ...model, id: 'MiniMax-H3' },
+      { mode: 'reference' },
+      { image: 0, video: 2, audio: 0 },
+      '@video3',
+    ),
+  ).toBe('引用 视频3 超出当前视频数量（2 段）')
   expect(
     videoModelProblem(model, { mode: 'reference' }, { image: 0, video: 1, audio: 0 }, '@image1', {
       deferReferenceCounts: true,

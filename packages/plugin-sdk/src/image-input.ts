@@ -56,6 +56,40 @@ export function imageLimits(
 }
 
 /** 只检查参数，不读取素材、不联网；软引用在服务端展开后用最终数量再检查。 */
+function resolutionProblem(
+  model: ModelInfo,
+  params: ImageParams,
+  references: number,
+  limits: ModelLimits,
+  value: string,
+) {
+  const image = model.limits?.image
+  const conditions: string[] = []
+  // 只有基础档位支持、组合限制把它排除时，才把原因归于当前画幅或素材模式。
+  if (model.limits?.resolutions?.includes(value)) {
+    const byAspect = image?.resolutionsByAspectRatio?.[String(params.aspectRatio)]
+    if (byAspect && !byAspect.includes(value))
+      conditions.push(`当前画幅为 ${String(params.aspectRatio)}`)
+    if (references && image?.referenceResolutions && !image.referenceResolutions.includes(value))
+      conditions.push('当前使用参考图')
+    const sequential = image?.sequential
+    if (
+      sequential &&
+      params.options?.[sequential.option] === true &&
+      sequential.resolutions &&
+      !sequential.resolutions.includes(value)
+    )
+      conditions.push('当前开启组图模式')
+  }
+  const condition = conditions.length ? `（${conditions.join('，')}）` : ''
+  const choices = limits.resolutions?.length ? limits.resolutions.join('、') : '模型支持的分辨率'
+  return `${model.title} 不支持分辨率 ${value}${condition}；请选择 ${choices}，或使用默认分辨率`
+}
+
+function ratioLabel(value: number) {
+  return value < 1 ? `1:${1 / value}` : `${value}:1`
+}
+
 export function imageModelProblem(model: ModelInfo, params: ImageParams, references: number) {
   const limits = imageLimits(model.limits, params, references)
   const count = params.count ?? 1
@@ -72,7 +106,7 @@ export function imageModelProblem(model: ModelInfo, params: ImageParams, referen
     params.resolution &&
     !limits.resolutions?.includes(String(params.resolution))
   )
-    return `${model.title} 当前画幅 / 参考图 / 组图模式不支持分辨率 ${String(params.resolution)}`
+    return resolutionProblem(model, params, references, limits, String(params.resolution))
   if (
     !explicitSize &&
     params.aspectRatio &&
@@ -92,7 +126,7 @@ export function imageModelProblem(model: ModelInfo, params: ImageParams, referen
     if (rules.tiers?.includes(String(size)))
       return limits.resolutions?.includes(String(size))
         ? null
-        : `${model.title} 当前模式不支持尺寸 ${String(size)}`
+        : resolutionProblem(model, params, references, limits, String(size))
     const match = typeof size === 'string' ? /^([1-9]\d*)[x*]([1-9]\d*)$/.exec(size) : null
     if (!match) return '自定义尺寸须为正整数宽*高'
     const width = Number(match[1]),
@@ -112,7 +146,7 @@ export function imageModelProblem(model: ModelInfo, params: ImageParams, referen
       width / height < rules.minRatio ||
       width / height > rules.maxRatio
     )
-      return `${model.title} 自定义尺寸超出当前模式的总像素 / 宽高比范围`
+      return `${model.title} 自定义尺寸须在 ${rules.minPixels}–${maxPixels} 像素（宽×高）之间、宽高比 ${ratioLabel(rules.minRatio)}–${ratioLabel(rules.maxRatio)}，现在是 ${width}*${height}`
   }
   return null
 }

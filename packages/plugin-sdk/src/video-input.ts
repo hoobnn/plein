@@ -1,4 +1,5 @@
 import type { ModelInfo } from './provider'
+import { referenceMediaLabel, type ReferenceLabelStyle } from './reference-tokens'
 
 const KINDS = {
   image: 'image',
@@ -31,10 +32,17 @@ export function videoReferenceTokens(text: string) {
   })
 }
 
-export function videoReferenceProblem(prompt: string, counts: Record<ReferenceKind, number>) {
+export function videoReferenceProblem(
+  prompt: string,
+  counts: Record<ReferenceKind, number>,
+  style: ReferenceLabelStyle = 'video',
+) {
   for (const token of videoReferenceTokens(prompt))
-    if (token.index > counts[token.kind])
-      return `引用 @${token.kind}${token.index} 超出当前素材数量（${counts[token.kind]}）`
+    if (token.index > counts[token.kind]) {
+      const kind = { image: '图片', video: '视频', audio: '音频' }[token.kind]
+      const unit = token.kind === 'image' ? '张' : '段'
+      return `引用 ${referenceMediaLabel(style, token.kind, token.index)} 超出当前${kind}数量（${counts[token.kind]} ${unit}）`
+    }
   return null
 }
 
@@ -52,6 +60,14 @@ export function videoReferencePrompt(prompt: string, platform: 'ark' | 'minimax'
   return text
 }
 
+const VIDEO_MODE_LABELS: Record<string, string> = {
+  text: '文生视频',
+  image: '图生视频',
+  lastFrame: '仅尾帧',
+  frames: '首尾帧',
+  reference: '多模态参考',
+}
+
 /** 浏览器和服务端预览共用，实际 Provider 仍负责素材字节级校验。 */
 export function videoModelProblem(
   model: ModelInfo,
@@ -62,7 +78,7 @@ export function videoModelProblem(
 ) {
   const mode = params.mode ?? 'text'
   if (model.limits?.videoModes && !model.limits.videoModes.some((m) => m === mode))
-    return '当前模型不支持此视频生成模式，请更换模式或模型'
+    return `${model.title} 不支持「${VIDEO_MODE_LABELS[String(mode)] ?? String(mode)}」模式，请更换模式或模型`
   const refs = mode === 'reference'
   const total = counts.image + counts.video + counts.audio
   const media = model.limits?.referenceMedia
@@ -75,7 +91,11 @@ export function videoModelProblem(
     !counts.video
   )
     return '当前模型的音频参考需要搭配图片或视频'
-  const problem = videoReferenceProblem(prompt, refs ? counts : { image: 0, video: 0, audio: 0 })
+  const problem = videoReferenceProblem(
+    prompt,
+    refs ? counts : { image: 0, video: 0, audio: 0 },
+    model.id.startsWith('MiniMax-H3') ? 'minimax-video' : 'video',
+  )
   if (problem && !options.deferReferenceCounts) return problem
   if (
     model.id.startsWith('MiniMax-H3') &&
@@ -84,7 +104,10 @@ export function videoModelProblem(
   )
     return '文生视频和 H3-Lite 参考模式需要选择具体画幅'
   if (
-    (model.limits?.optionalVideoPrompt !== undefined || model.id.startsWith('MiniMax-H3')) &&
+    (mode === 'text' ||
+      total > 0 ||
+      model.limits?.optionalVideoPrompt !== undefined ||
+      model.id.startsWith('MiniMax-H3')) &&
     !prompt.trim() &&
     !(model.limits?.optionalVideoPrompt && total && mode !== 'text')
   )
