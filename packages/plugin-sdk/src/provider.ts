@@ -287,6 +287,8 @@ export interface ModelLimits {
   aspectRatios?: string[]
   /** 可选分辨率（平台自己的写法，如 `720p`、`2K`）；不声明时不显示分辨率，用平台默认 */
   resolutions?: string[]
+  /** 未选择分辨率时适配器实际提交的值；表单与实际输入预览据此显示 */
+  defaultResolution?: string
   /** 图片生成的组合限制；由表单、输入预览、执行器和适配器共同检查。 */
   image?: {
     resolutionsByAspectRatio?: Record<string, string[]>
@@ -333,7 +335,7 @@ export interface ModelLimits {
   audio?: boolean
 }
 
-export type ModelFeature = 'tools' | 'vision'
+export type ModelFeature = 'tools' | 'vision' | 'structured'
 
 export interface ModelSpec {
   /** 平台上的模型 id */
@@ -350,7 +352,7 @@ export interface ModelSpec {
    * 平台不公布时不填，模型名不等于不可变的版本
    */
   version?: string
-  /** 对话模型的额外特性：tools（工具调用，内置智能体要用）、vision（看图） */
+  /** 对话模型的额外特性：tools（工具调用，内置智能体要用）、vision（看图）、structured（结构化输出） */
   features?: ModelFeature[]
   /** 仅供内置 Agent 使用，不用于普通画布生成。 */
   agentOnly?: boolean
