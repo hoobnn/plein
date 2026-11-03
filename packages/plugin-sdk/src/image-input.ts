@@ -4,6 +4,11 @@ export interface ImageParams {
   count?: unknown
   resolution?: unknown
   aspectRatio?: unknown
+  /** 自定义宽高；成对出现，适配器会换算成平台尺寸 */
+  width?: unknown
+  height?: unknown
+  negativePrompt?: unknown
+  seed?: unknown
   options?: Record<string, unknown>
 }
 
@@ -100,6 +105,13 @@ export function imageModelProblem(model: ModelInfo, params: ImageParams, referen
     return `${model.title} 参考图与生成图片合计最多 ${limits.image.maxTotalImages} 张`
   if (limits.count && Number(count) > limits.count.max)
     return `${model.title} 一次最多生成 ${limits.count.max} 张`
+  const negative = negativePromptValue(params)
+  if (limits.negativePrompt === false && negative)
+    return `${model.title} 不支持反向提示词，请把内容合并到提示词里`
+  const seedProblem = seedRangeProblem(limits.seed, params.seed, model.title)
+  if (seedProblem) return seedProblem
+  const custom = customSizeProblem(model, params)
+  if (custom) return custom
   const explicitSize = limits.image?.size && params.options?.size
   if (
     !explicitSize &&
@@ -147,6 +159,92 @@ export function imageModelProblem(model: ModelInfo, params: ImageParams, referen
       width / height > rules.maxRatio
     )
       return `${model.title} 自定义尺寸须在 ${rules.minPixels}–${maxPixels} 像素（宽×高）之间、宽高比 ${ratioLabel(rules.minRatio)}–${ratioLabel(rules.maxRatio)}，现在是 ${width}*${height}`
+  }
+  return null
+}
+
+/** 反向提示词的取值：模型参数本身，或专属参数里的同名项 */
+function negativePromptValue(params: ImageParams) {
+  for (const value of [
+    params.negativePrompt,
+    params.options?.negative_prompt,
+    params.options?.negativePrompt,
+  ])
+    if (typeof value === 'string' && value.trim()) return value
+  return undefined
+}
+
+/** 种子范围：声明范围时只接受范围内的整数 */
+function seedRangeProblem(
+  range: boolean | { min: number; max: number } | undefined,
+  value: unknown,
+  title: string,
+) {
+  if (!range || typeof range === 'boolean' || typeof value !== 'number') return null
+  if (Number.isInteger(value) && value >= range.min && value <= range.max) return null
+  return `${title} 的种子须为 ${range.min}–${range.max} 的整数，现在是 ${value}`
+}
+
+/** 自定义宽高：声明了范围或明确不支持时，运行前就能说清有没有问题 */
+function customSizeProblem(model: ModelInfo, params: ImageParams) {
+  const rules = model.limits?.customSize
+  if (rules === undefined) return null
+  const { width, height } = params
+  if (width === undefined && height === undefined) return null
+  if ((width === undefined) !== (height === undefined))
+    return `${model.title} 的自定义宽高须一起填写`
+  const w = Number(width)
+  const h = Number(height)
+  if (!Number.isInteger(w) || !Number.isInteger(h) || w < 1 || h < 1)
+    return `${model.title} 的自定义宽高须为正整数，现在是 ${String(width)}×${String(height)}`
+  if (rules === false) return `${model.title} 不支持自定义宽高，请改用画幅和分辨率`
+  const multiple = rules.multiple
+  const step = multiple ? `且为 ${multiple} 的倍数` : ''
+  if (
+    w < rules.min ||
+    w > rules.max ||
+    h < rules.min ||
+    h > rules.max ||
+    (multiple !== undefined && (w % multiple !== 0 || h % multiple !== 0))
+  )
+    return `${model.title} 的自定义宽高须为 ${rules.min}–${rules.max} 像素${step}，现在是 ${w}×${h}`
+  return null
+}
+
+/** 精修各边的说法 */
+const EXPANSION_LABELS = { top: '向上', bottom: '向下', left: '向左', right: '向右' } as const
+
+/**
+ * 图片精修（image.process）的范围预检：放大倍数、扩图各边比例。
+ * 只看模型声明与节点参数，不读素材；返回第一条问题。
+ */
+export function imageProcessProblem(
+  model: ModelInfo,
+  params: Record<string, unknown>,
+): string | null {
+  const limits = model.limits
+  if (!limits) return null
+  const operation = params.operation
+  if (limits.imageOperations && !limits.imageOperations.includes(operation as never))
+    return `${model.title} 不支持这项精修操作，请更换模型`
+  const rules = limits.process
+  if (!rules) return null
+  if (operation === 'upscale') {
+    if (rules.scale === false) return `${model.title} 不支持 AI 高清放大，请更换操作或模型`
+    const scale = rules.scale
+    const value = params.scale
+    if (scale && typeof value === 'number' && (value < scale.min || value > scale.max))
+      return `${model.title} 放大倍数须为 ${scale.min}–${scale.max}，现在是 ${value}`
+  }
+  if (operation === 'outpaint') {
+    if (rules.expansion === false) return `${model.title} 不支持扩图，请更换操作或模型`
+    const expansion = rules.expansion
+    if (expansion)
+      for (const side of ['top', 'bottom', 'left', 'right'] as const) {
+        const value = params[side]
+        if (typeof value === 'number' && (value < expansion.min || value > expansion.max))
+          return `${model.title} 扩图${EXPANSION_LABELS[side]}比例须为 ${expansion.min}–${expansion.max}，现在是 ${value}`
+      }
   }
   return null
 }

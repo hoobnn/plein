@@ -312,8 +312,32 @@ export interface ModelLimits {
   duration?: { min: number; max: number } | false
   /** 一次最多生成几张 */
   count?: { max: number }
-  /** false 表示不支持种子，表单隐藏，宿主也不会传给 Provider */
-  seed?: boolean
+  /**
+   * 种子：false 表示不支持，表单隐藏，宿主也不会传给 Provider；
+   * 声明范围时只接受范围内的整数（如百炼图片的 0–2147483647）。
+   */
+  seed?: boolean | { min: number; max: number }
+  /**
+   * 图片精修（image.process）的取值范围。scale 是放大倍数，expansion 是扩图各边的比例；
+   * false 表示不支持这项操作（表单隐藏，适配器提交前也拒绝）。不声明时按节点自己的范围处理。
+   */
+  process?: {
+    scale?: { min: number; max: number } | false
+    expansion?: { min: number; max: number } | false
+  }
+  /**
+   * 自定义宽高（`image.generate` 的 width / height）的范围：像素含端点，multiple 是步长
+   * （如 8 表示宽高都须是 8 的倍数）；false 表示不支持自定义宽高，表单隐藏。
+   * 不声明表示不按它限制，由平台或适配器自己换算。
+   */
+  customSize?: { min: number; max: number; multiple?: number } | false
+  /**
+   * 反向提示词：false 表示平台不支持，表单隐藏，宿主不传；
+   * 有值时预检说明怎么办（拒绝的模型给 blocked，忽略的模型给 notice）。
+   */
+  negativePrompt?: false
+  /** 视频输出格式（如 `mp4`、`mov`）；不声明表示不限，表单只给声明的值 */
+  outputFormats?: string[]
   /** 参考图最多几张 */
   references?: { max: number }
   /** Supported reference media for video generation; absent means images only. */
