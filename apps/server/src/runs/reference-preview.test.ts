@@ -17,7 +17,7 @@ const detail = (over: Partial<InputRef> & Pick<InputRef, 'name' | 'kind'>): Inpu
 
 const preview = (details: InputRef[], referenceMediaLimits?: { video: number; audio: number }) => {
   const doc = createDoc(undefined, { schedule: () => {} })
-  const el = createElement(doc, {
+  const elId = createElement(doc, {
     kind: 'node',
     nodeType: 'plein/video',
     params: { prompt: '', mode: 'reference' },
@@ -26,6 +26,8 @@ const preview = (details: InputRef[], referenceMediaLimits?: { video: number; au
     w: 10,
     h: 10,
   })
+  // createElement 返回的是 id，预览要的是真正的元素
+  const el = doc.get(elId)!
   return referencePreview({
     doc,
     el,
