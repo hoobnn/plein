@@ -331,6 +331,7 @@ export const bailianProvider = defineProvider({
         resolutions: ['1K', '2K'],
         count: { max: 6 },
         references: { max: 3 },
+        seed: { min: 0, max: 2147483647 },
         image: {
           referenceForbiddenOptions: { prompt_extend_mode: ['agent'] },
           resolutionRequiresAspectRatio: true,
@@ -374,6 +375,7 @@ export const bailianProvider = defineProvider({
         resolutions: ['1K', '2K', '4K'],
         count: { max: 4 },
         references: { max: 9 },
+        seed: { min: 0, max: 2147483647 },
         promptMaxLength: 5000,
         image: {
           referenceResolutions: ['1K', '2K'],
@@ -421,6 +423,8 @@ export const bailianProvider = defineProvider({
         // 精修（image.process）提示词上限 800 字；同一模型的局部重绘共用此上限
         promptMaxLength: 800,
         imageOperations: ['upscale' as const, 'outpaint' as const],
+        // 精修的运行期上限：AI 放大 1–4 倍，扩图各边 1–2 倍
+        process: { scale: { min: 1, max: 4 }, expansion: { min: 1, max: 2 } },
         media: WAN_PROCESS_MEDIA,
       },
     },
@@ -601,12 +605,17 @@ export const bailianProvider = defineProvider({
           throw new ProviderError('invalid_input', '自定义尺寸格式无效')
         if (typeof size === 'string') size = size.replace('x', '*')
         if (size === 'auto') size = undefined
+        // 种子范围以模型声明为准，宿主在运行前读的是同一份声明
         const seed = input.seed ?? extra.seed
-        if (
-          seed !== undefined &&
-          (!Number.isInteger(seed) || Number(seed) < 0 || Number(seed) > 2147483647)
-        )
-          throw new ProviderError('invalid_input', '百炼图片 seed 须为 0–2147483647 的整数')
+        if (seed !== undefined) {
+          const range = typeof spec.limits?.seed === 'object' ? spec.limits.seed : undefined
+          if (!range) throw new ProviderError('invalid_input', '所选百炼图片模型不支持 seed')
+          if (!Number.isInteger(seed) || Number(seed) < range.min || Number(seed) > range.max)
+            throw new ProviderError(
+              'invalid_input',
+              `百炼图片 seed 须为 ${range.min}–${range.max} 的整数`,
+            )
+        }
         const content: Json[] = [{ text: input.prompt }]
         for (const ref of input.references ?? []) content.push({ image: await inline(ref, ctx) })
         const data = await request(ctx, generation, {
@@ -637,17 +646,28 @@ export const bailianProvider = defineProvider({
           throw new ProviderError('invalid_input', '万相精修需要图片原图')
         if (input.prompt && input.prompt.length > 800)
           throw new ProviderError('invalid_input', '万相精修提示词不能超过 800 字')
+        // 精修的取值范围以模型声明为准，宿主在运行前读的是同一份声明
+        const spec = bailianProvider.models.find((m) => m.id === req.model)
+        const rules = spec?.limits?.process
         const parameters: Record<string, unknown> = { n: 1 }
         if (input.operation === 'upscale') {
           const factor = input.scale ?? 2
-          if (!Number.isFinite(factor) || factor < 1 || factor > 4)
-            throw new ProviderError('invalid_input', 'AI 放大倍数须为 1–4')
+          const range = rules?.scale
+          if (!range) throw new ProviderError('invalid_input', '所选模型不支持 AI 放大')
+          if (!Number.isFinite(factor) || factor < range.min || factor > range.max)
+            throw new ProviderError('invalid_input', `AI 放大倍数须为 ${range.min}–${range.max}`)
           parameters.upscale_factor = factor
         } else {
           const expansion = input.expansion ?? { top: 1, bottom: 1, left: 1.5, right: 1.5 }
+          const range = rules?.expansion
+          if (!range) throw new ProviderError('invalid_input', '所选模型不支持扩图')
           for (const side of ['top', 'bottom', 'left', 'right'] as const) {
-            if (!Number.isFinite(expansion[side]) || expansion[side] < 1 || expansion[side] > 2)
-              throw new ProviderError('invalid_input', '扩图比例须为 1–2')
+            if (
+              !Number.isFinite(expansion[side]) ||
+              expansion[side] < range.min ||
+              expansion[side] > range.max
+            )
+              throw new ProviderError('invalid_input', `扩图比例须为 ${range.min}–${range.max}`)
             parameters[side + '_scale'] = expansion[side]
           }
         }
@@ -655,7 +675,6 @@ export const bailianProvider = defineProvider({
         if (!source.data.length)
           throw new ProviderError('invalid_input', '万相精修原图不能是空文件')
         // 原图的格式要求以模型声明为准，宿主在运行前读的是同一份声明
-        const spec = bailianProvider.models.find((m) => m.id === req.model)
         const problems = mediaRequirementProblems(
           spec?.limits?.media?.process,
           {

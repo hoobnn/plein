@@ -284,6 +284,7 @@ const models: ModelSpec[] = [
       count: { max: 1 },
       references: { max: 10 },
       seed: false,
+      negativePrompt: false,
       image: {
         size: {
           minPixels: 921600,
@@ -309,6 +310,7 @@ const models: ModelSpec[] = [
       count: { max: 1 },
       references: { max: 10 },
       seed: false,
+      negativePrompt: false,
       image: {
         size: {
           minPixels: 921600,
@@ -336,6 +338,7 @@ const models: ModelSpec[] = [
       references: { max: 14 },
       count: { max: 15 },
       seed: false,
+      negativePrompt: false,
       image: {
         maxTotalImages: 15,
         size: {
@@ -359,6 +362,8 @@ const models: ModelSpec[] = [
       defaultResolution: '720p',
       duration: { min: 4, max: 30 },
       seed: false,
+      // 只有 Seedance 2.5 支持 MOV 输出
+      outputFormats: ['mp4', 'mov'],
       references: { max: 30 },
       referenceMedia: { video: 10, audio: 10, audioOnly: true },
       optionalVideoPrompt: true,
@@ -381,6 +386,7 @@ const models: ModelSpec[] = [
       defaultResolution: '720p',
       duration: { min: 4, max: 15 },
       seed: false,
+      outputFormats: ['mp4'],
       references: { max: 9 },
       referenceMedia: { video: 3, audio: 3, audioOnly: false },
       optionalVideoPrompt: true,
@@ -399,6 +405,7 @@ const models: ModelSpec[] = [
       defaultResolution: '720p',
       duration: { min: 4, max: 15 },
       seed: false,
+      outputFormats: ['mp4'],
       references: { max: 9 },
       referenceMedia: { video: 3, audio: 3, audioOnly: false },
       optionalVideoPrompt: true,
@@ -417,6 +424,7 @@ const models: ModelSpec[] = [
       defaultResolution: '720p',
       duration: { min: 4, max: 15 },
       seed: false,
+      outputFormats: ['mp4'],
       references: { max: 9 },
       referenceMedia: { video: 3, audio: 3, audioOnly: false },
       optionalVideoPrompt: true,
@@ -905,10 +913,12 @@ async function video(
   if (body.draft && plane === 'plan') invalid('Agent Plan 不支持 Seedance 草稿模式')
   if (body.draft && (!v25 || body.resolution !== '480p'))
     invalid('draft 仅支持 Seedance 2.5 的 480p 输出')
+  // 输出格式以模型声明为准，宿主在运行前读的是同一份声明
+  const outputFormats = spec?.limits?.outputFormats
   if (
     body.output_format !== undefined &&
     (!['mp4', 'mov'].includes(String(body.output_format)) ||
-      (current && body.output_format === 'mov' && !v25))
+      (outputFormats && !outputFormats.includes(String(body.output_format))))
   )
     invalid('所选 Seedance 模型不支持该 output_format')
   const counts = { image: 0, video: 0, audio: 0 }

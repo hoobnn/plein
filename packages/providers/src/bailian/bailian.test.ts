@@ -574,3 +574,45 @@ it('目录声明语音与精修的文本长度上限，与适配器的运行期�
   expect(limit('qwen3-tts-instruct-flash')).toBe(600)
   expect(limit('wanx2.1-imageedit')).toBe(800)
 })
+
+describe('百炼图片 seed 范围', () => {
+  const reply = {
+    output: {
+      choices: [
+        {
+          message: {
+            content: [{ image: 'https://dashscope-result-sz.oss-cn-shenzhen.aliyuncs.com/a.png' }],
+          },
+        },
+      ],
+    },
+  }
+
+  it('超出声明范围时联网前拒绝，范围内照常提交', async () => {
+    const bad = setup([])
+    await expect(
+      bailianProvider.submit(
+        {
+          capability: 'image.generate',
+          model: 'qwen-image-3.0-pro',
+          input: { prompt: 'cat', seed: -1 },
+        },
+        bad.ctx,
+      ),
+    ).rejects.toMatchObject({
+      code: 'invalid_input',
+      message: '百炼图片 seed 须为 0–2147483647 的整数',
+    })
+    expect(bad.fetch).not.toHaveBeenCalled()
+    const ok = setup([reply])
+    await bailianProvider.submit(
+      {
+        capability: 'image.generate',
+        model: 'qwen-image-3.0-pro',
+        input: { prompt: 'cat', seed: 42 },
+      },
+      ok.ctx,
+    )
+    expect(ok.body().parameters.seed).toBe(42)
+  })
+})

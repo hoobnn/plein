@@ -305,6 +305,9 @@ export const minimaxProvider = defineProvider({
         image: { resolutionsByAspectRatio: { '21:9': ['2K'] } },
         count: { max: 9 },
         references: { max: 1 },
+        // 自定义宽高须为 512–2048 且是 8 的倍数；图生图只接受一张人物参考图
+        customSize: { min: 512, max: 2048, multiple: 8 },
+        negativePrompt: false,
         promptMaxLength: 1500,
       },
     },
@@ -318,6 +321,9 @@ export const minimaxProvider = defineProvider({
         aspectRatios: ['16:9', '3:2', '4:3', '1:1', '3:4', '2:3', '9:16'],
         count: { max: 9 },
         references: { max: 1 },
+        // 画风模型只按画幅生成，不支持自定义宽高
+        customSize: false,
+        negativePrompt: false,
         promptMaxLength: 1500,
       },
     },
@@ -498,12 +504,16 @@ export const minimaxProvider = defineProvider({
         required(input.prompt, 1500, '图片提示词')
         if ((input.references?.length ?? 0) > 1)
           throw new ProviderError('invalid_input', 'MiniMax 图片仅支持一张人物参考图')
-        if (input.negativePrompt)
-          throw new ProviderError('invalid_input', 'MiniMax 图片不支持 negativePrompt')
         const n = input.count ?? 1
         if (!Number.isInteger(n) || n < 1 || n > 9)
           throw new ProviderError('invalid_input', 'MiniMax 图片数量须为 1–9')
+        // 反向提示词与自定义宽高以模型声明为准，宿主在运行前读的是同一份声明
         const spec = minimaxProvider.models.find((m) => m.id === req.model)!
+        if (spec.limits?.negativePrompt === false && input.negativePrompt)
+          throw new ProviderError(
+            'invalid_input',
+            `${spec.title} 不支持反向提示词，请把内容合并到提示词里`,
+          )
         const issue = imageModelProblem(
           spec,
           {
@@ -532,17 +542,27 @@ export const minimaxProvider = defineProvider({
         }
         if ((width === undefined) !== (height === undefined))
           throw new ProviderError('invalid_input', '图片宽高须一起填写')
-        if (
-          width !== undefined &&
-          (req.model !== 'image-01' ||
+        const customSize = spec.limits?.customSize
+        if (width !== undefined && height !== undefined) {
+          if (!customSize)
+            throw new ProviderError('invalid_input', `${spec.title} 不支持自定义宽高`)
+          if (
             ![width, height].every(
-              (n) => Number.isInteger(n) && n! >= 512 && n! <= 2048 && n! % 8 === 0,
-            ))
-        )
-          throw new ProviderError(
-            'invalid_input',
-            'image-01 宽高须为 512–2048 且为 8 的倍数；live 不支持自定义尺寸',
-          )
+              (n) =>
+                Number.isInteger(n) &&
+                n >= customSize.min &&
+                n <= customSize.max &&
+                (customSize.multiple === undefined || n % customSize.multiple === 0),
+            )
+          ) {
+            const step =
+              customSize.multiple === undefined ? '' : ` 且为 ${customSize.multiple} 的倍数`
+            throw new ProviderError(
+              'invalid_input',
+              `${spec.title} 宽高须为 ${customSize.min}–${customSize.max}${step}`,
+            )
+          }
+        }
         const result = await request(ctx, '/v1/image_generation', {
           model: req.model,
           prompt: input.prompt,

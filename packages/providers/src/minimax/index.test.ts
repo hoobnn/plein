@@ -557,3 +557,54 @@ it('目录声明图片、语音与音乐的文本长度上限', () => {
   expect(limit('speech-2.8-turbo')).toBe(9999)
   expect(limit('music-3.0')).toBe(2000)
 })
+
+describe('MiniMax 图片的声明约束', () => {
+  it('自定义宽高按声明在联网前拒绝，live 不接受自定义宽高', async () => {
+    const { ctx, fetch } = setup([])
+    await expect(
+      minimaxProvider.submit(
+        {
+          capability: 'image.generate',
+          model: 'image-01',
+          input: { prompt: '猫', width: 500, height: 512 },
+        },
+        ctx,
+      ),
+    ).rejects.toMatchObject({
+      code: 'invalid_input',
+      message: 'image-01 的自定义宽高须为 512–2048 像素且为 8 的倍数，现在是 500×512',
+    })
+    await expect(
+      minimaxProvider.submit(
+        {
+          capability: 'image.generate',
+          model: 'image-01-live',
+          input: { prompt: '猫', width: 1024, height: 1024 },
+        },
+        ctx,
+      ),
+    ).rejects.toMatchObject({
+      code: 'invalid_input',
+      message: 'image-01-live 不支持自定义宽高，请改用画幅和分辨率',
+    })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('反向提示词按声明拒绝，不联网', async () => {
+    const { ctx, fetch } = setup([])
+    await expect(
+      minimaxProvider.submit(
+        {
+          capability: 'image.generate',
+          model: 'image-01',
+          input: { prompt: '猫', negativePrompt: '不要文字' },
+        },
+        ctx,
+      ),
+    ).rejects.toMatchObject({
+      code: 'invalid_input',
+      message: 'image-01 不支持反向提示词，请把内容合并到提示词里',
+    })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+})

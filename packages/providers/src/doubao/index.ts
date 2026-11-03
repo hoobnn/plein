@@ -4,6 +4,8 @@ import {
   definePlugin,
   defineProvider,
   defineServerPlugin,
+  mediaRequirementProblems,
+  type MediaRequirement,
   PLUGIN_API_VERSION,
   type ProviderContext,
   type VoicePreset,
@@ -331,6 +333,22 @@ const CLONE_FORMATS: Record<string, string> = {
   'audio/aac': 'aac',
 }
 
+/** 复刻样本的要求：格式与单个文件大小；平台建议 14–30 秒，短音频也接受 */
+const CLONE_SAMPLE: MediaRequirement = {
+  mime: [
+    'audio/wav',
+    'audio/x-wav',
+    'audio/wave',
+    'audio/mpeg',
+    'audio/mp3',
+    'audio/ogg',
+    'audio/mp4',
+    'audio/x-m4a',
+    'audio/aac',
+  ],
+  maxMB: 10,
+}
+
 /** 复刻接口的响应：HTTP 200 也可能在 code / message 里带错误 */
 function cloneBody(raw: string, ctx: Context): Json {
   let body: Json
@@ -475,7 +493,28 @@ export const doubaoProvider = defineProvider({
         promptMaxLength: 2971,
       },
     },
-    { id: 'bigmodel', title: '录音文件识别极速版', capabilities: ['audio.transcribe'] },
+    {
+      id: 'bigmodel',
+      title: '录音文件识别极速版',
+      capabilities: ['audio.transcribe'],
+      // 识别音频 1 字节至 100 MB，平台只认这几种格式
+      limits: {
+        media: {
+          audio: {
+            mime: [
+              'audio/mpeg',
+              'audio/mp3',
+              'audio/wav',
+              'audio/x-wav',
+              'audio/ogg',
+              'audio/flac',
+              'audio/mp4',
+            ],
+            maxMB: 100,
+          },
+        },
+      },
+    },
   ],
   async test(ctx) {
     headers(ctx)
@@ -515,8 +554,15 @@ export const doubaoProvider = defineProvider({
     if (req.capability === 'audio.transcribe') {
       const input = req.input as CapabilityInput<'audio.transcribe'>
       const asset = await ctx.files.read(input.audio)
-      if (!asset.data.length || asset.data.length > 100 * 1024 * 1024)
+      if (!asset.data.length)
         throw new ProviderError('invalid_input', '识别音频须为 1 字节至 100 MB')
+      // 格式与大小以模型声明为准，宿主在运行前读的是同一份声明
+      const problems = mediaRequirementProblems(
+        supported.limits?.media?.audio,
+        { mime: asset.mime, size: asset.data.length },
+        { title: supported.title, label: '识别音频', strict: true },
+      )
+      if (problems.length) throw new ProviderError('invalid_input', problems[0]!)
       const format = (
         {
           'audio/mpeg': 'mp3',
@@ -592,6 +638,7 @@ export const doubaoProvider = defineProvider({
     voiceId: 'slot',
     customId: true,
     hint: '先在火山引擎控制台开通声音复刻，填分配的 S_ 音色 ID。样本建议 14–30 秒以改善效果，短音频可提交，由平台判定；单人清晰、无背景音乐，WAV / MP3 / OGG / M4A / AAC，10 MB 以内；预付费槽位消耗训练次数；后付费自定义音色首次正式合成会转正计费，转正后不可再复刻，未合成的音色 7 天后删除',
+    sample: CLONE_SAMPLE,
     async clone(
       {
         voiceId,
@@ -614,11 +661,17 @@ export const doubaoProvider = defineProvider({
           '请填写有效的音色槽位 ID 或符合官方规则的自定义音色 ID',
         )
       const asset = await ctx.files.read(sample)
+      if (!asset.data.length) throw new ProviderError('invalid_input', '复刻样本不能是空文件')
+      // 格式与大小以样本声明为准，宿主能在运行前读到资产记录时读同一份声明
+      const problems = mediaRequirementProblems(
+        CLONE_SAMPLE,
+        { mime: asset.mime, size: asset.data.length },
+        { title: '豆包声音复刻', label: '复刻样本', strict: true },
+      )
+      if (problems.length) throw new ProviderError('invalid_input', problems[0]!)
       const format = CLONE_FORMATS[asset.mime.toLowerCase()]
       if (!format)
         throw new ProviderError('invalid_input', '复刻样本须为 WAV、MP3、OGG、M4A 或 AAC 音频')
-      if (!asset.data.length || asset.data.length > 10 * 1024 * 1024)
-        throw new ProviderError('invalid_input', '复刻样本须在 10 MB 以内')
       const response = await post(ctx, '/api/v3/tts/voice_clone', {
         speaker_id: idMode === 'custom' ? 'custom_speaker_id' : voiceId,
         ...(idMode === 'custom' ? { custom_speaker_id: voiceId } : {}),

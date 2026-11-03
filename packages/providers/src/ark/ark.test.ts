@@ -839,3 +839,47 @@ describe('Agent Plan 套餐（volc/ark-plan）', () => {
     )
   })
 })
+
+describe('Seedance 输出格式与 Seedream 反向提示词', () => {
+  it('Seedance 2.0 拒绝 MOV 输出，2.5 接受', async () => {
+    const { ctx, fetch } = harness([])
+    await expect(
+      arkProvider.submit(
+        {
+          capability: 'video.generate',
+          model: 'doubao-seedance-2-0-260128',
+          input: { prompt: '海边', extra: { output_format: 'mov' } },
+        },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_input' })
+    expect(fetch).not.toHaveBeenCalled()
+    const ok = harness([{ id: 'task-1' }])
+    await expect(
+      arkProvider.submit(
+        {
+          capability: 'video.generate',
+          model: VIDEO,
+          input: { prompt: '海边', extra: { output_format: 'mov' } },
+        },
+        ok.ctx,
+      ),
+    ).resolves.toMatchObject({ state: 'pending', remoteId: 'task-1' })
+    expect(ok.body().output_format).toBe('mov')
+  })
+
+  it('Seedream 拒绝独立的反向提示词，不联网', async () => {
+    const { ctx, fetch } = harness([])
+    await expect(
+      arkProvider.submit(
+        {
+          capability: 'image.generate',
+          model: IMAGE,
+          input: { prompt: '苹果', negativePrompt: '不要文字' },
+        },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_input' })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+})

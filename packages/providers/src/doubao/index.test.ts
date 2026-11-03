@@ -625,3 +625,45 @@ it('目录声明语音与 Seed Audio 的有效文本长度上限', () => {
   // 适配器会在描述前拼类型与目标时长（小数保留 1 位），声明值已扣掉最长 29 字前缀
   expect(limit('seed-audio-1.0')).toBe(2971)
 })
+
+describe('豆包媒体声明的运行前约束', () => {
+  it('识别音频超过声明的 100 MB 时在联网前拒绝', async () => {
+    const ctx = context()
+    vi.mocked(ctx.files.read).mockResolvedValue({
+      data: { length: 120 * 1024 * 1024 } as Uint8Array,
+      mime: 'audio/wav',
+    })
+    await expect(
+      doubaoProvider.submit(
+        {
+          capability: 'audio.transcribe',
+          model: 'bigmodel',
+          input: { audio: { assetId: 'big', kind: 'audio' } },
+        },
+        ctx,
+      ),
+    ).rejects.toMatchObject({
+      code: 'invalid_input',
+      message: '识别音频大小 120 MB，超过 录音文件识别极速版 的 100 MB 上限，请压缩后再运行',
+    })
+    expect(ctx.fetch).not.toHaveBeenCalled()
+  })
+
+  it('复刻样本超过声明的 10 MB 时在联网前拒绝', async () => {
+    const ctx = context()
+    vi.mocked(ctx.files.read).mockResolvedValue({
+      data: { length: 11 * 1024 * 1024 } as Uint8Array,
+      mime: 'audio/wav',
+    })
+    await expect(
+      doubaoProvider.voiceClone!.clone(
+        { voiceId: 'S_abc', sample: { assetId: 'big', kind: 'audio' } },
+        ctx,
+      ),
+    ).rejects.toMatchObject({
+      code: 'invalid_input',
+      message: '复刻样本大小 11 MB，超过 豆包声音复刻 的 10 MB 上限，请压缩后再运行',
+    })
+    expect(ctx.fetch).not.toHaveBeenCalled()
+  })
+})
