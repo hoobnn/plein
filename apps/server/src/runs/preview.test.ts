@@ -156,6 +156,31 @@ it('分辨率按实际模型提前校验，修正后的预览和提交一致', a
   expect(submit.mock.calls[0]![0].input).toMatchObject({ resolution: '1080p' })
 }, 30_000)
 
+it('时长超出模型上限时在准备阶段阻断，不把越界值送给平台', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  // mock 视频模型临时声明最长 15 秒
+  const model = mockProvider.models.find((m) => m.id === 'video')!
+  const before = model.limits
+  model.limits = { ...before, duration: { min: 2, max: 15 } }
+  try {
+    const n = addNode(doc, 'plein/video', {
+      params: { model: 'plein/mock:video', prompt: '推门', duration: 30 },
+    })
+    const blocked = await preview(server, id, n)
+    expect(blocked.status).toBe('blocked')
+    expect(blocked.blocked).toContainEqual({
+      code: 'prepare_failed',
+      message: 'Mock 视频 的时长须为 2–15 秒，现在是 30 秒',
+    })
+    setParams(doc, n, { duration: 10 })
+    expect((await preview(server, id, n)).status).toBe('ready')
+  } finally {
+    model.limits = before
+  }
+})
+
 it('专属参数只校验所选模型，不把字符串 false 当成布尔值或自动修改原值', async () => {
   const { server } = await bootServer()
   mockSettings(server, {})
