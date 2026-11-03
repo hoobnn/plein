@@ -62,7 +62,7 @@ const RANGED = { duration: '秒', speed: '倍' } as const
 type Ranged = keyof typeof RANGED
 const isRanged = (k: string): k is Ranged => k in RANGED
 /** 模型可以声明为不支持（false）的参数 */
-const TOGGLED = ['seed', 'duration', 'speed', 'instruction', 'audio'] as const
+const TOGGLED = ['seed', 'duration', 'speed', 'instruction', 'temperature', 'audio'] as const
 const unsupported = (k: string, limits: ModelLimits) =>
   (TOGGLED as readonly string[]).includes(k) && limits[k as (typeof TOGGLED)[number]] === false
 const rangeOf = (k: Ranged, limits: ModelLimits) => {
@@ -213,6 +213,14 @@ export function adaptToModel(
       // 模型不支持调节语速：表单已隐藏该字段，旧值要恢复默认，否则执行器会照传给平台
       patch[k] = 1
       notes.push(`语速已恢复默认（${name} 不支持调节语速）`)
+    } else if (
+      k === 'temperature' &&
+      limits.temperature === false &&
+      typeof v === 'number' &&
+      v !== (typeof f.default === 'number' ? f.default : 1)
+    ) {
+      // 推理模型不吃温度采样：表单已隐藏，值留着不传（换回支持的模型时还在），只在换过来时说一声
+      notes.push(`${name} 不支持调节温度，已忽略`)
     } else if (isRanged(k) && typeof v === 'number' && rangeOf(k, limits)) {
       const r = rangeOf(k, limits)!
       const n = clamp(v, r.min, r.max)

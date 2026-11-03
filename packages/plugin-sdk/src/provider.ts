@@ -327,6 +327,8 @@ export interface ModelLimits {
   speed?: { min: number; max: number } | false
   /** false 表示不支持自然语言语气指令，表单隐藏，宿主不传 */
   instruction?: boolean
+  /** false 表示不支持调温，表单隐藏，宿主不传 */
+  temperature?: false
   /** false 表示视频不能选择是否生成音频，表单隐藏，宿主不传 */
   audio?: boolean
 }

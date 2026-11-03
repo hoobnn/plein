@@ -85,6 +85,12 @@ describe('OpenAI 官方平台', () => {
     })
     expect(openaiProvider.remoteModelsScope).toEqual([])
   })
+  it('对话模型声明不支持调温，让宿主在运行前就隐藏并说明', () => {
+    for (const spec of openaiProvider.models)
+      if (spec.capabilities.includes('text.chat')) expect(spec.limits?.temperature).toBe(false)
+    for (const spec of openaiProvider.models)
+      if (!spec.capabilities.includes('text.chat')) expect(spec.limits?.temperature).toBeUndefined()
+  })
   it('连接检查只读模型列表，目录外模型不假定可对话', async () => {
     const f = fakeContext(openaiProvider, [{ data: [{ id: 'whisper-1' }, { id: 'gpt-6.1-sol' }] }])
     expect(await openaiProvider.listRemoteModels!(f.ctx)).toEqual([

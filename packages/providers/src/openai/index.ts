@@ -38,11 +38,13 @@ const imageOptions = z.object({
   output_format: z.enum(['png', 'jpeg', 'webp']).optional().meta({ title: '输出格式' }),
 })
 const models: ModelSpec[] = [
+  // 推理模型不支持普通温度采样：声明 temperature: false，表单隐藏温度、执行时不发送
   ...['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6.1-terra', 'gpt-6-luna'].map((id): ModelSpec => ({
     id,
     title: id,
     capabilities: ['text.chat'],
     features: ['vision', 'tools'],
+    limits: { temperature: false },
     options: z.object({
       reasoning_effort: z.enum(['low', 'medium', 'high']).optional().meta({ title: '思考强度' }),
     }),

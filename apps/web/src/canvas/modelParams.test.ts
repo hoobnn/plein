@@ -303,6 +303,39 @@ it('最终素材编号交给服务端校验，避免误拦由角色软引用补�
   expect(modelProblem(node, params, m, new Map([['images', [{} as Upstream]]]))).toBeNull()
 })
 
+describe('对话模型温度', () => {
+  const llm = {
+    type: 'plein/llm',
+    capability: 'text.chat',
+    defaults: { model: '', temperature: 0.7 },
+    paramsSchema: {
+      properties: {
+        model: { type: 'string', widget: 'model' },
+        temperature: { type: 'number', minimum: 0, maximum: 2, title: '温度', default: 0.7 },
+      },
+    },
+  } as unknown as NodeInfo
+
+  it('推理模型不支持调温：表单隐藏温度，换过来时说明已忽略', () => {
+    const fields = Object.fromEntries(constrainFields(llm, fieldsOf(llm), { temperature: false }))
+    expect(fields.temperature).toBeUndefined()
+    const m: SelectedModel['info'] = {
+      ref: 'openai/api:gpt-6-astra',
+      id: 'gpt-6-astra',
+      title: 'gpt-6-astra',
+      capabilities: ['text.chat'],
+      limits: { temperature: false },
+    }
+    // 值保留不恢复默认：换回支持调温的模型时还在
+    expect(adaptToModel(llm, { temperature: 1.2 }, m)).toEqual({
+      patch: {},
+      notes: ['gpt-6-astra 不支持调节温度，已忽略'],
+    })
+    // 本来就是默认温度就没有可忽略的取值
+    expect(adaptToModel(llm, {}, m)).toEqual({ patch: {}, notes: [] })
+  })
+})
+
 describe('参考视频 / 音频的上限提示按类型区分', () => {
   const videoModel = (referenceMedia?: {
     video: number
