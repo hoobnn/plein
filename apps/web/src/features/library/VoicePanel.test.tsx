@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import type { Catalog } from '@plein/protocol'
 import { expect, it } from 'vite-plus/test'
 import { mockFetch } from '../../testing/fetch'
 import { fireEvent, renderApp, resetStoreAfterEach, screen, waitFor } from '../../testing/render'
