@@ -112,6 +112,52 @@ describe('配音参数', () => {
     expect(patch).toEqual({ speed: 2 })
     expect(notes[0]).toBe('语速已从 3 倍改为 2 倍（X 支持 0.5–2 倍）')
   })
+
+  it('模型不支持语速时把旧语速恢复为默认并说明', () => {
+    const m: SelectedModel['info'] = {
+      ref: 'p:x',
+      id: 'x',
+      title: 'X',
+      capabilities: ['audio.speech'],
+      limits: { speed: false },
+    }
+    const { patch, notes } = adaptToModel(speech, { speed: 1.5 }, m)
+    expect(patch).toEqual({ speed: 1 })
+    expect(notes).toEqual(['语速已恢复默认（X 不支持调节语速）'])
+    // 已经是默认语速就不动
+    expect(adaptToModel(speech, { speed: 1 }, m)).toEqual({ patch: {}, notes: [] })
+    // 提交前同样提示
+    expect(modelProblem(speech, { speed: 1.5 }, m, new Map())).toBe(
+      'X 不支持调节语速，请把语速恢复为 1',
+    )
+    expect(modelProblem(speech, { speed: 1 }, m, new Map())).toBeNull()
+  })
+
+  it('模型不支持时长、生成音频时只由平台决定，不改值也不说明', () => {
+    const videoNode = {
+      type: 'plein/video',
+      capability: 'video.generate',
+      defaults: { model: '', duration: 5, audio: true },
+      paramsSchema: {
+        properties: {
+          model: { type: 'string', widget: 'model' },
+          duration: { type: 'integer', minimum: 1, maximum: 30, title: '时长' },
+          audio: { type: 'boolean', title: '生成音频', widget: 'audio' },
+        },
+      },
+    } as unknown as NodeInfo
+    const m: SelectedModel['info'] = {
+      ref: 'p:x',
+      id: 'x',
+      title: 'X',
+      capabilities: ['video.generate'],
+      limits: { duration: false, audio: false },
+    }
+    expect(adaptToModel(videoNode, { duration: 5, audio: true }, m)).toEqual({
+      patch: {},
+      notes: [],
+    })
+  })
 })
 
 describe('张数、参考图与画幅', () => {
