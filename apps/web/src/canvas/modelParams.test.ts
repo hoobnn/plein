@@ -467,3 +467,61 @@ describe('参考视频 / 音频的上限提示按类型区分', () => {
     expect(modelProblem(node, draft('480p'), seedance, new Map())).toBeNull()
   })
 })
+
+describe('图片精修参数', () => {
+  const processNode = {
+    type: 'plein/image-process',
+    capability: 'image.process',
+    defaults: {
+      model: '',
+      operation: 'upscale',
+      scale: 2,
+      top: 1,
+      bottom: 1,
+      left: 1.5,
+      right: 1.5,
+    },
+    paramsSchema: {
+      properties: {
+        model: { type: 'string', widget: 'model' },
+        operation: {
+          type: 'string',
+          enum: ['upscale', 'outpaint', 'cutout'],
+          title: '操作',
+        },
+        scale: { type: 'number', minimum: 1, maximum: 4, title: '放大倍数' },
+        top: { type: 'number', minimum: 1, maximum: 2, title: '向上扩展比例' },
+        bottom: { type: 'number', minimum: 1, maximum: 2, title: '向下扩展比例' },
+        left: { type: 'number', minimum: 1, maximum: 2, title: '向左扩展比例' },
+        right: { type: 'number', minimum: 1, maximum: 2, title: '向右扩展比例' },
+      },
+    },
+  } as unknown as NodeInfo
+  const model = {
+    ref: 'aliyun/bailian:wanx2.1-imageedit',
+    id: 'wanx2.1-imageedit',
+    title: '万相图像编辑',
+    capabilities: ['image.edit', 'image.process'],
+    limits: {
+      imageOperations: ['upscale', 'outpaint'],
+      process: { scale: { min: 1, max: 3 }, expansion: { min: 1, max: 2 } },
+    },
+  } as unknown as SelectedModel['info']
+
+  it('按声明收窄放大倍数，操作只保留模型支持的', () => {
+    const fields = Object.fromEntries(
+      constrainFields(processNode, fieldsOf(processNode), model.limits),
+    )
+    expect(fields.scale).toMatchObject({ minimum: 1, maximum: 3 })
+    expect(fields.operation?.enum).toEqual(['upscale', 'outpaint'])
+  })
+
+  it('超出声明范围时说明模型、范围和当前值', () => {
+    expect(modelProblem(processNode, { operation: 'upscale', scale: 5 }, model, new Map())).toBe(
+      '万相图像编辑 放大倍数须为 1–3，现在是 5',
+    )
+    expect(
+      modelProblem(processNode, { operation: 'upscale', scale: 3 }, model, new Map()),
+    ).toBeNull()
+  })
+})

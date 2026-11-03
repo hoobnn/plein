@@ -1,6 +1,7 @@
 import {
   imageLimits,
   imageModelProblem,
+  imageProcessProblem,
   selectedImageOptions,
   videoTaskOverrides,
   videoModelProblem,
@@ -70,6 +71,15 @@ const rangeOf = (k: Ranged, limits: ModelLimits) => {
   return r ? r : undefined
 }
 
+/** 精修参数（放大倍数、扩图各边比例）在模型声明里的范围；false 表示不支持 */
+function processRange(k: string, limits: ModelLimits) {
+  const rules = limits.process
+  if (!rules) return undefined
+  if (k === 'scale') return rules.scale
+  if (['top', 'bottom', 'left', 'right'].includes(k)) return rules.expansion
+  return undefined
+}
+
 /** 按模型约束改写字段：选项收窄、范围取交集，不支持的项去掉；专属参数单独渲染，这里也去掉 */
 export function constrainFields(
   node: NodeInfo,
@@ -107,6 +117,21 @@ export function constrainFields(
     }
     if (k === 'operation' && node.capability === 'image.process' && limits.imageOperations)
       return [[k, { ...f, enum: limits.imageOperations }]]
+    if (node.capability === 'image.process') {
+      const rule = processRange(k, limits)
+      if (rule === false) return []
+      if (rule)
+        return [
+          [
+            k,
+            {
+              ...f,
+              minimum: Math.max(f.minimum ?? rule.min, rule.min),
+              maximum: Math.min(f.maximum ?? rule.max, rule.max),
+            },
+          ],
+        ]
+    }
     if (f.widget === 'resolution')
       return limits.resolutions?.length
         ? [
@@ -334,11 +359,10 @@ export function modelProblem(
     )
     if (issue) return issue
   }
-  if (
-    node.capability === 'image.process' &&
-    !model.limits?.imageOperations?.includes(params.operation as 'upscale' | 'outpaint' | 'cutout')
-  )
-    return '当前模型不支持这项精修操作，请更换模型'
+  if (node.capability === 'image.process') {
+    const issue = imageProcessProblem(model, params)
+    if (issue) return issue
+  }
   const { patch } = adaptToModel(node, params, model)
   const limits = model.limits ?? NONE
   const name = model.title
