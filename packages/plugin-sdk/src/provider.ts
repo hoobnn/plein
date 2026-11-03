@@ -215,6 +215,64 @@ export class ProviderError extends Error {
 }
 
 /**
+ * 一类素材（参考图 / 参考视频 / 参考音频 / 精修原图）的格式要求。
+ * 声明式：适配器提交前按它挡一次，宿主在运行前按同一份声明提前提醒，
+ * 用户不用等到上游报错才知道素材不合要求。
+ */
+export interface MediaRequirement {
+  /** 接受的 MIME（小写）；不声明表示不限 */
+  mime?: string[]
+  /** 单个文件大小上限（MB） */
+  maxMB?: number
+  /** 大小必须严格小于上限（MB） */
+  maxMBExclusive?: boolean
+  /** 宽高下限（像素） */
+  minEdge?: number
+  /** 宽高上限（像素） */
+  maxEdge?: number
+  /** 总像素下限 */
+  minPixels?: number
+  /** 总像素上限 */
+  maxPixels?: number
+  /** 宽高比下限 */
+  minRatio?: number
+  /** 宽高比上限 */
+  maxRatio?: number
+  /** 单段时长下限（秒）；0 表示只要能读到有效时长 */
+  minDuration?: number
+  /** 单段时长上限（秒） */
+  maxDuration?: number
+  /** 同类素材合计时长上限（秒） */
+  totalDurationMax?: number
+  /** 参考视频总时长加输出时长之和的上限（秒） */
+  totalWithOutputMax?: number
+  /** 接受的视频编码（ffprobe 的 codec_name） */
+  videoCodecs?: string[]
+  /** 帧率下限 */
+  minFrameRate?: number
+  /** 帧率上限 */
+  maxFrameRate?: number
+  /** 接受的音轨编码 */
+  audioCodecs?: string[]
+  /** 允许 PCM 音轨的容器 MIME（其余容器的 PCM 一律拒绝） */
+  pcmAudioMimes?: string[]
+}
+
+/** 模型对参考素材与原图的格式要求 */
+export interface MediaRequirements {
+  /** 参考图 */
+  image?: MediaRequirement
+  /** 参考视频 */
+  video?: MediaRequirement
+  /** 参考音频 */
+  audio?: MediaRequirement
+  /** image.process 的原图要求 */
+  process?: MediaRequirement
+  /** 按任务模式追加的参考视频要求（如编辑参考视频的最短时长） */
+  videoTasks?: Record<string, MediaRequirement>
+}
+
+/**
  * 模型对通用参数的约束。节点表单按它收窄选项、换模型时校正取值、提交前检查；
  * 没声明的项按节点自己的范围处理。
  */
@@ -254,6 +312,8 @@ export interface ModelLimits {
   references?: { max: number }
   /** Supported reference media for video generation; absent means images only. */
   referenceMedia?: { video: number; audio: number; audioOnly?: boolean }
+  /** 参考素材与原图的格式要求；宿主在运行前检查，适配器提交前按同一份声明再挡一次 */
+  media?: MediaRequirements
   /** 视频有素材输入时是否允许空提示词；不声明时仍要求提示词。 */
   optionalVideoPrompt?: boolean
   /** 已实现的视频输入模式；缺省时沿用节点支持的模式。 */
