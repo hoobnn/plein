@@ -786,10 +786,13 @@ it('有参考图但本次未送入时不标成无可用参考图，原因收进 
   const { doc, board, shots } = fixture(true)
   addActor(doc)
   bindCharacter(doc, board, shots, '@角色')
-  mockSummary(summaryInput('video-one', '', [], ['ref'], 'over_limit'))
+  const input = summaryInput('video-one', '', [], ['ref'], 'over_limit')
+  input.referenceLimit = 9
+  mockSummary(input)
   renderApp(<ShotWorkbench />)
   const badge = await screen.findByText('参考图将不送入')
-  expect(badge.getAttribute('title')).toContain('上限')
+  // 超限要说清是哪个模型、上限多少张
+  expect(badge.getAttribute('title')).toContain('超过 Mock video 的参考图上限 9 张')
   expect(screen.queryByText('无可用参考图')).toBeNull()
   expect(screen.queryByText('参考图将送入模型')).toBeNull()
 })

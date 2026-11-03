@@ -124,7 +124,10 @@ export function ShotSummary({
             if (ref.reason === 'failed') return '参考图生成失败，不追加文字设定'
             if (ref.reason === 'no_image') return '还没有可用的参考图，不追加文字设定'
             if (ref.reason === 'unsupported') return '当前模式不送参考图，不追加文字设定'
-            if (ref.reason === 'over_limit') return '超过模型的参考图上限，不追加文字设定'
+            if (ref.reason === 'over_limit')
+              return `超过 ${data?.model?.title ?? '当前模型'} 的参考图上限${
+                data?.referenceLimit === undefined ? '' : ` ${data.referenceLimit} 张`
+              }，不追加文字设定`
             if (ref.reason === 'selection_missing') return '所选参考图已失效'
             return '参考图没有送入'
           }
