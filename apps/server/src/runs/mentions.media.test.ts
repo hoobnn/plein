@@ -1,5 +1,5 @@
 import { videoNode } from '@plein/nodes'
-import { connect, createDoc, createElement, type PleinDoc } from '@plein/doc'
+import { connect, createDoc, createElement, setParams, type PleinDoc } from '@plein/doc'
 import type { PortValue } from '@plein/plugin-sdk'
 import { describe, expect, it } from 'vite-plus/test'
 import { addNode } from '../testing'
@@ -180,6 +180,107 @@ describe('多模态参考的视频 / 音频按名额取舍', () => {
     expect(r.notices.filter((n) => n.code === 'optional_dropped')).toHaveLength(1)
     expect(r.notices.find((n) => n.code === 'optional_dropped')?.message).toBe(
       '这个模型最多带 1 段参考音频，第二段 的参考音频没有送入',
+    )
+  })
+
+  it('模型不支持参考视频（名额为 0）：必需参考阻断，可选参考提示没送入', async () => {
+    const doc = createDoc(undefined, { schedule: () => {} })
+    const clip = media(doc, 'video', '第一段', 'a')
+    const n = createElement(doc, {
+      kind: 'node',
+      nodeType: 'plein/video',
+      params: { prompt: '@第一段', mode: 'reference' },
+      x: 0,
+      y: 400,
+      w: 10,
+      h: 10,
+    })
+    const optional = await applyMentions(
+      doc,
+      doc.get(n)!,
+      videoNode,
+      {},
+      collect(doc),
+      undefined,
+      undefined,
+      { video: 0, audio: 0 },
+    )
+    expect(optional.blocked).toEqual([])
+    expect(optional.details[0]?.reason).toBe('unsupported')
+    expect(optional.details[0]?.sent).toEqual([])
+    expect(optional.inputs.videos).toBeUndefined()
+    const notice = optional.notices.find((n) => n.code === 'unsupported_refs')
+    expect(notice?.message).toBe('当前模型不支持参考视频，第一段 的参考视频没有送入')
+
+    // 同样的引用设为必需：不能悄悄丢掉，要阻断说明原因
+    setParams(doc, n, { prompt: '@第一段', mode: 'reference', requiredRefs: [clip] })
+    const required = await applyMentions(
+      doc,
+      doc.get(n)!,
+      videoNode,
+      {},
+      collect(doc),
+      undefined,
+      undefined,
+      { video: 0, audio: 0 },
+    )
+    expect(required.blocked).toHaveLength(1)
+    expect(required.blocked[0]).toMatchObject({
+      code: 'required_unsupported',
+      elementId: clip,
+    })
+    expect(required.blocked[0]?.message).toBe(
+      '「第一段」是必需参考，但当前模型不支持参考视频，请取消必需或换模型',
+    )
+  })
+
+  it('模型不支持参考音频（名额为 0）：必需参考阻断，可选参考提示没送入', async () => {
+    const doc = createDoc(undefined, { schedule: () => {} })
+    const clip = media(doc, 'audio', '第一段', 'a')
+    const n = createElement(doc, {
+      kind: 'node',
+      nodeType: 'plein/video',
+      params: { prompt: '@第一段', mode: 'reference' },
+      x: 0,
+      y: 400,
+      w: 10,
+      h: 10,
+    })
+    const optional = await applyMentions(
+      doc,
+      doc.get(n)!,
+      videoNode,
+      {},
+      collect(doc),
+      undefined,
+      undefined,
+      { video: 0, audio: 0 },
+    )
+    expect(optional.blocked).toEqual([])
+    expect(optional.details[0]?.reason).toBe('unsupported')
+    expect(optional.details[0]?.sent).toEqual([])
+    expect(optional.inputs.audios).toBeUndefined()
+    const notice = optional.notices.find((n) => n.code === 'unsupported_refs')
+    expect(notice?.message).toBe('当前模型不支持参考音频，第一段 的参考音频没有送入')
+
+    setParams(doc, n, { prompt: '@第一段', mode: 'reference', requiredRefs: [clip] })
+    const required = await applyMentions(
+      doc,
+      doc.get(n)!,
+      videoNode,
+      {},
+      collect(doc),
+      undefined,
+      undefined,
+      { video: 0, audio: 0 },
+    )
+    expect(required.blocked).toHaveLength(1)
+    expect(required.blocked[0]).toMatchObject({
+      code: 'required_unsupported',
+      elementId: clip,
+    })
+    expect(required.blocked[0]?.message).toBe(
+      '「第一段」是必需参考，但当前模型不支持参考音频，请取消必需或换模型',
     )
   })
 })

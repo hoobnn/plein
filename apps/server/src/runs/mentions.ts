@@ -503,20 +503,39 @@ export async function applyMentions(
     if (!referenced.length) continue
     const mediaPort = kind === 'video' ? 'videos' : 'audios'
     const limit = mediaLimits[kind]
-    const supported =
+    // 多模态参考模式、端口也在：只是名额为 0 时，模型根本不支持这类素材，
+    // 与「不是参考模式 / 没有这个端口」要分开说，不能悄悄把必需参考丢掉。
+    const referenceMode =
       video &&
       params.mode === 'reference' &&
-      def.inputs.some((p) => p.id === mediaPort && p.type === kind) &&
-      limit > 0
+      def.inputs.some((p) => p.id === mediaPort && p.type === kind)
+    const supported = referenceMode && limit > 0
     // 节点自己连线进来的同类素材先占名额：它们不被舍弃，超出上限由 runs.ts 阻断。
     const ownMedia = merged[mediaPort] ?? []
     const ownIds = mediaIds(ownMedia, kind)
     if (!supported) {
+      const dropped: string[] = []
       for (const d of referenced) {
         d.sent = []
         if (d.available.length === 0) d.reason = 'no_image'
-        else d.reason = 'unsupported'
+        else {
+          d.reason = 'unsupported'
+          if (!referenceMode) continue
+          if (d.required)
+            blocked.push({
+              code: 'required_unsupported',
+              elementId: d.elementId,
+              message: `「${d.name}」是必需参考，但当前模型不支持参考${kind === 'video' ? '视频' : '音频'}，请取消必需或换模型`,
+            })
+          else dropped.push(d.name)
+        }
       }
+      // 同一次取舍只给一条汇总，避免每个没送入的引用重复同一段话。
+      if (dropped.length)
+        notices.push({
+          code: 'unsupported_refs',
+          message: `当前模型不支持参考${kind === 'video' ? '视频' : '音频'}，${dropped.join('、')} 的参考${kind === 'video' ? '视频' : '音频'}没有送入`,
+        })
       continue
     }
     // 名额分配：必需参考按 requiredRefs 的先后在前，可选参考保持出现顺序在后；
