@@ -40,6 +40,7 @@ const catalog = {
           capabilities: ['video.generate'],
           limits: {
             resolutions: ['480p', '720p'],
+            defaultResolution: '720p',
             duration: { min: 4, max: 15 },
             aspectRatios: ['16:9', '9:16'],
             seed: false,
@@ -60,6 +61,7 @@ describe('按模型处理参数', () => {
     expect(fields.duration).toMatchObject({ minimum: 4, maximum: 15 })
     expect(fields.aspectRatio?.enum).toEqual(['16:9', '9:16'])
     expect(fields.resolution?.enum).toEqual(['', '480p', '720p'])
+    expect(fields.resolution?.labels?.['']).toBe('默认（720p）')
     expect(fields.seed).toBeUndefined()
     expect(fields.options).toBeUndefined()
     // 没声明约束的模型：不显示分辨率，其余照旧

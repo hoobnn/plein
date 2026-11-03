@@ -108,7 +108,25 @@ export function constrainFields(
     if (k === 'operation' && node.capability === 'image.process' && limits.imageOperations)
       return [[k, { ...f, enum: limits.imageOperations }]]
     if (f.widget === 'resolution')
-      return limits.resolutions?.length ? [[k, { ...f, enum: ['', ...limits.resolutions] }]] : []
+      return limits.resolutions?.length
+        ? [
+            [
+              k,
+              {
+                ...f,
+                enum: ['', ...limits.resolutions],
+                ...(limits.defaultResolution
+                  ? {
+                      labels: {
+                        ...f.labels,
+                        '': `默认（${limits.defaultResolution}）`,
+                      },
+                    }
+                  : {}),
+              },
+            ],
+          ]
+        : []
     if (k === ak && f.enum) {
       // 没声明画幅的模型不给「智能」：auto 要模型明确支持
       const allowed = f.enum.filter((o) =>
