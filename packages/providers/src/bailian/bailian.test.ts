@@ -138,6 +138,12 @@ describe('百炼 API 契约', () => {
       { role: 'tool', tool_call_id: 'call_0' },
     ])
   })
+  it('对话模型声明可交回经本地 Schema 校验的 JSON', () => {
+    for (const id of ['qwen3.8-max', 'qwen3.7-plus', 'qwen3.8-flash'])
+      expect(bailianProvider.models.find((model) => model.id === id)?.features).toContain(
+        'structured',
+      )
+  })
   it('结构化输出：要求 JSON、Schema 写进系统提示，结果按 Schema 校验', async () => {
     const answer = (content: string) =>
       sse(

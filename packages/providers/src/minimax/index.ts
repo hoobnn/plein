@@ -283,7 +283,7 @@ export const minimaxProvider = defineProvider({
       id,
       title: CHAT_IMAGE_TITLES[id] ?? id,
       capabilities: ['text.chat' as const],
-      features: ['vision' as const],
+      features: ['vision' as const, 'structured' as const],
     })),
     {
       id: 'MiniMax-M2.7',
@@ -292,6 +292,7 @@ export const minimaxProvider = defineProvider({
         '已停止向新用户开放；按量付费存量用户可调用至 2026-11-18，请提前迁移至 M3.1 Flash',
       deprecated: true,
       capabilities: ['text.chat'],
+      features: ['structured'],
     },
     {
       id: 'image-01',

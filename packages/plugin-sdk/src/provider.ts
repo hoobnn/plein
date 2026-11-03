@@ -352,7 +352,7 @@ export interface ModelSpec {
    * 平台不公布时不填，模型名不等于不可变的版本
    */
   version?: string
-  /** 对话模型的额外特性：tools（工具调用，内置智能体要用）、vision（看图）、structured（结构化输出） */
+  /** 对话模型的额外特性：tools（工具调用，内置智能体要用）、vision（看图）、structured（宿主要求 jsonSchema 时能交回符合 schema 的 JSON，包括由适配器本地校验） */
   features?: ModelFeature[]
   /** 仅供内置 Agent 使用，不用于普通画布生成。 */
   agentOnly?: boolean

@@ -136,6 +136,12 @@ describe('MiniMax 官方 HTTP 契约', () => {
     ).rejects.toMatchObject({ code: 'invalid_input', message: '当前模型不支持图片输入' })
     expect(fetch).not.toHaveBeenCalled()
   })
+  it('对话模型声明可交回经本地 Schema 校验的 JSON', () => {
+    for (const id of ['MiniMax-M3', 'MiniMax-M3.1-Flash', 'MiniMax-M2.7'])
+      expect(minimaxProvider.models.find((model) => model.id === id)?.features).toContain(
+        'structured',
+      )
+  })
   it('结构化生成把 Schema 写入指令并校验返回的 JSON', async () => {
     const { ctx, body } = setup([
       { choices: [{ message: { content: '```json\n{"shots":["雨停了"]}\n```' } }] },
