@@ -738,6 +738,20 @@ it('声音复刻模型在预览时拒绝预置音色并点名模型', async () =
   })
 })
 
+it('声音复刻模型音色留空时预览直接阻断', async () => {
+  const { server } = await bootServer()
+  const { id, doc } = await createCanvas(server)
+  const node = addNode(doc, 'plein/speech', {
+    params: { model: 'doubao/speech:seed-icl-2.0', text: '你来了', voice: '' },
+  })
+  const input = await preview(server, id, node)
+  expect(input.status).toBe('blocked')
+  expect(input.blocked).toContainEqual({
+    code: 'prepare_failed',
+    message: '豆包声音复刻 2.0（已有音色） 需要选择已创建的复刻或设计音色',
+  })
+})
+
 it('音乐和独立识别预览明确当前模型权限未知，检查本身不发生成请求', async () => {
   const { server } = await bootServer()
   mockSettings(server, {})

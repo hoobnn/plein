@@ -65,17 +65,18 @@ export function speechVoice(
     return {
       problem: `音色 ${voice.voiceId} 属于 ${speechProviderTitle(voice.provider, options.providerTitle)}，当前配音模型是 ${speechProviderTitle(provider, options.providerTitle)} 的，请换成同一平台的音色或模型`,
     }
-  if (voice.voiceId && parsed?.model.startsWith('seed-icl-')) {
+  if (parsed?.model.startsWith('seed-icl-')) {
+    const title =
+      options.spec?.title ??
+      doubaoProvider.models.find((spec) => spec.id === parsed.model)?.title ??
+      '当前声音复刻模型'
+    // 预检拿不到平台设置里的默认音色；留空时不能等适配器选中预置默认值后才报错。
+    if (!voice.voiceId) return { problem: `${title} 需要选择已创建的复刻或设计音色` }
     const cloned = voice.voiceId.startsWith('S_') || createdVoiceId(voice.voiceId)
-    if (!cloned) {
-      const title =
-        options.spec?.title ??
-        doubaoProvider.models.find((spec) => spec.id === parsed.model)?.title ??
-        '当前声音复刻模型'
+    if (!cloned)
       return {
         problem: `${title} 只能用已创建的复刻或设计音色，当前是预置音色 ${voice.voiceId}`,
       }
-    }
   }
   if (voice.voiceId && !voice.provider)
     return { notice: `音色 ${voice.voiceId} 未标明所属平台，请确认它适用于当前模型` }
