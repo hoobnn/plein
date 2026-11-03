@@ -23,7 +23,10 @@ const run = async (visualStyle?: string) => {
       ...(visualStyle === undefined ? {} : { visualStyle }),
     }),
     inputs: { script: [{ type: 'text', text: '剧本正文' }] },
-    providers: { call },
+    providers: {
+      call,
+      models: () => [{ ref: 'mock:chat', title: 'Mock 对话', features: ['structured'] }],
+    },
   } as unknown as ExecutorContext)
   const messages = call.mock.calls[0]![2].messages
   return messages.find((m) => m.role === 'user')!.content
