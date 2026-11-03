@@ -41,6 +41,9 @@ describe('兼容对话渠道', () => {
     expect(provider.testScope).toBe('configuration')
     expect(provider.models[0]!.features).toEqual([])
   })
+  it.each(['json_object', 'json_schema'] as const)('%s 渠道声明结构化输出能力', (structured) => {
+    expect(fixture({ structured }).provider.models[0]!.features).toContain('structured')
+  })
   it('配置检查不联网，不宣称远端鉴权和能力通过', async () => {
     const f = fixture()
     await f.provider.test!(f.ctx)
