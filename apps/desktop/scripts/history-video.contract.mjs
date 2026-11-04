@@ -248,10 +248,23 @@ async function runCase({ item, record, data, dist, scratch, expect, _electron, r
       height: dimensions.height * scale,
     }
     if (action === 'manual') {
+      const x = videoBox.x + videoBox.width / 2
+      const y = videoBox.y + videoBox.height / 2
+      const paused = () => video.evaluate((el) => el.paused)
+      // 双击不能进入原生全屏：全屏后从系统入口退出会让审片浮层残留并挡住生成历史
+      await page.mouse.dblclick(x, y)
+      await page.waitForTimeout(600)
+      expect(await page.evaluate(() => !!document.fullscreenElement)).toBe(false)
+      // 单击画面切换播放 / 暂停；每次间隔超过双击判定窗口
       await video.evaluate((el) => el.pause())
-      // controlsList="nofullscreen" 下 Chromium 单击画面不再切换播放，用聚焦后的空格键恢复
-      await video.focus()
-      await page.keyboard.press('Space')
+      await page.waitForTimeout(600)
+      await page.mouse.click(x, y)
+      await expect.poll(paused).toBe(false)
+      await page.waitForTimeout(600)
+      await page.mouse.click(x, y)
+      await expect.poll(paused).toBe(true)
+      await page.waitForTimeout(600)
+      await page.mouse.click(x, y)
     } else if (action === 'seek') {
       const y = content.y + content.height - 15
       await page.mouse.move(content.x + content.width / 2, content.y + content.height / 2)

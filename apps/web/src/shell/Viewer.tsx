@@ -602,8 +602,14 @@ function ReviewMedia({
     <video
       key={attempt}
       {...props}
-      controlsList="nofullscreen"
-      className="max-h-full w-full object-contain"
+      // 审片里不允许原生全屏：全屏后从系统入口退出会让浮层残留并挡住生成历史。
+      // 不用 controlsList="nofullscreen"，它会让 Chromium 连单击画面播放 / 暂停一起关掉；
+      // 改为拦下连击里第二次及以后的点击（Chromium 靠它判定双击全屏），并隐藏控件条上的全屏按钮。
+      // 视频窄于约 200px 时 Chromium 会把全屏挪进溢出菜单，最小宽度保证它一直留在被隐藏的按钮上。
+      onClick={(e) => {
+        if (e.detail > 1) e.preventDefault()
+      }}
+      className="max-h-full w-full min-w-80 object-contain [&::-webkit-media-controls-fullscreen-button]:hidden"
       poster={local ? undefined : assetUrls.variant(assetId, 'poster')}
     />
   ) : (
