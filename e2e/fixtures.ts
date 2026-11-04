@@ -87,6 +87,11 @@ interface E2EFixtures {
    * 改完不复原的话，同一 worker 里后续的用例会带着这些改动跑，行为就不确定了。
    */
   resetProviders: void
+  /**
+   * 打开处漏了 Motion 宿主：浮层会降级为可见（不再透明），但少了进场动效。
+   * 开发期由 useOverlayMotion 报错，这里把它升级成用例失败，避免下一个浮层再漏。
+   */
+  motionHost: void
 }
 
 /** worker 启动时某个平台的配置 */
@@ -164,6 +169,21 @@ export const test = base.extend<E2EFixtures, E2EWorkerFixtures>({
         if (!restored?.ok())
           await request.put(url, { data: { enabled: snapshot.enabled } }).catch(() => undefined)
       }
+    },
+    { scope: 'test', auto: true },
+  ],
+  motionHost: [
+    async ({ page }, use) => {
+      const missing: string[] = []
+      page.on('console', (message) => {
+        if (message.type() === 'error' && message.text().includes('缺少 Motion 宿主'))
+          missing.push(message.text())
+      })
+      await use()
+      expect(
+        missing,
+        '浮层打开处缺少 Motion 宿主：套一层 <AnimatePresence> 或 <LazyMotion>',
+      ).toEqual([])
     },
     { scope: 'test', auto: true },
   ],

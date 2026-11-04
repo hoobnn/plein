@@ -4,8 +4,10 @@ import { type ReactNode, useEffect, useRef } from 'react'
 import { cn } from './cn'
 import { Icon } from './icons'
 import {
+  degradedOverlayMotion,
   dialogVariants,
   fadeVariants,
+  useMissingMotionHost,
   useOverlayClosing,
   useOverlayModal,
   useOverlayMotion,
@@ -47,8 +49,10 @@ export function Modal({
 }) {
   const closing = useOverlayClosing()
   const modal = useOverlayModal()
-  const popupMotion = useOverlayMotion(dialogVariants)
-  const backdropMotion = useOverlayMotion(fadeVariants)
+  // 打开处漏了 Motion 宿主时，m 组件会停在初始帧（opacity 0）：降级成可见的无动画浮层。
+  const missingHost = useMissingMotionHost(dialogVariants)
+  const popupMotion = missingHost ? degradedOverlayMotion : useOverlayMotion(dialogVariants)
+  const backdropMotion = missingHost ? degradedOverlayMotion : useOverlayMotion(fadeVariants)
   const popup = useRef<HTMLDivElement>(null)
   const escapeOwners = useRef(new WeakMap<Event, HTMLElement>())
   useEffect(() => {

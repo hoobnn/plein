@@ -6,7 +6,7 @@ import {
   type Variants,
 } from 'motion/react'
 import { createElement, type ReactNode, useContext, useSyncExternalStore } from 'react'
-import { LazyMotion, MotionFeatureFailure } from './LazyMotion'
+import { LazyMotion, MotionFeatureFailure, MotionHost } from './LazyMotion'
 
 /**
  * 与 tokens.css 一一对应：spring = cubic-bezier(0.22, 1, 0.36, 1)，
@@ -185,6 +185,35 @@ export function useOverlayClosing() {
 export function useOverlayModal() {
   return !useOverlayClosing()
 }
+
+/** 已经报过缺失宿主的变体：同一类浮层只提示一次，避免刷屏。 */
+const reportedHostMissing = new WeakSet<Variants>()
+
+/**
+ * 打开处漏了 AnimatePresence / LazyMotion 时，m 组件拿不到渲染器，animate 永远不会执行，
+ * 只能把初始变体的 opacity 0 留在面板上：浮层看不见，却仍在挡点击。
+ * Modal 用这个判断降级成直接可见，并在开发期报错，提示去打开处补宿主。
+ */
+export function useMissingMotionHost(variants: Variants) {
+  const host = useContext(MotionHost)
+  if (!host && !reportedHostMissing.has(variants)) {
+    reportedHostMissing.add(variants)
+    if (import.meta.env.DEV)
+      console.error(
+        '[plein] 浮层缺少 Motion 宿主：在打开处包一层 <AnimatePresence> 或 <LazyMotion>，否则 m 组件会停在初始帧（opacity 0）。',
+      )
+  }
+  return !host
+}
+
+/** 缺少 Motion 宿主时用的可见降级：不设初始帧，直接按最终状态渲染。 */
+export const degradedOverlayMotion = {
+  initial: false,
+  animate: { opacity: 1 },
+  'data-motion-host-missing': '',
+  variants: undefined,
+  custom: undefined,
+} as const
 
 /** 浮层统一的变体声明与关闭态标记；数值只来自本文件的变体。 */
 export function useOverlayMotion(variants: Variants, custom?: PopSide) {
