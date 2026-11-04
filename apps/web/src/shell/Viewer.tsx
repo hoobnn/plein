@@ -578,6 +578,7 @@ function ReviewMedia({
     <video
       key={attempt}
       {...props}
+      controlsList="nofullscreen"
       className="max-h-full w-full object-contain"
       poster={local ? undefined : assetUrls.variant(assetId, 'poster')}
     />
