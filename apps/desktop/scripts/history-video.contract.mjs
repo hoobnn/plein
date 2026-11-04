@@ -249,7 +249,9 @@ async function runCase({ item, record, data, dist, scratch, expect, _electron, r
     }
     if (action === 'manual') {
       await video.evaluate((el) => el.pause())
-      await page.mouse.click(videoBox.x + videoBox.width / 2, videoBox.y + videoBox.height / 2)
+      // controlsList="nofullscreen" 下 Chromium 单击画面不再切换播放，用聚焦后的空格键恢复
+      await video.focus()
+      await page.keyboard.press('Space')
     } else if (action === 'seek') {
       const y = content.y + content.height - 15
       await page.mouse.move(content.x + content.width / 2, content.y + content.height / 2)
