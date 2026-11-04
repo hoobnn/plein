@@ -28,11 +28,15 @@ import { currentReviewCandidates, isCurrentReview, runReviewAction } from './rev
  */
 export function Viewer() {
   const viewer = useCanvas((s) => s.viewer)
+  // 关闭后退场动画还没播完就重开同一结果时，AnimatePresence 会按 key 复用退场中的旧审片，
+  // 连平移、缩放状态一起带回来；每次从关闭到打开都换一个序号，保证重开是全新状态。
+  const [opens, setOpens] = useState({ open: !!viewer, count: 0 })
+  if (!!viewer !== opens.open) setOpens({ open: !!viewer, count: opens.count + (viewer ? 1 : 0) })
   return (
     <AnimatePresence>
       {viewer && (
         <Review
-          key={`${viewer.nodeId ?? ''}/${viewer.resultId ?? viewer.assetId}`}
+          key={`${opens.count}/${viewer.nodeId ?? ''}/${viewer.resultId ?? viewer.assetId}`}
           viewer={viewer}
         />
       )}
