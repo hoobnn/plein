@@ -51,8 +51,10 @@ export function Modal({
   const modal = useOverlayModal()
   // 打开处漏了 Motion 宿主时，m 组件会停在初始帧（opacity 0）：降级成可见的无动画浮层。
   const missingHost = useMissingMotionHost(dialogVariants)
-  const popupMotion = missingHost ? degradedOverlayMotion : useOverlayMotion(dialogVariants)
-  const backdropMotion = missingHost ? degradedOverlayMotion : useOverlayMotion(fadeVariants)
+  const dialogMotion = useOverlayMotion(dialogVariants)
+  const fadeMotion = useOverlayMotion(fadeVariants)
+  const popupMotion = missingHost ? degradedOverlayMotion : dialogMotion
+  const backdropMotion = missingHost ? degradedOverlayMotion : fadeMotion
   const popup = useRef<HTMLDivElement>(null)
   const escapeOwners = useRef(new WeakMap<Event, HTMLElement>())
   useEffect(() => {
