@@ -8,17 +8,29 @@ import { Icon } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
 import { Select } from '../ui/Select'
 import { Slider } from '../ui/Slider'
+import { LazyMotion } from '../ui/LazyMotion'
 import { useOverlayClosing } from '../ui/motion'
 import { CreativeReviewForm } from '../features/storyboard/CreativeReviewForm'
 import { useStale } from '../features/runs/stale'
 import { currentReviewCandidates, isCurrentReview, runReviewAction } from './reviewActions'
 
-/** 审片状态只在浮层里；只有明确采用才写文档。 */
+/**
+ * 审片状态只在浮层里；只有明确采用才写文档。
+ * 浮层里用的是 m 组件，必须在打开处给出 Motion 特性来源：缺了这一层，m 拿不到渲染器，
+ * 只能把初始帧（opacity 0）留在面板上，浮层看不见却还在播放和挡点击。
+ */
 export function Viewer() {
   const viewer = useCanvas((s) => s.viewer)
-  return viewer ? (
-    <Review key={`${viewer.nodeId ?? ''}/${viewer.resultId ?? viewer.assetId}`} viewer={viewer} />
-  ) : null
+  return (
+    <LazyMotion>
+      {viewer && (
+        <Review
+          key={`${viewer.nodeId ?? ''}/${viewer.resultId ?? viewer.assetId}`}
+          viewer={viewer}
+        />
+      )}
+    </LazyMotion>
+  )
 }
 
 type View = NonNullable<ReturnType<typeof useCanvas.getState>['viewer']>

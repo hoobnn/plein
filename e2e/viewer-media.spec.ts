@@ -1,6 +1,18 @@
 import { execFileSync } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { expect, test } from './fixtures'
 import { newProject, revealGenerator, waitNode, zoomTo } from './canvas'
+
+const sharp = createRequire(new URL('../apps/server/package.json', import.meta.url))(
+  'sharp',
+) as typeof import('../apps/server/node_modules/sharp').default
+
+/** 截图的中心像素：用来判断画面真的画出来了，而不只是元素在 DOM 里。 */
+async function centerRgb(png: Buffer) {
+  const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+  const at = (Math.floor(info.height / 2) * info.width + Math.floor(info.width / 2)) * 4
+  return [data[at]!, data[at + 1]!, data[at + 2]!]
+}
 
 test.describe('媒体浏览器冒烟', { tag: '@core' }, () => {
   test('图片平移只处理当前指针，取消、失焦、切换与重置结束拖动', async ({ page }) => {
@@ -390,4 +402,83 @@ test.describe('媒体浏览器冒烟', { tag: '@core' }, () => {
       await closing!.dispose()
     })
   }
+
+  test('历史双击视频打开审片浮层后画面可见、能播放，关闭后历史恢复可点', async ({ page }) => {
+    const errors: string[] = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    await newProject(page)
+    const target = await page.evaluate(() =>
+      window.__plein.addNode({
+        type: 'plein/video',
+        name: '双击审片',
+        params: { model: 'plein/mock:video', mode: 'text', prompt: '双击打开审片', duration: 2 },
+        x: 400,
+        y: 300,
+      }),
+    )
+    const canvas = /#\/c\/([^/?]+)/.exec(page.url())![1]
+    await expect
+      .poll(async () =>
+        (await page.request.get(`/api/canvases/${canvas}/nodes/${target}/input`)).status(),
+      )
+      .toBe(200)
+    expect(
+      (
+        await page.request.post(`/api/canvases/${canvas}/nodes/${target}/run`, { data: {} })
+      ).status(),
+    ).toBe(202)
+    await waitNode(page, target)
+    await page.getByRole('button', { name: '生成历史', exact: true }).click()
+    const panel = page.getByRole('dialog', { name: '生成历史', exact: true })
+    const card = panel.getByRole('button', { name: '预览「双击审片」' })
+    await expect(card).toBeVisible()
+    await expect.poll(() => panel.evaluate((el) => Number(getComputedStyle(el).opacity))).toBe(1)
+    // 缩略图就是视频首帧，记下它的颜色，稍后确认审片区画的是同一帧
+    const expected = await centerRgb(
+      await card.locator('img').screenshot({ animations: 'disabled' }),
+    )
+    const box = (await card.boundingBox())!
+    await page.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2)
+    const viewer = page.getByRole('dialog', { name: '查看「双击审片」', exact: true })
+    // 初始帧停在 opacity 0 时浮层只剩声音、画面全黑，这一步必须等它真的显示出来
+    await expect.poll(() => viewer.evaluate((el) => Number(getComputedStyle(el).opacity))).toBe(1)
+    expect(await page.evaluate(() => document.fullscreenElement)).toBeNull()
+    const player = viewer.locator('video')
+    await expect
+      .poll(() => player.evaluate((el: HTMLVideoElement) => el.readyState))
+      .toBeGreaterThanOrEqual(2)
+    await expect
+      .poll(() => player.evaluate((el: HTMLVideoElement) => el.currentTime))
+      .toBeGreaterThan(0)
+    expect(await player.evaluate((el: HTMLVideoElement) => el.videoWidth)).toBe(64)
+    const media = (await player.boundingBox())!
+    expect(media.width).toBeGreaterThan(0)
+    expect(media.height).toBeGreaterThan(0)
+    const painted = await centerRgb(
+      await page.screenshot({
+        clip: {
+          x: media.x + media.width / 2 - 2,
+          y: media.y + media.height / 2 - 2,
+          width: 4,
+          height: 4,
+        },
+      }),
+    )
+    for (const [index, value] of expected.entries())
+      expect(Math.abs(painted[index]! - value), `审片区第 ${index} 个通道应为视频帧`).toBeLessThan(
+        24,
+      )
+    await page.keyboard.press('Escape')
+    await expect(viewer).toHaveCount(0)
+    await expect(panel).toBeVisible()
+    // 关掉审片后历史必须重新可以点：不能有残留的透明浮层盖在上面
+    expect(
+      await page.evaluate(
+        ({ x, y }) => !!document.elementFromPoint(x, y)?.closest('[aria-label="预览「双击审片」"]'),
+        { x: box.x + box.width / 2, y: box.y + box.height / 2 },
+      ),
+    ).toBe(true)
+    await expect(card).toBeVisible()
+    expect(errors).toEqual([])
+  })
 })
