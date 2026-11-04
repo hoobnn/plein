@@ -11,6 +11,7 @@ import {
   revealGenerator,
   edgesInto,
   elements,
+  expectShown,
   newProject,
   waitNode,
 } from './canvas'
@@ -137,6 +138,15 @@ test('媒体工具条裁剪图片、截取视频', { tag: '@core' }, async ({ pa
   const cropped = (await assetElements(page, 'image')).find(([id]) => id !== stillId)!
   expect(await meta(page, cropped[1])).toMatchObject({ width: 32, height: 48 })
   expect(await meta(page, stillAsset)).toMatchObject({ width: 64, height: 48 })
+
+  // 局部重绘的蒙版窗口从「媒体工具」打开：这条入口没有 AnimatePresence 宿主，
+  // 浮层曾经停在初始帧 opacity 0，看着像点不开。
+  await openTools(stillId)
+  await page.getByRole('button', { name: '局部重绘 · 先画区域', exact: true }).click()
+  const mask = page.getByRole('dialog', { name: '画重绘区域', exact: true })
+  await expectShown(mask)
+  await page.keyboard.press('Escape')
+  await expect(mask).toHaveCount(0)
 
   const [clipId, clipAsset] = (await assetElements(page, 'video'))[0]!
   await openTools(clipId)

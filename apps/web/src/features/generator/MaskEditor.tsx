@@ -5,6 +5,7 @@ import { drawMask, exportMask, type MaskOp, type MaskTool, normRect } from '../.
 import { loadAssetMeta } from '../../stores/assetMeta'
 import { useCanvas } from '../../stores/canvas'
 import { Icon } from '../../ui/icons'
+import { LazyMotion } from '../../ui/LazyMotion'
 import { Modal, ModalHeader } from '../../ui/Modal'
 import { Segmented } from '../../ui/Segmented'
 import { Slider } from '../../ui/Slider'
@@ -324,155 +325,167 @@ export function MaskEditor({
   }, [closing, travel])
 
   return (
-    <Modal label="画重绘区域" onClose={close} isolateKeys top className="h-full max-w-6xl">
-      <ModalHeader
-        title="画重绘区域"
-        meta={<span className="text-sm text-ink-subtle">高亮的地方按提示词重画，其余保持原图</span>}
-        onClose={close}
-      >
-        <Segmented label="工具" options={TOOLS} value={tool} onChange={setTool} disabled={frozen} />
-        {tool !== 'rect' && (
-          // oxlint-disable-next-line jsx-a11y/label-has-associated-control -- Base UI Thumb 内渲染真实 range input
-          <label className="flex items-center gap-2 text-xs text-ink-subtle">
-            笔刷
-            <Slider
-              aria-label="笔刷大小"
-              disabled={frozen}
-              min={8}
-              max={160}
-              value={brush}
-              onValueChange={setBrush}
-              className="w-24"
-            />
-          </label>
-        )}
-        <button
-          type="button"
-          className="ui-btn ui-btn-quiet ui-icon-btn"
-          aria-label="撤销"
-          title="撤销（⌘Z）"
-          disabled={(!history.index && !draft) || frozen}
-          onClick={() => travel(-1)}
+    // 生成器里的入口有 AnimatePresence，媒体工具那条（creation.overlay）没有；
+    // 宿主放在浮层自己这里，两条入口都能拿到 Motion 渲染器。
+    <LazyMotion>
+      <Modal label="画重绘区域" onClose={close} isolateKeys top className="h-full max-w-6xl">
+        <ModalHeader
+          title="画重绘区域"
+          meta={
+            <span className="text-sm text-ink-subtle">高亮的地方按提示词重画，其余保持原图</span>
+          }
+          onClose={close}
         >
-          <Icon name="undo" />
-        </button>
-        <button
-          type="button"
-          className="ui-btn ui-btn-quiet ui-icon-btn"
-          aria-label="重做"
-          title="重做（⇧⌘Z / Ctrl+Y）"
-          disabled={history.index === history.steps.length - 1 || !!draft || frozen}
-          onClick={() => travel(1)}
-        >
-          <Icon name="redo" />
-        </button>
-        <button
-          type="button"
-          className="ui-btn ui-btn-quiet"
-          disabled={!ops.length || frozen}
-          onClick={() => {
-            cancelDrag()
-            edit(() => [])
-          }}
-        >
-          清空
-        </button>
-        <button
-          type="button"
-          className="ui-btn ui-btn-primary"
-          disabled={!ops.length || frozen}
-          onClick={() => void save()}
-        >
-          {saving ? '保存中…' : '完成'}
-        </button>
-      </ModalHeader>
-      {saveError && (
-        <p role="alert" className="px-6 py-3 text-sm text-danger">
-          重绘区域尚未保存：{saveError}。已保留绘制内容，请点击完成重试。
-        </p>
-      )}
-      <div
-        ref={setStage}
-        aria-busy={!ready && !loadError}
-        className="relative flex min-h-0 flex-1 items-center justify-center bg-surface-2"
-      >
-        {view && !loadError && (
-          <div
-            className="relative overflow-hidden rounded-md shadow-2"
-            style={{ width: view.w, height: view.h }}
-          >
-            <img
-              src={assetUrls.original(assetId)}
-              alt={name}
-              draggable={false}
-              className={`pointer-events-none absolute inset-0 size-full select-none ${ready ? '' : 'invisible'}`}
-              onLoad={() => {
-                if (!closing) setSourceReady(true)
-              }}
-              onError={() => {
-                if (!closing) setLoadError('原图加载失败，请重新加载后再绘制')
-              }}
-            />
-            {ready && (
-              <canvas
-                ref={overlayRef}
-                data-testid="mask-canvas"
-                aria-label="重绘区域"
-                className="absolute inset-0 size-full touch-none opacity-55"
-                style={{ cursor: tool === 'rect' ? 'crosshair' : 'none' }}
-                onPointerDown={down}
-                onPointerMove={move}
-                onPointerUp={up}
-                onPointerCancel={(e) => {
-                  if (drag.current?.pointerId === e.pointerId) cancelDrag()
-                }}
-                onLostPointerCapture={(e) => {
-                  if (drag.current?.pointerId === e.pointerId) cancelDrag()
-                }}
-                onPointerLeave={() => setCursor(null)}
+          <Segmented
+            label="工具"
+            options={TOOLS}
+            value={tool}
+            onChange={setTool}
+            disabled={frozen}
+          />
+          {tool !== 'rect' && (
+            // oxlint-disable-next-line jsx-a11y/label-has-associated-control -- Base UI Thumb 内渲染真实 range input
+            <label className="flex items-center gap-2 text-xs text-ink-subtle">
+              笔刷
+              <Slider
+                aria-label="笔刷大小"
+                disabled={frozen}
+                min={8}
+                max={160}
+                value={brush}
+                onValueChange={setBrush}
+                className="w-24"
               />
-            )}
-            {ready && tool !== 'rect' && cursor && (
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute rounded-full border border-white shadow-[0_0_0_1px_rgba(0,0,0,0.5)]"
-                style={{
-                  width: brush,
-                  height: brush,
-                  left: cursor.x - brush / 2,
-                  top: cursor.y - brush / 2,
-                }}
-              />
-            )}
-          </div>
-        )}
-        {loadError ? (
-          <div
-            role="alert"
-            className="mx-6 max-w-md rounded-xl border border-line bg-surface p-6 text-center"
+            </label>
+          )}
+          <button
+            type="button"
+            className="ui-btn ui-btn-quiet ui-icon-btn"
+            aria-label="撤销"
+            title="撤销（⌘Z）"
+            disabled={(!history.index && !draft) || frozen}
+            onClick={() => travel(-1)}
           >
-            <h3 className="font-semibold">重绘素材加载失败</h3>
-            <p className="mt-2 text-sm text-ink-muted">{loadError}</p>
-            <button
-              type="button"
-              className="ui-btn ui-btn-secondary mt-4"
-              disabled={closing}
-              onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+            <Icon name="undo" />
+          </button>
+          <button
+            type="button"
+            className="ui-btn ui-btn-quiet ui-icon-btn"
+            aria-label="重做"
+            title="重做（⇧⌘Z / Ctrl+Y）"
+            disabled={history.index === history.steps.length - 1 || !!draft || frozen}
+            onClick={() => travel(1)}
+          >
+            <Icon name="redo" />
+          </button>
+          <button
+            type="button"
+            className="ui-btn ui-btn-quiet"
+            disabled={!ops.length || frozen}
+            onClick={() => {
+              cancelDrag()
+              edit(() => [])
+            }}
+          >
+            清空
+          </button>
+          <button
+            type="button"
+            className="ui-btn ui-btn-primary"
+            disabled={!ops.length || frozen}
+            onClick={() => void save()}
+          >
+            {saving ? '保存中…' : '完成'}
+          </button>
+        </ModalHeader>
+        {saveError && (
+          <p role="alert" className="px-6 py-3 text-sm text-danger">
+            重绘区域尚未保存：{saveError}。已保留绘制内容，请点击完成重试。
+          </p>
+        )}
+        <div
+          ref={setStage}
+          aria-busy={!ready && !loadError}
+          className="relative flex min-h-0 flex-1 items-center justify-center bg-surface-2"
+        >
+          {view && !loadError && (
+            <div
+              className="relative overflow-hidden rounded-md shadow-2"
+              style={{ width: view.w, height: view.h }}
             >
-              重新加载
-            </button>
-          </div>
-        ) : !ready ? (
-          <div role="status" className="absolute text-sm text-ink-muted">
-            正在加载重绘素材…
-          </div>
-        ) : null}
-        {ready && !ops.length && view && (
-          <div className="ui-float pointer-events-none absolute bottom-5 rounded-lg px-3 py-2 text-sm text-ink-muted">
-            {tool === 'rect' ? '拖一个框圈出要改的区域' : '在要改的地方涂抹'}
-          </div>
-        )}
-      </div>
-    </Modal>
+              <img
+                src={assetUrls.original(assetId)}
+                alt={name}
+                draggable={false}
+                className={`pointer-events-none absolute inset-0 size-full select-none ${ready ? '' : 'invisible'}`}
+                onLoad={() => {
+                  if (!closing) setSourceReady(true)
+                }}
+                onError={() => {
+                  if (!closing) setLoadError('原图加载失败，请重新加载后再绘制')
+                }}
+              />
+              {ready && (
+                <canvas
+                  ref={overlayRef}
+                  data-testid="mask-canvas"
+                  aria-label="重绘区域"
+                  className="absolute inset-0 size-full touch-none opacity-55"
+                  style={{ cursor: tool === 'rect' ? 'crosshair' : 'none' }}
+                  onPointerDown={down}
+                  onPointerMove={move}
+                  onPointerUp={up}
+                  onPointerCancel={(e) => {
+                    if (drag.current?.pointerId === e.pointerId) cancelDrag()
+                  }}
+                  onLostPointerCapture={(e) => {
+                    if (drag.current?.pointerId === e.pointerId) cancelDrag()
+                  }}
+                  onPointerLeave={() => setCursor(null)}
+                />
+              )}
+              {ready && tool !== 'rect' && cursor && (
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute rounded-full border border-white shadow-[0_0_0_1px_rgba(0,0,0,0.5)]"
+                  style={{
+                    width: brush,
+                    height: brush,
+                    left: cursor.x - brush / 2,
+                    top: cursor.y - brush / 2,
+                  }}
+                />
+              )}
+            </div>
+          )}
+          {loadError ? (
+            <div
+              role="alert"
+              className="mx-6 max-w-md rounded-xl border border-line bg-surface p-6 text-center"
+            >
+              <h3 className="font-semibold">重绘素材加载失败</h3>
+              <p className="mt-2 text-sm text-ink-muted">{loadError}</p>
+              <button
+                type="button"
+                className="ui-btn ui-btn-secondary mt-4"
+                disabled={closing}
+                onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+              >
+                重新加载
+              </button>
+            </div>
+          ) : !ready ? (
+            <div role="status" className="absolute text-sm text-ink-muted">
+              正在加载重绘素材…
+            </div>
+          ) : null}
+          {ready && !ops.length && view && (
+            <div className="ui-float pointer-events-none absolute bottom-5 rounded-lg px-3 py-2 text-sm text-ink-muted">
+              {tool === 'rect' ? '拖一个框圈出要改的区域' : '在要改的地方涂抹'}
+            </div>
+          )}
+        </div>
+      </Modal>
+    </LazyMotion>
   )
 }
