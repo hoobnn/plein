@@ -1,7 +1,15 @@
 import { execFileSync } from 'node:child_process'
 import { expect, type Page, test } from './fixtures'
 import { solidPng } from '../packages/providers/src/mock/media'
-import { centerOf, clickElement, elements, newProject, waitEngine, zoomTo } from './canvas'
+import {
+  centerOf,
+  clickElement,
+  elements,
+  expectShown,
+  newProject,
+  waitEngine,
+  zoomTo,
+} from './canvas'
 
 async function uploadImage(page: Page, width: number, height: number) {
   await newProject(page)
@@ -341,6 +349,8 @@ test.describe('镜头素材浏览器冒烟', { tag: '@core' }, () => {
     await editor.getByRole('button', { name: '详细卡片', exact: true }).click()
     await editor.getByRole('button', { name: '镜头 1 工作台', exact: true }).click()
     const workspace = page.getByRole('dialog', { name: '镜头工作台', exact: true })
+    // 工作台由 EditorPanels 的 DeferredPanel 挂载，父级没有 Motion 宿主时会停在 opacity 0
+    await expectShown(workspace)
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 763 })
       await expect

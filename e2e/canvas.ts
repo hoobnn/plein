@@ -486,3 +486,12 @@ async function confirmBatchChecklist(page: Page) {
   await expect(checklist).toBeHidden()
   return total
 }
+
+/**
+ * 浮层必须真的显示出来。
+ * 缺少 Motion 宿主时浮层会停在初始帧 opacity 0：元素都在、也能点，但用户看不见；
+ * Playwright 的 toBeVisible 不检查透明度，只能用计算后的 opacity 断言。
+ */
+export async function expectShown(locator: Locator) {
+  await expect.poll(() => locator.evaluate((el) => Number(getComputedStyle(el).opacity))).toBe(1)
+}

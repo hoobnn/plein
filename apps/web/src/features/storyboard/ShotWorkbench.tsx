@@ -20,6 +20,7 @@ import { mentionTargets, upstreams } from '../../canvas/nodes'
 import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
 import { useSession } from '../../stores/session'
+import { LazyMotion } from '../../ui/LazyMotion'
 import { Modal, ModalHeader } from '../../ui/Modal'
 import { Select } from '../../ui/Select'
 import { Icon } from '../../ui/icons'
@@ -422,7 +423,9 @@ function Workbench({
     if (sequence) useCanvas.getState().openSequence(id)
   }
   return (
-    <>
+    // 工作台从 EditorPanels → DeferredPanel 打开，父级没有 Motion 宿主；补在这一层，
+    // 里面的 Modal 和它带出来的子面板才拿得到渲染器，不会停在初始帧。
+    <LazyMotion>
       <Modal label="镜头工作台" onClose={close} isolateKeys className="plein-shot-workspace">
         <ModalHeader
           title={`镜头工作台 · 镜头 ${shot?.no ?? '已删除'}`}
@@ -949,6 +952,6 @@ function Workbench({
           }}
         />
       )}
-    </>
+    </LazyMotion>
   )
 }
