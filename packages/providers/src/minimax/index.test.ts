@@ -9,7 +9,7 @@ const frame: AssetRef = { assetId: 'frame', kind: 'image', mime: 'image/png' }
 describe('MiniMax 官方 HTTP 契约', () => {
   it('allows the actual image-result OSS domain and recognizes withdrawn music access', async () => {
     expect(minimaxProvider.models.find((model) => model.id === 'music-3.0')).toMatchObject({
-      description: '官方已退役；仅保留旧画布引用',
+      description: '2026-08-20 起不再向新用户开放，仅历史付费用户可用；免费版已停服',
       deprecated: true,
     })
     expect(

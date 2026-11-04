@@ -375,7 +375,7 @@ export const minimaxProvider = defineProvider({
     {
       id: 'music-3.0',
       title: 'Music 3.0',
-      description: '官方已退役；仅保留旧画布引用',
+      description: '2026-08-20 起不再向新用户开放，仅历史付费用户可用；免费版已停服',
       deprecated: true,
       capabilities: ['audio.music'],
       limits: { duration: false, promptMaxLength: 2000 },
