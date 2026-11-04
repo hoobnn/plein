@@ -4,7 +4,16 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, type Page, test } from './fixtures'
-import { addNode, byName, handleOf, newProject, revealGenerator, waitNode, zoomTo } from './canvas'
+import {
+  addNode,
+  byName,
+  decodeImage,
+  handleOf,
+  newProject,
+  revealGenerator,
+  waitNode,
+  zoomTo,
+} from './canvas'
 
 const sharp = createRequire(new URL('../apps/server/package.json', import.meta.url))(
   'sharp',
@@ -53,9 +62,7 @@ async function expectOriginalImage(page: Page, name: string, assetId: string, fi
   await expect.poll(() => viewer.evaluate((el) => Number(getComputedStyle(el).opacity))).toBe(1)
   const image = viewer.getByRole('img', { name })
   await expect(image).toHaveAttribute('src', `/api/assets/${assetId}`)
-  await expect
-    .poll(() => image.evaluate((el: HTMLImageElement) => el.naturalWidth))
-    .toBeGreaterThan(0)
+  await decodeImage(image)
   const box = (await image.boundingBox())!
   expect(box.width).toBeGreaterThan(0)
   const painted = await centerRgb(
@@ -488,10 +495,11 @@ test.describe('媒体浏览器冒烟', { tag: '@core' }, () => {
     const card = panel.getByRole('button', { name: '预览「双击审片」' })
     await expect(card).toBeVisible()
     await expect.poll(() => panel.evaluate((el) => Number(getComputedStyle(el).opacity))).toBe(1)
-    // 缩略图就是视频首帧，记下它的颜色，稍后确认审片区画的是同一帧
-    const expected = await centerRgb(
-      await card.locator('img').screenshot({ animations: 'disabled' }),
-    )
+    // 缩略图就是视频首帧，记下它的颜色，稍后确认审片区画的是同一帧。
+    // 它是 loading=lazy 的图，先等加载并解码完，否则取到的是空白。
+    const thumb = card.locator('img')
+    await decodeImage(thumb)
+    const expected = await centerRgb(await thumb.screenshot({ animations: 'disabled' }))
     const box = (await card.boundingBox())!
     await page.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2)
     const viewer = page.getByRole('dialog', { name: '查看「双击审片」', exact: true })

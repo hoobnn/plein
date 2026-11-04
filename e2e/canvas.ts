@@ -495,3 +495,11 @@ async function confirmBatchChecklist(page: Page) {
 export async function expectShown(locator: Locator) {
   await expect.poll(() => locator.evaluate((el) => Number(getComputedStyle(el).opacity))).toBe(1)
 }
+
+/** 等图片真的加载并解码完再取色：懒加载的缩略图刚可见时可能还是一块空白。 */
+export async function decodeImage(image: Locator) {
+  await expect
+    .poll(() => image.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0))
+    .toBe(true)
+  await image.evaluate((el: HTMLImageElement) => el.decode())
+}
