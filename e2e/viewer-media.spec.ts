@@ -1,7 +1,10 @@
 import { execFileSync } from 'node:child_process'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { expect, test } from './fixtures'
-import { newProject, revealGenerator, waitNode, zoomTo } from './canvas'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { expect, type Page, test } from './fixtures'
+import { addNode, byName, handleOf, newProject, revealGenerator, waitNode, zoomTo } from './canvas'
 
 const sharp = createRequire(new URL('../apps/server/package.json', import.meta.url))(
   'sharp',
@@ -12,6 +15,58 @@ async function centerRgb(png: Buffer) {
   const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
   const at = (Math.floor(info.height / 2) * info.width + Math.floor(info.width / 2)) * 4
   return [data[at]!, data[at + 1]!, data[at + 2]!]
+}
+
+let dir = ''
+
+test.beforeAll(() => {
+  dir = mkdtempSync(join(tmpdir(), 'plein-e2e-review-'))
+  const ff = (...args: string[]) =>
+    execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args])
+  for (const [name, color] of Object.entries({ a: 'red', b: 'blue' }))
+    ff('-f', 'lavfi', '-i', `color=c=${color}:s=64x48`, '-frames:v', '1', join(dir, `${name}.png`))
+})
+
+test.afterAll(() => rmSync(dir, { recursive: true, force: true }))
+
+/** 上传一张参考图到生成器的指定端口（真实文件选择）。 */
+async function uploadReference(page: Page, port: string, file: string) {
+  const chooser = page.waitForEvent('filechooser')
+  const button = page
+    .getByTestId('generator')
+    .getByRole('button', { name: '上传参考', exact: true })
+  await revealGenerator(page, button)
+  await button.click()
+  await page
+    .getByRole('dialog', { name: '上传参考', exact: true })
+    .getByRole('button', { name: port, exact: true })
+    .click()
+  await (await chooser).setFiles(file)
+}
+
+/**
+ * 点参考图缩略图后审片浮层必须真的显示出来，并画出原图。
+ * 浮层停在初始帧（opacity 0）时元素都在、点了也“有反应”，只是什么都看不见。
+ */
+async function expectOriginalImage(page: Page, name: string, assetId: string, file: string) {
+  const viewer = page.getByRole('dialog', { name: `查看「${name}」`, exact: true })
+  await expect.poll(() => viewer.evaluate((el) => Number(getComputedStyle(el).opacity))).toBe(1)
+  const image = viewer.getByRole('img', { name })
+  await expect(image).toHaveAttribute('src', `/api/assets/${assetId}`)
+  await expect
+    .poll(() => image.evaluate((el: HTMLImageElement) => el.naturalWidth))
+    .toBeGreaterThan(0)
+  const box = (await image.boundingBox())!
+  expect(box.width).toBeGreaterThan(0)
+  const painted = await centerRgb(
+    await page.screenshot({
+      clip: { x: box.x + box.width / 2 - 2, y: box.y + box.height / 2 - 2, width: 4, height: 4 },
+    }),
+  )
+  const expected = await centerRgb(readFileSync(file))
+  for (const [index, value] of expected.entries())
+    expect(Math.abs(painted[index]! - value), `审片区第 ${index} 个通道应为原图`).toBeLessThan(24)
+  return viewer
 }
 
 test.describe('媒体浏览器冒烟', { tag: '@core' }, () => {
@@ -479,6 +534,86 @@ test.describe('媒体浏览器冒烟', { tag: '@core' }, () => {
       ),
     ).toBe(true)
     await expect(card).toBeVisible()
+    expect(errors).toEqual([])
+  })
+
+  test('点参考图缩略图打开审片浮层，可拖动与连线来的参考都显示原图', async ({ page }) => {
+    const errors: string[] = []
+    page.on('pageerror', (error) => errors.push(error.message))
+
+    // 多参考端口：缩略图按钮上带 dnd-kit 的拖拽监听，点击不能被它吞掉
+    await newProject(page)
+    await addNode(page, '角色')
+    await revealGenerator(page)
+    await uploadReference(page, '参考图', join(dir, 'a.png'))
+    await uploadReference(page, '参考图', join(dir, 'b.png'))
+    await expect(page.getByTestId('generator').getByRole('group')).toHaveCount(2)
+    const draggable = page.getByTestId('generator').getByRole('group', { name: '参考 2：b.png' })
+    const draggableAsset = (await draggable.getAttribute('data-asset-id'))!
+    const thumb = (await draggable.getByRole('button', { name: '预览「b.png」' }).boundingBox())!
+    await page.mouse.click(thumb.x + thumb.width / 2, thumb.y + thumb.height / 2)
+    const first = await expectOriginalImage(page, 'b.png', draggableAsset, join(dir, 'b.png'))
+    await page.keyboard.press('Escape')
+    await expect(first).toHaveCount(0)
+
+    // 连线来的参考：从画布节点的输出连到单值输入口，缩略图不带拖拽监听
+    await newProject(page)
+    const response = await page.request.post('/api/assets', {
+      headers: { 'content-type': 'image/png', 'x-file-name': 'linked.png' },
+      data: readFileSync(join(dir, 'a.png')),
+    })
+    const linked = ((await response.json()) as { id: string }).id
+    await addNode(page, '生成图片', { x: 300, y: 300 })
+    const source = await byName(page, '生成图片')
+    await page.keyboard.press('Escape')
+    await page.evaluate(
+      ({ id, assetId }) => {
+        const row = window.__plein.engine.doc.mutable(id) as unknown as {
+          set(key: string, value: unknown): void
+        }
+        row.set('results', [
+          {
+            id: 'fixture-1',
+            runId: 'fixture',
+            port: 'images',
+            at: 1,
+            value: { type: 'image', assetId },
+          },
+        ])
+        row.set('adopted', 'fixture-1')
+      },
+      { id: source.id, assetId: linked },
+    )
+    await addNode(page, '局部重绘', { x: 1000, y: 300 })
+    const target = await byName(page, '局部重绘')
+    await page.keyboard.press('Escape')
+    const from = await handleOf(page, source.id, 'out')
+    const to = await handleOf(page, target.id, 'in')
+    await page.mouse.move(from.x, from.y)
+    await page.mouse.down()
+    await page.mouse.move((from.x + to.x) / 2, to.y, { steps: 5 })
+    await page.mouse.move(to.x, to.y, { steps: 5 })
+    await page.mouse.up()
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (id) => [...window.__plein.engine.doc.edges()].filter((e) => e.to[0] === id).length,
+          target.id,
+        ),
+      )
+      .toBe(1)
+    await page.evaluate((id) => window.__plein.engine.selection.set([id]), target.id)
+    await revealGenerator(page)
+    const linkedTile = page
+      .getByTestId('generator')
+      .getByRole('group', { name: '参考 1：生成图片' })
+    const linkedBox = (await linkedTile
+      .getByRole('button', { name: '预览「生成图片」' })
+      .boundingBox())!
+    await page.mouse.click(linkedBox.x + linkedBox.width / 2, linkedBox.y + linkedBox.height / 2)
+    const second = await expectOriginalImage(page, '生成图片', linked, join(dir, 'a.png'))
+    await page.keyboard.press('Escape')
+    await expect(second).toHaveCount(0)
     expect(errors).toEqual([])
   })
 })
