@@ -1,3 +1,4 @@
+import sharp from 'sharp'
 import { describe, expect, it } from 'vite-plus/test'
 import { fakeContext, sse } from '../testing'
 import { bailianProvider } from './index'
@@ -338,6 +339,18 @@ describe('百炼 API 契约', () => {
         },
       },
     ])
+    // 蒙版规范化会真实解码素材：夹具用能被 sharp 解析的最小合法 PNG（512×512）
+    const png = await sharp({
+      create: { width: 512, height: 512, channels: 3, background: '#000000' },
+    })
+      .png()
+      .toBuffer()
+    ctx.files.read = async () => ({
+      data: new Uint8Array(png),
+      mime: 'image/png',
+      width: 512,
+      height: 512,
+    })
     expect(
       await bailianProvider.submit(
         {
