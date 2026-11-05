@@ -2,13 +2,16 @@ import {
   CLONE_SAMPLE,
   doubaoAdapter,
   headers,
-  speechSettings,
+  speechSettings as modelbaySpeechSettings,
   TTS_VOICES,
 } from '@modelbay/doubao-speech'
 import { definePlugin, defineServerPlugin, PLUGIN_API_VERSION } from '@plein/plugin-sdk'
 import { adapterToProvider, toAdapterContext } from '../bridge'
 
-export { speechSettings, TTS_VOICES }
+/** 设置表单只有音色、格式、采样率；语速是单次请求参数，不在设置里暴露。 */
+export const speechSettings = modelbaySpeechSettings.omit({ speed: true })
+
+export { TTS_VOICES }
 
 /** 请求构造、流式音频解码、复刻与设计、错误归类都在 modelbay；这里只留宿主侧的设置、密钥与表单元数据。 */
 const adapter = doubaoAdapter
