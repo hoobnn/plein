@@ -1,5 +1,5 @@
 import { capturePlanContinuation } from './plan-chat'
-import { speechSettings, synthesizeSpeech, TTS_VOICES } from '../doubao'
+import { speechSettings, synthesizeSpeech, TTS_VOICES } from '@modelbay/doubao-speech'
 import { transcribePlan } from './plan-speech'
 import { listPlanModels } from './plan-models'
 import { videoReferenceProblem, videoReferencePrompt } from '@plein/plugin-sdk'
