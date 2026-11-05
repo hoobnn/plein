@@ -128,6 +128,8 @@ export const arkProvider = adapterToProvider(apiAdapter, {
 export const arkPlanProvider = adapterToProvider(planAdapter, {
   id: 'volc/ark-plan',
   channel: 'ark-plan',
+  // 套餐的文档入口是套餐概览页；适配器的 docsUrl 指向按量的模型列表
+  docsUrl: 'https://docs.volcengine.com/docs/ark/agent-plan-personal-plan-overview?lang=zh',
   adjustModel: planModel,
   description:
     '套餐内置 Agent 对话、Seedream 图片、Seedance 视频、语音合成与识别；模型目录查询可选配 AK/SK',
