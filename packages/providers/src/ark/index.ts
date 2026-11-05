@@ -1,47 +1,21 @@
-import { capturePlanContinuation } from './plan-chat'
-import { speechSettings, synthesizeSpeech, TTS_VOICES } from '@modelbay/doubao-speech'
-import { transcribePlan } from './plan-speech'
-import { listPlanModels } from './plan-models'
-import { videoReferenceProblem, videoReferencePrompt } from '@plein/plugin-sdk'
-import { mediaRequirementProblems } from '@plein/plugin-sdk'
-import { referenceStorageHost, referenceUploader } from './reference-upload'
-import { videoReferences } from '@modelbay/shared'
+import { createArkAdapter, createArkPlanAdapter, models as arkModels } from '@modelbay/ark'
+import { nodeArkOptions, referenceStorageHost } from '@modelbay/ark/tos'
+import type { PlatformAdapter } from '@modelbay/core'
 import {
-  type AssetRef,
-  type ChatMessage,
-  type CapabilityInput,
   definePlugin,
-  defineProvider,
+  type ModelSpec,
   defineServerPlugin,
-  domainAllowed,
-  type MediaRequirements,
   PLUGIN_API_VERSION,
   ProviderError,
-  type ModelSpec,
-  type ProviderErrorCode,
-  type ProviderContext,
-  type ProviderOutput,
-  type PollResult,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
-import {
-  asJson,
-  imageDataUrl,
-  type Json,
-  type Method,
-  readJson,
-  redact,
-  send,
-  withRetry,
-} from '@modelbay/shared'
-import { chatCompletion, requireSseDone } from '@modelbay/shared'
-import { openAiModelList } from '@modelbay/shared'
-import { sizeByArea, tierEdge } from '@modelbay/shared'
+import { adapterModels, adapterToProvider, toAdapterContext } from '../bridge'
+import { speechSettings } from '../doubao'
 
-const BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
-// Agent Plan 个人版的专属数据面，只认专属 Key 和套餐模型名
-const PLAN_BASE_URL = 'https://ark.cn-beijing.volces.com/api/plan/v3'
 const NETWORK = ['*.volces.com', '*.byteimg.com', '*.ibytedtos.com', '*.byteicdn.com']
+/** plein 存量的参考视频对象前缀；生命周期策略按它配置。 */
+const REFERENCE_KEY_PREFIX = 'plein/video-references'
+
 const settings = z.object({
   referenceStorage: z
     .enum(['tos', 'oss', 'cos', 's3'])
@@ -78,889 +52,55 @@ const settings = z.object({
   customImageModel: z.string().default('').meta({ title: '自定义图片模型 / Endpoint ID' }),
   customVideoModel: z.string().default('').meta({ title: '自定义视频模型 / Endpoint ID' }),
 })
-// 套餐文本仅用于内置 Agent；语音和模型目录有各自的专属接口。
 const planSettings = settings.extend(speechSettings.shape)
-type Context = ProviderContext<z.output<typeof settings>>
-/** 按量付费数据面，或 Agent Plan 套餐数据面 */
-type Plane = 'api' | 'plan'
 
-// 图片、视频预置模型名与按量版本号不同；Seedream Lite 不在套餐内
-const PLAN_MODELS: Record<string, string> = {
-  'doubao-seedream-5-0-pro-260628': 'doubao-seedream-5.0-pro',
-  'doubao-seedream-5-0-flash-260915': 'doubao-seedream-5.0-flash',
-  'doubao-seedance-2-5-260628': 'doubao-seedance-2.5',
-  'doubao-seedance-2-0-260128': 'doubao-seedance-2.0',
-  'doubao-seedance-2-0-fast-260128': 'doubao-seedance-2.0-fast',
-  'doubao-seedance-2-0-mini-260615': 'doubao-seedance-2.0-mini',
-}
-
-const SECRET = { api: 'ARK_API_KEY', plan: 'ARK_AGENT_PLAN_API_KEY' } as const
-
-function apiKey(plane: Plane, ctx: Context) {
-  return ctx.secret(SECRET[plane])
-}
-
-/** 请求体里的模型名：套餐换成套餐模型名，自定义模型原样透传 */
-function wireModel(plane: Plane, model: string) {
-  return plane === 'plan' ? (PLAN_MODELS[model] ?? model) : model
-}
-
-// Seedream 宽高比 1/16–16 都能给；auto 只传分辨率档位，比例由模型按提示词决定
-const SEEDREAM_ASPECTS = ['auto', '21:9', '16:9', '3:2', '4:3', '1:1', '3:4', '2:3', '9:16']
-// Seedance 的 ratio；auto 即 adaptive，跟随首帧或由模型决定
-const SEEDANCE_ASPECTS = ['auto', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16']
-
-const seedreamOptions = z.object({
-  watermark: z
-    .boolean()
-    .default(false)
-    .meta({ title: '水印', description: '在右下角加 AI 生成水印' }),
-  output_format: z
-    .enum(['jpeg', 'png'])
-    .optional()
-    .meta({ title: '输出格式', labels: { jpeg: 'JPEG', png: 'PNG' } }),
-})
-
-const seedanceOptions = (v25: boolean) =>
-  z.object({
-    adaptive_duration: z
-      .boolean()
-      .optional()
-      .meta({ title: '自动时长', description: '由模型决定输出时长；编辑任务自动保持原视频时长' }),
-    return_last_frame: z
-      .boolean()
-      .optional()
-      .meta({ title: '返回尾帧', description: '输出最后一帧图片，可连到下一个镜头的首帧' }),
-    service_tier: z
-      .enum(['default', 'flex'])
-      .optional()
-      .meta({
-        title: '服务等级',
-        description: '离线模式价格更低，排队时间更长',
-        labels: { default: '在线', flex: '离线（低价）' },
-      }),
-    watermark: z.boolean().optional().meta({ title: '水印' }),
-    ...(v25
-      ? {
-          omni_reference_task_type: z
-            .enum(['auto', 'reference', 'edit', 'extend'])
-            .optional()
-            .meta({
-              title: '参考任务',
-              labels: {
-                auto: '自动判断',
-                reference: '生成新视频',
-                edit: '编辑参考视频',
-                extend: '延长参考视频',
-              },
-            }),
-          draft: z
-            .boolean()
-            .optional()
-            .meta({ title: '草稿模式', description: '先出低成本预览，仅 480p' }),
-        }
+/** 给适配器注入 plein 的参考视频对象前缀（settings 表单不暴露这一项）。 */
+function withKeyPrefix(adapter: PlatformAdapter): PlatformAdapter {
+  const inject = <C extends { settings?: Record<string, unknown> }>(ctx: C): C => ({
+    ...ctx,
+    settings: { referenceKeyPrefix: REFERENCE_KEY_PREFIX, ...ctx.settings },
+  })
+  return {
+    ...adapter,
+    submit: (req, ctx) => adapter.submit(req, inject(ctx)),
+    ...(adapter.native
+      ? { native: (op, params, ctx) => adapter.native!(op, params, inject(ctx)) }
       : {}),
-  })
-
-/**
- * 方舟的参考素材要求：参考图 30 MB 以内、宽高 300–6000、比例 0.4–2.5；
- * 参考视频 200 MB 以内、H.264/HEVC、24–60 fps、音轨 AAC/MP3（MOV 允许 PCM）；
- * 参考音频 15 MB 以内。宿主在运行前读的是同一份声明。
- */
-const ARK_REFERENCE_MEDIA = (duration: number): MediaRequirements => ({
-  // 首尾帧走平台自己的图片通道，只认格式与大小，不限尺寸
-  frame: {
-    mime: [
-      'image/jpeg',
-      'image/png',
-      'image/webp',
-      'image/bmp',
-      'image/tiff',
-      'image/gif',
-      'image/heic',
-      'image/heif',
-    ],
-    maxMB: 30,
-    maxMBExclusive: true,
-  },
-  image: {
-    mime: [
-      'image/jpeg',
-      'image/png',
-      'image/webp',
-      'image/bmp',
-      'image/tiff',
-      'image/gif',
-      'image/heic',
-      'image/heif',
-    ],
-    maxMB: 30,
-    maxMBExclusive: true,
-    minEdge: 300,
-    maxEdge: 6000,
-    minRatio: 0.4,
-    maxRatio: 2.5,
-  },
-  video: {
-    mime: ['video/mp4', 'video/quicktime'],
-    maxMB: 200,
-    minEdge: 300,
-    maxEdge: 6000,
-    minRatio: 0.4,
-    maxRatio: 2.5,
-    minPixels: 407696,
-    maxPixels: 8295044,
-    minDuration: 2,
-    maxDuration: duration,
-    totalDurationMax: duration,
-    videoCodecs: ['h264', 'hevc'],
-    minFrameRate: 24,
-    maxFrameRate: 60,
-    audioCodecs: ['aac', 'mp3'],
-    pcmAudioMimes: ['video/quicktime'],
-  },
-  audio: {
-    mime: ['audio/wav', 'audio/x-wav', 'audio/mpeg', 'audio/mp3'],
-    maxMB: 15,
-    minDuration: 2,
-    maxDuration: duration,
-    totalDurationMax: duration,
-  },
-})
-
-/** Seedream 5.0 抠图原图的要求：PNG/JPEG、30 MB 以内、比例 1/16–16、总像素 262144–36000000 */
-const ARK_CUTOUT_MEDIA: MediaRequirements = {
-  process: {
-    mime: ['image/png', 'image/jpeg'],
-    maxMB: 30,
-    minRatio: 1 / 16,
-    maxRatio: 16,
-    minPixels: 262144,
-    maxPixels: 36000000,
-  },
-}
-
-const models: ModelSpec[] = [
-  // 官方模型列表标注这批 Seed 2.1 / Evolving 模型支持「多模态理解」（图片内容理解），故声明 vision
-  {
-    id: 'doubao-seed-2-1-pro-260628',
-    features: ['tools', 'vision', 'structured'],
-    title: 'Doubao Seed 2.1 Pro（260628）',
-    capabilities: ['text.chat'],
-  },
-  {
-    id: 'doubao-seed-2-1-pro-260915',
-    features: ['tools', 'vision', 'structured'],
-    title: 'Doubao Seed 2.1 Pro（260915）',
-    capabilities: ['text.chat'],
-  },
-  {
-    id: 'doubao-seed-2-1-lite-260915',
-    features: ['tools', 'vision', 'structured'],
-    title: 'Doubao Seed 2.1 Lite',
-    capabilities: ['text.chat'],
-  },
-  {
-    id: 'doubao-seed-2-1-turbo-260628',
-    features: ['tools', 'vision', 'structured'],
-    title: 'Doubao Seed 2.1 Turbo',
-    capabilities: ['text.chat'],
-  },
-  {
-    id: 'doubao-seed-evolving',
-    features: ['tools', 'vision', 'structured'],
-    title: 'Doubao Seed Evolving（快速迭代）',
-    capabilities: ['text.chat'],
-  },
-  {
-    id: 'doubao-seedream-5-0-pro-260628',
-    title: 'Seedream 5.0 Pro',
-    capabilities: ['image.generate', 'image.process'],
-    limits: {
-      imageOperations: ['cutout'],
-      aspectRatios: SEEDREAM_ASPECTS,
-      resolutions: ['1K', '1.5K', '2K'],
-      defaultResolution: '2K',
-      count: { max: 1 },
-      references: { max: 10 },
-      seed: false,
-      negativePrompt: false,
-      image: {
-        size: {
-          minPixels: 921600,
-          maxPixels: 4624220,
-          minRatio: 1 / 16,
-          maxRatio: 16,
-          tiers: ['1K', '1.5K', '2K'],
-        },
-      },
-      media: ARK_CUTOUT_MEDIA,
-    },
-    options: seedreamOptions,
-  },
-  {
-    id: 'doubao-seedream-5-0-flash-260915',
-    title: 'Seedream 5.0 Flash',
-    capabilities: ['image.generate', 'image.process'],
-    limits: {
-      imageOperations: ['cutout'],
-      aspectRatios: SEEDREAM_ASPECTS,
-      resolutions: ['1K', '1.5K', '2K'],
-      defaultResolution: '2K',
-      count: { max: 1 },
-      references: { max: 10 },
-      seed: false,
-      negativePrompt: false,
-      image: {
-        size: {
-          minPixels: 921600,
-          maxPixels: 4624220,
-          minRatio: 1 / 16,
-          maxRatio: 16,
-          tiers: ['1K', '1.5K', '2K'],
-        },
-      },
-      media: ARK_CUTOUT_MEDIA,
-    },
-    options: seedreamOptions,
-  },
-  {
-    id: 'doubao-seedream-5-0-260128',
-    title: 'Seedream 5.0 Lite（支持组图）',
-    description:
-      '已停止新购，计划于 2026-11-24 14:00（UTC+8）下线；现有接入请提前迁移，Pro / Flash 不支持组图',
-    deprecated: true,
-    capabilities: ['image.generate'],
-    limits: {
-      aspectRatios: SEEDREAM_ASPECTS,
-      resolutions: ['2K', '3K', '4K'],
-      defaultResolution: '2K',
-      references: { max: 14 },
-      count: { max: 15 },
-      seed: false,
-      negativePrompt: false,
-      image: {
-        maxTotalImages: 15,
-        size: {
-          minPixels: 3686400,
-          maxPixels: 16777216,
-          minRatio: 1 / 16,
-          maxRatio: 16,
-          tiers: ['2K', '3K', '4K'],
-        },
-      },
-    },
-    options: seedreamOptions,
-  },
-  {
-    id: 'doubao-seedance-2-5-260628',
-    title: 'Seedance 2.5',
-    capabilities: ['video.generate'],
-    limits: {
-      aspectRatios: SEEDANCE_ASPECTS,
-      resolutions: ['480p', '720p', '1080p'],
-      defaultResolution: '720p',
-      duration: { min: 4, max: 30 },
-      seed: false,
-      // 只有 Seedance 2.5 支持 MOV 输出
-      outputFormats: ['mp4', 'mov'],
-      references: { max: 30 },
-      referenceMedia: { video: 10, audio: 10, audioOnly: true },
-      optionalVideoPrompt: true,
-      videoModes: ['text', 'image', 'frames', 'reference'],
-      media: {
-        ...ARK_REFERENCE_MEDIA(30),
-        // 「编辑参考视频」任务要求参考视频至少 4 秒
-        videoTasks: { edit: { minDuration: 4 } },
-      },
-    },
-    options: seedanceOptions(true),
-  },
-  {
-    id: 'doubao-seedance-2-0-260128',
-    title: 'Seedance 2.0',
-    capabilities: ['video.generate'],
-    limits: {
-      aspectRatios: SEEDANCE_ASPECTS,
-      resolutions: ['480p', '720p', '1080p', '4k'],
-      defaultResolution: '720p',
-      duration: { min: 4, max: 15 },
-      seed: false,
-      outputFormats: ['mp4'],
-      references: { max: 9 },
-      referenceMedia: { video: 3, audio: 3, audioOnly: false },
-      optionalVideoPrompt: true,
-      videoModes: ['text', 'image', 'frames', 'reference'],
-      media: ARK_REFERENCE_MEDIA(15),
-    },
-    options: seedanceOptions(false),
-  },
-  {
-    id: 'doubao-seedance-2-0-fast-260128',
-    title: 'Seedance 2.0 Fast',
-    capabilities: ['video.generate'],
-    limits: {
-      aspectRatios: SEEDANCE_ASPECTS,
-      resolutions: ['480p', '720p'],
-      defaultResolution: '720p',
-      duration: { min: 4, max: 15 },
-      seed: false,
-      outputFormats: ['mp4'],
-      references: { max: 9 },
-      referenceMedia: { video: 3, audio: 3, audioOnly: false },
-      optionalVideoPrompt: true,
-      videoModes: ['text', 'image', 'frames', 'reference'],
-      media: ARK_REFERENCE_MEDIA(15),
-    },
-    options: seedanceOptions(false),
-  },
-  {
-    id: 'doubao-seedance-2-0-mini-260615',
-    title: 'Seedance 2.0 Mini',
-    capabilities: ['video.generate'],
-    limits: {
-      aspectRatios: SEEDANCE_ASPECTS,
-      resolutions: ['480p', '720p'],
-      defaultResolution: '720p',
-      duration: { min: 4, max: 15 },
-      seed: false,
-      outputFormats: ['mp4'],
-      references: { max: 9 },
-      referenceMedia: { video: 3, audio: 3, audioOnly: false },
-      optionalVideoPrompt: true,
-      videoModes: ['text', 'image', 'frames', 'reference'],
-      media: ARK_REFERENCE_MEDIA(15),
-    },
-    options: seedanceOptions(false),
-  },
-  {
-    id: 'custom-chat',
-    title: '自定义对话模型（设置中填写）',
-    capabilities: ['text.chat'],
-    features: ['structured'],
-  },
-  {
-    id: 'custom-image',
-    title: '自定义图片模型（设置中填写）',
-    capabilities: ['image.generate'],
-    limits: { defaultResolution: '2K' },
-  },
-  {
-    id: 'custom-video',
-    title: '自定义视频模型（设置中填写）',
-    capabilities: ['video.generate'],
-    limits: { videoModes: ['text', 'image', 'frames', 'reference'], defaultResolution: '720p' },
-  },
-]
-
-function invalid(message: string): never {
-  throw new ProviderError('invalid_input', message)
-}
-
-function errorInfo(value: unknown, status = 0, secret?: string): ProviderError {
-  const error = asJson(value)
-  const name = String(error.code ?? '')
-  const message = redact(
-    typeof error.message === 'string' ? error.message : `火山方舟请求失败（HTTP ${status}）`,
-    [secret],
-  )
-  const match = `${name} ${message}`.toLowerCase()
-  let code: ProviderErrorCode = 'unknown'
-  if (/quota|balance|insufficient|arrears/.test(match) || status === 402) code = 'quota'
-  else if (/sensitive|content.?policy|content.?filter|risk|moderation/.test(match))
-    code = 'content_policy'
-  else if (
-    status === 401 ||
-    status === 403 ||
-    /authentication|unauthorized|apikey|modelnotopen|accessdenied/.test(match)
-  )
-    code = 'auth'
-  else if (status === 429 || /ratelimit|rate.?limit|bursttoofast/.test(match)) code = 'rate_limit'
-  else if (status === 408 || status === 504 || /timeout|expired/.test(match)) code = 'timeout'
-  else if (/cancelled|canceled/.test(match)) code = 'cancelled'
-  else if (status >= 500 || /serveroverloaded|serviceunavailable/.test(match)) code = 'unavailable'
-  else if ((status >= 400 && status < 500) || /invalidparameter|invalidrequest/.test(match))
-    code = 'invalid_input'
-  return new ProviderError(code, message)
-}
-
-async function request(
-  plane: Plane,
-  ctx: Context,
-  path: string,
-  body?: Json,
-  method: Method = body ? 'POST' : 'GET',
-): Promise<Json> {
-  const key = apiKey(plane, ctx)
-  if (!key) throw new ProviderError('auth', `请先配置 ${SECRET[plane]}`)
-  const encoded = body ? JSON.stringify(body) : undefined
-  if (encoded && Buffer.byteLength(encoded, 'utf8') > 64 * 1024 * 1024)
-    invalid('火山方舟请求体超过 64 MB，请缩小参考素材')
-  const messages = {
-    cancelled: '火山方舟请求已取消',
-    network: '火山方舟网络请求失败；生成提交结果可能未知，不会自动重新提交',
   }
-  const response = await send(
-    ctx,
-    `${plane === 'plan' ? PLAN_BASE_URL : BASE_URL}${path}`,
-    {
-      method,
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      ...(encoded ? { body: encoded } : {}),
-    },
-    messages,
-  )
-  const value = await readJson(ctx, response, method, messages)
-  if (value === null) {
-    if (!response.ok) throw withRetry(errorInfo({}, response.status, key), method, response.status)
-    throw new ProviderError('unknown', '火山方舟返回无效 JSON；不会自动重新提交')
-  }
-  const data = asJson(value)
-  if (
-    !response.ok ||
-    (data.error && !['failed', 'cancelled', 'expired'].includes(String(data.status)))
-  )
-    throw withRetry(errorInfo(data.error, response.status, key), method, response.status)
-  return data
 }
 
-const imageRule = {
-  notImage: '火山方舟此输入仅支持图片参考；本地视频 / 音频参考需预先上传至平台素材库',
-  accept: (mime: string) => /^image\/(jpeg|png|webp|bmp|tiff|gif|heic|heif)$/.test(mime),
-  badMime: '参考图片 MIME 格式不受火山方舟支持',
-  // 须小于 30 MB
-  maxBytes: 30 * 1024 * 1024 - 1,
-  tooLarge: '参考图片必须非空且小于 30 MB',
-}
+const apiAdapter = withKeyPrefix(createArkAdapter(arkModels, nodeArkOptions))
+const planAdapter = withKeyPrefix(createArkPlanAdapter(arkModels, nodeArkOptions))
 
-function imageData(ref: AssetRef, ctx: Context) {
-  return imageDataUrl(ctx, ref, imageRule)
-}
-
-function extraParams(extra: Json | undefined, allowed: string[]): Json {
-  for (const key of Object.keys(extra ?? {})) {
-    if (!allowed.includes(key)) invalid(`火山方舟不支持 extra.${key}；不能覆盖模型、输入或请求路由`)
-  }
-  return { ...extra }
-}
-
-function remoteFile(url: unknown, kind: 'image' | 'video', mime: string): ProviderOutput {
-  if (typeof url !== 'string') throw new ProviderError('unknown', '火山方舟响应缺少产物 URL')
-  let parsed: URL
-  try {
-    parsed = new URL(url)
-  } catch {
-    throw new ProviderError('unknown', '火山方舟返回无效产物 URL')
-  }
-  if (
-    parsed.protocol !== 'https:' ||
-    parsed.username ||
-    parsed.password ||
-    !domainAllowed(NETWORK, parsed.hostname)
-  )
-    throw new ProviderError('unknown', '火山方舟产物 URL 超出插件的下载权限')
-  return { type: 'file', kind, mime, url }
-}
-
-async function chat(
-  plane: Plane,
-  model: string,
-  input: CapabilityInput<'text.chat'>,
-  ctx: Context,
-) {
-  if (!input.messages.length) invalid('对话至少需要一条消息')
-  extraParams(input.extra, ['thinking', 'top_p', 'frequency_penalty', 'presence_penalty'])
-  const key = apiKey(plane, ctx)
-  if (!key) throw new ProviderError('auth', `请先配置 ${SECRET[plane]}`)
-  const continuation: NonNullable<ChatMessage['continuation']> = { model: wireModel(plane, model) }
-  const result = await chatCompletion({
-    ctx,
-    label: '火山方舟',
-    baseURL: plane === 'plan' ? PLAN_BASE_URL : BASE_URL,
-    // 鉴权、传输失败和 HTTP 错误码归类沿用 request() 的规则；流必须以 [DONE] 结束
-    fetch: async (url, init) => {
-      const body = asJson(JSON.parse(String(init?.body)))
-      if (plane === 'plan' && Array.isArray(body.messages)) {
-        body.messages = body.messages.map((message, index) => {
-          const saved = input.messages[index]?.continuation
-          return saved?.model === continuation.model && asJson(message).role === 'assistant'
-            ? {
-                ...asJson(message),
-                ...(saved.reasoningContent ? { reasoning_content: saved.reasoningContent } : {}),
-                ...(saved.encryptedContent ? { encrypted_content: saved.encryptedContent } : {}),
-              }
-            : message
-        })
-      }
-      const res = await send(
-        ctx,
-        String(url),
-        {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        },
-        {
-          cancelled: '火山方舟请求已取消',
-          network: '火山方舟网络请求失败；对话结果可能未知，不会自动重新提交',
-        },
-      )
-      if (!res.ok) {
-        const data = await readJson(ctx, res, 'POST', {
-          cancelled: '火山方舟请求已取消',
-          network: '火山方舟网络请求失败；对话结果可能未知，不会自动重新提交',
-        })
-        throw withRetry(errorInfo(asJson(data).error, res.status, key), 'POST')
-      }
-      return requireSseDone(
-        plane === 'plan' ? capturePlanContinuation(res, continuation) : res,
-        () => new ProviderError('unknown', '火山方舟回答不完整或未收到 [DONE]；请勿自动重新提交'),
-      )
-    },
-    model: wireModel(plane, model),
-    input,
-    image: (ref) => imageData(ref, ctx),
-    structured: 'json_schema',
-    streamError: (error) => withRetry(errorInfo(error, 200, key), 'POST'),
-  })
-  if (plane === 'plan' && (continuation.reasoningContent || continuation.encryptedContent))
-    for (const output of result.outputs)
-      if (output.type === 'tool_calls') output.continuation = continuation
-  return result
-}
-
-async function image(
-  plane: Plane,
-  model: string,
-  input: CapabilityInput<'image.generate'>,
-  ctx: Context,
-  defaultResolution: string | undefined,
-) {
-  if (!defaultResolution) invalid('所选图片模型未声明默认分辨率')
-  if (!input.prompt.trim()) invalid('图片提示词不能为空')
-  if (input.negativePrompt) invalid('Seedream 不支持独立 negativePrompt，请合并到 prompt')
-  if (input.seed !== undefined && model.startsWith('doubao-seedream-5-'))
-    invalid('Seedream 5.0 不支持 seed')
-  const count = input.count ?? 1
-  const lite = model === 'doubao-seedream-5-0-260128'
-  if (!Number.isInteger(count) || count < 1 || count > 15) invalid('图片数量必须为 1–15 的整数')
-  if (count > 1 && model.startsWith('doubao-seedream-5-') && !lite)
-    invalid('Seedream Pro / Flash 仅支持单图；多图请选 Seedream Lite')
-  const refs = input.references ?? []
-  if (refs.length > (lite ? 14 : 10)) invalid(`所选模型最多接受 ${lite ? 14 : 10} 张参考图`)
-  if (count > 1 && refs.length + count > 15) invalid('所选模型的参考图与生成图片合计最多 15 张')
-  const body: Json = {
-    // 云端默认开启；作为下游视频参考的图片默认不叠加可见水印。
-    watermark: false,
-    ...extraParams(input.extra, [
-      'aspectRatio',
-      'size',
-      'watermark',
-      'output_format',
-      'optimize_prompt_options',
-    ]),
-    model: wireModel(plane, model),
-    prompt: input.prompt,
-    response_format: 'b64_json',
-  }
-  const aspectRatio = body.aspectRatio
-  delete body.aspectRatio
-  // 未选分辨率时使用模型默认档位；固定画幅与显式选择走同一尺寸换算。
-  if (body.size === undefined && input.width === undefined && input.height === undefined) {
-    const resolution = input.resolution ?? defaultResolution
-    const tokens = lite ? ['2K', '3K', '4K'] : ['1K', '1.5K', '2K']
-    const edge = tierEdge(resolution)
-    if (!model.startsWith('doubao-seedream-5-') || !tokens.includes(resolution) || !edge)
-      invalid('所选 Seedream 模型不支持该分辨率')
-    const { width, height } = sizeByArea(String(aspectRatio ?? '1:1'), edge * edge)
-    // 智能画幅只给档位，比例由模型按提示词决定
-    body.size = aspectRatio === 'auto' ? resolution : `${width}x${height}`
-  }
-  if (body.size === undefined && (input.width !== undefined || input.height !== undefined)) {
-    if (
-      !Number.isInteger(input.width) ||
-      !Number.isInteger(input.height) ||
-      input.width! < 1 ||
-      input.height! < 1
+// 套餐的图片、视频模型沿用按量模型 ID（画布节点换平台不用改模型参数）；
+// 请求时由 modelbay 适配器换成套餐模型名。对话、语音的 ID 两边本来一致。
+const PLAN_MEDIA_IDS = new Map(
+  arkModels.flatMap((declaration) => {
+    const api = declaration.channels.find((item) => item.channel === 'ark')
+    const plan = declaration.channels.find((item) => item.channel === 'ark-plan')
+    const media = declaration.capabilities.some(
+      (capability) => capability === 'image.generate' || capability === 'video.generate',
     )
-      invalid('图片宽高必须同时指定为正整数')
-    // 像素与宽高比范围统一在下面按 size 校验
-    body.size = `${input.width}x${input.height}`
+    return api && plan && media ? [[plan.id, api.id] as const] : []
+  }),
+)
+
+/** 套餐视频接口必然拒绝草稿模式；套餐目录不要把 draft 展示成可选项 */
+function planModel(spec: ModelSpec): ModelSpec {
+  const id = PLAN_MEDIA_IDS.get(spec.id) ?? spec.id
+  const options = spec.options
+  return {
+    ...spec,
+    id,
+    // 套餐文本模型只给内置 Agent，不进画布默认模型
+    ...(spec.capabilities.includes('text.chat') ? { agentOnly: true as const } : {}),
+    ...(options && 'draft' in options.shape ? { options: options.omit({ draft: true }) } : {}),
   }
-  if (body.size !== undefined && model.startsWith('doubao-seedream-5-')) {
-    const tokens = lite ? ['2K', '3K', '4K'] : ['1K', '1.5K', '2K']
-    const dimensions =
-      typeof body.size === 'string' ? /^([1-9][0-9]*)x([1-9][0-9]*)$/.exec(body.size) : null
-    if (dimensions) {
-      const width = Number(dimensions[1])
-      const height = Number(dimensions[2])
-      if (
-        width * height < (lite ? 3686400 : 921600) ||
-        width * height > (lite ? 16777216 : 4624220) ||
-        width / height < 1 / 16 ||
-        width / height > 16
-      )
-        invalid('图片尺寸超出 Seedream 5.0 的像素 / 宽高比范围')
-    } else if (!tokens.includes(String(body.size))) invalid('所选 Seedream 模型不支持该 size')
-  }
-  if (input.seed !== undefined) body.seed = input.seed
-  if (refs.length) {
-    const images = await Promise.all(refs.map((ref) => imageData(ref, ctx)))
-    body.image = images.length === 1 ? images[0] : images
-  }
-  if (count > 1) {
-    body.sequential_image_generation = 'auto'
-    body.sequential_image_generation_options = { max_images: count }
-  }
-  const data = await request(plane, ctx, '/images/generations', body)
-  if (!Array.isArray(data.data) || !data.data.length)
-    throw new ProviderError('unknown', '火山方舟响应缺少图片')
-  const outputs = data.data.map((item): ProviderOutput => {
-    const result = asJson(item)
-    if (result.error) {
-      const error = errorInfo(result.error, 0, apiKey(plane, ctx))
-      throw new ProviderError(error.code, error.message, { retryable: false })
-    }
-    const format = result.output_format ?? body.output_format ?? 'jpeg'
-    const mime = format === 'png' ? 'image/png' : 'image/jpeg'
-    if (typeof result.b64_json === 'string' && result.b64_json.length) {
-      const encoded = result.b64_json.replace(/^data:image\/[a-z]+;base64,/, '')
-      if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded))
-        throw new ProviderError('unknown', '火山方舟返回无效图片 Base64')
-      return {
-        type: 'file',
-        kind: 'image',
-        mime,
-        data: new Uint8Array(Buffer.from(encoded, 'base64')),
-      }
-    }
-    return remoteFile(result.url, 'image', mime)
-  })
-  return { state: 'succeeded' as const, outputs, usage: { images: outputs.length } }
 }
 
-async function cutout(
-  plane: Plane,
-  model: string,
-  input: CapabilityInput<'image.process'>,
-  ctx: Context,
-) {
-  if (input.operation !== 'cutout') invalid('当前 Seedream 精修仅支持透明图层抠图')
-  if (input.image.kind !== 'image') invalid('图层抠图需要图片原图')
-  const source = await ctx.files.read(input.image)
-  if (!source.data.length) invalid('图层抠图原图不能是空文件')
-  // 原图的格式要求以模型声明为准，宿主在运行前读的是同一份声明
-  const spec = models.find((item) => item.id === model)
-  const problems = mediaRequirementProblems(
-    spec?.limits?.media?.process,
-    {
-      mime: source.mime,
-      size: source.data.length,
-      width: source.width,
-      height: source.height,
-    },
-    { title: spec?.title ?? '当前模型', label: '图层抠图原图', strict: true },
-  )
-  if (problems.length) invalid(problems[0]!)
-  const data = await request(plane, ctx, '/images/generations', {
-    model: wireModel(plane, model),
-    image: `data:${source.mime};base64,${Buffer.from(source.data).toString('base64')}`,
-    prompt: input.prompt ?? '',
-    layer_decomposition: true,
-    output_format: 'png',
-    response_format: 'b64_json',
-  })
-  if (!Array.isArray(data.data)) throw new ProviderError('unknown', '未返回图层结果')
-  const layers = data.data.map(asJson)
-  const indices = new Set<number>()
-  for (const layer of layers) {
-    if (
-      typeof layer.z_index !== 'number' ||
-      !Number.isInteger(layer.z_index) ||
-      layer.z_index < 0 ||
-      layer.z_index > 16 ||
-      indices.has(layer.z_index)
-    )
-      throw new ProviderError('unknown', '图层顺序信息无效；不会自动重提')
-    indices.add(layer.z_index)
-    if (layer.bounding_box !== undefined) {
-      const box = asJson(layer.bounding_box)
-      for (const coordinates of [box.absolute, box.normalized]) {
-        if (
-          coordinates !== undefined &&
-          (!Array.isArray(coordinates) ||
-            coordinates.length !== 4 ||
-            coordinates.some((v) => typeof v !== 'number' || !Number.isFinite(v)))
-        )
-          throw new ProviderError('unknown', '图层边界信息无效；不会自动重提')
-      }
-    }
-  }
-  const outputs: ProviderOutput[] = layers
-    .filter((layer) => typeof layer.z_index === 'number' && layer.z_index > 0)
-    .map((layer) => {
-      if (typeof layer.b64_json === 'string') {
-        const encoded = layer.b64_json.replace(/^data:image\/png;base64,/, '')
-        if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded) || encoded.length % 4 === 1)
-          throw new ProviderError('unknown', '图层图片数据无效')
-        return {
-          type: 'file',
-          kind: 'image',
-          mime: 'image/png',
-          data: new Uint8Array(Buffer.from(encoded, 'base64')),
-          name: typeof layer.name === 'string' ? layer.name + '.png' : '主体图层.png',
-        }
-      }
-      return remoteFile(layer.url, 'image', 'image/png')
-    })
-  if (!outputs.length)
-    throw new ProviderError('unknown', '未返回独立透明图层，请在平台核对结果；不会自动重提')
-  outputs.push({
-    type: 'json',
-    value: {
-      layers: layers.map(({ z_index, bounding_box, name, description }) => ({
-        z_index,
-        bounding_box,
-        name,
-        description,
-      })),
-    },
-  })
-  return { state: 'succeeded' as const, outputs }
-}
-
-async function video(
-  plane: Plane,
-  model: string,
-  input: CapabilityInput<'video.generate'>,
-  ctx: Context,
-  defaultResolution: string | undefined,
-) {
-  // 参考素材的格式要求以模型声明为准，宿主在运行前读的是同一份声明
-  const spec = models.find((item) => item.id === model)
-  if (!defaultResolution) invalid('所选视频模型未声明默认分辨率')
-  if (!input.prompt.trim() && !input.firstFrame && !input.references?.length)
-    invalid('视频需要提示词或图片参考')
-  if (input.lastFrame && !input.firstFrame) invalid('尾帧需要同时提供首帧')
-  if ((input.firstFrame || input.lastFrame) && input.references?.length)
-    invalid('首尾帧与参考图不能混用')
-  const { adaptive_duration, ...extra } = input.extra ?? {}
-  if (adaptive_duration !== undefined && typeof adaptive_duration !== 'boolean')
-    invalid('自动时长必须为布尔值')
-  const body: Json = {
-    ...extraParams(extra, [
-      'watermark',
-      'return_last_frame',
-      'service_tier',
-      'execution_expires_after',
-      'draft',
-      'output_format',
-      'omni_reference_task_type',
-    ]),
-    ...(input.audio !== undefined ? { generate_audio: input.audio } : {}),
-    model: wireModel(plane, model),
-    content: [],
-    resolution: input.resolution ?? defaultResolution,
-    ratio:
-      input.aspectRatio === 'auto'
-        ? 'adaptive'
-        : (input.aspectRatio ?? (input.firstFrame ? 'adaptive' : '16:9')),
-  }
-  const current = model.startsWith('doubao-seedance-2-')
-  const v25 = model.startsWith('doubao-seedance-2-5-')
-  const maxDuration = v25 ? 30 : 15
-  const taskType = input.extra?.omni_reference_task_type
-  if (
-    taskType !== undefined &&
-    (!v25 || !['auto', 'reference', 'edit', 'extend'].includes(String(taskType)))
-  )
-    invalid('参考任务类型仅支持 Seedance 2.5 的 auto / reference / edit / extend')
-  if (taskType && !input.references?.length) invalid('参考任务类型需要使用多模态参考模式')
-  if (taskType === 'edit' || taskType === 'extend') {
-    if (!input.references?.some((ref) => ref.kind === 'video'))
-      invalid('编辑或延长任务需要参考视频')
-    body.ratio = 'adaptive'
-  }
-
-  if (current && input.seed !== undefined) invalid('Seedance 2.0 / 2.5 不支持 seed')
-  if (input.duration !== undefined) {
-    if (
-      !Number.isInteger(input.duration) ||
-      (current && input.duration !== -1 && (input.duration < 4 || input.duration > maxDuration))
-    )
-      invalid(`Seedance 时长必须为 -1 或 4–${maxDuration} 的整数秒`)
-    body.duration = input.duration
-  }
-  if (taskType === 'edit' || (current && adaptive_duration === true)) body.duration = -1
-  if (input.seed !== undefined) body.seed = input.seed
-  if (
-    current &&
-    !['16:9', '4:3', '1:1', '3:4', '9:16', '21:9', 'adaptive'].includes(String(body.ratio))
-  )
-    invalid('Seedance 不支持该宽高比')
-  const resolutions = /-(fast|mini)-/.test(model)
-    ? ['480p', '720p']
-    : v25
-      ? ['480p', '720p', '1080p']
-      : ['480p', '720p', '1080p', '4k']
-  if (current && !resolutions.includes(String(body.resolution))) invalid('Seedance 不支持该分辨率')
-  if (v25 && input.firstFrame) body.ratio = 'adaptive'
-  if (
-    current &&
-    (input.references ?? []).filter((ref) => ref.kind === 'image').length > (v25 ? 30 : 9)
-  )
-    invalid('Seedance 参考图片过多')
-  if (body.draft && plane === 'plan') invalid('Agent Plan 不支持 Seedance 草稿模式')
-  if (body.draft && (!v25 || body.resolution !== '480p'))
-    invalid('draft 仅支持 Seedance 2.5 的 480p 输出')
-  // 输出格式以模型声明为准，宿主在运行前读的是同一份声明
-  const outputFormats = spec?.limits?.outputFormats
-  if (
-    body.output_format !== undefined &&
-    (!['mp4', 'mov'].includes(String(body.output_format)) ||
-      (outputFormats && !outputFormats.includes(String(body.output_format))))
-  )
-    invalid('所选 Seedance 模型不支持该 output_format')
-  const counts = { image: 0, video: 0, audio: 0 }
-  for (const ref of input.references ?? [])
-    if (ref.kind === 'image' || ref.kind === 'video' || ref.kind === 'audio') counts[ref.kind]++
-  const referenceProblem = videoReferenceProblem(input.prompt, counts)
-  if (referenceProblem) invalid(referenceProblem)
-  const content: Json[] = input.prompt.trim()
-    ? [{ type: 'text', text: videoReferencePrompt(input.prompt, 'ark') }]
-    : []
-  for (const [ref, role] of [
-    [input.firstFrame, 'first_frame'],
-    [input.lastFrame, 'last_frame'],
-  ] as Array<readonly [AssetRef | undefined, string]>) {
-    if (ref)
-      content.push({ type: 'image_url', image_url: { url: await imageData(ref, ctx) }, role })
-  }
-  if (input.references?.length) {
-    if (!current && input.references.some((ref) => ref.kind !== 'image'))
-      invalid('当前模型不支持视频或音频参考')
-    content.push(
-      ...(await videoReferences(input.references, ctx, {
-        image: v25 ? 30 : 9,
-        video: current ? (v25 ? 10 : 3) : 0,
-        audio: current ? (v25 ? 10 : 3) : 0,
-        allowAudioOnly: v25,
-        platform: 'ark',
-        requirements: spec?.limits?.media,
-        title: spec?.title ?? '当前模型',
-        ...(taskType === 'edit' ? { videoTask: 'edit' } : {}),
-        ...(input.references.some((ref) => ref.kind === 'video')
-          ? { uploadVideo: referenceUploader(ctx) }
-          : {}),
-      })),
-    )
-  }
-  body.content = content
-  const data = await request(plane, ctx, '/contents/generations/tasks', body)
-  if (typeof data.id !== 'string' || !data.id)
-    throw new ProviderError('unknown', '火山方舟响应缺少任务 ID；不会自动重新提交')
-  return { state: 'pending' as const, remoteId: data.id, pollAfterMs: 5000 }
-}
+/** plein 暂无向量化能力，目录里不展示只有向量化能力的 modelbay 声明。 */
+const channelModels = (adapter: PlatformAdapter, channel: string) =>
+  adapterModels(adapter, channel).filter((spec) => spec.capabilities.length > 0)
 
 // 沿用 TOS 时期的密钥名，已有配置不用重填；S3 兼容存储也用这一对
 const TOS_SECRETS = [
@@ -968,211 +108,6 @@ const TOS_SECRETS = [
   { name: 'ARK_TOS_SECRET_KEY', title: '存储 Secret Key（视频参考）' },
 ]
 
-/** 解析模型槽并按能力分派；套餐文本须由内置 Agent 调用 */
-async function submitTo(
-  plane: Plane,
-  specs: ModelSpec[],
-  req: { capability: string; model: string; input: unknown; remoteOnly?: boolean; usage?: 'agent' },
-  ctx: Context & { settings: { customChatModel?: string } },
-) {
-  const spec = specs.find((model) => model.id === req.model)
-  // remoteOnly 是宿主核对过覆盖范围的远端新模型：只限对话
-  if (
-    spec
-      ? !(spec.capabilities as readonly string[]).includes(req.capability)
-      : !(req.remoteOnly && req.capability === 'text.chat')
-  )
-    invalid('所选火山方舟模型不支持此能力')
-  const custom =
-    req.model === 'custom-chat'
-      ? (ctx.settings.customChatModel ?? '')
-      : req.model === 'custom-image'
-        ? ctx.settings.customImageModel
-        : req.model === 'custom-video'
-          ? ctx.settings.customVideoModel
-          : req.model
-  const model = custom.trim()
-  if (!model) invalid('请在火山方舟设置中填写自定义模型 / Endpoint ID')
-  if (req.capability === 'text.chat') {
-    if (plane === 'plan' && req.usage !== 'agent') invalid('套餐文本模型仅供 Plein 内置 Agent 使用')
-    return chat(plane, model, req.input as CapabilityInput<'text.chat'>, ctx)
-  }
-  if (req.capability === 'image.generate')
-    return image(
-      plane,
-      model,
-      req.input as CapabilityInput<'image.generate'>,
-      ctx,
-      spec?.limits?.defaultResolution,
-    )
-  if (req.capability === 'image.process')
-    return cutout(plane, model, req.input as CapabilityInput<'image.process'>, ctx)
-  if (req.capability === 'video.generate')
-    return video(
-      plane,
-      model,
-      req.input as CapabilityInput<'video.generate'>,
-      ctx,
-      spec?.limits?.defaultResolution,
-    )
-  return invalid('火山方舟不支持此能力')
-}
-
-/** 视频任务的测试、轮询与取消；两个数据面接口相同，只是前缀和 Key 不同 */
-function tasks(plane: Plane) {
-  const path = (remoteId: string) => `/contents/generations/tasks/${encodeURIComponent(remoteId)}`
-  return {
-    async test(ctx: Context) {
-      await request(plane, ctx, '/contents/generations/tasks?page_size=1')
-    },
-    async poll(remoteId: string, ctx: Context): Promise<PollResult> {
-      const data = await request(plane, ctx, path(remoteId))
-      if (data.status === 'succeeded') {
-        const mov = data.output_format === 'mov'
-        const content = asJson(data.content)
-        const outputs = [
-          remoteFile(content.video_url, 'video', mov ? 'video/quicktime' : 'video/mp4'),
-        ]
-        // 开了「返回尾帧」时多一张尾帧图片
-        if (typeof content.last_frame_url === 'string' && content.last_frame_url)
-          outputs.push(remoteFile(content.last_frame_url, 'image', 'image/jpeg'))
-        return {
-          state: 'succeeded',
-          outputs,
-          usage: {
-            seconds: typeof data.duration === 'number' ? data.duration : undefined,
-            outputTokens:
-              typeof asJson(data.usage).completion_tokens === 'number'
-                ? (asJson(data.usage).completion_tokens as number)
-                : undefined,
-          },
-        }
-      }
-      if (['failed', 'cancelled', 'expired'].includes(String(data.status))) {
-        const error = errorInfo(
-          data.error ?? { code: data.status, message: `火山方舟视频任务 ${data.status}` },
-          0,
-          apiKey(plane, ctx),
-        )
-        return {
-          state: 'failed',
-          error: { code: error.code, message: error.message, retryable: false },
-        }
-      }
-      if (data.status !== 'queued' && data.status !== 'running')
-        throw new ProviderError('unknown', '火山方舟返回未知任务状态')
-      return {
-        state: 'pending',
-        pollAfterMs: 5000,
-        remote: data.status === 'queued' ? 'queued' : 'running',
-      }
-    },
-    async cancel(remoteId: string, ctx: Context) {
-      const data = await request(plane, ctx, path(remoteId))
-      if (data.status === 'queued') {
-        await request(plane, ctx, path(remoteId), undefined, 'DELETE')
-        return
-      }
-      if (data.status === 'running')
-        throw new ProviderError('invalid_input', '火山方舟不支持取消已经运行的视频任务')
-      if (!['succeeded', 'failed', 'cancelled', 'expired'].includes(String(data.status)))
-        throw new ProviderError('unknown', '火山方舟返回未知任务状态，未执行取消')
-    },
-  }
-}
-
-export const arkProvider = defineProvider({
-  id: 'volc/ark',
-  title: '火山方舟',
-  description: 'Doubao Seed 对话、Seedream 图片及 Seedance 视频；支持自定义模型 / Endpoint ID',
-  docsUrl: 'https://docs.volcengine.com/docs/ark/model-list?lang=zh',
-  settings,
-  secrets: [{ name: 'ARK_API_KEY', title: '火山方舟 API Key', required: true }, ...TOS_SECRETS],
-  models: models.map((model) => ({ ...model, capabilities: [...model.capabilities] })),
-  // 列表是否含图片 / 视频模型未能在官方文档确证，先只覆盖对话；对话复用现有 chat() 路径
-  remoteModelsScope: ['text.chat'],
-  // 按量数据面地址固定北京，列表与设置无关
-  // 按量使用 OpenAI 兼容模型列表；套餐使用独立管控面目录接口
-  listRemoteModels: async (ctx) =>
-    openAiModelList(await request('api', ctx, '/models')).map((model) => ({
-      ...model,
-      features: ['structured' as const],
-    })),
-  ...tasks('api'),
-  submit: (req, ctx) => submitTo('api', models, req, ctx),
-})
-
-// 模型 ID 与按量平台一致，画布节点换平台不用改模型参数；请求时再换成套餐模型名
-const PLAN_CHAT_IDS = [
-  'ark-code-latest',
-  'minimax-m3',
-  'kimi-k2.7-code',
-  'doubao-seed-2.0-mini',
-  'doubao-seed-2.1-lite',
-  'doubao-seed-2.1-pro',
-  'doubao-seed-evolving',
-  'deepseek-v4-flash',
-  'deepseek-v4-pro',
-  'deepseek-v4.1-flash',
-  'deepseek-v4.1-flash-economy',
-  'glm-5.3',
-  'glm-5.3-flash',
-  'kimi-k2.8-preview',
-  'kimi-k3',
-  'kimi-k3.1-pro',
-]
-/** 套餐侧支持看图的对话模型：官方模型列表标注「多模态理解」的同款模型 */
-const PLAN_VISION_CHAT_IDS = [
-  'glm-5.3-flash',
-  'deepseek-v4.1-flash',
-  'deepseek-v4.1-flash-economy',
-  'doubao-seed-2.1-lite',
-  'doubao-seed-2.1-pro',
-  'doubao-seed-evolving',
-]
-/** 套餐视频接口必然拒绝草稿模式；套餐目录不要把 draft 展示成可选项 */
-function withoutDraft(model: ModelSpec): ModelSpec {
-  const options = model.options
-  return options && 'draft' in options.shape
-    ? { ...model, options: options.omit({ draft: true }) }
-    : model
-}
-const planModels: ModelSpec[] = [
-  ...models
-    .filter(
-      (model) =>
-        PLAN_MODELS[model.id] || model.id === 'custom-image' || model.id === 'custom-video',
-    )
-    .map(withoutDraft),
-  ...PLAN_CHAT_IDS.map((id): ModelSpec => ({
-    id,
-    title: id === 'ark-code-latest' ? 'Auto（套餐自动路由）' : id,
-    ...(['minimax-m3', 'kimi-k2.7-code'].includes(id) ? { deprecated: true as const } : {}),
-    capabilities: ['text.chat'],
-    agentOnly: true,
-    features: [
-      'tools',
-      'structured',
-      ...(PLAN_VISION_CHAT_IDS.includes(id) ? ['vision' as const] : []),
-    ],
-    description: 'Agent Plan 套餐文本模型，仅用于内置 Agent；可用性取决于套餐档位',
-  })),
-  {
-    id: 'custom-chat',
-    title: '自定义套餐对话模型',
-    capabilities: ['text.chat'],
-    features: ['tools', 'structured'],
-    agentOnly: true,
-  },
-  {
-    id: 'doubao-seed-tts-2.0',
-    title: '豆包语音合成 2.0',
-    capabilities: ['audio.speech'],
-    limits: { speed: { min: 0.5, max: 2 }, promptMaxLength: 3000 },
-    voices: TTS_VOICES,
-  },
-  { id: 'doubao-seed-asr-2.0', title: '豆包语音识别 2.0', capabilities: ['audio.transcribe'] },
-]
 const PLAN_DIRECTORY_SECRETS = [
   {
     name: 'ARK_PLAN_ACCESS_KEY',
@@ -1182,57 +117,45 @@ const PLAN_DIRECTORY_SECRETS = [
   { name: 'ARK_PLAN_SECRET_KEY', title: '模型目录 Secret Key（可选）' },
 ]
 
-export const arkPlanProvider = defineProvider({
+export const arkProvider = adapterToProvider(apiAdapter, {
+  id: 'volc/ark',
+  channel: 'ark',
+  models: channelModels(apiAdapter, 'ark'),
+  description: 'Doubao Seed 对话、Seedream 图片及 Seedance 视频；支持自定义模型 / Endpoint ID',
+  settings,
+  secrets: [{ name: 'ARK_API_KEY', title: '火山方舟 API Key', required: true }, ...TOS_SECRETS],
+  // 列表是否含图片 / 视频模型未能在官方文档确证，先只覆盖对话
+  remoteModelsScope: ['text.chat'],
+  listRemoteModels: async (ctx) =>
+    (await apiAdapter.native!('listModels', {}, toAdapterContext(ctx))) as never,
+  // 只查任务列表，不触发生成计费
+  test: async (ctx) => {
+    await apiAdapter.native!('listTasks', {}, toAdapterContext(ctx))
+  },
+})
+
+export const arkPlanProvider = adapterToProvider(planAdapter, {
   id: 'volc/ark-plan',
-  title: '火山方舟 Agent Plan',
+  channel: 'ark-plan',
+  models: channelModels(planAdapter, 'ark-plan').map(planModel),
   description:
     '套餐内置 Agent 对话、Seedream 图片、Seedance 视频、语音合成与识别；模型目录查询可选配 AK/SK',
-  docsUrl: 'https://docs.volcengine.com/docs/ark/agent-plan-personal-plan-overview?lang=zh',
   settings: planSettings,
   secrets: [
     { name: 'ARK_AGENT_PLAN_API_KEY', title: 'Agent Plan 专属 API Key', required: true },
     ...PLAN_DIRECTORY_SECRETS,
     ...TOS_SECRETS,
   ],
-  models: planModels.map((model) => ({ ...model, capabilities: [...model.capabilities] })),
   remoteModelsScope: ['text.chat'],
-  listRemoteModels: async (ctx) => {
-    const entries = await listPlanModels(ctx)
-    const aliases = new Map(Object.entries(PLAN_MODELS).map(([id, alias]) => [alias, id]))
-    return entries
-      .map((entry) => {
-        const id = aliases.get(entry.id) ?? entry.id
-        const media = /seedream|seedance|tts|asr|embedding/.test(id)
-        return {
-          ...entry,
-          id,
-          ...(!media
-            ? {
-                kind: 'llm' as const,
-                agentOnly: true,
-                features: ['tools' as const, 'structured' as const],
-              }
-            : {}),
-        }
-      })
-      .filter((entry) => !/embedding|asr/.test(entry.id))
+  listRemoteModels: async (ctx) =>
+    (await planAdapter.native!('listModels', {}, toAdapterContext(ctx))) as never,
+  test: async (ctx) => {
+    await planAdapter.native!('listTasks', {}, toAdapterContext(ctx))
   },
-  ...tasks('plan'),
-  submit: (req, ctx) => {
-    if (req.model === 'doubao-seed-tts-2.0' && req.capability === 'audio.speech')
-      return synthesizeSpeech(
-        'seed-tts-2.0',
-        req.input as CapabilityInput<'audio.speech'>,
-        {
-          ...ctx,
-          secret: (name) =>
-            name === 'VOLC_SPEECH_API_KEY' ? ctx.secret('ARK_AGENT_PLAN_API_KEY') : undefined,
-        },
-        true,
-      )
-    if (req.model === 'doubao-seed-asr-2.0' && req.capability === 'audio.transcribe')
-      return transcribePlan(req.input as CapabilityInput<'audio.transcribe'>, ctx)
-    return submitTo('plan', planModels, req, ctx)
+  // 宿主策略：套餐文本模型只给内置 Agent
+  beforeSubmit(req) {
+    if (req.capability === 'text.chat' && req.usage !== 'agent')
+      throw new ProviderError('invalid_input', '套餐文本模型仅供 Plein 内置 Agent 使用')
   },
 })
 

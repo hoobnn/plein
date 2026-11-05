@@ -13,7 +13,7 @@ const video = { assetId: 'motion', kind: 'video' as const }
 const setup = (replies: unknown[] = [], over = {}) => {
   const f = fakeContext(arkProvider, replies)
   f.ctx.files.read = vi.fn(async (ref) => ({
-    data: new Uint8Array([1, 2, 3]),
+    data: Buffer.from([1, 2, 3]),
     mime: ref.kind === 'audio' ? 'audio/wav' : ref.kind === 'video' ? 'video/mp4' : 'image/png',
     width: 1024,
     height: 1024,
@@ -127,7 +127,7 @@ describe('Ark 创作扩展 HTTP 合同', () => {
           type: 'file',
           kind: 'image',
           mime: 'image/png',
-          data: new Uint8Array([4, 5, 6]),
+          data: Buffer.from([4, 5, 6]),
           name: '人物.png',
         },
         {

@@ -1,7 +1,26 @@
 import { describe, expect, it } from 'vite-plus/test'
 import { fakeContext } from '../testing'
 import { arkProvider } from './index'
-import { presignS3, referenceStorageHost, referenceUploader } from './reference-upload'
+import {
+  presignS3,
+  referenceStorageFrom,
+  referenceStorageHost,
+  referenceUploader as uploaderFor,
+} from '@modelbay/ark/tos'
+import type { AdapterContext } from '@modelbay/core'
+
+/** 上传实现已迁到 @modelbay/ark/tos；这里按 plein 的对象前缀与调用形态适配，沿用原有断言。 */
+function referenceUploader(ctx: unknown) {
+  const adapterCtx = {
+    ...(ctx as object),
+    settings: {
+      ...(ctx as { settings: object }).settings,
+      referenceKeyPrefix: 'plein/video-references',
+    },
+  } as unknown as AdapterContext
+  const upload = uploaderFor(adapterCtx, referenceStorageFrom(adapterCtx))
+  return (_ref: unknown, file: { data: Uint8Array; mime: string }) => upload(file)
+}
 
 const video = { assetId: 'local', kind: 'video' as const }
 const file = { data: new Uint8Array([1, 2, 3]), mime: 'video/mp4' }

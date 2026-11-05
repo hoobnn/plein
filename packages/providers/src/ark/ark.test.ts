@@ -225,9 +225,7 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
     })
     expect(result).toMatchObject({
       state: 'succeeded',
-      outputs: [
-        { type: 'file', kind: 'image', mime: 'image/png', data: new Uint8Array([1, 2, 3]) },
-      ],
+      outputs: [{ type: 'file', kind: 'image', mime: 'image/png', data: Buffer.from([1, 2, 3]) }],
       usage: { images: 1 },
     })
   })
@@ -787,7 +785,7 @@ describe('Agent Plan 套餐（volc/ark-plan）', () => {
       req_params: { speaker: 'zh_female_vv_uranus_bigtts', text: '你好' },
     })
     if (result.state !== 'succeeded') throw new Error('expected success')
-    expect(result.outputs[0]).toMatchObject({ type: 'file', data: new Uint8Array([1, 2, 3]) })
+    expect(result.outputs[0]).toMatchObject({ type: 'file', data: Buffer.from([1, 2, 3]) })
   })
 
   it('图片走专属数据面、专属 Key 和套餐模型名', async () => {
