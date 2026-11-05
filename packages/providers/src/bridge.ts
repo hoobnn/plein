@@ -146,6 +146,36 @@ export interface AdapterProviderOptions<S extends z.ZodObject> extends Omit<
    * 抛 `ProviderError` 即拒绝，不会联网。
    */
   beforeSubmit?(request: ProviderRequest, ctx: ProviderContext<z.output<S>>): void | Promise<void>
+  /**
+   * 交给适配器之前改写请求（宿主语义：某平台的某类能力忽略 plein 传入的 `extra` 之类）。
+   * 在统一剥离 `callback_url` 之后调用，返回的请求才会提交。
+   */
+  prepareRequest?(request: ProviderRequest): ProviderRequest
+}
+
+/** 请求里可能携带平台回调地址的几处位置：`input` 本身及其 `extra` / `options` / `parameters`。 */
+const CALLBACK_HOLDERS = ['extra', 'options', 'parameters'] as const
+
+function withoutCallback(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value
+  if (!('callback_url' in value)) return value
+  const { callback_url: _dropped, ...rest } = value as Record<string, unknown>
+  return rest
+}
+
+/**
+ * plein 宿主不需要平台回调（结果一律靠轮询取回），而协作文档里的 extra / options 可能被他人
+ * 写入回调地址，把任务结果推到外部。所以桥接对所有平台统一剥离 `callback_url`。
+ */
+export function stripCallbackUrl(request: ProviderRequest): ProviderRequest {
+  const input = request.input as Record<string, unknown> | undefined
+  if (!input || typeof input !== 'object') return request
+  let next: Record<string, unknown> = withoutCallback(input) as Record<string, unknown>
+  for (const key of CALLBACK_HOLDERS) {
+    const cleaned = withoutCallback(next[key])
+    if (cleaned !== next[key]) next = { ...next, [key]: cleaned }
+  }
+  return next === input ? request : ({ ...request, input: next } as ProviderRequest)
 }
 
 /** plein 的上下文是 modelbay `AdapterContext` 的子集，`settings` / `files` / `stream` 等原样透传。 */
@@ -193,6 +223,7 @@ export function adapterToProvider<S extends z.ZodObject>(
     adjustModel,
     poll,
     beforeSubmit,
+    prepareRequest,
     declaredSecretsOnly,
     ...host
   } = opts
@@ -218,8 +249,11 @@ export function adapterToProvider<S extends z.ZodObject>(
     models: specs,
     async submit(request, ctx) {
       await beforeSubmit?.(request, ctx)
+      const prepared = prepareRequest
+        ? prepareRequest(stripCallbackUrl(request))
+        : stripCallbackUrl(request)
       return nodeBuffers(
-        await adapter.submit(request as AdapterRequest, toAdapterContext(scoped(ctx))),
+        await adapter.submit(prepared as AdapterRequest, toAdapterContext(scoped(ctx))),
       )
     },
     ...(withPoll

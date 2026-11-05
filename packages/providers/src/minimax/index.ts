@@ -29,6 +29,12 @@ export const minimaxProvider = adapterToProvider(adapter, {
     },
   ],
   limits: { concurrency: 2 },
+  // 宿主语义：MiniMax 对话不接受 plein 传入的 extra（官方对话参数由适配器决定）
+  prepareRequest(request) {
+    if (request.capability !== 'text.chat') return request
+    const { extra: _ignored, ...input } = request.input as Record<string, unknown>
+    return { ...request, input } as typeof request
+  },
   // 官方 /v1/models 是 OpenAI 兼容的对话模型列表，不覆盖图片 / 视频 / 语音 / 音乐
   remoteModelsScope: ['text.chat'],
   // 切换地区后列表不同，地域参与缓存键
