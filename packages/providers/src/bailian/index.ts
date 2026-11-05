@@ -7,10 +7,28 @@ import {
   ProviderError,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
-import { adapterToProvider, toAdapterContext } from '../bridge'
+import { adapterModels, adapterToProvider, toAdapterContext } from '../bridge'
 
 // 局部重绘需要蒙版规范化与临时 OSS 上传（依赖 sharp），由宿主在创建适配器时注入。
 const adapter = createBailianAdapter(bailianAdapter.models, { edit: prepareImageEditRequest })
+
+/**
+ * modelbay 目录里 plein 宿主跑不通的百炼模型，不进 plein 目录（MCP 侧不受影响）：
+ * - `qwen3-asr-flash`：适配器 submit 尚未实现 audio.transcribe；
+ * - `wan2.2-s2v`：需要驱动音频 / 人像素材，plein 节点给不出；
+ * - `happyhorse-1.0-video-edit`：需要待编辑视频与参考素材，plein 节点给不出；
+ * - `cosyvoice-*`、`qwen-audio-*-tts-*`：必须指定系统音色或复刻音色，设置里的默认音色（Cherry）
+ *   对它们无效，而 plein 的语音节点只带一个默认音色。
+ */
+function unsupportedInPlein(id: string): boolean {
+  return (
+    id === 'qwen3-asr-flash' ||
+    id === 'wan2.2-s2v' ||
+    id === 'happyhorse-1.0-video-edit' ||
+    id.startsWith('cosyvoice-') ||
+    /^qwen-audio-[\d.]+-tts-/.test(id)
+  )
+}
 
 const settings = z.object({
   region: z
@@ -39,6 +57,7 @@ export const bailianProvider = adapterToProvider(adapter, {
   description: '千问对话、图像、万相视频和语音合成；连接测试仅检查本地配置，不调用计费模型',
   testScope: 'configuration',
   channel: 'bailian',
+  models: adapterModels(adapter, 'bailian').filter((spec) => !unsupportedInPlein(spec.id)),
   // 适配器会探测 BAILIAN_API_KEY、域名与轮询覆盖等 MCP / CLI 用的密钥名，宿主沙箱只认清单声明的
   declaredSecretsOnly: true,
   settings,
