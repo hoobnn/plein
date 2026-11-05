@@ -33,16 +33,12 @@ const settings = z.object({
     .meta({ title: '任务轮询间隔（毫秒）' }),
 })
 
-// 已下线、仅为旧画布引用保留的模型：宿主标记 deprecated，适配器在发包前拒绝。
-const RETIRED = new Set(['qwen3-tts-instruct-flash'])
-
 export const bailianProvider = adapterToProvider(adapter, {
   id: 'aliyun/bailian',
   title: '阿里云百炼',
   description: '千问对话、图像、万相视频和语音合成；连接测试仅检查本地配置，不调用计费模型',
   testScope: 'configuration',
   channel: 'bailian',
-  adjustModel: (model) => (RETIRED.has(model.id) ? { ...model, deprecated: true } : model),
   // 适配器会探测 BAILIAN_API_KEY、域名与轮询覆盖等 MCP / CLI 用的密钥名，宿主沙箱只认清单声明的
   declaredSecretsOnly: true,
   settings,

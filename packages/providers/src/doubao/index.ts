@@ -6,7 +6,7 @@ import {
   TTS_VOICES,
 } from '@modelbay/doubao-speech'
 import { definePlugin, defineServerPlugin, PLUGIN_API_VERSION } from '@plein/plugin-sdk'
-import { adapterModels, adapterToProvider, toAdapterContext } from '../bridge'
+import { adapterToProvider, toAdapterContext } from '../bridge'
 
 export { speechSettings, TTS_VOICES }
 
@@ -38,8 +38,7 @@ export const doubaoProvider = adapterToProvider(adapter, {
     ['VOLC_SPEECH_API_KEY'],
     ['VOLC_SPEECH_APP_ID', 'VOLC_SPEECH_ACCESS_KEY'],
   ],
-  // seed-tts-1.0 只服务历史音色，不进 plein 的模型列表
-  models: adapterModels(adapter, 'doubao-speech').filter((spec) => spec.id !== 'seed-tts-1.0'),
+  channel: 'doubao-speech',
   async test(ctx) {
     headers(toAdapterContext(ctx))
     ctx.log('本地配置检查通过；未调用计费接口，尚未验证远端密钥、模型权限或网络')

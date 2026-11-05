@@ -85,17 +85,13 @@ const PLAN_MEDIA_IDS = new Map(
   }),
 )
 
-/** 套餐视频接口必然拒绝草稿模式；套餐目录不要把 draft 展示成可选项 */
+/**
+ * 套餐图片 / 视频的模型 id 换回按量 id（宿主语义：画布节点换平台不用改模型参数）。
+ * 套餐文本只给内置 Agent、套餐视频不支持草稿，这两项来自 modelbay 声明。
+ */
 function planModel(spec: ModelSpec): ModelSpec {
-  const id = PLAN_MEDIA_IDS.get(spec.id) ?? spec.id
-  const options = spec.options
-  return {
-    ...spec,
-    id,
-    // 套餐文本模型只给内置 Agent，不进画布默认模型
-    ...(spec.capabilities.includes('text.chat') ? { agentOnly: true as const } : {}),
-    ...(options && 'draft' in options.shape ? { options: options.omit({ draft: true }) } : {}),
-  }
+  const id = PLAN_MEDIA_IDS.get(spec.id)
+  return id ? { ...spec, id } : spec
 }
 
 // 沿用 TOS 时期的密钥名，已有配置不用重填；S3 兼容存储也用这一对
