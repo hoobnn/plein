@@ -13,7 +13,11 @@
   "dependencies": {
     "@ai-sdk/openai": "4.0.106",
     "@ai-sdk/openai-compatible": "3.0.81",
+    "@modelbay/ark": "0.1.0",
+    "@modelbay/bailian": "0.1.0",
     "@modelbay/core": "0.1.0",
+    "@modelbay/doubao-speech": "0.1.0",
+    "@modelbay/minimax": "0.1.0",
     "@modelbay/openai": "0.1.0",
     "@modelbay/shared": "0.1.0",
     "@plein/plugin-sdk": "workspace:*",

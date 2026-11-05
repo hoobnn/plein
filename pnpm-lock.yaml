@@ -215,6 +215,10 @@ overrides:
   '@modelbay/core': link:../../modelbay/packages/core
   '@modelbay/shared': link:../../modelbay/packages/shared
   '@modelbay/openai': link:../../modelbay/packages/openai
+  '@modelbay/ark': link:../../modelbay/packages/ark
+  '@modelbay/bailian': link:../../modelbay/packages/bailian
+  '@modelbay/minimax': link:../../modelbay/packages/minimax
+  '@modelbay/doubao-speech': link:../../modelbay/packages/doubao-speech
 
 patchedDependencies:
   pixi.js@8.22.0: dde46599357b4045b58d7012ce3bcdf71cbf91b88b2034ed5fbaae8c94bb6d52
@@ -654,9 +658,21 @@ importers:
       '@ai-sdk/openai-compatible':
         specifier: 3.0.81
         version: 3.0.81(zod@4.6.7)
+      '@modelbay/ark':
+        specifier: link:../../../../modelbay/packages/ark
+        version: link:../../../../modelbay/packages/ark
+      '@modelbay/bailian':
+        specifier: link:../../../../modelbay/packages/bailian
+        version: link:../../../../modelbay/packages/bailian
       '@modelbay/core':
         specifier: link:../../../../modelbay/packages/core
         version: link:../../../../modelbay/packages/core
+      '@modelbay/doubao-speech':
+        specifier: link:../../../../modelbay/packages/doubao-speech
+        version: link:../../../../modelbay/packages/doubao-speech
+      '@modelbay/minimax':
+        specifier: link:../../../../modelbay/packages/minimax
+        version: link:../../../../modelbay/packages/minimax
       '@modelbay/openai':
         specifier: link:../../../../modelbay/packages/openai
         version: link:../../../../modelbay/packages/openai

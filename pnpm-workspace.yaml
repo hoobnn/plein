@@ -50,6 +50,10 @@ overrides:
   "@modelbay/core": "link:../../modelbay/packages/core"
   "@modelbay/shared": "link:../../modelbay/packages/shared"
   "@modelbay/openai": "link:../../modelbay/packages/openai"
+  "@modelbay/ark": "link:../../modelbay/packages/ark"
+  "@modelbay/bailian": "link:../../modelbay/packages/bailian"
+  "@modelbay/minimax": "link:../../modelbay/packages/minimax"
+  "@modelbay/doubao-speech": "link:../../modelbay/packages/doubao-speech"
 patchedDependencies:
   pixi.js@8.22.0: patches/pixi.js@8.22.0.patch
 peerDependencyRules:
