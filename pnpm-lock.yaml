@@ -213,6 +213,8 @@ overrides:
   '@hyperframes/engine>puppeteer': 25.16.0
   '@hyperframes/producer>puppeteer': 25.16.0
   '@modelbay/core': link:../../modelbay/packages/core
+  '@modelbay/shared': link:../../modelbay/packages/shared
+  '@modelbay/openai': link:../../modelbay/packages/openai
 
 patchedDependencies:
   pixi.js@8.22.0: dde46599357b4045b58d7012ce3bcdf71cbf91b88b2034ed5fbaae8c94bb6d52
@@ -652,6 +654,15 @@ importers:
       '@ai-sdk/openai-compatible':
         specifier: 3.0.81
         version: 3.0.81(zod@4.6.7)
+      '@modelbay/core':
+        specifier: link:../../../../modelbay/packages/core
+        version: link:../../../../modelbay/packages/core
+      '@modelbay/openai':
+        specifier: link:../../../../modelbay/packages/openai
+        version: link:../../../../modelbay/packages/openai
+      '@modelbay/shared':
+        specifier: link:../../../../modelbay/packages/shared
+        version: link:../../../../modelbay/packages/shared
       '@plein/plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk

@@ -1,6 +1,6 @@
-import { downloadVoicePreview } from '../shared/voice-preview'
+import { downloadVoicePreview } from '@modelbay/shared'
 import { videoReferenceProblem, videoReferencePrompt } from '@plein/plugin-sdk'
-import { videoReferences } from '../shared/video-references'
+import { videoReferences } from '@modelbay/shared'
 import {
   type AssetRef,
   type CapabilityInput,
@@ -24,9 +24,9 @@ import {
   redact,
   withRetry,
   send,
-} from '../shared/http'
-import { minimaxModelList } from '../shared/model-list'
-import { sizeByLongEdge, tierEdge } from '../size'
+} from '@modelbay/shared'
+import { minimaxModelList } from '@modelbay/shared'
+import { sizeByLongEdge, tierEdge } from '@modelbay/shared'
 
 const settings = z.object({
   region: z.enum(['cn', 'global']).default('cn').meta({ title: 'API 地区' }),

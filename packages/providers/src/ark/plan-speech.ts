@@ -5,7 +5,7 @@ import {
   type CapabilityInput,
   type TranscriptSegment,
 } from '@plein/plugin-sdk'
-import { asJson, redact } from '../shared/http'
+import { asJson, redact } from '@modelbay/shared'
 
 export function asrFrame(type: number, sequence: number, payload: Uint8Array) {
   const compressed = gzipSync(payload)

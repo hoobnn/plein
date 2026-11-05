@@ -1,4 +1,4 @@
-import { downloadVoicePreview } from '../shared/voice-preview'
+import { downloadVoicePreview } from '@modelbay/shared'
 import {
   type CapabilityInput,
   definePlugin,
@@ -17,7 +17,7 @@ import {
   type VoiceCreationResult,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
-import { isJson, type Json, readText, redact, send } from '../shared/http'
+import { isJson, type Json, readText, redact, send } from '@modelbay/shared'
 
 export const speechSettings = z.object({
   voice: z.string().min(1).default('zh_female_vv_uranus_bigtts').meta({ title: '默认音色 ID' }),

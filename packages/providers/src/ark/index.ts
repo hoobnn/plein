@@ -5,7 +5,7 @@ import { listPlanModels } from './plan-models'
 import { videoReferenceProblem, videoReferencePrompt } from '@plein/plugin-sdk'
 import { mediaRequirementProblems } from '@plein/plugin-sdk'
 import { referenceStorageHost, referenceUploader } from './reference-upload'
-import { videoReferences } from '../shared/video-references'
+import { videoReferences } from '@modelbay/shared'
 import {
   type AssetRef,
   type ChatMessage,
@@ -33,10 +33,10 @@ import {
   redact,
   send,
   withRetry,
-} from '../shared/http'
-import { chatCompletion, requireSseDone } from '../shared/llm'
-import { openAiModelList } from '../shared/model-list'
-import { sizeByArea, tierEdge } from '../size'
+} from '@modelbay/shared'
+import { chatCompletion, requireSseDone } from '@modelbay/shared'
+import { openAiModelList } from '@modelbay/shared'
+import { sizeByArea, tierEdge } from '@modelbay/shared'
 
 const BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
 // Agent Plan 个人版的专属数据面，只认专属 Key 和套餐模型名

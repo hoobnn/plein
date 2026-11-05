@@ -1,5 +1,5 @@
 import { type ChatMessage, ProviderError } from '@plein/plugin-sdk'
-import { asJson } from '../shared/http'
+import { asJson } from '@modelbay/shared'
 
 /** AI SDK 的兼容协议会丢弃 encrypted_content，在方舟边界保留并原样回传。 */
 export function capturePlanContinuation(

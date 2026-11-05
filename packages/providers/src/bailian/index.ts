@@ -13,7 +13,7 @@ import {
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
 import { imageModelProblem, mediaBatchProblems, mediaRequirementProblems } from '@plein/plugin-sdk'
-import { sizeByArea, tierEdge } from '../size'
+import { sizeByArea, tierEdge } from '@modelbay/shared'
 import {
   asJson,
   imageDataUrl,
@@ -23,9 +23,9 @@ import {
   redact,
   send,
   withRetry,
-} from '../shared/http'
-import { chatCompletion, requireSseDone } from '../shared/llm'
-import { openAiModelList } from '../shared/model-list'
+} from '@modelbay/shared'
+import { chatCompletion, requireSseDone } from '@modelbay/shared'
+import { openAiModelList } from '@modelbay/shared'
 
 const settings = z.object({
   region: z

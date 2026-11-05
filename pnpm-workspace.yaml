@@ -48,6 +48,8 @@ overrides:
   "@hyperframes/producer>puppeteer": 25.16.0
   # modelbay 未发布前的本地联调，不能合进 main
   "@modelbay/core": "link:../../modelbay/packages/core"
+  "@modelbay/shared": "link:../../modelbay/packages/shared"
+  "@modelbay/openai": "link:../../modelbay/packages/openai"
 patchedDependencies:
   pixi.js@8.22.0: patches/pixi.js@8.22.0.patch
 peerDependencyRules:

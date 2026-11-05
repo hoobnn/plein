@@ -1,6 +1,6 @@
 import { createHash, createHmac } from 'node:crypto'
 import { ProviderError, type ProviderContext, type RemoteModel } from '@plein/plugin-sdk'
-import { asJson, readJson, send } from '../shared/http'
+import { asJson, readJson, send } from '@modelbay/shared'
 
 /** 官方套餐目录接口是管控面，只接受 AK/SK，不接受 Agent Plan API Key。 */
 export async function listPlanModels(ctx: ProviderContext): Promise<RemoteModel[]> {
