@@ -60,7 +60,7 @@ describe('Doubao Speech HTTP contracts', () => {
         { capability: 'audio.speech', model: 'seed-tts-2.0', input: { text: 'fixture' } },
         ctx,
       ),
-    ).toMatchObject({ state: 'succeeded', outputs: [{ data: new Uint8Array([1, 2, 3]) }] })
+    ).toMatchObject({ state: 'succeeded', outputs: [{ data: Buffer.from([1, 2, 3]) }] })
   })
   it('assembles streamed PCM into a playable mono 16-bit WAV with one container', async () => {
     const ctx = context(new Response('{"code":0,"data":"AAD/"}\n{"code":20000000,"data":"fwCA"}'))
@@ -216,7 +216,7 @@ describe('Doubao Speech HTTP contracts', () => {
     )
     expect(result).toMatchObject({
       state: 'succeeded',
-      outputs: [{ data: new Uint8Array([1, 2, 3, 4]), mime: 'audio/mpeg' }],
+      outputs: [{ data: Buffer.from([1, 2, 3, 4]), mime: 'audio/mpeg' }],
     })
     const [url, init] = vi.mocked(ctx.fetch).mock.calls[0]!
     expect(url).toBe('https://openspeech.bytedance.com/api/v3/tts/unidirectional')

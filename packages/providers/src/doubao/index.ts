@@ -21,7 +21,7 @@ const SECRET_TITLES: Record<string, string> = {
   VOLC_SPEECH_ACCESS_KEY: 'Access Key（旧版鉴权）',
 }
 
-const bridged = adapterToProvider(adapter, {
+export const doubaoProvider = adapterToProvider(adapter, {
   testScope: 'configuration',
   id: 'doubao/speech',
   title: '豆包语音',
@@ -62,25 +62,6 @@ const bridged = adapterToProvider(adapter, {
     design: (input, ctx) => adapter.voiceDesign.design(input, toAdapterContext(ctx)),
   },
 })
-
-/** 桥接把音频换成 Node Buffer；豆包一直交付纯 Uint8Array（合同测试按此断言），这里还原。 */
-function plainBytes<R>(result: R): R {
-  const outputs = (result as { outputs?: unknown }).outputs
-  if (!Array.isArray(outputs)) return result
-  return {
-    ...result,
-    outputs: outputs.map((output: { type?: string; data?: Uint8Array }) =>
-      output.type === 'file' && output.data
-        ? { ...output, data: new Uint8Array(output.data) }
-        : output,
-    ),
-  }
-}
-
-export const doubaoProvider: typeof bridged = {
-  ...bridged,
-  submit: async (request, ctx) => plainBytes(await bridged.submit(request, ctx)),
-}
 
 export const doubaoPlugin = defineServerPlugin(
   definePlugin({

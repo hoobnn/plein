@@ -15,7 +15,7 @@ const settings = z.object({
   voice: z.string().min(1).default('male-qn-qingse').meta({ title: '默认音色 ID' }),
 })
 
-const bridged = adapterToProvider(adapter, {
+export const minimaxProvider = adapterToProvider(adapter, {
   id: 'minimax/api',
   title: 'MiniMax',
   description: '对话、图片、H3 音画视频、语音和音乐；生成使用按量 API Key',
@@ -43,33 +43,6 @@ const bridged = adapterToProvider(adapter, {
   voiceClone: minimaxVoiceClone,
   voiceDesign: minimaxVoiceDesign,
 })
-
-/** 桥接把文件输出换成 Node Buffer；MiniMax 一直交付 Uint8Array，保持原样。 */
-function plainBytes<R>(result: R): R {
-  const outputs = (result as { outputs?: unknown }).outputs
-  if (!Array.isArray(outputs)) return result
-  return {
-    ...result,
-    outputs: outputs.map((output: { data?: Uint8Array }) =>
-      output.data && Buffer.isBuffer(output.data)
-        ? {
-            ...output,
-            data: new Uint8Array(
-              output.data.buffer,
-              output.data.byteOffset,
-              output.data.byteLength,
-            ),
-          }
-        : output,
-    ),
-  }
-}
-
-export const minimaxProvider: typeof bridged = {
-  ...bridged,
-  submit: async (request, ctx) => plainBytes(await bridged.submit(request, ctx)),
-  ...(bridged.poll ? { poll: async (id, ctx) => plainBytes(await bridged.poll!(id, ctx)) } : {}),
-}
 
 export const minimaxPlugin = defineServerPlugin(
   definePlugin({

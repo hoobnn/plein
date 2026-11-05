@@ -338,7 +338,7 @@ describe('MiniMax 官方 HTTP 契约', () => {
       voice_setting: { voice_id: 'male-qn-qingse', speed: 1.2 },
     })
     expect(result).toMatchObject({
-      outputs: [{ mime: 'audio/mpeg', data: new Uint8Array([1, 2, 255]) }],
+      outputs: [{ mime: 'audio/mpeg', data: Buffer.from([1, 2, 255]) }],
       usage: { seconds: 1.5, characters: 2 },
     })
   })
