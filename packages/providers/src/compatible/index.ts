@@ -76,6 +76,8 @@ export function createCompatiblePlugin(raw: Record<string, unknown> = {}) {
     title: '兼容对话渠道',
     channel: 'openai-compatible',
     poll: false,
+    // 适配器会探测 OPENAI_COMPATIBLE_API_KEY 等 MCP / CLI 用的别名，宿主沙箱只认清单声明的
+    declaredSecretsOnly: true,
     description:
       '单个自定义 Chat Completions 渠道；能力由你明确指定。更改地址、模型或能力后需重新选择模型。',
     settings: compatibleSettings,
@@ -107,8 +109,11 @@ export function createCompatiblePlugin(raw: Record<string, unknown> = {}) {
       ctx.log('仅检查本地配置；未验证网络、鉴权、模型能力或余额，未调用计费接口')
     },
     // 渠道上的模型都是对话模型；拉取候选只需要 Base URL 与 API Key，模型 ID 只在提交时必填
-    listRemoteModels: async (ctx) =>
-      (await adapter.native!('listModels', {}, toAdapterContext(ctx))) as never,
+    async listRemoteModels(ctx) {
+      if (!ctx.settings.baseURL)
+        throw new ProviderError('invalid_input', '请先填写渠道 Base URL，再拉取模型候选')
+      return (await adapter.native!('listModels', {}, toAdapterContext(ctx))) as never
+    },
     async beforeSubmit(req, ctx) {
       validate(ctx.settings)
       if (req.capability !== 'text.chat' || req.model !== identity(ctx.settings))
