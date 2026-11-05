@@ -1,16 +1,20 @@
 import { createHash } from 'node:crypto'
-import { createOpenAICompatibleAdapter, models as openaiModels } from '@modelbay/openai'
+import {
+  compatibleBaseURL,
+  createOpenAICompatibleAdapter,
+  models as openaiModels,
+} from '@modelbay/openai'
 import {
   type CapabilityInput,
   definePlugin,
   defineServerPlugin,
   PLUGIN_API_VERSION,
-  type ProviderContext,
   ProviderError,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
-import { asJson, openAiModelList, readJson, redact, send, withRetry } from '@modelbay/shared'
-import { adapterToProvider } from '../bridge'
+import { adapterToProvider, toAdapterContext } from '../bridge'
+
+export { compatibleBaseURL }
 
 export const COMPATIBLE_ID = 'plein/compatible'
 
@@ -47,25 +51,7 @@ export const compatibleSettings = z
     }
   })
 
-export function compatibleBaseURL(raw: string): URL {
-  let url: URL
-  try {
-    url = new URL(raw)
-  } catch {
-    throw new Error('Base URL 必须是完整的 HTTP(S) 地址')
-  }
-  if (url.username || url.password || url.search || url.hash)
-    throw new Error('Base URL 不能包含用户名、密码、查询参数或片段')
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && url.hostname === 'localhost'))
-    throw new Error('远端渠道必须使用 HTTPS；HTTP 仅支持 localhost')
-  if (!/^(?:localhost|(?:[a-z0-9-]+\.)+[a-z]{2,})$/.test(url.hostname))
-    throw new Error('渠道地址须使用域名或 localhost')
-  url.pathname = url.pathname.replace(/\/+$/, '')
-  return url
-}
-
 type Settings = z.output<typeof compatibleSettings>
-type Context = ProviderContext<Settings>
 
 function identity(settings: Settings): string {
   const url = compatibleBaseURL(settings.baseURL)
@@ -77,34 +63,6 @@ function validate(settings: Settings) {
   if (!settings.baseURL || !settings.model)
     throw new ProviderError('invalid_input', '请填写渠道 Base URL 与实际模型 ID')
   compatibleBaseURL(settings.baseURL)
-}
-
-function remoteError(status: number, value: unknown, ctx: Context) {
-  const data = asJson(value),
-    error = asJson(data.error)
-  const code = String(error.code ?? data.code ?? '').toLowerCase()
-  const message = redact(
-    String(error.message ?? data.message ?? `兼容渠道 HTTP ${status}`),
-    [ctx.secret('COMPATIBLE_API_KEY'), ctx.secret('COMPATIBLE_API_KEY')?.trim()],
-    { tokens: true },
-  )
-  const normalized =
-    status === 401 || status === 403
-      ? 'auth'
-      : /quota|insufficient|balance/.test(code)
-        ? 'quota'
-        : /content|safety|policy/.test(code)
-          ? 'content_policy'
-          : status === 429
-            ? 'rate_limit'
-            : status === 408 || status === 504
-              ? 'timeout'
-              : status >= 500
-                ? 'unavailable'
-                : status >= 400
-                  ? 'invalid_input'
-                  : 'unknown'
-  return withRetry(new ProviderError(normalized, message), 'POST', status)
 }
 
 /** Rebuild only this built-in descriptor after configuration changes. Old refs stop being selectable. */
@@ -148,27 +106,9 @@ export function createCompatiblePlugin(raw: Record<string, unknown> = {}) {
         throw new ProviderError('auth', '请填写 API Key')
       ctx.log('仅检查本地配置；未验证网络、鉴权、模型能力或余额，未调用计费接口')
     },
-    // OpenAI 兼容渠道的模型列表；渠道上的模型都是对话模型，能力提示归为 llm
-    async listRemoteModels(ctx) {
-      // 拉取候选只需要 Base URL 与 API Key：模型 ID 可以从候选里选，不在提交路径之前强制
-      const settings = ctx.settings
-      if (!settings.baseURL)
-        throw new ProviderError('invalid_input', '请先填写渠道 Base URL，再拉取模型候选')
-      compatibleBaseURL(settings.baseURL)
-      const key = ctx.secret('COMPATIBLE_API_KEY')?.trim()
-      if (!key) throw new ProviderError('auth', '请填写 API Key')
-      const base = compatibleBaseURL(settings.baseURL).href.replace(/\/$/, '')
-      const messages = { cancelled: '兼容渠道请求已取消', network: '兼容渠道网络请求失败' }
-      const res = await send(
-        ctx,
-        `${base}/models`,
-        { method: 'GET', headers: { Authorization: `Bearer ${key}` } },
-        messages,
-      )
-      const body = await readJson(ctx, res, 'GET', messages)
-      if (!res.ok) throw remoteError(res.status, body, ctx)
-      return openAiModelList(body, { kind: 'llm' })
-    },
+    // 渠道上的模型都是对话模型；拉取候选只需要 Base URL 与 API Key，模型 ID 只在提交时必填
+    listRemoteModels: async (ctx) =>
+      (await adapter.native!('listModels', {}, toAdapterContext(ctx))) as never,
     async beforeSubmit(req, ctx) {
       validate(ctx.settings)
       if (req.capability !== 'text.chat' || req.model !== identity(ctx.settings))
