@@ -71,7 +71,7 @@ MiniMax 默认走中国区 `api.minimax.cn`，也可以选国际区 `api.minimax
 
 适配器以官方接口文档为契约，直接调用宿主提供的 `ctx.fetch`，没有引入云厂商 SDK。这样域名许可、密钥访问、资产归属、取消信号和异步任务轮询都由宿主统一把关。每个平台各自声明模型、设置、密钥和所需的最小网络权限；生成的产物经宿主写入资产库。
 
-OpenAI 兼容的对话（`text.chat`）共用 `packages/providers/src/shared/llm.ts`。它基于 Vercel AI SDK（`ai` + `@ai-sdk/openai-compatible`），负责消息转换、流式读取、按请求里的 JSON Schema 校验结构化输出（zod `fromJSONSchema`），以及用量归一化。鉴权、端点，以及 HTTP 错误码和流内错误码的归类与脱敏，仍由各平台适配器通过传入的 `fetch` 和 `streamError` 负责；请求一律不重试。百炼和火山方舟已接入这一层，支持流式文字回调和工具调用；MiniMax 对话仍使用独立的非流式请求实现。
+各平台的请求构造、响应解析、错误归类与模型声明都在 modelbay 适配器里，`packages/providers/src/bridge.ts` 的 `adapterToProvider` 把适配器桥接成 Plein 的 Provider；平台目录里只保留宿主侧的设置表单、密钥清单、连接检查、远端模型列表和限流等。模型目录与弃用状态以 modelbay 声明为准，文件产物统一为 Node `Buffer`。对话请求一律不重试。
 
 SDK 新增了两个字段：`testScope` 用来标出「只检查本地配置」，`credentialAlternatives` 用来表达豆包的新旧两种鉴权方式；只有某一组凭据填完整时，目录里的 `configured` 才为真。宿主发送取消请求时使用独立的 10 秒信号，避免已取消的生成请求把远端取消请求也一起拦下。
 

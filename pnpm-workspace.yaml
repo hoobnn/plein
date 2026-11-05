@@ -38,6 +38,7 @@ overrides:
   # markdownlint 固定旧版 re2js；2.8.7 修复 lookbehind 匹配的 high 漏洞
   re2js: 2.8.7
   # undici 的 high 漏洞修复版：7.x 为 7.30.1、6.x 为 6.29.1；三处调用方的版本区间都容纳得了修复版
+  # @modelbay/openai 依赖 @ai-sdk/openai；改用发布版（取消 link）后这条依赖链回到 plein 的锁文件
   "@ai-sdk/provider-utils>undici": 7.30.1
   "@electron/get>undici": 7.30.1
   "node-gyp>undici": 6.29.1

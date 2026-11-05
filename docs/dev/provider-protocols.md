@@ -58,4 +58,4 @@ Agent Plan 工具调用保留 `reasoning_content` 和 `encrypted_content`，随 
 
 官方来源和面向使用者的完整参数表见[模型平台参数](../guide/providers.md#图片和视频参数2026-11-02-核对)。
 
-OpenAI `GET /v1/models` 用于免费连接检查和设置页模型展示。列表不提供接口能力，`remoteModelsScope=[]`，不把未知 ID 当作可对话模型。原生 Responses 使用 `@ai-sdk/openai`；SSE 必须收到 `response.completed` / `response.incomplete` / `response.failed` / `error`，状态由 SDK 解释，缺终包不能作为成功。图像 JSON 协议见[官方 Images Edits](https://developers.openai.com/api/reference/resources/images/methods/edit)。
+OpenAI `GET /v1/models` 用于免费连接检查和设置页模型展示。列表不提供接口能力，`remoteModelsScope=[]`，不把未知 ID 当作可对话模型。原生 Responses 由 modelbay 的 OpenAI 适配器实现；SSE 必须收到 `response.completed` / `response.incomplete` / `response.failed` / `error`，缺终包不能作为成功。图像 JSON 协议见[官方 Images Edits](https://developers.openai.com/api/reference/resources/images/methods/edit)。
