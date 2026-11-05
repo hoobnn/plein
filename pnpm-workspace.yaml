@@ -46,6 +46,8 @@ overrides:
   # 与 engine 已解析的 puppeteer-core 对齐，移除旧 chromium-bidi 引入的易受攻击 zod 3
   "@hyperframes/engine>puppeteer": 25.16.0
   "@hyperframes/producer>puppeteer": 25.16.0
+  # modelbay 未发布前的本地联调，不能合进 main
+  "@modelbay/core": "link:../../modelbay/packages/core"
 patchedDependencies:
   pixi.js@8.22.0: patches/pixi.js@8.22.0.patch
 peerDependencyRules:

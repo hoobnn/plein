@@ -212,6 +212,7 @@ overrides:
   '@hyperframes/engine>undici': 7.30.1
   '@hyperframes/engine>puppeteer': 25.16.0
   '@hyperframes/producer>puppeteer': 25.16.0
+  '@modelbay/core': link:../../modelbay/packages/core
 
 patchedDependencies:
   pixi.js@8.22.0: dde46599357b4045b58d7012ce3bcdf71cbf91b88b2034ed5fbaae8c94bb6d52
@@ -619,6 +620,9 @@ importers:
 
   packages/plugin-sdk:
     dependencies:
+      '@modelbay/core':
+        specifier: link:../../../../modelbay/packages/core
+        version: link:../../../../modelbay/packages/core
       zod:
         specifier: 'catalog:'
         version: 4.6.7
