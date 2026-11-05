@@ -9,7 +9,7 @@ import {
   ProviderError,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
-import { adapterModels, adapterToProvider, toAdapterContext } from '../bridge'
+import { adapterToProvider, toAdapterContext } from '../bridge'
 import { speechSettings } from '../doubao'
 
 const NETWORK = ['*.volces.com', '*.byteimg.com', '*.ibytedtos.com', '*.byteicdn.com']
@@ -98,10 +98,6 @@ function planModel(spec: ModelSpec): ModelSpec {
   }
 }
 
-/** plein 暂无向量化能力，目录里不展示只有向量化能力的 modelbay 声明。 */
-const channelModels = (adapter: PlatformAdapter, channel: string) =>
-  adapterModels(adapter, channel).filter((spec) => spec.capabilities.length > 0)
-
 // 沿用 TOS 时期的密钥名，已有配置不用重填；S3 兼容存储也用这一对
 const TOS_SECRETS = [
   { name: 'ARK_TOS_ACCESS_KEY', title: '存储 Access Key（视频参考）' },
@@ -120,7 +116,6 @@ const PLAN_DIRECTORY_SECRETS = [
 export const arkProvider = adapterToProvider(apiAdapter, {
   id: 'volc/ark',
   channel: 'ark',
-  models: channelModels(apiAdapter, 'ark'),
   description: 'Doubao Seed 对话、Seedream 图片及 Seedance 视频；支持自定义模型 / Endpoint ID',
   settings,
   secrets: [{ name: 'ARK_API_KEY', title: '火山方舟 API Key', required: true }, ...TOS_SECRETS],
@@ -137,7 +132,7 @@ export const arkProvider = adapterToProvider(apiAdapter, {
 export const arkPlanProvider = adapterToProvider(planAdapter, {
   id: 'volc/ark-plan',
   channel: 'ark-plan',
-  models: channelModels(planAdapter, 'ark-plan').map(planModel),
+  adjustModel: planModel,
   description:
     '套餐内置 Agent 对话、Seedream 图片、Seedance 视频、语音合成与识别；模型目录查询可选配 AK/SK',
   settings: planSettings,

@@ -1,4 +1,3 @@
-import type { AdapterContext, PlatformAdapter } from '@modelbay/core'
 import { bailianAdapter, createBailianAdapter } from '@modelbay/bailian'
 import { prepareImageEditRequest } from '@modelbay/bailian/image-edit'
 import {
@@ -8,27 +7,10 @@ import {
   ProviderError,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
-import { adapterModels, adapterToProvider, toAdapterContext } from '../bridge'
+import { adapterToProvider, toAdapterContext } from '../bridge'
 
 // 局部重绘需要蒙版规范化与临时 OSS 上传（依赖 sharp），由宿主在创建适配器时注入。
-const base = createBailianAdapter(bailianAdapter.models, { edit: prepareImageEditRequest })
-
-// 适配器会按名依次读取 BAILIAN_API_KEY、域名与轮询覆盖等 MCP / CLI 用的名字；宿主沙箱对未声明
-// 的密钥名直接抛错。这里只放行清单声明的密钥，其余按「未设置」返回，让适配器走默认值。
-const DECLARED_SECRETS = new Set(['DASHSCOPE_API_KEY'])
-const declaredOnly = (ctx: AdapterContext): AdapterContext => ({
-  ...ctx,
-  secret: (name) => (DECLARED_SECRETS.has(name) ? ctx.secret(name) : undefined),
-})
-const adapter: PlatformAdapter = {
-  ...base,
-  submit: (request, ctx) => base.submit(request, declaredOnly(ctx)),
-  ...(base.poll ? { poll: (id, ctx) => base.poll!(id, declaredOnly(ctx)) } : {}),
-  ...(base.cancel ? { cancel: (id, ctx) => base.cancel!(id, declaredOnly(ctx)) } : {}),
-  ...(base.native
-    ? { native: (op, params, ctx) => base.native!(op, params, declaredOnly(ctx)) }
-    : {}),
-}
+const adapter = createBailianAdapter(bailianAdapter.models, { edit: prepareImageEditRequest })
 
 const settings = z.object({
   region: z
@@ -59,10 +41,10 @@ export const bailianProvider = adapterToProvider(adapter, {
   title: '阿里云百炼',
   description: '千问对话、图像、万相视频和语音合成；连接测试仅检查本地配置，不调用计费模型',
   testScope: 'configuration',
-  // 向量、转写等 plein 暂无对应能力的模型（派生后能力为空）不进目录。
-  models: adapterModels(adapter, 'bailian')
-    .filter((model) => model.capabilities.length > 0)
-    .map((model) => (RETIRED.has(model.id) ? { ...model, deprecated: true } : model)),
+  channel: 'bailian',
+  adjustModel: (model) => (RETIRED.has(model.id) ? { ...model, deprecated: true } : model),
+  // 适配器会探测 BAILIAN_API_KEY、域名与轮询覆盖等 MCP / CLI 用的密钥名，宿主沙箱只认清单声明的
+  declaredSecretsOnly: true,
   settings,
   secrets: [
     {

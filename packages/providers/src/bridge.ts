@@ -99,13 +99,18 @@ export function specFromInfo(info: ModelInfo): ModelSpec {
   return optionsSchema ? { ...rest, options: optionsFromSchema(optionsSchema) } : rest
 }
 
-/** 适配器里某个渠道的全部模型，按声明顺序，id 为渠道内模型 ID。 */
+/**
+ * 适配器里某个渠道的全部模型，按声明顺序，id 为渠道内模型 ID。
+ * 派生后没有 plein 能力的声明（向量化、重排、识别等 plein 暂无对应能力的模型）不进目录。
+ */
 export function adapterModels(adapter: PlatformAdapter, channel: string): ModelSpec[] {
   return adapter.models.flatMap((declaration) => {
     const ref: ChannelRef | undefined = declaration.channels.find(
       (item) => item.channel === channel,
     )
-    return ref ? [specFromInfo(toModelInfo(declaration, ref))] : []
+    if (!ref) return []
+    const spec = specFromInfo(toModelInfo(declaration, ref))
+    return spec.capabilities.length > 0 ? [spec] : []
   })
 }
 
@@ -128,6 +133,12 @@ export interface AdapterProviderOptions<S extends z.ZodObject> extends Omit<
   models?: ModelSpec[]
   /** 对派生出的模型逐个调整（补 plein 独有的字段）。 */
   adjustModel?(spec: ModelSpec): ModelSpec
+  /**
+   * 宿主沙箱对未声明的密钥名直接抛错，而适配器会按名探测 MCP / CLI 用的别名与覆盖项。
+   * 设为 true 时，适配器（以及 `test` / `listRemoteModels`）看到的 `ctx.secret` 只放行
+   * `secrets` 里声明的名字，其余按「未设置」返回 undefined，让适配器走默认值。
+   */
+  declaredSecretsOnly?: boolean
   /** 同步接口的平台没有任务可轮询：设为 false 时不暴露 `poll` / `cancel`。默认跟随适配器。 */
   poll?: boolean
   /**
@@ -162,37 +173,65 @@ function nodeBuffers<R>(result: R): R {
   }
 }
 
+/** 只放行 `names` 里的密钥，其余返回 undefined（不抛错）。 */
+function onlySecrets<C extends { secret(name: string): string | undefined }>(
+  ctx: C,
+  names: ReadonlySet<string>,
+): C {
+  return { ...ctx, secret: (name: string) => (names.has(name) ? ctx.secret(name) : undefined) }
+}
+
 export function adapterToProvider<S extends z.ZodObject>(
   adapter: PlatformAdapter,
   opts: AdapterProviderOptions<S>,
 ): ProviderDefinition<S> {
-  const { id, title, channel, models, adjustModel, poll, beforeSubmit, ...host } = opts
+  const {
+    id,
+    title,
+    channel,
+    models,
+    adjustModel,
+    poll,
+    beforeSubmit,
+    declaredSecretsOnly,
+    ...host
+  } = opts
   const channelId = channel ?? adapter.channels[0]
   if (!channelId) throw new Error(`适配器 ${adapter.id} 没有渠道`)
   const specs =
     models ??
     adapterModels(adapter, channelId).map((spec) => (adjustModel ? adjustModel(spec) : spec))
   const withPoll = (poll ?? true) && adapter.poll !== undefined
+  const declared = new Set(host.secrets.map((secret) => secret.name))
+  const scoped = <C extends ProviderContext<z.output<S>>>(ctx: C): C =>
+    declaredSecretsOnly ? onlySecrets(ctx, declared) : ctx
+  const { test, listRemoteModels } = host
   return defineProvider<S>({
     docsUrl: adapter.docsUrl,
     ...host,
+    ...(test ? { test: (ctx: ProviderContext<z.output<S>>) => test(scoped(ctx)) } : {}),
+    ...(listRemoteModels
+      ? { listRemoteModels: (ctx: ProviderContext<z.output<S>>) => listRemoteModels(scoped(ctx)) }
+      : {}),
     id: id ?? adapter.id,
     title: title ?? adapter.title,
     models: specs,
     async submit(request, ctx) {
       await beforeSubmit?.(request, ctx)
-      return nodeBuffers(await adapter.submit(request as AdapterRequest, toAdapterContext(ctx)))
+      return nodeBuffers(
+        await adapter.submit(request as AdapterRequest, toAdapterContext(scoped(ctx))),
+      )
     },
     ...(withPoll
       ? {
           poll: async (remoteId: string, ctx: ProviderContext<z.output<S>>) =>
-            nodeBuffers(await adapter.poll!(remoteId, toAdapterContext(ctx))),
+            nodeBuffers(await adapter.poll!(remoteId, toAdapterContext(scoped(ctx)))),
         }
       : {}),
     ...(withPoll && adapter.cancel
       ? {
           cancel: (remoteId: string, ctx: ProviderContext<z.output<S>>) =>
-            adapter.cancel!(remoteId, toAdapterContext(ctx)),
+            adapter.cancel!(remoteId, toAdapterContext(scoped(ctx))),
         }
       : {}),
   })
