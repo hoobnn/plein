@@ -145,8 +145,10 @@
   --radius-lg: 10px;
   --radius-xl: 14px;
   --radius-2xl: 18px;
+  /* 胶囊：芯片、徽标、滑块，取代零散的 999px */
+  --radius-pill: 9999px;
   /* 画布 DOM 圆角独立于 Nova，与 canvas-core/src/theme.ts 的画布语义及
-     renderers.ts 的 RADIUS = 16 对应；control 保留迁移前 lg = 12。 */
+     renderers.ts 的 RADIUS = 16 对应；control = 12，独立于上面六级，不参与 lg 的语义。 */
   --radius-canvas-control: 12px;
   --radius-canvas-card: 16px;
 
@@ -169,6 +171,18 @@
 
   /* 行高：多行说明 13/20（配 .ui-note）；阅读正文直接用 text-base 的 14/22 */
   --leading-note: 20px;
+
+  /*
+   * 断点只有四档：sm 640 · compact 900 · lg 1024 · xl 1280。Tailwind 的 sm: / compact: / lg: / xl: 直接可用，
+   * 不再有 md、2xl。CSS 的 @media 不能引用变量，手写这四个数字；JS 一律用 ui/layout.ts 的 BREAKPOINT。
+   * 640 以下为手机窄屏；900 以下右侧面板改铺满宽度、双栏对话框改上下堆叠；1024 以下首页收成两列；
+   * 1280 以上顶栏展开全部操作。
+   */
+  --breakpoint-*: initial;
+  --breakpoint-sm: 640px;
+  --breakpoint-compact: 900px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
 
   /* 动效：颜色变化用 fast，弹出和位移用 base，对话框用 slow */
   --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
@@ -218,6 +232,8 @@
   --h-md: 32px;
   --h-lg: 36px;
   --h-xl: 40px;
+  /* 小控件：键帽、标签、徽标、移除按钮、加载圈 */
+  --h-2xs: 20px;
   /* Nova 开关：32 × 18.4，圆钮 16；圆钮尺寸直接用 size-4。 */
   --switch-w: 32px;
   --switch-h: 18.4px;
@@ -227,6 +243,28 @@
   --panel-pad-sm: 12px;
   --panel-pad: 16px;
   --panel-pad-lg: 20px;
+  /*
+   * 右侧浮层面板宽度三档：sm 提醒条 · md 任务、创作引导 · lg 助手。
+   * 编辑器相机内缩、首页留白都读这三个值（JS 侧在 ui/layout.ts，数值由测试保证一致）。
+   */
+  --panel-w-sm: 320px;
+  --panel-w-md: 360px;
+  --panel-w-lg: 400px;
+  /* 菜单与选择器宽度三档，以及它们的最大高度 */
+  --menu-w-sm: 220px;
+  --menu-w-md: 240px;
+  --menu-w-lg: 280px;
+  --menu-h: 440px;
+  --pop-max-h: 480px;
+  /*
+   * 对话框宽度四档（Modal 的 size）：sm 确认和小表单 · md 单栏内容 · lg 双栏工作面板和资料库 · xl 分镜、序列这类宽编辑器。
+   * 高度统一：内容多的面板（资料库、设置、检查点）用 --dialog-h，视口已经由外层留出 16 / 24 边距。
+   */
+  --dialog-w-sm: 640px;
+  --dialog-w-md: 880px;
+  --dialog-w-lg: 1120px;
+  --dialog-w-xl: 1440px;
+  --dialog-h: min(850px, 100%);
   /* 布局：浮动外框离视口边 12，顶栏 44，之下的浮层从 64 开始 */
   --chrome-inset: 12px;
   --chrome-h: 44px;
