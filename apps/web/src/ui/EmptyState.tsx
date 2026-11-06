@@ -12,6 +12,7 @@ export function EmptyState({
   action,
   fill = false,
   compact = false,
+  wide = false,
 }: {
   icon?: IconName
   title: ReactNode
@@ -21,12 +22,14 @@ export function EmptyState({
   fill?: boolean
   /** 侧栏、弹层这类窄处：上下留白小一些，标题用小号字 */
   compact?: boolean
+  /** 说明较长、容器又宽时放宽说明的行宽，避免窄栏里折成三行 */
+  wide?: boolean
 }) {
   return (
     <div className={`ui-empty ${fill ? 'ui-empty-fill' : ''} ${compact ? 'ui-empty-compact' : ''}`}>
       {icon && <Icon name={icon} size={24} />}
       <p className="ui-empty-title">{title}</p>
-      {hint && <p className="ui-empty-hint">{hint}</p>}
+      {hint && <p className={wide ? 'ui-empty-hint max-w-xl' : 'ui-empty-hint'}>{hint}</p>}
       {action && <div className="mt-1">{action}</div>}
     </div>
   )

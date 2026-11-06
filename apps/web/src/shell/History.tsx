@@ -276,6 +276,7 @@ function HistoryPanel({ engine }: { engine: Engine }) {
         {/* oxlint-disable-next-line jsx-a11y/label-has-associated-control -- Base UI Thumb 内渲染真实 range input */}
         <label className="flex items-center gap-2 text-ink-subtle" title="缩略图大小">
           <Icon name="board" size={14} />
+          <span className="hidden text-xs sm:inline">缩略图大小</span>
           <Slider
             aria-label="缩略图大小"
             min={SIZE_MIN}

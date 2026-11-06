@@ -267,7 +267,7 @@ function Guide({
           {error}
         </p>
       )}
-      <div className="ui-scrollbar flex min-h-0 flex-col gap-3 overflow-y-auto px-3 pb-3 [&>*]:shrink-0">
+      <div className="ui-scrollbar guide-body flex min-h-0 flex-col gap-3 overflow-y-auto px-3 pb-3 [&>*]:shrink-0">
         {(facts.boards.length > 1 || !facts.board) && (
           <label className="ui-field" htmlFor={`${canvasId}-guide-board`}>
             <span className="ui-label">继续哪份分镜</span>
@@ -440,7 +440,7 @@ function Guide({
                       ) : (
                         <button
                           type="button"
-                          className="flex w-full gap-2 rounded text-left hover:bg-hover disabled:opacity-60"
+                          className="flex w-full gap-2 rounded text-left hover:bg-hover disabled:cursor-default disabled:hover:bg-transparent"
                           title={`定位到${step.title}`}
                           disabled={!step.target}
                           onClick={() =>
@@ -476,7 +476,7 @@ function Guide({
                             >
                               <button
                                 type="button"
-                                className="flex w-full gap-1.5 rounded px-1 py-0.5 text-left text-2xs hover:bg-hover disabled:opacity-50"
+                                className="flex w-full gap-1.5 rounded px-1 py-0.5 text-left text-2xs hover:bg-hover disabled:cursor-default disabled:hover:bg-transparent"
                                 disabled={!sub.target}
                                 onClick={() =>
                                   sub.target &&

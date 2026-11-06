@@ -29,6 +29,7 @@ export function Empty({
     <EmptyState
       icon={filtered ? 'search' : 'library'}
       title={text}
+      wide
       hint={
         filtered
           ? '试试其他关键词，或清空搜索和筛选。'

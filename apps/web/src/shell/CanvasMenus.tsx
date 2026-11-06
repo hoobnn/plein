@@ -170,7 +170,7 @@ function Item(props: {
       className={`ui-menu-item justify-between ${props.danger ? 'text-danger hover:bg-danger-soft' : ''}`}
     >
       <span>{props.label}</span>
-      {props.hint && <span className="ui-kbd">{props.hint}</span>}
+      {props.hint && <span className="ui-kbd text-xs text-ink-muted">{props.hint}</span>}
     </button>
   )
 }
@@ -399,7 +399,7 @@ function ContextMenu({
         )}
         {node?.executable && node.execution === 'job' && single && (
           <Item
-            label="生成"
+            label={single.results?.length ? '重新生成' : '生成'}
             hint={shortcut('mod+enter')}
             disabled={readOnly}
             onClick={edit(() => void runNode(single.id))}

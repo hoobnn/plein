@@ -22,9 +22,14 @@ export function SelectionBar({ remote }: { remote: boolean }) {
   return <SelectionBarHost engine={engine} remote={remote} />
 }
 
+/** 提示条底边（顶栏下 64 + 条高 40）再留 8 */
+const TOAST_CLEAR = 112
+
 function SelectionBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
   useEngineVersion(engine)
   const notify = useCanvas((s) => s.notify)
+  // 顶栏下方的提示条显示期间，多选条不压到它下面
+  const toastShown = useCanvas((s) => !!s.notice)
   const downloads = useBatchDownload(engine)
   const ids = engine.selection.values()
   const multi = ids.length >= 2 && !engine.doc.readOnly
@@ -78,7 +83,7 @@ function SelectionBarHost({ engine, remote }: { engine: Engine; remote: boolean 
     if (!box) return null
     const tl = engine.worldToClient(box.x, box.y)
     const tr = engine.worldToClient(box.x + box.w, box.y)
-    return fitCanvasToolbar(
+    const fitted = fitCanvasToolbar(
       { x: (tl.x + tr.x) / 2, y: tl.y - TITLE_H },
       {
         width: ref.current?.offsetWidth ?? window.innerWidth,
@@ -87,6 +92,7 @@ function SelectionBarHost({ engine, remote }: { engine: Engine; remote: boolean 
       { width: window.innerWidth, ...engine.camera.insets },
       'center',
     )
+    return toastShown ? { ...fitted, top: Math.max(fitted.top, TOAST_CLEAR) } : fitted
   }
   const ref = useFollow<HTMLDivElement>(engine, place)
   const style = place()

@@ -381,7 +381,7 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
                     aria-label={`查看素材 ${asset.name}`}
                     aria-pressed={selected?.id === asset.id}
                     onClick={() => setSelected(asset)}
-                    className={`overflow-hidden rounded-xl border bg-surface-2 text-left transition-colors ${selected?.id === asset.id ? 'border-accent' : 'border-line hover:border-ink-subtle'}`}
+                    className={`overflow-hidden rounded-xl border bg-surface-2 text-left transition-colors ${selected?.id === asset.id ? 'border-accent' : 'border-line hover:border-ink-subtle hover:bg-surface-3 hover:shadow-2'}`}
                   >
                     <div className="flex aspect-video items-center justify-center overflow-hidden bg-canvas">
                       {asset.kind === 'audio' ? (

@@ -268,14 +268,14 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
       </ModalHeader>
       {canSave && (
         <form
-          className="flex flex-wrap items-center gap-2 border-b border-line px-5 py-3"
+          className="flex flex-wrap items-end gap-2 border-b border-line px-5 py-3"
           onSubmit={(event) => {
             event.preventDefault()
             void save()
           }}
         >
-          <label className="flex min-w-48 flex-1 items-center gap-2 text-sm">
-            <span className="flex-none">检查点名称</span>
+          <label className="flex min-w-48 flex-1 flex-col gap-1.5">
+            <span className="ui-label">检查点名称</span>
             <input
               aria-label="检查点名称"
               value={name}
@@ -286,7 +286,11 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
               className="ui-input w-full"
             />
           </label>
-          <button type="submit" className="ui-btn ui-btn-primary" disabled={saving || !name.trim()}>
+          <button
+            type="submit"
+            className="ui-btn ui-btn-primary disabled:bg-transparent disabled:text-ink-muted disabled:ring-1 disabled:ring-line disabled:ring-inset"
+            disabled={saving || !name.trim()}
+          >
             {saving ? (waiting ? '等待同步…' : '保存中…') : '保存当前画布'}
           </button>
           {saving && (

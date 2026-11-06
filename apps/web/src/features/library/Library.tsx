@@ -376,16 +376,18 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
               value={scope}
               onChange={setScope}
             />
-            {kind.tags.map((t) => (
-              <Select
-                key={t.id}
-                aria-label={t.label}
-                value={tags[t.id] ?? ''}
-                options={[{ value: '', label: t.label }, ...t.options.map((v) => ({ value: v }))]}
-                onChange={(v) => setTags({ ...tags, [t.id]: v })}
-                className="w-28"
-              />
-            ))}
+            {/* 整个类别还没有内容时筛选没有意义，先收起；有筛选条件时保留，方便改回来 */}
+            {(shown.length > 0 || filtered || !loaded) &&
+              kind.tags.map((t) => (
+                <Select
+                  key={t.id}
+                  aria-label={t.label}
+                  value={tags[t.id] ?? ''}
+                  options={[{ value: '', label: t.label }, ...t.options.map((v) => ({ value: v }))]}
+                  onChange={(v) => setTags({ ...tags, [t.id]: v })}
+                  className="w-28"
+                />
+              ))}
             {filtered && (
               <button
                 type="button"

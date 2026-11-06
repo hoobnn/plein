@@ -29,7 +29,7 @@ const GROUPS: Array<{ title: string; items: Array<[string, ...Combo[]]> }> = [
     title: '视图',
     items: [
       ['缩放', [MOD, '滚轮'], ['双指捏合']],
-      ['移动画布', ['鼠标右键', '拖动'], ['空格', '拖动'], ['滚轮']],
+      ['移动画布', ['右键拖动'], ['空格拖动'], ['滚轮']],
       ['适应画布', [k('shift+1')]],
       ['缩放到选中', [k('shift+2')]],
       ['放大 / 缩小', [k('mod+plus')], [k('mod+minus')]],
@@ -94,7 +94,7 @@ export function Shortcuts() {
                       className="flex min-h-8 flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1"
                     >
                       <span className="text-ink-muted">{label}</span>
-                      <span className="flex flex-none items-center gap-1 text-2xs text-ink-subtle">
+                      <span className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-1 text-2xs text-ink-subtle">
                         {combos.map((combo, i) => (
                           <Fragment key={combo.join()}>
                             {i > 0 && <span className="px-0.5">/</span>}

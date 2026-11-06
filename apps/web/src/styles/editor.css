@@ -761,3 +761,15 @@
 .shot-flow-table th:first-child {
   background: var(--surface-2);
 }
+
+/* 创作下一步：浮动面板内容被裁在底边时用渐隐提示还能往下滚 */
+.ui-float > .guide-body::after {
+  content: "";
+  position: sticky;
+  bottom: 0;
+  flex: none;
+  height: 20px;
+  margin-top: -20px;
+  background: linear-gradient(to bottom, transparent, var(--float));
+  pointer-events: none;
+}
