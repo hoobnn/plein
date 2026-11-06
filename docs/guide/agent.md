@@ -97,6 +97,7 @@ Agent 按语义调用画布功能。文档编辑复用 `packages/capabilities` �
 - `search_media` / `get_media_sources`：检索跨画布已有文件并读取来源，得到的资产 id 可用 `create_element` 放入画布。
 - `list_jobs` / `recover_job` / `cancel_group`：读取任务、按原回执恢复，以及取消整组运行。指定节点查询最新任务不受最近任务窗口限制。未知提交重新提交前须核实平台未受理。
 - `create_checkpoint` / `list_checkpoints` / `restore_checkpoint` / `delete_checkpoint`：保存已同步到服务端的画布、查看项目检查点、恢复为新画布或删除检查点。恢复不会自动改变本轮工具的目标画布。
+- `list_projects` / `create_project` / `rename_project` / `delete_project` / `list_canvases` / `create_canvas` / `rename_canvas` / `delete_canvas`：项目与画布管理，复用项目与画布路由及所有权校验，三种驱动共用。不依赖当前画布，外部 MCP 在空工作区也能调用。`list_canvases` 带所属项目，可按 `project_id` 过滤并用 `offset` / `limit` 翻页；两个删除工具是破坏性操作，走确认，且不能删除本会话正在操作的画布。
 - `capture_stage`：按时刻截取 3D 构图，保留完整场景与轨迹来源。客户端未打开、超时或目标锁定时明确失败；不会调用生成模型。
 
 `list_canvas_actions` 提供扩展操作目录。先指定 `action` 查看完整 schema，再用 `perform_canvas_action` 传入同名操作及 `input`：

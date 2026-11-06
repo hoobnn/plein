@@ -5,6 +5,7 @@ import { CapabilityError } from '@plein/capabilities'
 import type { ExternalMcpStatus } from '@plein/protocol'
 import { z } from 'zod'
 import { toToolResult, McpServer, type McpTool } from '../agent/mcp'
+import { workspaceToolNames } from '../agent/project-caps'
 import { capabilitiesOf, serverContext, type ToolEnv, viewOf } from '../agent/tools'
 import { listCanvases, ownsCanvas } from '../storage/canvases'
 import type { DB } from '../storage/db'
@@ -80,44 +81,35 @@ export class ExternalMcp {
     return this.server.handle(body)
   }
 
-  /** 全部能力，每个都多一个可选的 canvas_id；外加 list_canvases */
+  /** 全部能力；依赖画布的每个都多一个可选的 canvas_id */
   private tools(): McpTool[] {
     const registry = capabilitiesOf(this.deps.host)
-    const caps = registry.list().map((cap): McpTool => ({
-      name: cap.name,
-      description: cap.description,
-      input: cap.input.extend({
-        canvas_id: z.string().max(100).optional().describe('画布 id；不填用用户正在看的画布'),
-      }),
-      run: async (raw) => {
-        const { canvas_id, ...args } = raw as { canvas_id?: string }
-        const ctx = serverContext(this.env(this.canvas(canvas_id)))
-        return toToolResult(await registry.invoke(cap.name, ctx, args))
-      },
-    }))
-    return [
-      {
-        name: 'list_canvases',
-        description: '列出用户的画布（最近改过的在前），标出用户现在正在看的那块。',
-        input: z.object({}),
-        run: () => {
-          const watching = this.watching()
-          return JSON.stringify(
-            listCanvases(this.deps.db, this.owner())
-              .slice(0, 50)
-              .map((c) => ({
-                id: c.id,
-                title: c.title,
-                updated_at: new Date(c.updatedAt).toISOString(),
-                ...(c.id === watching ? { viewing: true } : {}),
-              })),
-            null,
-            1,
-          )
+    const caps = registry.list().map((cap): McpTool => {
+      // 不依赖画布的能力（项目、画布管理等）不追加 canvas_id，空工作区里也能用
+      if (workspaceToolNames.has(cap.name))
+        return {
+          name: cap.name,
+          description: cap.description,
+          input: cap.input,
+          run: async (args) =>
+            toToolResult(
+              await registry.invoke(cap.name, serverContext(this.env(this.watching() ?? '')), args),
+            ),
+        }
+      return {
+        name: cap.name,
+        description: cap.description,
+        input: cap.input.extend({
+          canvas_id: z.string().max(100).optional().describe('画布 id；不填用用户正在看的画布'),
+        }),
+        run: async (raw) => {
+          const { canvas_id, ...args } = raw as { canvas_id?: string }
+          const ctx = serverContext(this.env(this.canvas(canvas_id)))
+          return toToolResult(await registry.invoke(cap.name, ctx, args))
         },
-      },
-      ...caps,
-    ]
+      }
+    })
+    return caps
   }
 
   private owner() {
@@ -133,7 +125,7 @@ export class ExternalMcp {
       ownerId: this.owner(),
       origin: EXTERNAL_ORIGIN,
       // 外部应用没有会话发送入口：每次工具调用捕获一次，异步插件内的后续读取复用它。
-      selection: [...(viewOf(this.deps.rooms, canvasId)?.selection ?? [])],
+      selection: canvasId ? [...(viewOf(this.deps.rooms, canvasId)?.selection ?? [])] : [],
     }
   }
 

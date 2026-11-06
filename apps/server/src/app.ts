@@ -144,6 +144,16 @@ export async function createServer(config: Config): Promise<Server> {
     await next()
   })
   internal.route('/', creative)
+  // 项目、画布、影响面板与平台设置：与界面共用同一份路由实例，只经已登记的工具路径访问
+  const preview = previewer(db)
+  const projectApi = projectRoutes(db, rooms, preview)
+  const canvasRoutesApp = canvasRoutes(db, rooms, preview)
+  const runApi = runRoutes(db, runs)
+  const pluginApi = pluginRoutes(plugins, { jobs: runs.store, voices, dataDir: config.dataDir })
+  internal.route('/', projectApi)
+  internal.route('/', canvasRoutesApp)
+  internal.route('/', runApi)
+  internal.route('/', pluginApi)
   const canvasApi = async (ownerId: string, request: Request) =>
     internal.fetch(request, { ownerId })
   const agents = new AgentSessions({
@@ -197,13 +207,12 @@ export async function createServer(config: Config): Promise<Server> {
   app.route('/', auth.routes)
   app.use('/api/*', auth.requireAuth)
   app.use('/sync/*', auth.requireAuth)
-  const preview = previewer(db)
-  app.route('/', projectRoutes(db, rooms, preview))
+  app.route('/', projectApi)
   app.route(
     '/',
     packageRoutes({ db, rooms, assets, host: plugins, dataDir: config.dataDir, mediaIndex }),
   )
-  app.route('/', canvasRoutes(db, rooms, preview))
+  app.route('/', canvasRoutesApp)
   if (maintenance) app.route('/', maintenanceRoutes(maintenance))
   // 素材来源路由要排在 creative 之前：资产文件路由 /api/assets/:id/:variant?
   // 会把 /api/assets/:id/sources 当成变体名抢先匹配，来源分页就永远 404。
@@ -214,11 +223,11 @@ export async function createServer(config: Config): Promise<Server> {
   // 资产与素材路由已经并进 creative，动态合成路由沿用它们之后的顺序
   app.route('/', motionRoutes({ assets, previews: motionPreviews, db, rooms }))
   app.route('/', syncRoutes(db, rooms))
-  app.route('/', pluginRoutes(plugins, { jobs: runs.store, voices, dataDir: config.dataDir }))
+  app.route('/', pluginApi)
   app.route('/', localPluginRoutes(local))
   app.route('/', pluginInstallRoutes(pluginInstaller))
   app.route('/', promptRoutes(plugins))
-  app.route('/', runRoutes(db, runs))
+  app.route('/', runApi)
   app.route('/', agentRoutes(db, agents))
   app.route('/', capabilityRoutes({ db, rooms, runs, host: plugins, assets, library }))
   app.route('/', mcpRoutes(external))
