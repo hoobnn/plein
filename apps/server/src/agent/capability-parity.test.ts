@@ -64,6 +64,29 @@ describe('画布与 Agent 能力契约', () => {
     expect(stage[0]?.params_schema).toHaveProperty('properties.scene')
   })
 
+  it('模型与改名工具已登记，副作用等级正确，并被内置与外部入口共用', async () => {
+    const f = await fixture()
+    const effect = (name: string, args: Record<string, unknown> = {}) => {
+      const cap = serverCapabilities.get(name)
+      expect(cap, name).toBeTruthy()
+      return serverCapabilities.effectOf(cap!, args, serverContext(f.env))
+    }
+    expect(effect('list_models')).toBe('read')
+    expect(effect('set_node_model')).toBe('edit')
+    expect(effect('rename_element')).toBe('edit')
+    expect(effect('rewrite_prompt', { apply: false })).toBe('read')
+    expect(effect('rewrite_prompt')).toBe('edit')
+    const tools = canvasTools(f.env).map((t) => t.name)
+    expect(tools).toEqual(
+      expect.arrayContaining(['list_models', 'set_node_model', 'rename_element']),
+    )
+    // 发现路径：能力目录能查到新工具的契约
+    const schema = (await f.invoke('list_canvas_capabilities', { name: 'set_node_model' })) as {
+      input_schema: { properties: Record<string, unknown> }
+    }
+    expect(schema.input_schema.properties).toHaveProperty('model')
+  })
+
   it('扩展操作使用实际用户身份及 UI 路由，不信任 input 里的 owner', async () => {
     const f = await fixture()
     const made = (await f.action('create_library_item', {

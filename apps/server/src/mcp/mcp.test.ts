@@ -162,6 +162,27 @@ describe('对外开放 MCP', () => {
     }
     const names = list.result.tools.map((t) => t.name)
     expect(names).toEqual(expect.arrayContaining(['list_canvases', 'get_canvas', 'create_node']))
+    expect(names).toEqual(
+      expect.arrayContaining(['list_models', 'set_node_model', 'rename_element']),
+    )
+    // 说明里写明发现顺序
+    const init = (await (
+      await rpc({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'initialize',
+        params: { protocolVersion: '2025-06-18' },
+      })
+    ).json()) as { result: { instructions: string } }
+    const order = [
+      'list_canvas_capabilities',
+      'list_canvas_actions',
+      'list_node_types',
+      'list_models',
+    ]
+    const at = order.map((n) => init.result.instructions.indexOf(n))
+    expect(at.every((i) => i >= 0)).toBe(true)
+    expect([...at].sort((a, b) => a - b)).toEqual(at)
     expect(
       list.result.tools.find((t) => t.name === 'get_canvas')?.inputSchema.properties,
     ).toHaveProperty('canvas_id')
