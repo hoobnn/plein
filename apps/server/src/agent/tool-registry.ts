@@ -42,6 +42,7 @@ import { actionCapabilities } from './action-caps'
 import { workspaceCapabilities } from './workspace-caps'
 import { modelCapabilities } from './model-caps'
 import { projectCapabilities } from './project-caps'
+import { impactCapabilities } from './impact-caps'
 import { editMedia, continueShot, makeCollage, rewrite, shotGroup, viewMedia } from './tools-media'
 import {
   cancelRun,
@@ -325,6 +326,7 @@ export const serverCapabilities = new CapabilityRegistry<ServerContext>([
   ...actionCapabilities,
   ...modelCapabilities,
   ...projectCapabilities,
+  ...impactCapabilities,
   captureStage,
   ...templateCapabilities,
   ...analysisCapabilities,
