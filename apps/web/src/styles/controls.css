@@ -222,6 +222,12 @@
       box-shadow var(--dur-fast) var(--ease-standard),
       scale var(--dur-fast) var(--ease-spring);
   }
+  /* 键盘焦点环：贴着按钮边缘、半透明，弹窗打开时落在关闭按钮上也不抢眼；输入框另有自己的聚焦样式 */
+  .ui-btn:focus-visible,
+  .ui-bar-btn:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+    outline-offset: 0;
+  }
   .ui-btn:hover {
     background: var(--hover);
   }
