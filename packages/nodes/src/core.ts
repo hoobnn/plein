@@ -129,6 +129,8 @@ export const imageNode = defineNode({
     resolution: resolution(),
     options: modelOptions(),
     count: z.number().int().min(1).max(15).default(1).meta({ title: '张数' }),
+    // 只有模型声明了种子范围才会显示和传给平台；留空表示随机
+    seed: z.number().int().min(0).optional().meta({ title: '种子', placeholder: '随机' }),
     usedRefs: usedRefs(),
     requiredRefs: requiredRefs(),
     referenceImagePicks: referenceImagePicks(),

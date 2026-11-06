@@ -607,3 +607,29 @@ describe('视频参数随当前设置收窄', () => {
     expect(resolutionEnum({})).toEqual(['', '480p', '720p', '1080p'])
   })
 })
+
+describe('图片种子字段', () => {
+  const imageNode = {
+    type: 'plein/image',
+    capability: 'image.generate',
+    defaults: { model: '' },
+    paramsSchema: {
+      properties: {
+        model: { type: 'string', widget: 'model' },
+        seed: { type: 'integer', title: '种子', minimum: 0 },
+      },
+    },
+  } as unknown as NodeInfo
+  const keys = (limits: ModelLimits) =>
+    constrainFields(imageNode, fieldsOf(imageNode), limits).map(([k]) => k)
+
+  it('只有模型声明了种子才显示，声明范围时范围收窄到声明内', () => {
+    expect(keys({})).not.toContain('seed')
+    expect(keys({ seed: false })).not.toContain('seed')
+    expect(keys({ seed: true })).toContain('seed')
+    const field = constrainFields(imageNode, fieldsOf(imageNode), {
+      seed: { min: 1, max: 99 },
+    }).find(([k]) => k === 'seed')![1]
+    expect([field.minimum, field.maximum]).toEqual([1, 99])
+  })
+})

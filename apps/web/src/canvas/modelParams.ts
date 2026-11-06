@@ -169,6 +169,23 @@ export function constrainFields(
         allowed = videoAllowed(model, params, k, allowed).allowed
       return [[k, { ...f, enum: allowed.length ? allowed : f.enum }]]
     }
+    if (k === 'seed' && node.capability === 'image.generate') {
+      // 种子只在模型声明支持时出现；声明了范围就收窄到范围内
+      const seed = limits.seed
+      if (!seed) return []
+      return typeof seed === 'object'
+        ? [
+            [
+              k,
+              {
+                ...f,
+                minimum: Math.max(f.minimum ?? seed.min, seed.min),
+                maximum: Math.min(f.maximum ?? seed.max, seed.max),
+              },
+            ],
+          ]
+        : [[k, f]]
+    }
     if (unsupported(k, limits)) return []
     const range = isRanged(k) ? rangeOf(k, limits) : undefined
     if (range)

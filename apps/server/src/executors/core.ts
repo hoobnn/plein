@@ -156,6 +156,8 @@ const image = defineExecutor(imageNode, async (ctx) => {
     prompt: requireText(joinText(params.prompt, inputText(inputs, 'prompt')), '提示词'),
     references,
     count: params.count,
+    // 模型没声明种子时，节点里残留的种子不送给平台
+    ...(spec?.limits?.seed && params.seed !== undefined ? { seed: params.seed } : {}),
     resolution: params.resolution || undefined,
     extra: { ...options, aspectRatio: params.aspectRatio },
   })
