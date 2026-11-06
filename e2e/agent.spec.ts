@@ -217,7 +217,7 @@ test('窄屏助手避让可点击，长会话原生翻页不穿透画布', { tag
   await panel.getByRole('button', { name: '发送', exact: true }).click()
   await expect(panel.getByText(/【mock】看过画布了/)).toBeVisible()
   await input.fill('缩放期间保留的草稿')
-  for (const width of [390, 640, 1440]) {
+  for (const width of [390, 899, 1440]) {
     await page.setViewportSize({ width, height: 900 })
     await expect
       .poll(() =>
@@ -227,7 +227,7 @@ test('窄屏助手避让可点击，长会话原生翻页不穿透画布', { tag
               .insets.right,
         ),
       )
-      .toBe(width >= 640 ? 424 : 0)
+      .toBe(width >= 900 ? 412 : 0)
     for (const button of [
       page.getByRole('button', { name: '收起助手', exact: true }),
       panel.getByRole('button', { name: '发送', exact: true }),
