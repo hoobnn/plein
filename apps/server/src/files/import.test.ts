@@ -1,0 +1,276 @@
+import http from 'node:http'
+import type { AddressInfo } from 'node:net'
+import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import sharp from 'sharp'
+import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test'
+import { bootServer, createCanvas, request, tempDir } from '../testing'
+
+/** 同内容的资产只存一份，名字沿用先入库的那份；要区分的测试给不同颜色 */
+const png = (background = '#336699') =>
+  sharp({ create: { width: 8, height: 6, channels: 3, background } })
+    .png()
+    .toBuffer()
+
+let running: Awaited<ReturnType<typeof bootServer>>
+let root: string
+let outside: string
+let canvasId: string
+let rpc: (name: string, args?: Record<string, unknown>) => Promise<{ error: boolean; text: string }>
+let n = 0
+
+beforeAll(async () => {
+  root = tempDir('plein-import-root-')
+  outside = tempDir('plein-import-out-')
+  running = await bootServer({ env: { PLEIN_IMPORT_ROOTS: root } })
+  const { server } = running
+  canvasId = (await createCanvas(server)).id
+  const { token } = (await (
+    await request(server, '/api/mcp/external', { method: 'POST' })
+  ).json()) as {
+    token: string
+  }
+  rpc = async (name, args = {}) => {
+    const res = await server.app.request('/mcp', {
+      method: 'POST',
+      headers: {
+        host: '127.0.0.1:8787',
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: ++n,
+        method: 'tools/call',
+        params: { name, arguments: { canvas_id: canvasId, ...args } },
+      }),
+    })
+    const r = (await res.json()) as {
+      result: { content: Array<{ text: string }>; isError?: boolean }
+    }
+    return { error: r.result.isError === true, text: r.result.content[0]?.text ?? '' }
+  }
+})
+afterAll(() => running.close())
+
+interface Out {
+  asset_id: string
+  kind: string
+  width?: number
+  element_id?: string
+  reason?: string
+  url: string
+  max_bytes: number
+}
+const asJson = (r: { text: string }) => JSON.parse(r.text) as Out
+
+describe('import_asset', () => {
+  it('base64 入库并可摆到画布上', async () => {
+    const data = (await png()).toString('base64')
+    const r = await rpc('import_asset', {
+      source: { base64: `data:image/png;base64,${data}`, name: 'pic.png' },
+      place: { x: 10, y: 20 },
+    })
+    expect(r.error).toBe(false)
+    const out = asJson(r)
+    expect(out.kind).toBe('image')
+    expect(out.width).toBe(8)
+    expect(out.element_id).toBeTruthy()
+    expect(running.server.assets.get('local', out.asset_id)?.name).toBe('pic.png')
+    const el = running.server.rooms.withDoc(canvasId, (doc) => doc.get(out.element_id!))
+    expect(el?.assetId).toBe(out.asset_id)
+  })
+
+  it('source 必须只给一个来源', async () => {
+    expect((await rpc('import_asset', { source: {} })).text).toContain('必须且只能给一个')
+    expect(
+      (await rpc('import_asset', { source: { url: 'http://x.test/a', base64: 'AAAA' } })).text,
+    ).toContain('必须且只能给一个')
+  })
+
+  it('base64 超过 8 MiB 拒绝', async () => {
+    const big = Buffer.alloc(8 * 1024 * 1024 + 10, 1).toString('base64')
+    const r = await rpc('import_asset', { source: { base64: big } })
+    expect(r.error).toBe(true)
+    expect(r.text).toMatch(/8 MiB|参数不对/)
+  })
+
+  it('非图片文件入库但不能摆上画布', async () => {
+    const r = await rpc('import_asset', {
+      source: { base64: Buffer.from('hello').toString('base64'), name: 'a.txt' },
+      place: {},
+    })
+    const out = asJson(r)
+    expect(out.kind).toBe('file')
+    expect(out.element_id).toBeUndefined()
+    expect(out.reason).toContain('不能直接放上画布')
+  })
+
+  it('path：目录内可读，符号链接逃逸、隐藏目录、数据目录和目录外被拒', async () => {
+    writeFileSync(join(root, 'a.png'), await png())
+    writeFileSync(join(outside, 'o.png'), await png())
+    mkdirSync(join(root, '.ssh'))
+    writeFileSync(join(root, '.ssh', 'k.png'), await png())
+    symlinkSync(join(outside, 'o.png'), join(root, 'link.png'))
+    const ok = await rpc('import_asset', { source: { path: join(root, 'a.png') } })
+    expect(ok.error).toBe(false)
+    expect(asJson(ok).kind).toBe('image')
+    for (const p of [
+      join(outside, 'o.png'),
+      join(root, 'link.png'),
+      join(root, '.ssh', 'k.png'),
+      join(running.dataDir, 'external-mcp.json'),
+      '/etc/passwd',
+      'relative.png',
+    ]) {
+      const r = await rpc('import_asset', { source: { path: p } })
+      expect(r.error, p).toBe(true)
+    }
+  })
+
+  it('path 在没有本机授权的入口不可用', async () => {
+    const { server } = await bootServer()
+    server.files!.local = undefined
+    const { token } = (await (
+      await request(server, '/api/mcp/external', { method: 'POST' })
+    ).json()) as {
+      token: string
+    }
+    const { id } = await createCanvas(server)
+    const res = await server.app.request('/mcp', {
+      method: 'POST',
+      headers: {
+        host: '127.0.0.1:8787',
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: {
+          name: 'import_asset',
+          arguments: { canvas_id: id, source: { path: join(root, 'a.png') } },
+        },
+      }),
+    })
+    const r = (await res.json()) as {
+      result: { content: Array<{ text: string }>; isError: boolean }
+    }
+    expect(r.result.isError).toBe(true)
+    expect(r.result.content[0]!.text).toContain('只在本机模式可用')
+  })
+
+  it('url：内网、回环、重定向到内网都拒绝；公网放行（测试里换解析）', async () => {
+    for (const url of [
+      'http://127.0.0.1:9/a.png',
+      'http://169.254.169.254/x',
+      'file:///etc/passwd',
+    ]) {
+      const r = await rpc('import_asset', { source: { url } })
+      expect(r.error, url).toBe(true)
+    }
+    const body = await png()
+    const srv = http.createServer((req, res) => {
+      if (req.url === '/redir') {
+        res.writeHead(302, { location: 'http://10.0.0.1/secret' })
+        return res.end()
+      }
+      if (req.url === '/huge') {
+        res.writeHead(200, { 'content-type': 'image/png' })
+        return res.end(Buffer.alloc(3000))
+      }
+      res.writeHead(200, { 'content-type': 'image/png' })
+      res.end(body)
+    })
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r))
+    const port = (srv.address() as AddressInfo).port
+    const { files } = running.server
+    const saved = files!.remote
+    files!.remote = {
+      allowAddress: (ip) => ip === '127.0.0.1' || !ip.startsWith('10.'),
+      lookup: async () => [{ address: '127.0.0.1', family: 4 }],
+    }
+    try {
+      const ok = await rpc('import_asset', { source: { url: `http://pub.test:${port}/p.png` } })
+      expect(ok.error).toBe(false)
+      expect(asJson(ok).kind).toBe('image')
+      const redir = await rpc('import_asset', { source: { url: `http://pub.test:${port}/redir` } })
+      expect(redir.error).toBe(true)
+      expect(redir.text).toMatch(/内网|本机/)
+    } finally {
+      files!.remote = saved
+      srv.close()
+    }
+  })
+})
+
+describe('request_upload 与上传端点', () => {
+  const upload = (url: string, body: Buffer | string, method = 'PUT') => {
+    const u = new URL(url)
+    return running.server.app.request(u.pathname, {
+      method,
+      headers: { host: '127.0.0.1:8787', 'content-type': 'application/octet-stream' },
+      body,
+    })
+  }
+
+  it('票据上传一次成功，再用同一票据 404，且带回 asset_id', async () => {
+    const data = await png('#aa2200')
+    const t = asJson(
+      await rpc('request_upload', { name: 'u.png', mime: 'image/png', size: data.length }),
+    )
+    expect(t.url).toMatch(/\/mcp\/upload\//)
+    expect(t.max_bytes).toBe(data.length)
+    const res = await upload(t.url, data)
+    expect(res.status).toBe(201)
+    const out = (await res.json()) as { asset_id: string; mime: string; name: string }
+    expect(out.mime).toBe('image/png')
+    expect(out.name).toBe('u.png')
+    expect(running.server.assets.get('local', out.asset_id)).toBeTruthy()
+    expect((await upload(t.url, data)).status).toBe(404)
+  })
+
+  it('超过票据声明的大小 413，且票据同样作废', async () => {
+    const t = asJson(await rpc('request_upload', { name: 'x.bin', mime: 'image/png', size: 10 }))
+    const res = await upload(t.url, Buffer.alloc(100))
+    expect(res.status).toBe(413)
+    expect((await upload(t.url, Buffer.alloc(5))).status).toBe(404)
+  })
+
+  it('实际数据流超过票据上限（无 Content-Length）也被拒绝', async () => {
+    const t = asJson(await rpc('request_upload', { name: 'x.bin', mime: 'image/png', size: 10 }))
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(new Uint8Array(50))
+        c.close()
+      },
+    })
+    const u = new URL(t.url)
+    const res = await running.server.app.request(u.pathname, {
+      method: 'POST',
+      headers: { host: '127.0.0.1:8787' },
+      body: stream,
+      duplex: 'half',
+    } as RequestInit)
+    expect(res.status).toBe(413)
+  })
+
+  it('伪造票据 404；过期票据 404', async () => {
+    expect((await upload('http://127.0.0.1:8787/mcp/upload/forged', 'x')).status).toBe(404)
+    const t = asJson(await rpc('request_upload', { name: 'x.bin', mime: 'image/png', size: 10 }))
+    const ticket = t.url.split('/').pop() as string
+    // 把票据的过期时间推到过去
+    const tickets = running.server.files!.tickets as unknown as {
+      uploads: Map<string, { expires: number }>
+    }
+    for (const v of tickets.uploads.values()) v.expires = 0
+    expect((await upload(`http://x/mcp/upload/${ticket}`, Buffer.alloc(5))).status).toBe(404)
+  })
+
+  it('声明大小超过服务端上限时不签发', async () => {
+    const r = await rpc('request_upload', { name: 'big.mp4', mime: 'video/mp4', size: 1e13 })
+    expect(r.error).toBe(true)
+    expect(r.text).toContain('上限')
+  })
+})

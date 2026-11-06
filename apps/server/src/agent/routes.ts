@@ -288,7 +288,11 @@ function streamFor(accept: string | undefined, body: unknown) {
  * 智能体调用画布工具的 MCP 入口。CLI 不带浏览器 Cookie，
  * 用会话令牌（Authorization: Bearer）鉴权，令牌只在服务端内存里、随会话生成。
  */
-export function agentMcpRoute(agents: AgentSessions, external?: ExternalMcp | null) {
+export function agentMcpRoute(
+  agents: AgentSessions,
+  external?: ExternalMcp | null,
+  tickets?: { noteOrigin(origin: string): void },
+) {
   return (
     new Hono()
       .post('/mcp', async (c) => {
@@ -303,6 +307,8 @@ export function agentMcpRoute(agents: AgentSessions, external?: ExternalMcp | nu
         }
         // 长期令牌给外部应用（Claude Desktop、Cursor…），其余是会话令牌
         const grant = external?.authenticate(token)
+        // 记下外部应用访问 Plein 用的地址，上传 / 下载票据据此拼出绝对 URL
+        if (external && grant) tickets?.noteOrigin(new URL(c.req.url).origin)
         if (external && grant) {
           const stream = streamFor(c.req.header('accept'), body)
           if (stream) return stream((notify) => external.handle(body, grant, { notify }))

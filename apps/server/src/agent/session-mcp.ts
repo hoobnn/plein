@@ -52,6 +52,7 @@ export function configureTurn(env: SessionEnv, s: Live, turn: TurnExecution, sel
       mediaIndex: env.deps.mediaIndex,
       checkpoints: env.deps.checkpoints,
       canvasApi: env.deps.canvasApi,
+      files: env.deps.files,
       origin: s.changes.origin,
       execution: turn,
       selection: selection ? [...selection] : [],

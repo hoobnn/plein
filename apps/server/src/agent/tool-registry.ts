@@ -26,6 +26,7 @@ import { storyboardBatchesOf, type StoryboardBatches } from '../runs/storyboard-
 import type { LibraryStore } from '../library/store'
 import type { Rooms } from '../sync/rooms'
 import type { CheckpointService } from '../checkpoints/service'
+import type { FileServices } from '../files/services'
 import type { MediaIndex } from '../media-index/service'
 import { type Approvals, approvalFor, type ApprovalRequest } from './approvals'
 import type { AgentChanges } from './changes'
@@ -39,6 +40,7 @@ import { analysisCapabilities } from './analysis-caps'
 import { templateCapabilities } from './template-caps'
 import { captureStage } from './client-render'
 import { actionCapabilities } from './action-caps'
+import { fileCapabilities } from './tools-files'
 import { workspaceCapabilities } from './workspace-caps'
 import { modelCapabilities } from './model-caps'
 import { projectCapabilities } from './project-caps'
@@ -74,6 +76,8 @@ export interface ToolEnv {
   mediaIndex?: MediaIndex
   checkpoints?: CheckpointService
   library?: LibraryStore
+  /** 文件进出服务（导入、上传、下载票据）；不给就不开放 */
+  files?: FileServices
   /** 修改方案（测试里可以不给） */
   plans?: EditPlans
   /** 文档写入的事务 origin：智能体会话用自己的 origin，改动集和撤销按它归属 */
@@ -364,6 +368,7 @@ export const serverCapabilities = new CapabilityRegistry<ServerContext>([
   ...impactCapabilities,
   estimateCost,
   ...providerCapabilities,
+  ...fileCapabilities,
   captureStage,
   ...templateCapabilities,
   ...analysisCapabilities,

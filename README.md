@@ -159,18 +159,19 @@ pnpm install && pnpm build && pnpm start   # http://localhost:8787
 <details>
 <summary><b>环境变量</b></summary>
 
-| 变量                                       | 默认                               | 说明                                                   |
-| ------------------------------------------ | ---------------------------------- | ------------------------------------------------------ |
-| `PLEIN_HOST` / `PLEIN_PORT`                | `127.0.0.1` / `8787`               | 监听地址                                               |
-| `PLEIN_DATA_DIR`                           | `./data`                           | 数据目录                                               |
-| `PLEIN_AUTH`                               | 本机地址为 `none`，否则 `password` | `password` 时用 Better Auth 登录，只允许一个所有者账号 |
-| `PLEIN_PUBLIC_URL`                         | 按请求推断                         | 反向代理后的对外地址                                   |
-| `PLEIN_ALLOWED_HOSTS`                      | 空                                 | 免登录模式下额外允许的主机名，逗号分隔                 |
-| `PLEIN_MAX_UPLOAD_MB`                      | `2048`                             | 单个文件上限                                           |
-| `PLEIN_MAX_JOBS`                           | `4`                                | 同时运行的节点任务数上限                               |
-| `PLEIN_FFMPEG_PATH` / `PLEIN_FFPROBE_PATH` | 从 `PATH` 查找                     | ffmpeg / ffprobe 可执行文件                            |
-| `PLEIN_SUBTITLE_FONT`                      | fontconfig 里的 Noto Sans CJK SC   | 字幕字体文件，导出烧字幕和剪辑预览共用                 |
-| `PLEIN_AGENT`                              | 免登录模式下开启                   | 设为 `0` 关闭本机 CLI 智能体                           |
+| 变量                                       | 默认                               | 说明                                                    |
+| ------------------------------------------ | ---------------------------------- | ------------------------------------------------------- |
+| `PLEIN_HOST` / `PLEIN_PORT`                | `127.0.0.1` / `8787`               | 监听地址                                                |
+| `PLEIN_DATA_DIR`                           | `./data`                           | 数据目录                                                |
+| `PLEIN_AUTH`                               | 本机地址为 `none`，否则 `password` | `password` 时用 Better Auth 登录，只允许一个所有者账号  |
+| `PLEIN_PUBLIC_URL`                         | 按请求推断                         | 反向代理后的对外地址                                    |
+| `PLEIN_ALLOWED_HOSTS`                      | 空                                 | 免登录模式下额外允许的主机名，逗号分隔                  |
+| `PLEIN_IMPORT_ROOTS`                       | 用户主目录                         | 外部 AI 用本机路径导入 / 保存文件的目录，路径分隔符分隔 |
+| `PLEIN_MAX_UPLOAD_MB`                      | `2048`                             | 单个文件上限                                            |
+| `PLEIN_MAX_JOBS`                           | `4`                                | 同时运行的节点任务数上限                                |
+| `PLEIN_FFMPEG_PATH` / `PLEIN_FFPROBE_PATH` | 从 `PATH` 查找                     | ffmpeg / ffprobe 可执行文件                             |
+| `PLEIN_SUBTITLE_FONT`                      | fontconfig 里的 Noto Sans CJK SC   | 字幕字体文件，导出烧字幕和剪辑预览共用                  |
+| `PLEIN_AGENT`                              | 免登录模式下开启                   | 设为 `0` 关闭本机 CLI 智能体                            |
 
 </details>
 

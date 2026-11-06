@@ -66,6 +66,8 @@ export interface AgentDeps {
   runs: NodeRuns
   host: PluginHost
   assets: AssetStore
+  /** 文件进出服务（导入、上传、下载票据） */
+  files?: import('../files/services').FileServices
   /** 修改方案（三种入口共用一份） */
   plans?: EditPlans
   dataDir: string

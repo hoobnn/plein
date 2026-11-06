@@ -331,6 +331,12 @@ describe('桌面端令牌', () => {
       expect(ok.status).toBe(200)
 
       expect(await handshake(`${s.base.replace('http', 'ws')}/sync/x`)).toBe(403)
+
+      // 外部 AI 的文件票据端点随 /mcp 绕过 Cookie 校验（凭据是票据本身）：无效票据是 404 而不是 403
+      const upload = await fetch(`${s.base}/mcp/upload/forged`, { method: 'PUT', body: 'x' })
+      expect(upload.status).toBe(404)
+      expect((await fetch(`${s.base}/mcp/files/forged`)).status).toBe(404)
+      expect((await fetch(`${s.base}/mcpx`)).status).toBe(403)
     } finally {
       await s.close()
     }

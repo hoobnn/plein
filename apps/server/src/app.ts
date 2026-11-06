@@ -10,6 +10,10 @@ import { Hono } from 'hono'
 import { agentMcpRoute, agentRoutes } from './agent/routes'
 import { capabilityRoutes } from './agent/cap-routes'
 import { ExternalMcp } from './mcp/external'
+import { fileRoutes } from './files/routes'
+import { localAccess } from './files/local-path'
+import type { FileServices } from './files/services'
+import { FileTickets } from './files/tickets'
 import { mcpRoutes } from './mcp/routes'
 import { AgentSessions } from './agent/sessions'
 import { setSubtitleFont } from './assets/fonts'
@@ -65,6 +69,7 @@ export interface Server {
   mediaIndex: MediaIndex
   checkpoints: CheckpointService
   canvasApi: (ownerId: string, request: Request) => Promise<Response>
+  files: FileServices | undefined
   maintenance: MaintenanceService | null
   close(): Promise<void>
 }
@@ -156,6 +161,21 @@ export async function createServer(config: Config): Promise<Server> {
   internal.route('/', pluginApi)
   const canvasApi = async (ownerId: string, request: Request) =>
     internal.fetch(request, { ownerId })
+  // 外部 AI 的文件进出：票据 + 本机路径范围（本机路径只在免登录模式开放）
+  const files: FileServices | undefined =
+    config.agent || config.mcp
+      ? {
+          tickets: new FileTickets({
+            publicUrl: config.publicUrl,
+            fallbackOrigin: () => `http://${config.host}:${config.port}`,
+          }),
+          local:
+            config.auth === 'none'
+              ? await localAccess(config.dataDir, config.importRoots)
+              : undefined,
+          maxUpload: config.maxUpload,
+        }
+      : undefined
   const agents = new AgentSessions({
     db,
     library,
@@ -165,6 +185,7 @@ export async function createServer(config: Config): Promise<Server> {
     assets,
     plans,
     canvasApi,
+    files,
     mediaIndex: index,
     checkpoints,
     dataDir: config.dataDir,
@@ -184,6 +205,7 @@ export async function createServer(config: Config): Promise<Server> {
         mediaIndex: index,
         checkpoints,
         canvasApi,
+        files,
       })
     : null
 
@@ -195,7 +217,9 @@ export async function createServer(config: Config): Promise<Server> {
   // 智能体的 MCP 请求来自本机 CLI，没有桌面端窗口的 Cookie，用会话令牌单独鉴权
   if (config.desktopToken) {
     const guard = desktopGuard(config.desktopToken)
-    app.use('*', (c, next) => (c.req.path === '/mcp' ? next() : guard(c, next)))
+    app.use('*', (c, next) =>
+      c.req.path === '/mcp' || c.req.path.startsWith('/mcp/') ? next() : guard(c, next),
+    )
   }
   app.use(
     '*',
@@ -203,7 +227,8 @@ export async function createServer(config: Config): Promise<Server> {
   )
   app.get('/api/health', (c) => c.json({ ok: true }))
   // 放在登录鉴权之前：CLI 用会话令牌访问
-  app.route('/', agentMcpRoute(agents, external))
+  app.route('/', agentMcpRoute(agents, external, files?.tickets))
+  if (files) app.route('/', fileRoutes({ tickets: files.tickets, assets, canvasApi }))
   app.route('/', auth.routes)
   app.use('/api/*', auth.requireAuth)
   app.use('/sync/*', auth.requireAuth)
@@ -275,6 +300,7 @@ export async function createServer(config: Config): Promise<Server> {
     checkpoints,
     maintenance,
     canvasApi,
+    files,
     close() {
       closeWork ??= (async () => {
         await motionPreviews.close()

@@ -154,18 +154,19 @@ pnpm install && pnpm build && pnpm start   # http://localhost:8787
 <details>
 <summary><b>Environment variables</b></summary>
 
-| Variable                                   | Default                                   | Description                                                  |
-| ------------------------------------------ | ----------------------------------------- | ------------------------------------------------------------ |
-| `PLEIN_HOST` / `PLEIN_PORT`                | `127.0.0.1` / `8787`                      | Listen address                                               |
-| `PLEIN_DATA_DIR`                           | `./data`                                  | Data directory                                               |
-| `PLEIN_AUTH`                               | `none` on localhost, `password` otherwise | With `password`, login via Better Auth, single owner account |
-| `PLEIN_PUBLIC_URL`                         | Inferred from the request                 | Public URL behind a reverse proxy                            |
-| `PLEIN_ALLOWED_HOSTS`                      | Empty                                     | Extra host names allowed in no-login mode, comma separated   |
-| `PLEIN_MAX_UPLOAD_MB`                      | `2048`                                    | Per-file upload limit                                        |
-| `PLEIN_MAX_JOBS`                           | `4`                                       | Max node jobs running at once                                |
-| `PLEIN_FFMPEG_PATH` / `PLEIN_FFPROBE_PATH` | Looked up in `PATH`                       | ffmpeg / ffprobe executables                                 |
-| `PLEIN_SUBTITLE_FONT`                      | Noto Sans CJK SC from fontconfig          | Subtitle font file, shared by export and editor preview      |
-| `PLEIN_AGENT`                              | On in no-login mode                       | Set to `0` to disable the local CLI agent                    |
+| Variable                                   | Default                                   | Description                                                                             |
+| ------------------------------------------ | ----------------------------------------- | --------------------------------------------------------------------------------------- |
+| `PLEIN_HOST` / `PLEIN_PORT`                | `127.0.0.1` / `8787`                      | Listen address                                                                          |
+| `PLEIN_DATA_DIR`                           | `./data`                                  | Data directory                                                                          |
+| `PLEIN_AUTH`                               | `none` on localhost, `password` otherwise | With `password`, login via Better Auth, single owner account                            |
+| `PLEIN_PUBLIC_URL`                         | Inferred from the request                 | Public URL behind a reverse proxy                                                       |
+| `PLEIN_ALLOWED_HOSTS`                      | Empty                                     | Extra host names allowed in no-login mode, comma separated                              |
+| `PLEIN_IMPORT_ROOTS`                       | User home directory                       | Directories external AI may read from / save to by local path, path-delimiter separated |
+| `PLEIN_MAX_UPLOAD_MB`                      | `2048`                                    | Per-file upload limit                                                                   |
+| `PLEIN_MAX_JOBS`                           | `4`                                       | Max node jobs running at once                                                           |
+| `PLEIN_FFMPEG_PATH` / `PLEIN_FFPROBE_PATH` | Looked up in `PATH`                       | ffmpeg / ffprobe executables                                                            |
+| `PLEIN_SUBTITLE_FONT`                      | Noto Sans CJK SC from fontconfig          | Subtitle font file, shared by export and editor preview                                 |
+| `PLEIN_AGENT`                              | On in no-login mode                       | Set to `0` to disable the local CLI agent                                               |
 
 </details>
 

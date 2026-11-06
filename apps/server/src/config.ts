@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { delimiter, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export type AuthMode = 'none' | 'password'
@@ -43,6 +43,11 @@ export interface Config {
    * 和 agent 分开：测试环境关掉本机 CLI，但要测对外开放
    */
   mcp: boolean
+  /**
+   * 外部 AI 用 import_asset(path) / save_to 可以读写的本机目录，默认只有用户主目录。
+   * 仅在 agent / mcp 开启（免登录本机模式）时生效
+   */
+  importRoots: string[]
 }
 
 /** 本机地址：监听在这些地址上默认免登录，免登录模式也只接受这些 Host */
@@ -82,5 +87,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     desktopToken: env.PLEIN_DESKTOP_TOKEN || undefined,
     agent: auth === 'none' && env.PLEIN_AGENT !== '0',
     mcp: auth === 'none' && env.PLEIN_MCP !== '0',
+    importRoots: (env.PLEIN_IMPORT_ROOTS ?? '')
+      .split(delimiter)
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .map((p) => resolve(p)),
   }
 }

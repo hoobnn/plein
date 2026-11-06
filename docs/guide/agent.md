@@ -111,6 +111,22 @@ Codex 目录来自本机 `skills/list`，显式选用时通过 `turn/start` 的 
 - `prompts/list` 暴露五个创作技能（`canvas-audit`、`workflow`、`shot-revise`、`storyboard`、`media-edit`），`prompts/get` 返回展开后的指引文本；参数有 `goal`、`canvas_id`、`element_ids`。外部没有内置智能体的 `await_approval`，指引里的确认步骤已换成上面的 `needs_approval` / `confirm` 流程。
 - `resources/list` 列出最近改过的画布（`plein://canvas/{id}`，分页）；`resources/templates/list` 给出三个模板：`plein://canvas/{id}`（与 `get_canvas_page` 同一分页，查询参数 `section`、`offset`、`limit`、`expected_version`）、`plein://canvas/{id}/element/{eid}`、`plein://capabilities/{name}`（工具契约和完整输入 schema）。读取需要 `read` 权限；资源不存在返回 `-32602` 并在 `data.uri` 里给出地址。
 
+### 文件送进画布
+
+外部 AI 在另一个进程里，拿不到你的桌面 Cookie，也没法直接把文件交给 Plein。三种途径，最终都走和界面上传同一套写入（流式落盘、按内容去重、类型和大小校验）：
+
+- `import_asset({ source: { path | url | base64, name?, mime? }, place?: { near?, x?, y?, parent_id?, name? } })`：返回 `asset_id`；给了 `place` 且是图片、视频、音频时再返回 `element_id`，落点规则与 `create_element` 相同。
+- `request_upload({ name, mime, size })`：大文件用。返回一次性的 `url`，客户端用 `curl -T 文件 "<url>"`（PUT 或 POST）上传，响应里的 `asset_id` 即资产 id；再用 `create_element` 摆上画布。上传地址挂在 `/mcp/upload/:ticket`，随 `/mcp` 一起绕过桌面端 Cookie 校验。
+
+安全边界：
+
+- `base64`：解码后最多 8 MiB，更大的走 `url` 或 `request_upload`。
+- `url`：只允许 http / https，不能带账号密码；解析出的任何地址落在回环、私网、链路本地（含 169.254.169.254）、共享地址、组播和保留段都拒绝，混合解析结果只要有一个内网地址就拒绝。连接用的就是校验过的地址（防 DNS 换解析）；最多跟随 5 次重定向，每一跳重新检查；超过单文件上限或 30 秒超时即中止。
+- `path`：只在本机免登录模式可用。必须是绝对路径，先解析符号链接再检查，真实路径需在允许目录内（默认用户主目录，可用 `PLEIN_IMPORT_ROOTS` 改），最后用 `O_NOFOLLOW` 打开，所以指向目录外的符号链接、检查后被调包的文件都读不到。额外拒绝隐藏目录与隐藏文件（`.ssh`、`.config` 等）、`~/Library` 以及 Plein 数据目录（里面有令牌和密钥）。
+- 上传票据绑定签发它的用户，一次性（用过不论成败即作废）、约 15 分钟过期，声明的 `size` 是上限（先看 Content-Length，再按实际字节数截断）；同一用户未使用的票据最多 32 张。
+
+地址里的主机来自外部应用访问 `/mcp` 时用的地址；设置了 `PLEIN_PUBLIC_URL` 时以它为准。
+
 ## 画布操作的完整契约
 
 Agent 按语义调用画布功能。文档编辑复用 `packages/capabilities` 与 `packages/doc` 命令；文件、音色、字幕和资产库操作复用界面正在使用的服务端路由；WebGL 构图截图由打开当前画布的客户端渲染，服务端核对资产和目标后写回。内置助手、本机 CLI 和外部 MCP 使用同一目录。
