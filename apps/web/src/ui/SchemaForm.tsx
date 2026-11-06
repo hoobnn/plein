@@ -22,13 +22,22 @@ interface FieldSchema {
   enum?: unknown[]
   minimum?: number
   maximum?: number
+  /** 开区间边界：值必须严格大于 / 小于它 */
+  exclusiveMinimum?: number
+  exclusiveMaximum?: number
   default?: unknown
+  /** 嵌套对象：递归渲染成子表单 */
+  properties?: Record<string, FieldSchema>
+  required?: string[]
+  /** 声明里的扩展：实际尺寸由画幅换算，字段本身没有固定默认值 */
+  'x-aspectRatioSizes'?: Record<string, string>
   /** 枚举值的显示名 */
   labels?: Record<string, string>
 }
 
 export interface ObjectSchema {
   properties?: Record<string, FieldSchema>
+  required?: string[]
 }
 
 export function SchemaForm({
@@ -39,6 +48,7 @@ export function SchemaForm({
   onNumberEditEnd,
   readValue,
   dense = false,
+  nested = false,
 }: {
   schema: ObjectSchema
   value: Record<string, unknown>
@@ -50,6 +60,8 @@ export function SchemaForm({
   readValue?(): Record<string, unknown>
   /** 弹层里用 32 高的控件；默认是设置页的 36 高 */
   dense?: boolean
+  /** 嵌套子表单：清空的文本按未设置处理，整个对象清空时随之撤销 */
+  nested?: boolean
 }) {
   const formId = useId()
   const field = dense ? 'ui-input w-full' : 'ui-input ui-input-lg w-full'
@@ -65,13 +77,41 @@ export function SchemaForm({
     <div className="flex flex-col gap-3">
       {props.map(([key, f]) => {
         const id = `${formId}-field-${key}`
-        const current = value[key] === undefined ? f.default : value[key]
+        // 实际值由别的字段推导时（如按画幅换算尺寸）没有固定默认值，不拿声明里的占位值冒充
+        const current =
+          value[key] === undefined ? (f['x-aspectRatioSizes'] ? undefined : f.default) : value[key]
         const label = f.title ?? key
-        const help = f.description ?? rangeOf(f)
+        const help =
+          f.description ??
+          rangeOf(f) ??
+          (f['x-aspectRatioSizes'] ? '留空时按所选画幅换算' : undefined)
         let control: React.ReactNode
+        const derived = f['x-aspectRatioSizes'] !== undefined
         // 没有默认值的选项和开关多一个「默认」：不传，用平台自己的默认
         const optional = f.default === undefined
-        if (f.enum || (f.type === 'boolean' && optional)) {
+        if (f.type === 'object' && f.properties) {
+          return (
+            <ObjectGroup
+              key={key}
+              label={label}
+              help={f.description}
+              required={schema.required?.includes(key)}
+              schema={f}
+              value={isRecord(value[key]) ? value[key] : {}}
+              readValue={() => {
+                const latest = (readValue ? readValue() : value)[key]
+                return isRecord(latest) ? latest : {}
+              }}
+              onChange={(next) => set(key, Object.keys(next).length ? next : undefined)}
+              onNumberEdit={onNumberEdit}
+              onNumberEditEnd={onNumberEditEnd}
+              dense={dense}
+            />
+          )
+        } else if (f.type === 'array' || f.type === 'object') {
+          // 没有对应控件的结构：说明清楚，别渲染成文本框存成字符串
+          control = <span className="ui-help">该参数暂不支持在界面中编辑</span>
+        } else if (f.enum || (f.type === 'boolean' && optional)) {
           const enumeration = enumField(
             f.enum ?? [true, false],
             current,
@@ -141,10 +181,12 @@ export function SchemaForm({
               id={id}
               className={field}
               aria-label={label}
-              placeholder={f.placeholder}
+              placeholder={f.placeholder ?? (derived ? '跟随画幅' : undefined)}
               list={f.list}
               value={String(current ?? '')}
-              onChange={(e) => set(key, e.target.value)}
+              onChange={(e) =>
+                set(key, (derived || nested) && e.target.value === '' ? undefined : e.target.value)
+              }
             />
           )
         }
@@ -152,6 +194,7 @@ export function SchemaForm({
           <div key={key} className="ui-field">
             <label htmlFor={id} className="ui-label">
               {label}
+              {schema.required?.includes(key) && ' *'}
             </label>
             {control}
             {help && (
@@ -166,17 +209,84 @@ export function SchemaForm({
   )
 }
 
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === 'object' && !Array.isArray(v)
+
+/** 嵌套对象：可折叠的分组，里面按同样的规则渲染；已填值的分组默认展开 */
+function ObjectGroup({
+  label,
+  help,
+  required,
+  schema,
+  value,
+  readValue,
+  onChange,
+  onNumberEdit,
+  onNumberEditEnd,
+  dense,
+}: {
+  label: string
+  help?: string
+  required?: boolean
+  schema: FieldSchema
+  value: Record<string, unknown>
+  readValue(): Record<string, unknown>
+  onChange(next: Record<string, unknown>): void
+  onNumberEdit?(): void
+  onNumberEditEnd?(): void
+  dense: boolean
+}) {
+  const missing = (schema.required ?? []).filter((k) => value[k] === undefined || value[k] === '')
+  const filled = Object.keys(value).length > 0
+  return (
+    <details className="ui-field rounded-lg border border-line p-2" open={filled || undefined}>
+      <summary className="ui-label cursor-pointer">
+        {label}
+        {required && ' *'}
+        {filled && missing.length > 0 && (
+          <span className="ui-help text-danger ml-2">缺少必填项：{missing.join('、')}</span>
+        )}
+      </summary>
+      {help && <span className="ui-help">{help}</span>}
+      <div className="mt-2">
+        <SchemaForm
+          schema={schema}
+          value={value}
+          readValue={readValue}
+          onChange={onChange}
+          onNumberEdit={onNumberEdit}
+          onNumberEditEnd={onNumberEditEnd}
+          dense={dense}
+          nested
+        />
+      </div>
+    </details>
+  )
+}
+
 /** 取值范围的说明，如“1–4 之间的整数” */
 function rangeOf(f: FieldSchema) {
-  if (f.minimum === undefined && f.maximum === undefined) return undefined
   const kind = f.type === 'integer' ? '的整数' : ''
+  const low =
+    f.minimum !== undefined
+      ? `不小于 ${f.minimum}`
+      : f.exclusiveMinimum !== undefined
+        ? `大于 ${f.exclusiveMinimum}`
+        : undefined
+  const high =
+    f.maximum !== undefined
+      ? `不大于 ${f.maximum}`
+      : f.exclusiveMaximum !== undefined
+        ? `小于 ${f.exclusiveMaximum}`
+        : undefined
+  if (!low && !high) return undefined
   if (f.minimum !== undefined && f.maximum !== undefined)
     return `${f.minimum}–${f.maximum} 之间${kind}`
-  return f.minimum !== undefined ? `不小于 ${f.minimum}` : `不大于 ${f.maximum}`
+  return [low, high].filter(Boolean).join('，') + kind
 }
 
 /**
- * 数值输入：输入时只改草稿，失焦或回车时夹到范围内再写入；清空表示用默认值（没有默认值时如种子为“随机”）。
+ * 数值输入：输入时只改草稿，失焦或回车时夹到范围内再写入；清空表示用平台默认值。
  * 有上下限的小数（温度、音量）配一个滑块。
  */
 function NumberControl({
@@ -248,7 +358,7 @@ function NumberControl({
       min={f.minimum}
       max={f.maximum}
       step={f.type === 'integer' ? 1 : 'any'}
-      placeholder={f.placeholder ?? (f.default === undefined ? '随机' : String(f.default))}
+      placeholder={f.placeholder ?? (f.default === undefined ? '默认' : String(f.default))}
       value={draft?.text ?? (value === undefined ? '' : String(value))}
       onChange={(e) => {
         setInvalid(false)
@@ -305,6 +415,8 @@ function NumberControl({
   )
   const slider =
     f.type === 'number' &&
+    f.exclusiveMinimum === undefined &&
+    f.exclusiveMaximum === undefined &&
     f.minimum !== undefined &&
     f.maximum !== undefined &&
     f.maximum - f.minimum <= 10

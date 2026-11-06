@@ -2,6 +2,8 @@ export interface NumberRange {
   type?: string
   minimum?: number
   maximum?: number
+  exclusiveMinimum?: number
+  exclusiveMaximum?: number
 }
 
 /** 按字段约定取整、收拢范围；不依赖浏览器的 stepMismatch。 */
@@ -35,7 +37,11 @@ export function resolveNumberDraft(
   const text = draft.text.trim()
   if (!text) return { kind: 'commit', value: undefined }
   const number = Number(text)
-  return Number.isFinite(number)
-    ? { kind: 'commit', value: clampNumber(range, number) }
-    : { kind: 'invalid' }
+  if (!Number.isFinite(number)) return { kind: 'invalid' }
+  // 开区间边界没有「最近的合法值」可夹，越界按无效输入处理并保留原值
+  if (range.exclusiveMinimum !== undefined && number <= range.exclusiveMinimum)
+    return { kind: 'invalid' }
+  if (range.exclusiveMaximum !== undefined && number >= range.exclusiveMaximum)
+    return { kind: 'invalid' }
+  return { kind: 'commit', value: clampNumber(range, number) }
 }

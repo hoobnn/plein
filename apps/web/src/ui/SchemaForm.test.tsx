@@ -233,3 +233,101 @@ describe('同名字段的身份', () => {
     expect(specificInput.value).toBe('0.8')
   })
 })
+
+describe('嵌套对象字段', () => {
+  const schema: ObjectSchema = {
+    properties: {
+      svg: {
+        type: 'object',
+        title: 'SVG 作者设置',
+        required: ['model'],
+        properties: {
+          model: { type: 'string', title: '模型' },
+          reasoning: {
+            type: 'object',
+            title: '推理',
+            properties: { effort: { type: 'string', title: '强度', enum: ['low', 'high'] } },
+          },
+        },
+      },
+    },
+  }
+
+  it('值存成对象而不是字符串，嵌套枚举照常渲染', async () => {
+    const { submitted, user } = renderForm(schema)
+    fireEvent.change(screen.getByRole('textbox', { name: /模型/ }), {
+      target: { value: 'gpt-x' },
+    })
+    expect(submitted.at(-1)).toEqual({ svg: { model: 'gpt-x' } })
+
+    await choose(user, '强度', 'high')
+    expect(submitted.at(-1)).toEqual({ svg: { model: 'gpt-x', reasoning: { effort: 'high' } } })
+  })
+
+  it('子字段清空后整个对象一并撤销，不留空对象', () => {
+    const { submitted } = renderForm(schema, { svg: { model: 'gpt-x' } })
+    expect(screen.queryByText(/缺少必填项/)).toBeNull()
+    fireEvent.change(screen.getByRole('textbox', { name: /模型/ }), { target: { value: '' } })
+    expect(submitted.at(-1)).toEqual({})
+  })
+
+  it('已填值但缺必填项时提示', () => {
+    renderForm(schema, { svg: { reasoning: { effort: 'low' } } })
+    expect(screen.getByText('缺少必填项：model')).toBeTruthy()
+  })
+
+  it('数组等没有控件的结构不渲染成文本框', () => {
+    renderForm({ properties: { tags: { type: 'array', title: '标签' } } })
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(screen.getByText('该参数暂不支持在界面中编辑')).toBeTruthy()
+  })
+})
+
+describe('开区间与推导默认', () => {
+  it('exclusiveMinimum：等于边界的输入作废并保留原值，说明文字写「大于」', () => {
+    const { submitted } = renderForm(
+      {
+        properties: {
+          weight: { type: 'number', title: '权重', exclusiveMinimum: 0, maximum: 1 },
+        },
+      },
+      { weight: 0.5 },
+    )
+    expect(screen.getByText('大于 0，不大于 1')).toBeTruthy()
+    const input = screen.getByRole<HTMLInputElement>('spinbutton', { name: '权重' })
+    typeNumber(input, '0')
+    commitNumber(input)
+    expect(submitted).toHaveLength(0)
+    expect(screen.getByRole('alert')).toBeTruthy()
+    typeNumber(input, '0.2')
+    commitNumber(input)
+    expect(submitted.at(-1)).toEqual({ weight: 0.2 })
+  })
+
+  it('尺寸由画幅换算时不把声明里的 auto 当成当前值，占位提示跟随画幅', () => {
+    const { submitted } = renderForm({
+      properties: {
+        size: {
+          type: 'string',
+          title: '输出尺寸',
+          default: 'auto',
+          'x-aspectRatioSizes': { '1:1': '1024x1024' },
+        },
+      },
+    })
+    const input = screen.getByRole<HTMLInputElement>('textbox', { name: '输出尺寸' })
+    expect(input.value).toBe('')
+    expect(input.placeholder).toBe('跟随画幅')
+    fireEvent.change(input, { target: { value: '1024x1024' } })
+    fireEvent.change(input, { target: { value: '' } })
+    expect(submitted.at(-1)).toEqual({})
+  })
+
+  it('枚举（如视频输出格式）正常渲染并写回', async () => {
+    const { submitted, user } = renderForm({
+      properties: { output_format: { type: 'string', title: '输出格式', enum: ['mp4', 'mov'] } },
+    })
+    await choose(user, '输出格式', 'mov')
+    expect(submitted.at(-1)).toEqual({ output_format: 'mov' })
+  })
+})
