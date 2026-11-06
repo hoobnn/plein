@@ -702,7 +702,7 @@
 }
 
 /* 小窗口在编辑区内纵向滚动，预览与时间线不再被固定轨道挤成零高度。 */
-@media (width < 768px), (height < 650px) {
+@media (width < 900px), (height < 650px) {
   .seq-editor .seq-edit-body {
     overflow-y: auto;
     overscroll-behavior-y: contain;
@@ -722,7 +722,7 @@
   }
 }
 
-@media (width < 768px) {
+@media (width < 900px) {
   .seq-editor > header > div {
     min-width: 0;
     max-width: 100%;

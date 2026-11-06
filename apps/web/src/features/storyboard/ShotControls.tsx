@@ -99,7 +99,7 @@ export function ShotControls({
     onClose()
   }
   return (
-    <Modal label="镜头控制" onClose={onClose} top isolateKeys className="max-w-5xl">
+    <Modal label="镜头控制" onClose={onClose} top isolateKeys size="lg">
       <ModalHeader
         title={`镜头控制${context ? ` · 镜头 ${context.shot.no}` : ''}`}
         onClose={onClose}
@@ -251,7 +251,7 @@ export function ShotControls({
                       />
                       写入{labels[field]}
                     </label>
-                    <div className="grid gap-3 md:grid-cols-2">
+                    <div className="grid gap-3 compact:grid-cols-2">
                       <label className="ui-field">
                         <span className="ui-label">原{labels[field]}</span>
                         <textarea

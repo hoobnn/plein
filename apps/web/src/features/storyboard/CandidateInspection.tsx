@@ -271,7 +271,7 @@ export function CandidateInspection({
       )}
       <details className="plein-shot-input-evidence">
         <summary>生成依据与输入对照</summary>
-        <div className="grid gap-2 md:grid-cols-2" aria-label="旧候选与当前输入对照">
+        <div className="grid gap-2 compact:grid-cols-2" aria-label="旧候选与当前输入对照">
           <section>
             <h4 className="text-sm font-medium">此候选生成时实际输入</h4>
             {!candidate?.runId ? (

@@ -126,7 +126,7 @@ export function CheckpointPreview({ state }: { state: string }) {
   }, [state])
   return (
     <div
-      className="relative flex min-h-40 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-canvas md:min-h-80"
+      className="relative flex min-h-40 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-canvas compact:min-h-80"
       data-testid="checkpoint-preview"
     >
       <div className="flex flex-none items-center justify-between border-b border-line bg-surface px-3 py-2 text-xs">

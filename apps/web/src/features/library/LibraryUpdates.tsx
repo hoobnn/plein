@@ -162,7 +162,7 @@ export function LibraryUpdatesPanel({ item }: { item: LibraryItem }) {
                       </label>{' '}
                       · 查看差异
                     </summary>
-                    <div className="grid gap-2 text-xs md:grid-cols-2">
+                    <div className="grid gap-2 text-xs compact:grid-cols-2">
                       <div>
                         <b>画布当前</b>
                         <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-all">

@@ -174,7 +174,7 @@
   flex-direction: column;
   gap: 12px;
 }
-@media (min-width: 768px) {
+@media (min-width: 900px) {
   .lib-hero-col {
     position: sticky;
     top: 0;
@@ -448,7 +448,7 @@
   border-radius: var(--radius-xs);
   background: var(--surface-2);
 }
-@media (max-width: 900px) {
+@media (max-width: 899px) {
   .lib-editor-content,
   .lib-editor-content.is-character {
     grid-template-columns: minmax(0, 1fr);
@@ -461,7 +461,7 @@
     aspect-ratio: auto;
   }
 }
-@media (max-width: 540px) {
+@media (max-width: 639px) {
   .lib-character-heading {
     align-items: start;
     flex-direction: column;
@@ -600,7 +600,7 @@
   width: auto;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 639px) {
   .lib-lane {
     grid-template-columns: minmax(0, 1fr);
   }
