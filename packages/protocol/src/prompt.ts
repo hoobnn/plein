@@ -15,6 +15,11 @@ export const RewritePrompt = z.object({
   /** 改写用的对话模型与最终生成模型分开，后者仅作为创作约束。 */
   generationModel: z.string().max(200).optional(),
   detail: z.enum(['refine', 'expand']).default('expand'),
+  /**
+   * 优化的结构：auto 在目标是 MiniMax H3 的多模态参考时用 H3 六段结构，其余用通用公式；
+   * default 强制通用公式；h3 强制 H3 六段结构（目标须是 H3 模型）。
+   */
+  structure: z.enum(['auto', 'default', 'h3']).default('auto'),
   inputContext: z
     .object({
       mode: z.string().max(100).optional(),
