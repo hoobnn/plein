@@ -57,11 +57,10 @@ export function AddFixedInstance({ engine, sequenceId, writable, onSelect }: Con
       isVideoSegment(el.videoSegment) &&
       el.assetId === el.videoSegment.asset.assetId,
   )
+  // 没有可添加的固定素材时整块不显示，空序列里不摆无关控件
+  if (videos.length === 0) return null
   return (
-    <div
-      className="flex flex-wrap items-center gap-2 px-4 py-2 text-xs"
-      aria-label="添加固定素材实例"
-    >
+    <div className="flex flex-wrap items-end gap-2 px-4 py-2 text-xs" aria-label="添加固定素材实例">
       <Select
         className="ui-input max-w-64"
         aria-label="已固定视频素材"
@@ -112,8 +111,16 @@ export function AddFixedInstance({ engine, sequenceId, writable, onSelect }: Con
   )
 }
 
-export function SequenceInstanceTools(props: Context & { row: ArrangedClip }) {
-  const { engine, canvasId, sequenceId, row, writable, readCurrent, onSelect } = props
+const PORT_LABELS: Record<string, string> = {
+  video: '视频',
+  image: '图片',
+  audio: '音频',
+  text: '文本',
+}
+const portLabel = (port?: string) => (port ? (PORT_LABELS[port] ?? '') : '')
+
+export function SequenceInstanceTools(props: Context & { row: ArrangedClip; index: number }) {
+  const { engine, canvasId, sequenceId, row, index, writable, readCurrent, onSelect } = props
   const id = row.clipInstanceId!
   const raw = sequenceInstancesOf(engine.doc.get(sequenceId)!).find((c) => c.clipInstanceId === id)
   const source = row.source ? engine.doc.get(row.source) : undefined
@@ -286,8 +293,23 @@ export function SequenceInstanceTools(props: Context & { row: ArrangedClip }) {
   return (
     <section className="seq-section space-y-2 text-xs" aria-label="独立剪辑实例">
       <h3 className="ui-section-title">独立剪辑实例</h3>
-      <p className="break-all">
-        实例 {id} · 端口 {row.port ?? '未知'}
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span>
+          镜头 {String(index + 1).padStart(2, '0')}
+          {portLabel(row.port) && ` · ${portLabel(row.port)}`}
+        </span>
+        <button
+          type="button"
+          className="ui-btn ui-btn-quiet ui-btn-xs"
+          title="复制实例 ID、端口等原始信息，排查问题时使用"
+          onClick={() =>
+            void navigator.clipboard
+              ?.writeText(JSON.stringify({ sequenceId, clipInstanceId: id, port: row.port }))
+              .catch(() => undefined)
+          }
+        >
+          复制调试信息
+        </button>
       </p>
       {row.segment ? (
         <>
@@ -566,8 +588,8 @@ function SoundChoice({
   label: string
 }) {
   return (
-    <div className="block text-xs">
-      {label}
+    <div className="flex flex-col gap-1.5 text-xs">
+      <span className="text-ink-muted">{label}</span>
       <Select
         className="ui-input"
         aria-label={label}

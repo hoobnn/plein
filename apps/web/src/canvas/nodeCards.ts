@@ -117,6 +117,7 @@ function glyphOf(el: CanvasElement, kind: string): IconName {
   if (el.nodeType === STAGE_TYPE) return 'cube'
   if (el.nodeType && ASSET_NODE_TYPES.has(el.nodeType))
     return CARD_GLYPHS[el.nodeType] ?? 'character'
+  if (el.nodeType === SEQUENCE_TYPE || el.nodeType === ANIMATIC_TYPE) return 'timeline'
   return GLYPHS[kind] ?? 'text'
 }
 

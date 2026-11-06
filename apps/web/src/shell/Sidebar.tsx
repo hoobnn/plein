@@ -27,7 +27,7 @@ import { coverOf, findPlacedCard, placeInputOf } from '../features/library/canva
 import {
   OUTLINE_TYPES,
   type OutlineType,
-  outlineIcon,
+  elementIcon,
   outlineTitle,
   outlineType,
 } from '../canvas/outline'
@@ -937,7 +937,7 @@ function Thumb({ el, type }: { el: CanvasElement; type: OutlineType }) {
         />
       ) : (
         // 设定卡按输出归在「图片」里，图标用资产类别的，和画布上卡片标题一致
-        <Icon name={assetIcon(el) ?? outlineIcon(type)} size={16} />
+        <Icon name={assetIcon(el) ?? elementIcon(el, type)} size={16} />
       )}
       {m?.kind === 'video' && (
         <span className="plein-layer-play">

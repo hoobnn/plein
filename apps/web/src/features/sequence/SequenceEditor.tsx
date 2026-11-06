@@ -386,6 +386,7 @@ function Editor({
   const [previewRevision, setPreviewRevision] = useState(0)
   const [animaticError, setAnimaticError] = useState<string | null>(null)
   const latestDelivery = el?.deliveries?.[0]?.id
+  const focusStart = useRef<HTMLDivElement>(null)
   const seenDelivery = useRef(latestDelivery)
   useEffect(() => {
     if (latestDelivery && latestDelivery !== seenDelivery.current) setView('delivery')
@@ -1116,7 +1117,13 @@ function Editor({
   const row = current >= 0 ? rows[current] : undefined
 
   return (
-    <Modal label="序列" onClose={onClose} size="xl" className="seq-editor h-full">
+    <Modal
+      label="序列"
+      onClose={onClose}
+      size="xl"
+      initialFocus={focusStart}
+      className="seq-editor h-full"
+    >
       <ModalHeader
         title={el?.name ?? '序列'}
         onClose={onClose}
@@ -1220,7 +1227,11 @@ function Editor({
         <span aria-hidden="true" className="ui-bar-sep" />
         <button
           type="button"
-          className={running ? 'ui-btn ui-btn-secondary' : 'ui-btn ui-btn-primary'}
+          className={
+            running
+              ? 'ui-btn ui-btn-secondary'
+              : 'ui-btn ui-btn-primary disabled:bg-transparent disabled:text-ink-muted disabled:ring-1 disabled:ring-line disabled:ring-inset'
+          }
           disabled={
             canceling ||
             readonly ||
@@ -1369,7 +1380,7 @@ function Editor({
         </p>
       )}
 
-      <div className="px-4 py-2">
+      <div ref={focusStart} tabIndex={-1} className="px-4 py-2 outline-none">
         <Segmented
           label="序列视图"
           value={view}
@@ -1531,6 +1542,7 @@ function Editor({
                           canvasId={canvasId}
                           sequenceId={id}
                           row={row}
+                          index={current}
                           writable={writable}
                           readCurrent={() => readSequence(engine, id)}
                           onSelect={select}

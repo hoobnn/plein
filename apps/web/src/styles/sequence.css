@@ -10,6 +10,8 @@
   min-height: 0;
   flex: none;
   flex-direction: column;
+  /* 矮窗口里时间线最多占 40% 高度，轨道在内部滚动，预览和检查器留得出空间 */
+  max-height: 40vh;
   border-top: 1px solid var(--line);
   background: var(--surface);
 }
@@ -93,7 +95,7 @@
   flex: none;
   align-items: center;
   gap: 8px;
-  padding-left: 16px;
+  padding-left: 12px;
   background: var(--surface);
   font-size: var(--text-xs);
   color: var(--ink-muted);
@@ -126,7 +128,7 @@
   display: inline-flex;
   height: 100%;
   align-items: center;
-  padding-left: 12px;
+  padding-left: 36px;
   font-size: var(--text-2xs);
   color: var(--ink-subtle);
   pointer-events: none;
@@ -147,7 +149,8 @@
   position: absolute;
   bottom: 0;
   height: 100%;
-  padding: 4px 0 0 4px;
+  /* 左侧多留一点：起点的播放头把手压在刻线上，不能盖住「0:00」首字 */
+  padding: 4px 0 0 10px;
   border-left: 1px solid var(--line-strong);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
@@ -462,6 +465,15 @@
 }
 .seq-playhead-grip:hover {
   scale: 1.15;
+}
+
+/* 上半部（预览 + 检查器）至少 240：时间线再高也不把预览挤没，装不下时整体滚动 */
+.seq-editor .seq-edit-body {
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+.seq-editor .seq-edit-top {
+  min-height: 240px;
 }
 
 /* 监视器：凹进去的画布底，画面按画幅取最大的尺寸居中，底下是播放条 */

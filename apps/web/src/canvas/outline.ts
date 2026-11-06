@@ -1,4 +1,5 @@
 import { type CanvasElement, elementPorts } from '@plein/doc'
+import { ANIMATIC_TYPE, SEQUENCE_TYPE } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import type { IconName } from '../ui/icons'
 import { findNode } from './nodes'
@@ -16,6 +17,13 @@ export const OUTLINE_TYPES: Array<{ type: OutlineType; label: string; icon: Icon
 ]
 
 export const outlineIcon = (type: OutlineType) => OUTLINE_TYPES.find((t) => t.type === type)!.icon
+
+/** 元素的图标：序列与节奏样片是时间线，不和视频节点共用摄像机图标 */
+export function elementIcon(el: CanvasElement, type: OutlineType = outlineType(el)): IconName {
+  return el.nodeType === SEQUENCE_TYPE || el.nodeType === ANIMATIC_TYPE
+    ? 'timeline'
+    : outlineIcon(type)
+}
 
 export function outlineType(el: CanvasElement): OutlineType {
   switch (el.kind) {

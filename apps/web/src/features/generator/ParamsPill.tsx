@@ -33,7 +33,7 @@ function shortValue(key: string, f: FieldSchema, v: unknown) {
   if (v === undefined || v === '') return null
   if (key === 'count') return `${v} ${countUnit(f)}`
   if (key === 'duration') return `${v}s`
-  if (f.enum) return aspectLabel(v)
+  if (f.enum) return f.labels?.[String(v)] ?? aspectLabel(v)
   return `${f.title ?? key} ${v}`
 }
 

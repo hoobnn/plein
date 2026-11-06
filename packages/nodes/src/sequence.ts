@@ -178,8 +178,14 @@ export const sequenceNode = defineNode({
       subtitleRender: z
         .enum(['static', 'animated', 'none'])
         .default('static')
-        .meta({ title: '字幕渲染' }),
-      subtitleAnimation: z.enum(['fade', 'pop']).default('pop').meta({ title: '字幕动画' }),
+        .meta({
+          title: '字幕渲染',
+          labels: { static: '静态字幕', animated: '动画字幕', none: '不烧录' },
+        }),
+      subtitleAnimation: z
+        .enum(['fade', 'pop'])
+        .default('pop')
+        .meta({ title: '字幕动画', labels: { fade: '淡入淡出', pop: '弹出' } }),
       clipVolume: volume('镜头原声音量', 1),
       dialogueVolume: volume('对白音量', 1),
       musicVolume: volume('配乐音量', 0.35),
