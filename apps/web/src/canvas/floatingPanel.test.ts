@@ -70,25 +70,25 @@ describe('节点生成面板的放置', () => {
 
   it('下方放得下就放下方，不动相机', () => {
     const p = placeGeneratorPanel({
-      node: rect(500, 150, 400, 220),
+      node: rect(500, 150, 400, 150),
       bounds,
       width: 960,
       height: 600,
     })
     expect(p.placement).toBe('below')
-    expect(p.top).toBe(382)
-    expect(p.height).toBe(354)
+    expect(p.top).toBe(312)
+    expect(p.height).toBe(424)
     expect(p.pan).toEqual({ x: 0, y: 0 })
   })
   it('下方不足最小可用高度时改放上方，并让开节点标签', () => {
     const p = placeGeneratorPanel({
-      node: rect(500, 450, 400, 150),
+      node: rect(500, 520, 400, 100),
       bounds,
       width: 960,
-      height: 400,
+      height: 600,
     })
     expect(p.placement).toBe('above')
-    expect(p.top + p.height).toBe(450 - 32)
+    expect(p.top + p.height).toBe(520 - 32)
     expect(p.pan).toEqual({ x: 0, y: 0 })
   })
   const shift = (r: ReturnType<typeof rect>, pan: { x: number; y: number }) => ({
@@ -108,7 +108,7 @@ describe('节点生成面板的放置', () => {
     expect(after.placement).toBe('below')
     expect(after.pan).toEqual({ x: 0, y: 0 })
     expect(after.top + after.height).toBeLessThanOrEqual(bounds.bottom)
-    expect(after.height).toBeGreaterThanOrEqual(320)
+    expect(after.height).toBeGreaterThanOrEqual(400)
   })
   it('相机不平移时面板贴着可用区域底边，仍避开输出端口，不会被带出窗口', () => {
     const node = rect(500, 246, 372, 209)
@@ -132,7 +132,7 @@ describe('节点生成面板的放置', () => {
     const mid = (node.top + node.bottom) / 2 + p.pan.y
     expect(after.top).toBeGreaterThanOrEqual(mid + 16)
     expect(after.top + after.height).toBe(656)
-    expect(after.height).toBeGreaterThanOrEqual(320)
+    expect(after.height).toBeGreaterThanOrEqual(400)
   })
   it('节点落在右侧边缘时平移进可见宽度，面板宽度按可用宽度收', () => {
     const p = placeGeneratorPanel({

@@ -45,8 +45,12 @@ const PANEL_GAP = 12
 const PANEL_LABEL_GAP = 32
 /** 面板压住节点下半部时，离节点中线留出输出端口的高度 */
 const PANEL_PORT_CLEARANCE = 16
-/** 面板至少要有的可用高度：低于它就换位置或平移相机 */
-export const PANEL_MIN_USABLE_HEIGHT = 320
+/**
+ * 面板至少要有的可用高度：低于它就换位置或平移相机。
+ * 标题、参考区、至少 120px 的提示词、辅助区一行和底部工具栏合起来约 390px，
+ * 再矮「实际输入」等区域就要靠滚动才看得到。
+ */
+export const PANEL_MIN_USABLE_HEIGHT = 400
 
 interface ScreenRect {
   left: number
