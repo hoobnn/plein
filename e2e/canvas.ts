@@ -265,6 +265,8 @@ export async function clickElement(page: Page, id: string) {
 export async function revealGenerator(page: Page, target?: Locator) {
   const editor = page.getByTestId('node-editor')
   await expect(editor).toBeVisible()
+  // 节点周围放不下面板时，相机会在片刻后平移到位：面板透明期间不接收点击，等它显示出来
+  await expect(editor).not.toHaveAttribute('data-pending', '')
   // 面板跟着相机走，平移后要再确认一次仍在窗口里
   for (let attempt = 0; attempt < 3; attempt++) {
     const moved = await editor.evaluate((el) => {

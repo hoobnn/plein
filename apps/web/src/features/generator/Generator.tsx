@@ -2,7 +2,7 @@ import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement, primaryResult, setParam } from '@plein/doc'
 import { ASSET_NODE_TYPES, firstPlaceholder, presetsFor, type VideoMode } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useEngineVersion, useFollow } from '../../canvas/hooks'
 import { canvasBottomSpace, placeGeneratorPanel } from '../../canvas/floatingPanel'
 import { adaptToModel, constrainFields, selectedModel } from '../../canvas/modelParams'
@@ -57,6 +57,8 @@ const INLINE_EDITOR_W = 640
 /** 面板离左右浮层、顶栏的间距（--chrome-inset）与顶栏占用高度（--chrome-top） */
 const PANEL_INSET = 12
 const PANEL_TOP = 64
+/** 需要平移相机时的等待时间：略长于双击间隔，让双击先完成 */
+const PAN_DELAY_MS = 320
 /** 默认面板高度随窗口增长的上限：再大的窗口也留出上半屏看画布。 */
 const EDITOR_MAX_H = 720
 /** 默认面板高度随窗口增长的比例：小窗口也至少留出 1/4 给画布。 */
@@ -166,10 +168,35 @@ function NodeBelow({
     }
   }
   // 新建节点或选中节点后，节点与面板超出可见区域就平滑平移进来。
+  // 需要平移时先等一个双击间隔：双击节点（播放、编辑）的第二下不能落在被推走的画面上，
+  // 这段时间面板透明且不拦截指针（data-pending），平移开始后再显示，随节点一起滑进位置。
+  const [armed, setArmed] = useState(false)
   // oxlint-disable react-hooks/exhaustive-deps -- 只在换节点时检查一次，之后由用户控制相机
-  useEffect(() => {
+  useLayoutEffect(() => {
     const { x, y } = plan({ x: 0, y: 0 })?.pan ?? { x: 0, y: 0 }
-    engine.glideBy(x, y)
+    if (Math.abs(x) < 0.5 && Math.abs(y) < 0.5) {
+      setArmed(true)
+      return
+    }
+    setArmed(false)
+    // 等待期间用户自己动了相机：说明他有别的打算，放弃这次自动平移，面板照常显示
+    const off = engine.camera.onChange(() => {
+      window.clearTimeout(timer)
+      off()
+      setArmed(true)
+    })
+    const timer = window.setTimeout(() => {
+      off()
+      const again = plan({ x: 0, y: 0 })?.pan ?? { x: 0, y: 0 }
+      engine.glideBy(again.x, again.y)
+      setArmed(true)
+    }, PAN_DELAY_MS)
+    // 面板关闭（取消选中、换节点）后不再继续推相机，避免点空白处时画布还在漂
+    return () => {
+      window.clearTimeout(timer)
+      off()
+      engine.stopGlide()
+    }
   }, [engine, nodeId])
   // oxlint-enable react-hooks/exhaustive-deps
   const ref = useFollow<HTMLElement>(engine, place)
@@ -183,7 +210,8 @@ function NodeBelow({
       data-testid="node-editor"
       data-placement={placement}
       className="plein-node-editor pointer-events-auto fixed z-20 flex min-h-0 flex-col overflow-hidden rounded-canvas-card border border-line bg-surface"
-      style={style}
+      data-pending={armed ? undefined : ''}
+      style={armed ? style : { ...style, opacity: 0 }}
     >
       <button
         type="button"

@@ -528,7 +528,8 @@ test.describe('画布实际渲染与输入关键旅程', { tag: '@core' }, () =>
         async () => {
           const box = (await editor.boundingBox())!
           const inset = await page.evaluate(() => window.__plein.engine.camera.insets.left)
-          return Math.round(box.width) === Math.max(320, Math.min(840, 800 - inset))
+          // 左右各留 12px（--chrome-inset）
+          return Math.round(box.width) === Math.max(320, Math.min(840, 800 - inset - 24))
         },
         { timeout: 3000 },
       )

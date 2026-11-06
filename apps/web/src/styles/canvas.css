@@ -393,6 +393,11 @@
   min-width: 0;
   min-height: var(--plein-prompt-floor);
 }
+/* 等待平移相机时面板透明：内部子元素各自声明了 pointer-events，要逐个压掉，双击才能穿过去 */
+.plein-node-editor[data-pending],
+.plein-node-editor[data-pending] * {
+  pointer-events: none !important;
+}
 /* 参考素材区：不参与收缩（收缩会盖住 / 裁掉瓦片，拖拽换序就废了）；
    上限取 45% 与「一整行缩略图」两者的较大值：小窗口里也至少看得全一行
    （工具行 32 + 标题 16 + 48 图 + 标签 + 间距），多出来的靠内部滚动，上传工具行吸顶。 */

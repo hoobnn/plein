@@ -112,7 +112,7 @@ const STROKE_ZOOM_SLACK = 0.1
 /** 镜头过渡（flyTo）时长 */
 const FLIGHT_MS = 560
 /** 平移过渡（glideBy）时长 */
-const GLIDE_MS = 240
+const GLIDE_MS = 280
 /** 静止时仍低频提交一帧，让 Pixi 的渲染后 GPU 回收按原期限运行。 */
 const IDLE_MAINTENANCE_MS = 30_000
 
@@ -702,6 +702,11 @@ export class Engine {
     this.glide = { from: { x: camera.x, y: camera.y }, to, start: performance.now() }
   }
 
+  /** 取消尚未走完的平移过渡，相机停在当前位置（面板关闭时用） */
+  stopGlide() {
+    this.glide = null
+  }
+
   /** 平移过渡还剩多少没走完（屏幕像素）；浮动面板按它预估节点的最终位置 */
   get glideRemaining() {
     const g = this.glide
@@ -712,7 +717,8 @@ export class Engine {
     const g = this.glide
     if (!g) return
     const t = Math.min(1, (now - g.start) / GLIDE_MS)
-    const e = 1 - (1 - t) ** 3
+    // 先慢后快：起步几十毫秒几乎不动，双击节点的第二下还落在原处
+    const e = t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2
     this.advancingFlight = true
     try {
       this.camera.panBy(

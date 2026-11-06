@@ -91,34 +91,48 @@ describe('节点生成面板的放置', () => {
     expect(p.top + p.height).toBe(450 - 32)
     expect(p.pan).toEqual({ x: 0, y: 0 })
   })
-  it('上下都放不下时平移相机，让面板回到下方并拿到尽量多的高度', () => {
-    const p = placeGeneratorPanel({
-      node: rect(500, 246, 372, 209),
-      bounds,
-      width: 960,
-      height: 600,
-    })
-    expect(p.placement).toBe('below')
+  const shift = (r: ReturnType<typeof rect>, pan: { x: number; y: number }) => ({
+    left: r.left + pan.x,
+    right: r.right + pan.x,
+    top: r.top + pan.y,
+    bottom: r.bottom + pan.y,
+  })
+  it('上下都放不下时建议平移相机：平移后面板回到下方并拿到尽量多的高度', () => {
+    const node = rect(500, 246, 372, 209)
+    const p = placeGeneratorPanel({ node, bounds, width: 960, height: 600 })
     expect(p.pan.x).toBe(0)
     expect(p.pan.y).toBeLessThan(0)
     // 节点顶边不越过标签位置
     expect(246 + p.pan.y).toBeGreaterThanOrEqual(64 + 32)
-    expect(p.top + p.height).toBeLessThanOrEqual(bounds.bottom)
-    expect(p.height).toBeGreaterThanOrEqual(320)
+    const after = placeGeneratorPanel({ node: shift(node, p.pan), bounds, width: 960, height: 600 })
+    expect(after.placement).toBe('below')
+    expect(after.pan).toEqual({ x: 0, y: 0 })
+    expect(after.top + after.height).toBeLessThanOrEqual(bounds.bottom)
+    expect(after.height).toBeGreaterThanOrEqual(320)
   })
-  it('节点太高无法与最小高度的面板同屏时，面板压住节点下半部并留出输出端口', () => {
+  it('相机不平移时面板贴着可用区域底边，仍避开输出端口，不会被带出窗口', () => {
+    const node = rect(500, 246, 372, 209)
+    const p = placeGeneratorPanel({ node, bounds, width: 960, height: 600 })
+    expect(p.placement).toBe('overlap')
+    expect(p.top + p.height).toBe(bounds.bottom)
+    expect(p.top).toBeGreaterThanOrEqual((246 + 455) / 2 + 16)
+    expect(p.height).toBeGreaterThanOrEqual(160)
+  })
+  it('节点太高无法与最小高度的面板同屏时，平移后面板压住节点下半部并留出输出端口', () => {
     const node = rect(500, 150, 380, 420)
-    const p = placeGeneratorPanel({
-      node,
-      bounds: { ...bounds, bottom: 656 },
+    const tight = { ...bounds, bottom: 656 }
+    const p = placeGeneratorPanel({ node, bounds: tight, width: 960, height: 600 })
+    const after = placeGeneratorPanel({
+      node: shift(node, p.pan),
+      bounds: tight,
       width: 960,
       height: 600,
     })
-    expect(p.placement).toBe('overlap')
-    const midAfterPan = (node.top + node.bottom) / 2 + p.pan.y
-    expect(p.top).toBeGreaterThanOrEqual(midAfterPan + 16)
-    expect(p.top + p.height).toBe(656)
-    expect(p.height).toBeGreaterThanOrEqual(320)
+    expect(after.placement).toBe('overlap')
+    const mid = (node.top + node.bottom) / 2 + p.pan.y
+    expect(after.top).toBeGreaterThanOrEqual(mid + 16)
+    expect(after.top + after.height).toBe(656)
+    expect(after.height).toBeGreaterThanOrEqual(320)
   })
   it('节点落在右侧边缘时平移进可见宽度，面板宽度按可用宽度收', () => {
     const p = placeGeneratorPanel({

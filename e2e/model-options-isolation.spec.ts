@@ -97,7 +97,8 @@ test('没有专属参数表单的模型仍能恢复损坏历史参数并重新�
   // 编辑器固定在卡片下方，控件可能在窗口外：先把它移进窗口
   const actual = preview.getByRole('button', { name: /实际输入/ })
   await revealGenerator(page, actual)
-  await actual.click()
+  // 点在开头的文字上：窄窗口里按钮正中间可能正好是摘要里「最终提示词」的说明图标
+  await actual.click({ position: { x: 24, y: 14 } })
   const generate = generator.getByRole('button', { name: /^(重新)?生成$/ })
   await expect(preview).toContainText('参数格式')
   await expect(generate).toBeDisabled()

@@ -61,15 +61,20 @@ export interface PanelPlacement {
   top: number
   width: number
   height: number
-  /** 相机需要平移的量（屏幕像素）才能让节点与面板同时可见；放得下时为 0 */
+  /** 相机平移（屏幕像素）后，节点与面板能按更舒服的布局同屏；已经放得下时为 0 */
   pan: { x: number; y: number }
 }
 
+/** 压住节点下半部又没有平移余地时，面板至少保留的高度 */
+const PANEL_FLOOR_HEIGHT = 160
+
 /**
- * 节点生成面板的统一放置：下方放得下放下方，否则上方；两边都不够就让相机平移，
- * 平移也容不下整个节点时，面板上移压住节点下半部，但留出中线上的输出端口。
- * node 与 bounds 同为屏幕坐标；bounds 已扣掉侧栏、右侧浮层、顶栏和底部工具栏。
- * 返回的矩形对应「平移之后」的画面，调用方平移时让面板随节点一起移动即可。
+ * 节点生成面板的统一放置：下方放得下放下方，否则上方；两边都不够就压住节点下半部，
+ * 只留出中线上的输出端口。node 与 bounds 同为屏幕坐标；bounds 已扣掉侧栏、
+ * 右侧浮层、顶栏和底部工具栏，面板宽度按它收。
+ *
+ * 返回的矩形是相机不动时的布局，任何时候都成立；`pan` 是建议的相机平移量：
+ * 平移后下方（或上方）能放下最小可用高度，调用方愿意平移时再用。
  */
 export function placeGeneratorPanel(input: {
   node: ScreenRect
@@ -78,41 +83,44 @@ export function placeGeneratorPanel(input: {
   /** 面板期望高度 */
   height: number
 }): PanelPlacement {
-  const { bounds } = input
+  const { node, bounds } = input
   const width = Math.max(1, Math.min(input.width, bounds.right - bounds.left))
   const height = Math.max(1, input.height)
   const minHeight = Math.min(height, PANEL_MIN_USABLE_HEIGHT)
+  const centerLeft = (centre: number) =>
+    Math.max(bounds.left, Math.min(centre - width / 2, bounds.right - width))
+  const left = centerLeft((node.left + node.right) / 2)
 
-  // 水平：节点放得进可见宽度就整个移进来；比可见宽度还宽的节点不动。
+  // 相机建议：水平把节点整个移进可见宽度（比可见宽度还宽的节点不动）
   let dx = 0
-  if (input.node.right - input.node.left <= bounds.right - bounds.left) {
-    if (input.node.left < bounds.left) dx = bounds.left - input.node.left
-    else if (input.node.right > bounds.right) dx = bounds.right - input.node.right
+  if (node.right - node.left <= bounds.right - bounds.left) {
+    if (node.left < bounds.left) dx = bounds.left - node.left
+    else if (node.right > bounds.right) dx = bounds.right - node.right
   }
-  const node = {
-    left: input.node.left + dx,
-    right: input.node.right + dx,
-    top: input.node.top,
-    bottom: input.node.bottom,
-  }
-  const left = Math.max(
-    bounds.left,
-    Math.min((node.left + node.right - width) / 2, bounds.right - width),
-  )
-
+  // 垂直：节点顶边最高停在标签之下。能放下「节点 + 间距 + 最小高度」就让面板回到下方，
+  // 否则只要求节点中线到面板之间留出端口。
   const spaceBelow = bounds.bottom - (node.bottom + PANEL_GAP)
-  if (spaceBelow >= minHeight) {
-    const h = Math.min(height, spaceBelow)
-    return {
-      placement: 'below',
-      left,
-      top: node.bottom + PANEL_GAP,
-      width,
-      height: h,
-      pan: { x: dx, y: 0 },
+  const spaceAbove = node.top - PANEL_LABEL_GAP - bounds.top
+  const topLimit = bounds.top + PANEL_LABEL_GAP
+  const mid = (node.top + node.bottom) / 2
+  let dy = 0
+  if (spaceBelow < minHeight && spaceAbove < minHeight) {
+    if (topLimit + (node.bottom - node.top) + PANEL_GAP + minHeight <= bounds.bottom) {
+      const need = bounds.bottom - minHeight - PANEL_GAP - node.bottom
+      const wanted = bounds.bottom - height - PANEL_GAP - node.bottom
+      dy = Math.min(need, Math.max(wanted, topLimit - node.top))
+    } else {
+      const need = bounds.bottom - minHeight - PANEL_PORT_CLEARANCE - mid
+      const wanted = bounds.bottom - height - PANEL_PORT_CLEARANCE - mid
+      dy = Math.min(need, Math.max(wanted, topLimit - node.top))
     }
   }
-  const spaceAbove = node.top - PANEL_LABEL_GAP - bounds.top
+  const pan = { x: dx, y: dy }
+
+  if (spaceBelow >= minHeight) {
+    const h = Math.min(height, spaceBelow)
+    return { placement: 'below', left, top: node.bottom + PANEL_GAP, width, height: h, pan }
+  }
   if (spaceAbove >= minHeight) {
     const h = Math.min(height, spaceAbove)
     return {
@@ -121,40 +129,13 @@ export function placeGeneratorPanel(input: {
       top: node.top - PANEL_LABEL_GAP - h,
       width,
       height: h,
-      pan: { x: dx, y: 0 },
+      pan,
     }
   }
-
-  // 平移：节点顶边最高停在标签之下。能放下「节点 + 间距 + 最小高度」就把面板放回下方，
-  // 否则面板压住节点下半部，只要求节点中线到面板之间留出端口。
-  const topLimit = bounds.top + PANEL_LABEL_GAP
-  const nodeHeight = node.bottom - node.top
-  const mid = (node.top + node.bottom) / 2
-  if (topLimit + nodeHeight + PANEL_GAP + minHeight <= bounds.bottom) {
-    const need = bounds.bottom - minHeight - PANEL_GAP - node.bottom
-    const wanted = bounds.bottom - height - PANEL_GAP - node.bottom
-    const dy = Math.min(need, Math.max(wanted, topLimit - node.top))
-    const bottom = node.bottom + dy
-    const h = Math.min(height, bounds.bottom - (bottom + PANEL_GAP))
-    return {
-      placement: 'below',
-      left,
-      top: bottom + PANEL_GAP,
-      width,
-      height: h,
-      pan: { x: dx, y: dy },
-    }
-  }
-  const need = bounds.bottom - minHeight - PANEL_PORT_CLEARANCE - mid
-  const wanted = bounds.bottom - height - PANEL_PORT_CLEARANCE - mid
-  const dy = Math.min(need, Math.max(wanted, topLimit - node.top))
-  const h = Math.min(height, bounds.bottom - (mid + dy + PANEL_PORT_CLEARANCE))
-  return {
-    placement: 'overlap',
-    left,
-    top: bounds.bottom - h,
-    width,
-    height: h,
-    pan: { x: dx, y: dy },
-  }
+  // 相机不动：贴着可用区域底边，上沿停在输出端口之下
+  const h = Math.min(
+    height,
+    Math.max(bounds.bottom - (mid + PANEL_PORT_CLEARANCE), Math.min(height, PANEL_FLOOR_HEIGHT)),
+  )
+  return { placement: 'overlap', left, top: bounds.bottom - h, width, height: h, pan }
 }
