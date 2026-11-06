@@ -1,2 +1,11 @@
-/** 与 @modelbay/core 的同名模块逐字相同；modelbay M1 起公共类型与校验以 @modelbay/core 为单一来源，这里再导出保持 plein 的导入路径不变。 */
-export * from '@modelbay/core/ids'
+/** 与 modelbay 同名模块逐字相同；公共类型与校验以 modelbay 为单一来源，这里按名字再导出，保持 plein 的导入路径和公开 API 不变。 */
+export {
+  modelRef,
+  NAMESPACED_ID,
+  NamespacedId,
+  nodeKey,
+  parseModelRef,
+  parseNodeKey,
+  PLUGIN_API_VERSION,
+  vendorOf,
+} from 'modelbay'

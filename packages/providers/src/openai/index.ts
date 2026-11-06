@@ -1,5 +1,5 @@
-import { createOpenAIAdapter, models as openaiModels } from '@modelbay/openai'
-import { editMask } from '@modelbay/openai/node'
+import { createOpenAIAdapter, models as openaiModels } from 'modelbay/openai'
+import { editMask } from 'modelbay/openai/node'
 import { definePlugin, defineServerPlugin, PLUGIN_API_VERSION } from '@plein/plugin-sdk'
 import { z } from 'zod'
 import { adapterToProvider, toAdapterContext } from '../bridge'

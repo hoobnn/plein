@@ -12,7 +12,7 @@ import {
   type ChannelRef,
   type PlatformAdapter,
   toModelInfo,
-} from '@modelbay/core'
+} from 'modelbay'
 import {
   type ModelInfo,
   type ModelSpec,

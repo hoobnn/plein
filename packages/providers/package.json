@@ -11,15 +11,9 @@
     "typecheck": "tsc -p ."
   },
   "dependencies": {
-    "@modelbay/ark": "0.1.0",
-    "@modelbay/bailian": "0.1.0",
-    "@modelbay/core": "0.1.0",
-    "@modelbay/doubao-speech": "0.1.0",
-    "@modelbay/minimax": "0.1.0",
-    "@modelbay/openai": "0.1.0",
-    "@modelbay/shared": "0.1.0",
     "@plein/plugin-sdk": "workspace:*",
     "@volcengine/tos-sdk": "^2.9.1",
+    "modelbay": "0.1.2",
     "sharp": "^0.35.5",
     "zod": "catalog:"
   },

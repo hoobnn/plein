@@ -4,7 +4,7 @@ import {
   headers,
   speechSettings as modelbaySpeechSettings,
   TTS_VOICES,
-} from '@modelbay/doubao-speech'
+} from 'modelbay/doubao-speech'
 import { definePlugin, defineServerPlugin, PLUGIN_API_VERSION } from '@plein/plugin-sdk'
 import { adapterToProvider, toAdapterContext } from '../bridge'
 

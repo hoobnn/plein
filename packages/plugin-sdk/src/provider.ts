@@ -1,5 +1,5 @@
 /**
- * Provider 协议：公共类型与校验已上移到 @modelbay/core（modelbay M1），这里再导出，
+ * Provider 协议：公共类型与校验以 modelbay 为单一来源，这里再导出，
  * 保持 plein 各包的导入路径不变。
  * describeProvider / ProviderDescriptor / providerTestScope 供设置页使用，按设计留在 plein。
  */
@@ -11,9 +11,48 @@ import type {
   SecretSpec,
   VoiceCloneSpec,
   VoiceDesignSpec,
-} from '@modelbay/core/provider'
+} from 'modelbay'
 
-export * from '@modelbay/core/provider'
+export {
+  Capability,
+  type CapabilityInput,
+  type CapabilityInputs,
+  type ChatMessage,
+  type ChatTool,
+  type ChatToolCall,
+  defineProvider,
+  type LoadedFile,
+  type MediaRequirement,
+  type MediaRequirements,
+  type ModelFeature,
+  type ModelInfo,
+  type ModelLimits,
+  type ModelSpec,
+  type PollResult,
+  providerConfigured,
+  type ProviderContext,
+  type ProviderDefinition,
+  ProviderError,
+  ProviderErrorCode,
+  type ProviderErrorInfo,
+  type ProviderOutput,
+  type ProviderRequest,
+  type ProviderSocket,
+  type ProviderUsage,
+  type RemoteModel,
+  type SecretSpec,
+  type SpeechLimits,
+  type SubmissionRecord,
+  type SubmitResult,
+  type TranscriptSegment,
+  type VoiceCloneInput,
+  type VoiceCloneSpec,
+  type VoiceCloneState,
+  type VoiceCreationResult,
+  type VoiceDesignInput,
+  type VoiceDesignSpec,
+  type VoicePreset,
+} from 'modelbay'
 
 /** Provider 的可序列化描述，供设置页使用 */
 export interface ProviderDescriptor {

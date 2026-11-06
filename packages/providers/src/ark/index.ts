@@ -1,6 +1,6 @@
-import { createArkAdapter, createArkPlanAdapter, models as arkModels } from '@modelbay/ark'
-import { nodeArkOptions, referenceStorageHost } from '@modelbay/ark/tos'
-import type { PlatformAdapter } from '@modelbay/core'
+import { createArkAdapter, createArkPlanAdapter, models as arkModels } from 'modelbay/ark'
+import { nodeOptions, referenceStorageHost } from 'modelbay/ark/node'
+import type { PlatformAdapter } from 'modelbay'
 import {
   definePlugin,
   type ModelSpec,
@@ -69,8 +69,8 @@ function withKeyPrefix(adapter: PlatformAdapter): PlatformAdapter {
   }
 }
 
-const apiAdapter = withKeyPrefix(createArkAdapter(arkModels, nodeArkOptions))
-const planAdapter = withKeyPrefix(createArkPlanAdapter(arkModels, nodeArkOptions))
+const apiAdapter = withKeyPrefix(createArkAdapter(arkModels, nodeOptions))
+const planAdapter = withKeyPrefix(createArkPlanAdapter(arkModels, nodeOptions))
 
 // 套餐的图片、视频模型沿用按量模型 ID（画布节点换平台不用改模型参数）；
 // 请求时由 modelbay 适配器换成套餐模型名。对话、语音的 ID 两边本来一致。

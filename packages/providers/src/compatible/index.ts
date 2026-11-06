@@ -3,7 +3,7 @@ import {
   compatibleBaseURL,
   createOpenAICompatibleAdapter,
   models as openaiModels,
-} from '@modelbay/openai'
+} from 'modelbay/openai'
 import {
   type CapabilityInput,
   definePlugin,

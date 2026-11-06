@@ -1,4 +1,4 @@
-import { minimaxAdapter as adapter, minimaxVoiceClone, minimaxVoiceDesign } from '@modelbay/minimax'
+import { minimaxAdapter as adapter, minimaxVoiceClone, minimaxVoiceDesign } from 'modelbay/minimax'
 import {
   definePlugin,
   defineServerPlugin,

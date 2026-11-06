@@ -1,5 +1,5 @@
-import { bailianAdapter, createBailianAdapter } from '@modelbay/bailian'
-import { prepareImageEditRequest } from '@modelbay/bailian/image-edit'
+import { bailianAdapter, createBailianAdapter } from 'modelbay/bailian'
+import { prepareImageEditRequest } from 'modelbay/bailian/node'
 import {
   definePlugin,
   defineServerPlugin,
