@@ -98,7 +98,7 @@ function SelectionBarHost({ engine, remote }: { engine: Engine; remote: boolean 
         aria-label="下载操作"
         ref={ref}
         style={style}
-        className="ui-bar ui-bar-sm pointer-events-auto fixed z-20 h-auto w-max flex-wrap"
+        className="ui-bar ui-bar-sm pointer-events-auto fixed z-20 w-max"
       >
         {downloadControls}
       </div>
@@ -135,7 +135,7 @@ function SelectionBarHost({ engine, remote }: { engine: Engine; remote: boolean 
       ref={ref}
       aria-label="多选操作"
       style={style}
-      className="ui-bar ui-bar-sm pointer-events-auto fixed z-20 h-auto w-max flex-wrap"
+      className="ui-bar ui-bar-sm pointer-events-auto fixed z-20 w-max"
     >
       <span className="ui-bar-text">已选 {ids.length}</span>
       <div className="ui-bar-sep" />

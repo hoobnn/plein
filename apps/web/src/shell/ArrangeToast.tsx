@@ -87,7 +87,7 @@ function Bar({
     <m.div
       role="status"
       {...useOverlayMotion(popUpVariants)}
-      className="ui-bar ui-bar-sm ui-pop ui-pop-up ui-motion pointer-events-auto h-auto min-h-10 gap-3 pr-1.5 pl-4"
+      className="ui-bar ui-bar-sm ui-pop ui-pop-up ui-motion pointer-events-auto gap-3 pr-1.5 pl-4"
     >
       {/* 与带操作的提示条共用 40 高、28 按钮、12 间距；文字折行时自然增高 */}
       <span className="min-w-0">

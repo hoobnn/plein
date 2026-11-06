@@ -84,7 +84,7 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
       ref={ref}
       aria-label="Frame 操作"
       style={style}
-      className="ui-bar ui-bar-sm pointer-events-auto fixed z-20 h-auto w-max flex-wrap"
+      className="ui-bar ui-bar-sm pointer-events-auto fixed z-20 w-max"
     >
       <button
         type="button"

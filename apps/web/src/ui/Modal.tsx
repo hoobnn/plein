@@ -154,7 +154,12 @@ export function Modal({
               )
                 e.preventDefault()
             }}
-            initialFocus={initialFocus}
+            // 鼠标和触屏打开时焦点落在面板本身，不在第一个按钮上画焦点环；键盘打开仍进入第一个控件。
+            initialFocus={
+              initialFocus ??
+              ((type) =>
+                type === 'mouse' || type === 'touch' || type === 'pen' ? popup.current : true)
+            }
             data-plein-active={isolateKeys ? '' : undefined}
             className={cn(
               'ui-dialog ui-motion relative flex max-h-full w-full flex-col overflow-hidden bg-menu text-sm text-ink ring-1 ring-line outline-none',

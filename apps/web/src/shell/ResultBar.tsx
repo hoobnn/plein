@@ -142,7 +142,7 @@ function ResultBarHost({ engine }: { engine: Engine }) {
       role="toolbar"
       aria-label="结果操作"
       style={style}
-      className="ui-bar ui-bar-sm ui-scrollbar pointer-events-auto fixed z-20 h-auto w-max flex-wrap overflow-y-auto"
+      className="ui-bar ui-bar-sm ui-scrollbar pointer-events-auto fixed z-20 w-max overflow-y-auto"
     >
       {!engine.doc.readOnly && (
         <button

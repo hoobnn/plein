@@ -185,7 +185,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
           <div className="ui-bar ui-bar-bare -ml-3.5">
             <Brand compactOnMobile />
           </div>
-          <div className="app-actions ui-bar ui-bar-bare -mr-1 max-sm:h-auto max-sm:min-w-0 max-sm:flex-1 max-sm:flex-wrap max-sm:justify-end">
+          <div className="app-actions ui-bar ui-bar-bare -mr-1 max-sm:min-w-0 max-sm:flex-1 max-sm:justify-end">
             <HomeAgentTrigger />
             <button
               type="button"

@@ -107,8 +107,9 @@
   .ui-bar {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 2px;
-    height: var(--chrome-h);
+    min-height: var(--chrome-h);
     padding: 4px;
     border-radius: var(--radius-lg);
     background: var(--float);
@@ -116,7 +117,7 @@
     backdrop-filter: blur(var(--blur-float));
   }
   .ui-bar-sm {
-    height: var(--h-xl);
+    min-height: var(--h-xl);
   }
   /* 同样尺寸但不带底色：首页顶栏，和画布顶栏对齐 */
   .ui-bar-bare {
@@ -228,7 +229,9 @@
   .ui-btn[aria-expanded="true"] {
     background: var(--active);
   }
-  .ui-btn:disabled {
+  /* 禁用：不响应悬停，保持各自的底色（次要按钮有底，其余透明） */
+  .ui-btn:disabled,
+  .ui-btn:disabled:hover {
     cursor: not-allowed;
     opacity: 0.4;
     background: transparent;
@@ -247,8 +250,12 @@
   .ui-btn-primary:hover {
     background: var(--primary-hover);
   }
-  .ui-btn-primary:disabled {
-    background: var(--primary);
+  /* 主按钮禁用时不再是半透明的黑，改成与次要按钮不同的中性底，一眼看出不可点 */
+  .ui-btn-primary:disabled,
+  .ui-btn-primary:disabled:hover {
+    background: var(--surface-3);
+    color: var(--ink-subtle);
+    opacity: 1;
   }
   .ui-btn-secondary {
     background: var(--surface-2);
@@ -257,11 +264,18 @@
   .ui-btn-secondary:hover {
     background: var(--surface-3);
   }
+  .ui-btn-secondary:disabled,
+  .ui-btn-secondary:disabled:hover {
+    background: var(--surface-2);
+  }
   .ui-btn-danger {
     color: var(--danger);
   }
   .ui-btn-danger:hover {
     background: var(--danger-soft);
+  }
+  .ui-btn-danger:disabled:hover {
+    background: transparent;
   }
   .ui-btn-danger-solid {
     background: var(--danger);
@@ -270,6 +284,10 @@
   }
   .ui-btn-danger-solid:hover {
     background: color-mix(in srgb, var(--danger) 88%, black);
+  }
+  .ui-btn-danger-solid:disabled,
+  .ui-btn-danger-solid:disabled:hover {
+    background: var(--danger);
   }
   /* 尺寸：xs 24（行内、卡片里的小按钮）· sm 28（面板里的次要操作）· 默认 32 · lg 36（页面主操作） */
   .ui-btn-xs {
