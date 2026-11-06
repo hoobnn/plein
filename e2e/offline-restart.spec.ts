@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, type Browser, type Page, test } from './fixtures'
-import { addNode, elements, waitEngine } from './canvas'
+import { addNode, deselect, elements, waitEngine } from './canvas'
 import { slowFile } from './slow-file'
 
 /**
@@ -137,7 +137,8 @@ test(
     const url = page.url()
     await expect(syncStatus(page)).toHaveAttribute('data-sync', 'connected')
     await addNode(page, '文本', { x: 400, y: 450 })
-    await page.keyboard.press('Escape')
+    // 新节点的编辑面板抢到焦点时，单次 Esc 只收焦点；确认取消选中，面板才不会盖住后面双击的空白处
+    await deselect(page)
     await expect.poll(() => nodeCount(page)).toBe(1)
     // 等服务端攒批写库（50ms）
     await page.waitForTimeout(500)
@@ -145,7 +146,8 @@ test(
     await kill()
     await expect(syncStatus(page)).toHaveAttribute('data-sync', 'disconnected')
     await addNode(page, '文本', { x: 900, y: 450 })
-    await page.keyboard.press('Escape')
+    // 新节点的编辑面板抢到焦点时，单次 Esc 只收焦点；确认取消选中，面板才不会盖住后面双击的空白处
+    await deselect(page)
     await expect.poll(() => nodeCount(page)).toBe(2)
     // 入口由服务托管：服务停着时新开页面打不开
     const other = await context.newPage()
