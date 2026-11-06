@@ -73,12 +73,43 @@ Codex 目录来自本机 `skills/list`，显式选用时通过 `turn/start` 的 
 
 ## 对外开放 MCP
 
-在设置 →「MCP」里生成一个长期令牌，再按你用的客户端（Claude Code、Claude Desktop、Cursor 等）复制对应的连接配置。外部应用拿到的能力和小满完全相同；调用时不传 `canvas_id`，就操作你正在看的那块画布，没有打开的画布时用最近改过的那块。
+在设置 →「MCP」里生成令牌，再按你用的客户端（Claude Code、Claude Desktop、Cursor 等）复制对应的连接配置。外部应用和小满使用同一份能力目录，但外部没有会话里的确认面板和按轮撤销，所以这一层由 MCP 协议层单独补齐，行为和小满并不完全相同（见下）。调用时不传 `canvas_id`，就操作你正在看的那块画布，没有打开的画布时用最近改过的那块。
 
 - 初次使用按这个顺序了解能力：`list_canvas_capabilities`（工具目录与契约）→ `list_canvas_actions`（扩展操作）→ `list_node_types`（节点类型、参数、端口）→ `list_models`（模型目录与约束）。连接说明里也写了这个顺序。
 - 同样只在本机免登录模式下开放。
-- 令牌只在生成时显示一次，服务端只保存它的 SHA-256；重新生成会让旧令牌失效。
-- 外部应用的改动不进任何会话的撤销栈，确认环节交给外部应用自己的界面。
+- 令牌只在生成时显示一次，服务端只保存它的 SHA-256。
+
+### 令牌与权限范围
+
+可以同时有多枚令牌，每枚带名称和权限范围，对应能力的副作用等级：`read`（查看）、`edit`（新建、修改、连线）、`run`（调用模型，会花钱）、`destructive`（删除）。设置页生成时勾选范围，可选「每天最多运行 N 次」，并能列出、单独撤销令牌；新增令牌不会让旧令牌失效。
+
+- `tools/list` 只列出令牌范围内的工具；调用超出范围的工具返回 `forbidden_scope`，信息里说明缺哪项权限、去哪里新建令牌。
+- 旧版的单个令牌自动迁移为一枚「默认令牌」，拥有全部权限，原有配置继续可用。
+- 每次调用写入审计日志（`external-mcp-audit.jsonl`，在数据目录里）：时间、令牌名、工具名、是否成功和错误码，不记录参数内容。最近记录可从 `GET /api/mcp/external/audit` 读取。
+
+### 确认、幂等与撤销
+
+- 运行类工具外部同样先做预检：输入被阻断时直接返回阻断原因，不会先让你确认再失败。批量分镜 `run_storyboard` 第一次调用只返回含费用的清单，审阅后带 `token` 才提交。
+- 会花钱或删东西的操作（规则与内置智能体的「规则」模式一致：视频、插件能力、所有删除类）不会静默执行，而是返回 `status: "needs_approval"`（错误码 `needs_user`），带 `reason`，运行节点时还带模型价格。外部应用把原因讲给你，你同意后用相同参数加 `confirm: true` 重试。令牌范围不含 `run` / `destructive` 时直接拒绝。
+- 修改类和运行类工具可带 `client_request_id`：同一个令牌下同一个 id 重放会返回第一次的结果（结果里带 `replayed: true`），不会重复执行或重复扣费；同一个 id 用于不同参数会报 `invalid_params`。失败和等待确认的结果不记，修正后可用同一个 id 重试。幂等记录保存在进程内存，保留 30 分钟。
+- 修改类调用的结果带 `undo_token`，10 分钟内用 `undo_call({ token })` 撤销这一次，机制与「让小满撤销这一轮」相同；只能撤销发起它的那枚令牌做的改动，之后又有改动夹在中间时返回 `stale`。
+
+### 错误码
+
+错误结果的 `structuredContent.error` 为 `{ code, message }`，文字末尾也附带错误码。常见值：`not_found`、`stale`（读到的版本过期）、`needs_user`、`input_changed`、`forbidden_scope`、`blocked`（预检阻断）、`invalid_params`（附 `issues: [{ path, message }]`）、`too_large`、`rate_limited`（达到每日运行上限）、`internal`（服务端异常，细节只在服务端日志）、`failed`。需要调用方处理的成功结果（如 `needs_approval`、`stale`、`input_changed`）在 `structuredContent.code` 里给出同样的码。
+
+### 输出上限与长任务
+
+工具结果文字超过 32 KiB 时不返回原文，而是返回 `too_large`，提示改用 `get_canvas_page`、`get_element_field` 分页读取（与内置智能体同一口径）。`run_node`、`wait_for_run`、`wait_for_group` 默认最多等 20 秒（可用 `wait_seconds` 调到 50），仍在运行时返回 `running` 和续等提示。客户端请求带 `progressToken` 并接受 `text/event-stream` 时，服务端分段等待并发送 `notifications/progress`。
+
+### 界面动作
+
+画布在浏览器或桌面端打开时，`ui_focus`、`ui_select`、`ui_set_viewport` 经协同通道推给打开这块画布的标签页执行；没有标签页打开时返回明确提示且不影响画布内容。`ui_select` 传空数组清空选区；`ui_set_viewport({ x, y, zoom })` 的 `x`、`y` 是落在屏幕中央的世界坐标，`zoom` 范围 0.05–8。
+
+### resources 与 prompts
+
+- `prompts/list` 暴露五个创作技能（`canvas-audit`、`workflow`、`shot-revise`、`storyboard`、`media-edit`），`prompts/get` 返回展开后的指引文本；参数有 `goal`、`canvas_id`、`element_ids`。外部没有内置智能体的 `await_approval`，指引里的确认步骤已换成上面的 `needs_approval` / `confirm` 流程。
+- `resources/list` 列出最近改过的画布（`plein://canvas/{id}`，分页）；`resources/templates/list` 给出三个模板：`plein://canvas/{id}`（与 `get_canvas_page` 同一分页，查询参数 `section`、`offset`、`limit`、`expected_version`）、`plein://canvas/{id}/element/{eid}`、`plein://capabilities/{name}`（工具契约和完整输入 schema）。读取需要 `read` 权限；资源不存在返回 `-32602` 并在 `data.uri` 里给出地址。
 
 ## 画布操作的完整契约
 

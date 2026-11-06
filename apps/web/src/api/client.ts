@@ -81,6 +81,7 @@ import {
   type LocalPluginInfo,
   type LocalCliUpdateResult,
   type ExternalMcpToken,
+  type IssueExternalMcpToken,
   type ApplyEditPlan,
   type EditPlan,
   type ReviseEditPlan,
@@ -255,8 +256,11 @@ export const api = {
   updateLocalCli: (id: string) =>
     request<LocalCliUpdateResult>(API.agentCliUpdate(id), json('POST', {})),
   externalMcp: () => request<ExternalMcpStatus>(API.mcpExternal),
-  issueExternalMcp: () => request<ExternalMcpToken>(API.mcpExternal, json('POST', {})),
+  issueExternalMcp: (body: IssueExternalMcpToken = {}) =>
+    request<ExternalMcpToken>(API.mcpExternal, json('POST', body)),
   revokeExternalMcp: () => request<void>(API.mcpExternal, { method: 'DELETE' }),
+  revokeExternalMcpToken: (id: string) =>
+    request<void>(`${API.mcpExternal}/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   callCapability: (canvasId: string, name: string, body: Partial<CapabilityCall>) =>
     request<CapabilityCallResult>(API.capabilityCall(canvasId, name), json('POST', body)),
   undoCapabilityCall: (id: string) => request<void>(API.capabilityUndo(id), json('POST', {})),

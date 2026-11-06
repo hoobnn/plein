@@ -17,7 +17,13 @@ it('生成和关闭令牌直接同步状态，不重复读取状态接口', asyn
     }
     if (request.method === 'POST') {
       enabled = true
-      return Response.json({ token: 'plein_test_token', createdAt: 123 })
+      return Response.json({
+        token: 'plein_test_token',
+        id: 'mcp_1',
+        name: 'Claude',
+        scopes: ['read'],
+        createdAt: 123,
+      })
     }
     if (request.method === 'DELETE') {
       enabled = false
@@ -31,10 +37,10 @@ it('生成和关闭令牌直接同步状态，不重复读取状态接口', asyn
     'plein_test_token',
   )
   expect(
-    (await screen.findByRole<HTMLButtonElement>('button', { name: '重新生成令牌' })).disabled,
+    (await screen.findByRole<HTMLButtonElement>('button', { name: '新增令牌' })).disabled,
   ).toBe(false)
 
-  await user.click(screen.getByRole('button', { name: '关闭' }))
+  await user.click(screen.getByRole('button', { name: '关闭全部' }))
   expect(
     (await screen.findByRole<HTMLButtonElement>('button', { name: '生成连接令牌' })).disabled,
   ).toBe(false)
@@ -59,7 +65,16 @@ it('生成失败保留关闭状态，提示后可重试', async () => {
         { status: 503 },
       )
     if (request.method === 'POST')
-      return Response.json({ token: 'plein_retry_token', createdAt: 456 }, { status: 201 })
+      return Response.json(
+        {
+          token: 'plein_retry_token',
+          id: 'mcp_1',
+          name: 'Claude',
+          scopes: ['read'],
+          createdAt: 456,
+        },
+        { status: 201 },
+      )
   })
   const { user } = renderApp(<ExternalMcp />)
   const issue = await screen.findByRole<HTMLButtonElement>('button', { name: '生成连接令牌' })
@@ -83,7 +98,16 @@ it('关闭失败保留配置和开启状态，提示后可重试', async () => {
     if (path !== '/api/mcp/external') return
     if (request.method === 'GET') return Response.json({ enabled: true, createdAt: 123 })
     if (request.method === 'POST')
-      return Response.json({ token: 'plein_keep_on_failure', createdAt: 456 }, { status: 201 })
+      return Response.json(
+        {
+          token: 'plein_keep_on_failure',
+          id: 'mcp_1',
+          name: 'Claude',
+          scopes: ['read'],
+          createdAt: 456,
+        },
+        { status: 201 },
+      )
     if (request.method === 'DELETE' && ++deletes === 1)
       return Response.json(
         { error: 'test_failure', message: '暂时无法保存连接设置' },
@@ -92,16 +116,16 @@ it('关闭失败保留配置和开启状态，提示后可重试', async () => {
     if (request.method === 'DELETE') return new Response(null, { status: 204 })
   })
   const { user } = renderApp(<ExternalMcp />)
-  await user.click(await screen.findByRole('button', { name: '重新生成令牌' }))
+  await user.click(await screen.findByRole('button', { name: '新增令牌' }))
   const config = await screen.findByTestId('external-mcp-config')
   const before = config.textContent
 
-  await user.click(screen.getByRole('button', { name: /^关闭$/ }))
+  await user.click(screen.getByRole('button', { name: /^关闭全部$/ }))
   expect((await screen.findByRole('alert')).textContent).toContain('暂时无法保存连接设置')
   expect(config.textContent).toBe(before)
-  expect(screen.getByRole<HTMLButtonElement>('button', { name: /^关闭$/ }).disabled).toBe(false)
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: /^关闭全部$/ }).disabled).toBe(false)
 
-  await user.click(screen.getByRole('button', { name: /^关闭$/ }))
+  await user.click(screen.getByRole('button', { name: /^关闭全部$/ }))
   expect(screen.queryByTestId('external-mcp-config')).toBeNull()
   expect(
     (await screen.findByRole<HTMLButtonElement>('button', { name: '生成连接令牌' })).disabled,
@@ -115,7 +139,16 @@ it('复制失败不显示成功，重试和客户端切换复制当前配置', a
     if (path !== '/api/mcp/external') return
     if (request.method === 'GET') return Response.json({ enabled: false })
     if (request.method === 'POST')
-      return Response.json({ token: 'plein_clipboard_token', createdAt: 123 }, { status: 201 })
+      return Response.json(
+        {
+          token: 'plein_clipboard_token',
+          id: 'mcp_1',
+          name: 'Claude',
+          scopes: ['read'],
+          createdAt: 123,
+        },
+        { status: 201 },
+      )
   })
   const writeText = vi.fn<(text: string) => Promise<void>>()
   writeText
@@ -170,7 +203,7 @@ it('读取状态时有反馈，失败可重试且不提前生成令牌', async (
   )
   expect((await screen.findByRole('alert')).textContent).toContain('连接暂时不可用')
   await user.click(screen.getByRole('button', { name: '重试' }))
-  expect(await screen.findByRole('button', { name: '重新生成令牌' })).not.toBeNull()
+  expect(await screen.findByRole('button', { name: '新增令牌' })).not.toBeNull()
   expect(screen.queryByRole('alert')).toBeNull()
   expect(reads).toBe(2)
 })
@@ -189,18 +222,24 @@ it.each(['issue', 'revoke'] as const)('%s 成功后旧后台状态响应不能�
       return reads === 1 ? Response.json({ enabled: wasEnabled }) : oldResponse
     }
     if (request.method === 'POST')
-      return Response.json({ token: 'plein_current_token', createdAt: 123 })
+      return Response.json({
+        token: 'plein_current_token',
+        id: 'mcp_1',
+        name: 'Claude',
+        scopes: ['read'],
+        createdAt: 123,
+      })
     if (request.method === 'DELETE') return new Response(null, { status: 204 })
   })
   const { user, queryClient } = renderApp(<ExternalMcp />)
-  await screen.findByRole('button', { name: wasEnabled ? '重新生成令牌' : '生成连接令牌' })
+  await screen.findByRole('button', { name: wasEnabled ? '新增令牌' : '生成连接令牌' })
   let refresh!: Promise<void>
   act(() => {
     refresh = queryClient.refetchQueries({ queryKey: queryKeys.mcpExternal })
   })
   await waitFor(() => expect(reads).toBe(2))
-  await user.click(screen.getByRole('button', { name: wasEnabled ? '关闭' : '生成连接令牌' }))
-  const currentLabel = wasEnabled ? '生成连接令牌' : '重新生成令牌'
+  await user.click(screen.getByRole('button', { name: wasEnabled ? '关闭全部' : '生成连接令牌' }))
+  const currentLabel = wasEnabled ? '生成连接令牌' : '新增令牌'
   await screen.findByRole('button', { name: currentLabel })
   await act(async () => {
     release(Response.json({ enabled: wasEnabled }))
@@ -211,4 +250,39 @@ it.each(['issue', 'revoke'] as const)('%s 成功后旧后台状态响应不能�
   )
   expect(screen.getByRole('button', { name: currentLabel })).toBeTruthy()
   expect(reads).toBe(2)
+})
+
+it('生成时带名称和权限范围，列出已有令牌并可单独撤销', async () => {
+  const posted: unknown[] = []
+  let tokens = [{ id: 'mcp_old', name: '旧令牌', scopes: ['read'], createdAt: 1 }]
+  mockFetch(async (request) => {
+    const url = new URL(request.url)
+    if (url.pathname === '/api/mcp/external' && request.method === 'GET')
+      return Response.json({ enabled: true, createdAt: 1, tokens })
+    if (url.pathname === '/api/mcp/external' && request.method === 'POST') {
+      posted.push(await request.json())
+      return Response.json(
+        { token: 'plein_scoped', id: 'mcp_new', name: '只读代理', scopes: ['read'], createdAt: 2 },
+        { status: 201 },
+      )
+    }
+    if (url.pathname === '/api/mcp/external/mcp_old' && request.method === 'DELETE') {
+      tokens = []
+      return new Response(null, { status: 204 })
+    }
+  })
+  const { user } = renderApp(<ExternalMcp />)
+  expect((await screen.findByLabelText('已有令牌')).textContent).toContain('旧令牌')
+  const name = screen.getByLabelText('令牌名称')
+  await user.clear(name)
+  await user.type(name, '只读代理')
+  await user.click(screen.getByLabelText('编辑'))
+  await user.click(screen.getByLabelText('运行'))
+  await user.click(screen.getByRole('button', { name: '新增令牌' }))
+  await screen.findByTestId('external-mcp-config')
+  expect(posted).toEqual([{ name: '只读代理', scopes: ['read'] }])
+
+  await user.click(screen.getByRole('button', { name: '撤销令牌 旧令牌' }))
+  await waitFor(() => expect(screen.queryByText('旧令牌')).toBeNull())
+  expect(screen.getByText('只读代理', { selector: 'span' })).toBeTruthy()
 })
