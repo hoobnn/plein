@@ -13,6 +13,7 @@ import { streamSSE } from 'hono/streaming'
 import type { AuthEnv } from '../auth'
 import { ownsCanvas } from '../storage/canvases'
 import type { DB } from '../storage/db'
+import { progressTokenOf, type RequestContext } from './mcp'
 import { cliDetails, isCliKind, updateCli } from './cli'
 import { AgentError, type AgentSessions } from './sessions'
 
@@ -255,6 +256,35 @@ export function agentRoutes(db: DB, agents: AgentSessions) {
 }
 
 /**
+ * 客户端带了 progressToken、也接受 text/event-stream 时，工具调用的响应改成 SSE：
+ * 先推 notifications/progress，最后推 JSON-RPC 响应。其余情况返回 null，走普通 JSON 响应。
+ */
+function streamFor(accept: string | undefined, body: unknown) {
+  if (!accept?.includes('text/event-stream')) return null
+  const req = body as { method?: unknown } | null
+  if (Array.isArray(body) || req?.method !== 'tools/call' || progressTokenOf(req) === undefined)
+    return null
+  return (run: (notify: NonNullable<RequestContext['notify']>) => Promise<unknown>) => {
+    const enc = new TextEncoder()
+    return new Response(
+      new ReadableStream({
+        async start(ctrl) {
+          const send = (m: unknown) =>
+            ctrl.enqueue(enc.encode(`event: message\ndata: ${JSON.stringify(m)}\n\n`))
+          try {
+            const out = await run(send)
+            if (out) send(out)
+          } finally {
+            ctrl.close()
+          }
+        },
+      }),
+      { headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' } },
+    )
+  }
+}
+
+/**
  * 智能体调用画布工具的 MCP 入口。CLI 不带浏览器 Cookie，
  * 用会话令牌（Authorization: Bearer）鉴权，令牌只在服务端内存里、随会话生成。
  */
@@ -272,9 +302,15 @@ export function agentMcpRoute(agents: AgentSessions, external?: ExternalMcp | nu
           )
         }
         // 长期令牌给外部应用（Claude Desktop、Cursor…），其余是会话令牌
-        const out = external?.matches(token)
-          ? await external.handle(body)
-          : await agents.handleMcp(token, body)
+        const grant = external?.authenticate(token)
+        if (external && grant) {
+          const stream = streamFor(c.req.header('accept'), body)
+          if (stream) return stream((notify) => external.handle(body, grant, { notify }))
+        }
+        const out =
+          external && grant
+            ? await external.handle(body, grant)
+            : await agents.handleMcp(token, body)
         if (out === undefined) return c.json({ error: 'unauthorized' }, 401)
         return out === null ? c.body(null, 202) : c.json(out)
       })

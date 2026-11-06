@@ -141,7 +141,10 @@ describe('对外开放 MCP', () => {
   it('对外开放：长期令牌让外部应用用全部能力，不传画布时用用户正在看的', async () => {
     const { server: app } = running
     const { rooms } = app
-    expect(await (await request(app, '/api/mcp/external')).json()).toEqual({ enabled: false })
+    expect(await (await request(app, '/api/mcp/external')).json()).toEqual({
+      enabled: false,
+      tokens: [],
+    })
     const issued = (await (await request(app, '/api/mcp/external', { method: 'POST' })).json()) as {
       token: string
     }

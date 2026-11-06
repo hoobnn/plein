@@ -29,15 +29,17 @@ function headers(client: Client, config: string) {
 }
 
 it.each(['claude-code', 'json', 'claude-desktop'] as const)(
-  '%s 生成配置可实际接入，轮换与关闭使旧配置失效',
+  '%s 生成配置可实际接入，撤销单枚与全部关闭使对应配置失效',
   async (client) => {
     const { server } = running
-    const issue = async () =>
-      (
-        (await (await request(server, '/api/mcp/external', { method: 'POST' })).json()) as {
-          token: string
-        }
-      ).token
+    const issued: Array<{ token: string; id: string }> = []
+    const issue = async () => {
+      const out = (await (
+        await request(server, '/api/mcp/external', { method: 'POST' })
+      ).json()) as { token: string; id: string }
+      issued.push(out)
+      return out.token
+    }
     const url = 'http://127.0.0.1:8787/mcp'
     const rpc = (config: string) =>
       server.app.request('/mcp', {
@@ -59,6 +61,10 @@ it.each(['claude-code', 'json', 'claude-desktop'] as const)(
       ),
     ).toContain('list_canvases')
     const next = snippet(client, url, await issue())
+    // 多枚令牌并存：新增不影响旧的
+    expect((await rpc(config)).status).toBe(200)
+    expect((await rpc(next)).status).toBe(200)
+    await request(server, `/api/mcp/external/${issued[0]!.id}`, { method: 'DELETE' })
     expect((await rpc(config)).status).toBe(401)
     expect((await rpc(next)).status).toBe(200)
     await request(server, '/api/mcp/external', { method: 'DELETE' })
