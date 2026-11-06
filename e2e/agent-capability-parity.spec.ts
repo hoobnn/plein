@@ -26,10 +26,8 @@ test(
       const body = (await response.json()) as {
         result: { isError?: boolean; content: Array<{ type: string; text?: string }> }
       }
-      const text = body.result.content
-        .filter((c) => c.type === 'text')
-        .map((c) => c.text)
-        .join('\n')
+      // 写操作的结果后面会附一段 undo_token 提示文本；JSON 结果始终是第一段
+      const text = body.result.content.find((c) => c.type === 'text')?.text ?? ''
       expect(body.result.isError, text).not.toBe(true)
       return JSON.parse(text)
     }
