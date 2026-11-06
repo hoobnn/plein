@@ -1,4 +1,6 @@
 import {
+  aspectKey,
+  fieldsOf,
   mentionElements as mentionElementsIn,
   mentionTargetsIn,
   type NodeFactory,
@@ -33,24 +35,7 @@ import { modelProblem, selectedModel } from './modelParams'
 
 export type NodeInfo = Catalog['nodes'][number]
 
-/** 节点参数的 JSON Schema 字段（zod.toJSONSchema 生成，含 meta 提示） */
-export interface FieldSchema {
-  type?: string
-  title?: string
-  description?: string
-  placeholder?: string
-  widget?: string
-  enum?: unknown[]
-  labels?: Record<string, string>
-  minimum?: number
-  maximum?: number
-  default?: unknown
-}
-
-export function fieldsOf(node: NodeInfo): Array<[string, FieldSchema]> {
-  const props = (node.paramsSchema as { properties?: Record<string, FieldSchema> }).properties
-  return Object.entries(props ?? {})
-}
+export { aspectKey, aspectLabel, fieldsOf, type FieldSchema } from '@plein/capabilities'
 
 /** 按类型取已安装的节点声明（同类型多版本时取最新） */
 export function findNode(catalog: Catalog | null, type: string | undefined): NodeInfo | undefined {
@@ -72,16 +57,6 @@ export function promptKey(node: NodeInfo): string | undefined {
     if (fields.some(([k, f]) => k === key && f.widget === 'textarea')) return key
   }
   return fields.find(([, f]) => f.widget === 'textarea')?.[0]
-}
-
-/** 画幅值的显示文字：auto 显示为「智能」 */
-export function aspectLabel(v: unknown) {
-  return v === 'auto' ? '智能' : String(v ?? '')
-}
-
-/** 节点里表示画幅的参数名 */
-export function aspectKey(node: NodeInfo): string | undefined {
-  return fieldsOf(node).find(([k, f]) => /aspect/i.test(k) && f.enum)?.[0]
 }
 
 /** 节点在画布上的初始尺寸：按最终画幅取形状，未传参数时沿用声明默认值。 */
