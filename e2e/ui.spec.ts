@@ -333,18 +333,18 @@ test.describe('画布操作浏览器断点', { tag: '@core' }, () => {
       await openTasks.click()
       await expect(tasks).toBeVisible()
       await expect(assistant).toHaveCount(0)
-      await expect.poll(right).toBe(initialWidth >= 640 ? 372 : 0)
-      for (const width of [640, 639, 1440]) {
+      await expect.poll(right).toBe(initialWidth >= 900 ? 372 : 0)
+      for (const width of [900, 899, 1440]) {
         await page.setViewportSize({ width, height: 900 })
-        await expect.poll(right).toBe(width >= 640 ? 372 : 0)
+        await expect.poll(right).toBe(width >= 900 ? 372 : 0)
         await expect
           .poll(async () => Math.round((await tasks.boundingBox())!.width))
-          .toBe(width >= 640 ? 360 : width - 24)
+          .toBe(width >= 900 ? 360 : width - 24)
       }
       await openAgent.click()
       await expect(tasks).toHaveCount(0)
       await expect(input).toHaveValue('切换面板时保留这份草稿')
-      await expect.poll(right).toBe(424)
+      await expect.poll(right).toBe(412)
       await page.getByRole('button', { name: '收起助手', exact: true }).click()
       await expect.poll(right).toBe(0)
       await openTasks.click()
