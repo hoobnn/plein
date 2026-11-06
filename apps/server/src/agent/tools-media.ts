@@ -37,7 +37,8 @@ import sharp, { type Sharp } from 'sharp'
 import { z } from 'zod'
 import { collageAssets } from '../assets/collage'
 import { DeriveError, deriveAsset } from '../assets/derive'
-import { PromptError, rewritePrompt } from '../prompt/rewrite'
+import { inputContextOf, PromptError, rewritePrompt, usesH3Structure } from '../prompt/rewrite'
+import { NodeRunError } from '../plugins/provider-protocol'
 import { ffmpegBin, hasFfmpeg } from '../assets/media'
 import type { ServerContext } from './tool-registry'
 
@@ -437,7 +438,10 @@ export const rewrite = serverCapability({
   name: 'rewrite_prompt',
   title: '改写提示词',
   description:
-    '用对话模型改写节点的提示词：optimize 补全画面 / 镜头细节，translate 中英互译。@ 引用和【占位】原样保留。默认直接写回节点，apply=false 时只返回结果。',
+    '用对话模型改写节点的提示词：mode=optimize 补全画面 / 镜头细节，translate 中英互译。@ 引用和【占位】原样保留。默认直接写回节点，apply=false 时只返回结果。' +
+    '生成模型取自节点当前的 params.model，参考素材取自节点的实际输入（与 inspect_node_input 同源），所以先用 set_node_model 选好模型、连好参考再改写。' +
+    'structure：auto（默认）在生成模型是 MiniMax H3 且节点是多模态参考模式时用 H3 六段结构，其余用通用公式；default 强制通用公式；h3 强制六段结构（节点模型须是 H3）。' +
+    'detail：expand（默认）补全细节，refine 只精修表达、不新增内容。model：改写用的对话模型 ref（来自 list_models 的 text.chat），不填用第一个已启用的对话模型。',
   group: 'edit',
   where: 'server',
   effect: (a) => (a.apply === false ? 'read' : 'edit'),
@@ -445,25 +449,56 @@ export const rewrite = serverCapability({
     id,
     mode: z.enum(['optimize', 'translate']).default('optimize'),
     apply: z.boolean().default(true),
+    structure: z.enum(['auto', 'default', 'h3']).default('auto'),
+    detail: z.enum(['refine', 'expand']).default('expand'),
+    model: z.string().max(200).optional().describe('改写用的对话模型 ref；不填用默认对话模型'),
   }),
   run: async (ctx, a) => {
-    const { key, text, target, mentions } = ctx.withDoc((doc) => {
+    const { key, text, target, mentions, generationModel, nodeType } = ctx.withDoc((doc) => {
       const el = need(doc, a.id)
       const key = promptField(el.params)
       const text = key ? String(el.params?.[key] ?? '').trim() : ''
       if (!key || !text) throw new CapabilityError('这个节点没有可改写的提示词')
       const capability = el.nodeType ? ctx.nodes.latest(el.nodeType)?.def.capability : undefined
+      const target = capability?.startsWith('video.') ? ('video' as const) : ('image' as const)
+      // 节点当前选的生成模型；已停用或能力不符的不传，免得改写被「目标模型不可用」拦下
+      const picked = String(el.params?.model ?? '')
+      const usable =
+        picked && capability && ctx.nodes.models(capability).some((m) => m.ref === picked)
       return {
         key,
         text,
-        target: capability?.startsWith('video.') ? ('video' as const) : ('image' as const),
+        target,
         mentions: [...mentionElements(doc).keys()],
+        generationModel: usable ? picked : undefined,
+        nodeType: el.kind === 'node' ? el.nodeType : undefined,
       }
     })
+    // 实际输入预览与界面同源；非运行节点或准备不过去时没有上下文，照常改写
+    let inputContext: ReturnType<typeof inputContextOf> | undefined
+    if (nodeType) {
+      try {
+        inputContext = inputContextOf(
+          await ctx.env.runs.preview(ctx.env.canvasId, a.id, ctx.env.ownerId),
+        )
+      } catch (err) {
+        if (!(err instanceof NodeRunError)) throw err
+      }
+    }
     try {
       const out = await rewritePrompt(
         ctx.env.host,
-        { text, mode: a.mode, target, mentions },
+        {
+          text,
+          mode: a.mode,
+          target,
+          detail: a.detail,
+          structure: a.structure,
+          ...(a.model ? { model: a.model } : {}),
+          ...(generationModel ? { generationModel } : {}),
+          ...(inputContext ? { inputContext } : {}),
+          mentions,
+        },
         {
           ownerId: ctx.env.ownerId,
           signal: AbortSignal.any([
@@ -473,7 +508,17 @@ export const rewrite = serverCapability({
         },
       )
       if (a.apply) ctx.withDoc((doc) => setParams(doc, a.id, { [key]: out.text }))
-      return { [key]: out.text, applied: a.apply }
+      return {
+        [key]: out.text,
+        applied: a.apply,
+        rewrite_model: out.model,
+        ...(generationModel ? { generation_model: generationModel } : {}),
+        structure:
+          a.mode === 'optimize' &&
+          usesH3Structure({ structure: a.structure, generationModel, inputContext })
+            ? 'h3'
+            : 'default',
+      }
     } catch (err) {
       if (err instanceof PromptError) throw new CapabilityError(err.message)
       throw err

@@ -1,4 +1,4 @@
-import type { RewritePrompt, RewritePromptResult } from '@plein/protocol'
+import type { PreparedInput, RewritePrompt, RewritePromptResult } from '@plein/protocol'
 import { ProviderError } from '@plein/plugin-sdk'
 import type { PluginHost } from '../plugins/host'
 
@@ -43,6 +43,19 @@ Prefer concrete visual and audio details over abstract words like "cinematic" or
 
 Reference tokens: markers like ⟦1⟧ stand for references the user already wrote (an @mention, a placeholder, or a numbered label such as Image 1). Keep every marker exactly as written, at least once, at the place where that referenced item is described; do not translate, merge or delete them. You may add your own <Subject N> / <Picture N> / <Video N> / <Audio N> labels as the structure requires.
 ${ONLY}`
+
+/**
+ * 由节点的实际输入预览构造改写的创作上下文：模式与参考素材清单。
+ * 界面（PromptTools）与 rewrite_prompt 工具共用这一份口径，auto 才能在 H3 参考任务上判成六段结构。
+ */
+export function inputContextOf(input: Pick<PreparedInput, 'params' | 'refs'>) {
+  return {
+    mode: String(input.params.mode ?? ''),
+    references: input.refs
+      .map((r) => `${r.name}：${r.sent.length ? '已送入参考图' : (r.reason ?? '文字参考')}`)
+      .slice(0, 64),
+  }
+}
 
 /** 是 MiniMax H3 系列的生成模型引用（vendor/name:model） */
 const isH3 = (generationModel?: string) =>
