@@ -441,7 +441,7 @@ describe('参考视频 / 音频的上限提示按类型区分', () => {
     })
     expect(adaptToModel(node, draft('1080p'), seedance)).toEqual({
       patch: { resolution: '480p' },
-      notes: ['草稿模式固定 480p'],
+      notes: ['分辨率已改为 480p（当前设置下平台只接受这一档）'],
     })
     // 分辨率留空（跟平台默认）也拦：默认不是 480p
     expect(adaptToModel(node, draft(''), seedance).patch).toEqual({ resolution: '480p' })
@@ -523,5 +523,87 @@ describe('图片精修参数', () => {
     expect(
       modelProblem(processNode, { operation: 'upscale', scale: 3 }, model, new Map()),
     ).toBeNull()
+  })
+})
+
+describe('视频参数随当前设置收窄', () => {
+  const videoNode = {
+    type: 'plein/video',
+    capability: 'video.generate',
+    defaults: { model: '', mode: 'text', aspectRatio: '16:9', resolution: '' },
+    paramsSchema: {
+      properties: {
+        model: { type: 'string', widget: 'model' },
+        mode: { type: 'string', enum: ['text', 'image', 'reference'] },
+        aspectRatio: { type: 'string', enum: ['auto', '16:9', '9:16'], title: '画幅' },
+        resolution: { type: 'string', widget: 'resolution' },
+        options: { type: 'object', widget: 'modelOptions' },
+      },
+    },
+  } as unknown as NodeInfo
+  const fieldOf = (
+    fields: ReturnType<typeof constrainFields>,
+    key: string,
+  ): { enum?: unknown[] } | undefined => fields.find(([k]) => k === key)?.[1]
+  const all = () => fieldsOf(videoNode)
+
+  const h3 = (id: string): SelectedModel['info'] => ({
+    ref: `minimax/api:${id}`,
+    id,
+    title: id,
+    capabilities: ['video.generate'],
+    limits: {
+      aspectRatios: ['auto', '16:9', '9:16'],
+      videoModes: ['text', 'image', 'reference'],
+    },
+  })
+
+  it('文生视频与 H3-Lite 参考模式的画幅选项去掉 auto，其余模式保留', () => {
+    const pro = h3('MiniMax-H3')
+    const lite = h3('MiniMax-H3-Lite')
+    const options = (m: SelectedModel['info'], mode: string) =>
+      fieldOf(
+        constrainFields(videoNode, all(), m.limits, { model: m.ref, mode }, 0, m),
+        'aspectRatio',
+      )?.enum
+    expect(options(pro, 'text')).toEqual(['16:9', '9:16'])
+    expect(options(pro, 'reference')).toEqual(['auto', '16:9', '9:16'])
+    expect(options(lite, 'reference')).toEqual(['16:9', '9:16'])
+    // 图生视频由平台按首帧决定画幅，字段本身隐藏
+    expect(options(pro, 'image')).toBeUndefined()
+  })
+
+  it('换到不接受 auto 的模式时把画幅纠正为具体值', () => {
+    const pro = h3('MiniMax-H3')
+    const params = { model: pro.ref, mode: 'text', aspectRatio: 'auto', prompt: 'x' }
+    const { patch, notes } = adaptToModel(videoNode, params, pro)
+    expect(patch).toEqual({ aspectRatio: '16:9' })
+    expect(notes[0]).toContain('画幅已从')
+    // 图生视频本来就接受 auto，不动
+    expect(adaptToModel(videoNode, { ...params, mode: 'image' }, pro).patch).toEqual({})
+  })
+
+  it('Seedance 2.5 勾选草稿后分辨率枚举只剩平台接受的值，且不再提供「默认」', () => {
+    const seedance: SelectedModel['info'] = {
+      ref: 'volc/ark:doubao-seedance-2-5-260628',
+      id: 'doubao-seedance-2-5-260628',
+      title: 'Seedance 2.5',
+      capabilities: ['video.generate'],
+      limits: { resolutions: ['480p', '720p', '1080p'], defaultResolution: '720p' },
+    }
+    const resolutionEnum = (options: Record<string, unknown>) =>
+      fieldOf(
+        constrainFields(
+          videoNode,
+          all(),
+          seedance.limits,
+          { model: seedance.ref, mode: 'text', options: { [seedance.ref]: options } },
+          0,
+          seedance,
+        ),
+        'resolution',
+      )?.enum
+    expect(resolutionEnum({ draft: true })).toEqual(['480p'])
+    expect(resolutionEnum({})).toEqual(['', '480p', '720p', '1080p'])
   })
 })

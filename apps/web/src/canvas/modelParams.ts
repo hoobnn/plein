@@ -87,6 +87,7 @@ export function constrainFields(
   limits: ModelLimits = NONE,
   params?: Record<string, unknown>,
   references = 0,
+  model?: SelectedModel['info'],
 ): Array<[string, FieldSchema]> {
   if (node.capability === 'image.generate')
     limits = imageLimits(
@@ -132,15 +133,20 @@ export function constrainFields(
           ],
         ]
     }
-    if (f.widget === 'resolution')
+    if (f.widget === 'resolution') {
+      // 草稿模式等会进一步收窄分辨率：枚举里只留平台接受的值
+      const narrowed =
+        node.capability === 'video.generate' ? videoResolutions(model, params, limits) : undefined
       return limits.resolutions?.length
         ? [
             [
               k,
               {
                 ...f,
-                enum: ['', ...limits.resolutions],
-                ...(limits.defaultResolution
+                enum: narrowed
+                  ? [...(narrowed.defaultBlocked ? [] : ['']), ...narrowed.options]
+                  : ['', ...limits.resolutions],
+                ...(limits.defaultResolution && !narrowed?.defaultBlocked
                   ? {
                       labels: {
                         ...f.labels,
@@ -152,11 +158,15 @@ export function constrainFields(
             ],
           ]
         : []
+    }
     if (k === ak && f.enum) {
       // 没声明画幅的模型不给「智能」：auto 要模型明确支持
-      const allowed = f.enum.filter((o) =>
+      let allowed = f.enum.filter((o) =>
         limits.aspectRatios ? limits.aspectRatios.includes(String(o)) : o !== 'auto',
       )
+      // 有的模式不接受 auto（如部分视频的文生视频），选项按当前模式收窄
+      if (model && params && node.capability === 'video.generate')
+        allowed = videoAllowed(model, params, k, allowed).allowed
       return [[k, { ...f, enum: allowed.length ? allowed : f.enum }]]
     }
     if (unsupported(k, limits)) return []
@@ -180,23 +190,68 @@ export function constrainFields(
   })
 }
 
-const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
+const NO_REFERENCES = { image: 0, video: 0, audio: 0 }
 
-/** Seedance 2.5 的草稿模式只支持 480p 输出：分辨率要提前收敛，别等运行期才被平台挡下。 */
-const draftOn = (params: Record<string, unknown>, model: SelectedModel['info'] | undefined) => {
-  if (!model?.id.startsWith('doubao-seedance-2-5-')) return false
-  const options = params.options
-  const extra =
-    options && typeof options === 'object' && !Array.isArray(options)
-      ? (options as Record<string, unknown>)[String(params.model)]
-      : undefined
-  return (
-    !!extra &&
-    typeof extra === 'object' &&
-    !Array.isArray(extra) &&
-    (extra as Record<string, unknown>).draft === true
-  )
+/**
+ * 用 modelbay 的视频预检探测「把某字段改成某值」是否会被平台规则拦下，选项收窄与提交前检查因此共用同一份判断。
+ * 不看参考素材数量（交给提交前检查），提示词用占位；返回问题文本，没有问题为 null。
+ */
+function videoProbe(
+  model: SelectedModel['info'],
+  params: Record<string, unknown>,
+  patch: Record<string, unknown>,
+) {
+  return videoModelProblem(model, { ...params, ...patch }, NO_REFERENCES, 'x', {
+    deferReferenceCounts: true,
+  })
 }
+
+/**
+ * 在候选值里去掉会被视频预检拦下的那些。与「不设该字段」的结果相同的问题算与该字段无关（如模式本身不支持），不算被拦。
+ */
+function videoAllowed(
+  model: SelectedModel['info'],
+  params: Record<string, unknown>,
+  key: string,
+  candidates: unknown[],
+) {
+  const base = videoProbe(model, params, { [key]: undefined })
+  const problems = candidates.map((v) => videoProbe(model, params, { [key]: v }))
+  return {
+    base,
+    allowed: candidates.filter((_, i) => problems[i] === null || problems[i] === base),
+    /** 存在能通过的取值，而不设该字段本身过不了：说明默认值也被这条规则排除 */
+    defaultBlocked: base !== null && problems.some((p) => p === null),
+  }
+}
+
+/** 视频分辨率在当前参数下实际可选的取值；没有收窄时返回 undefined */
+function videoResolutions(
+  model: SelectedModel['info'] | undefined,
+  params: Record<string, unknown> | undefined,
+  limits: ModelLimits,
+) {
+  if (!model || !params || !limits.resolutions?.length) return undefined
+  const { allowed, defaultBlocked } = videoAllowed(model, params, 'resolution', limits.resolutions)
+  if (allowed.length === limits.resolutions.length && !defaultBlocked) return undefined
+  return { options: allowed.map(String), defaultBlocked }
+}
+
+/** 当前分辨率不被接受时应改成的取值（留空 = 平台默认）；不需要改返回 undefined */
+function narrowedResolution(
+  model: SelectedModel['info'] | undefined,
+  params: Record<string, unknown>,
+  limits: ModelLimits,
+  value: unknown,
+) {
+  const narrowed = videoResolutions(model, params, limits)
+  if (!narrowed) return undefined
+  const current = value ? String(value) : ''
+  if (current ? narrowed.options.includes(current) : !narrowed.defaultBlocked) return undefined
+  return narrowed.options[0] ?? ''
+}
+
+const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
 
 /**
  * 换到新模型时需要改的参数和对应说明：分辨率不支持改回默认，画幅换成第一个支持的，
@@ -232,18 +287,30 @@ export function adaptToModel(
     ) {
       patch[k] = limits.imageOperations[0]
       notes.push('已切换为所选模型支持的精修操作')
-    } else if (f.widget === 'resolution' && draftOn(params, model) && String(v ?? '') !== '480p') {
-      patch[k] = '480p'
-      notes.push('草稿模式固定 480p')
+    } else if (
+      f.widget === 'resolution' &&
+      node.capability === 'video.generate' &&
+      narrowedResolution(model, params, limits, v) !== undefined
+    ) {
+      const next = narrowedResolution(model, params, limits, v)!
+      patch[k] = next
+      notes.push(`分辨率已改为 ${next}（当前设置下平台只接受这一档）`)
     } else if (f.widget === 'resolution' && v && !limits.resolutions?.includes(String(v))) {
       patch[k] = ''
       notes.push(`分辨率已改回默认（${name} 不支持 ${String(v)}）`)
     } else if (k === aspectKey(node) && v !== undefined) {
       const supported = limits.aspectRatios
-      if (supported ? !supported.includes(String(v)) : v === 'auto') {
-        const allowed = (f.enum ?? []).filter((o) =>
+      const video = !!model && node.capability === 'video.generate'
+      // 当前模式不接受的画幅（如文生视频不接受 auto）也要纠正
+      const rejected =
+        video &&
+        videoProbe(model, params, { [k]: v }) !== null &&
+        videoProbe(model, params, { [k]: v }) !== videoProbe(model, params, { [k]: undefined })
+      if (rejected || (supported ? !supported.includes(String(v)) : v === 'auto')) {
+        let allowed = (f.enum ?? []).filter((o) =>
           supported ? supported.includes(String(o)) : o !== 'auto',
         )
+        if (video) allowed = videoAllowed(model, params, k, allowed).allowed
         const next = allowed.includes('16:9') ? '16:9' : allowed.find((o) => o !== 'auto')
         if (next !== undefined) {
           patch[k] = next
@@ -370,8 +437,6 @@ export function modelProblem(
     if (!(k in patch)) continue
     const v = params[k] ?? f.default
     if (f.widget === 'resolution') {
-      if (draftOn(params, model))
-        return `草稿模式只支持 480p，当前是 ${v ? String(v) : '默认分辨率'}`
       const options = limits.resolutions ?? []
       return `${name} 不支持分辨率 ${String(v)}；${
         options.length ? `请选择 ${options.join('、')}，` : ''

@@ -216,6 +216,7 @@ export function GeneratorPanel({
     model?.info.limits,
     params,
     imageReferences,
+    model?.info,
   )
   // 换模型时自动校正了哪些参数
   const [notes, setNotes] = useState<string[]>([])
