@@ -82,6 +82,7 @@ const TOOL_LABELS: Record<string, string> = {
   keep_stale: '保留过期结果',
   revoke_keep: '撤销保留决定',
   run_impact: '运行受影响的节点',
+  estimate_cost: '估算运行费用',
   list_projects: '查看项目',
   create_project: '新建项目',
   rename_project: '重命名项目',
