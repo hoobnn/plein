@@ -1,8 +1,16 @@
-import { createElement, gridPlan, groupShots, shotGroupOf, updateElement } from '@plein/doc'
+import { EditMask } from '@plein/nodes'
+import {
+  connect,
+  createElement,
+  gridPlan,
+  groupShots,
+  shotGroupOf,
+  updateElement,
+} from '@plein/doc'
 import { Readable } from 'node:stream'
 import sharp from 'sharp'
 import { describe, expect, it } from 'vite-plus/test'
-import { bootServer, createCanvas } from '../testing'
+import { addNode, bootServer, createCanvas } from '../testing'
 import { serverCapabilities, serverContext, type ToolEnv } from './tools'
 
 async function fixture() {
@@ -157,5 +165,158 @@ describe('split_grid', () => {
       '已变化',
     )
     assets.ingest = original
+  })
+})
+
+describe('create_mask', () => {
+  const pixels = async (f: Awaited<ReturnType<typeof fixture>>, assetId: string) => {
+    const { data, info } = await sharp(f.server.assets.originalPath(assetId))
+      .raw()
+      .toBuffer({ resolveWithObject: true })
+    const at = (x: number, y: number) => data[(y * info.width + x) * info.channels]!
+    return { at, info, values: new Set(data) }
+  }
+  const setup = async (w = 40, h = 30) => {
+    const f = await fixture()
+    const src = await f.importImage(await gradient(w, h), `s${w}.png`)
+    const image = createElement(f.doc, {
+      kind: 'image',
+      assetId: src.id,
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 75,
+    })
+    const node = addNode(f.doc, 'plein/image-edit', { x: 300, y: 0 })
+    connect(f.doc, [image, 'image'], [node, 'image'])
+    return { ...f, src, image, node }
+  }
+
+  it('矩形蒙版：与原图同宽高的黑底白区二值 PNG，写进局部重绘节点的 mask 参数', async () => {
+    const f = await setup()
+    const out = (await f.invoke('create_mask', {
+      element_id: f.node,
+      rects: [{ x: 10, y: 5, w: 10, h: 10 }],
+    })) as { mask_asset_id: string; applied: boolean }
+    expect(out.applied).toBe(true)
+    const px = await pixels(f, out.mask_asset_id)
+    expect([px.info.width, px.info.height]).toEqual([40, 30])
+    expect([...px.values].sort((a, b) => a - b)).toEqual([0, 255])
+    expect(px.at(12, 8)).toBe(255)
+    expect(px.at(9, 8)).toBe(0)
+    expect(px.at(20, 8)).toBe(0)
+    expect(px.at(12, 4)).toBe(0)
+    const mask = f.doc.get(f.node)!.params!.mask
+    expect(EditMask.parse(mask)).toEqual({
+      assetId: out.mask_asset_id,
+      width: 40,
+      height: 30,
+      sourceAssetId: f.src.id,
+    })
+  })
+
+  it('多边形、比例坐标与 feather 外扩', async () => {
+    const f = await setup()
+    const tri = (await f.invoke('create_mask', {
+      element_id: f.image,
+      polygons: [
+        [
+          [0, 0],
+          [30, 0],
+          [0, 30],
+        ],
+      ],
+    })) as { mask_asset_id: string; applied: boolean }
+    expect(tri.applied).toBe(false)
+    const t = await pixels(f, tri.mask_asset_id)
+    expect(t.at(5, 5)).toBe(255)
+    expect(t.at(28, 28)).toBe(0)
+    expect(t.at(35, 2)).toBe(0)
+
+    const norm = (await f.invoke('create_mask', {
+      element_id: f.image,
+      normalized: true,
+      rects: [{ x: 0.5, y: 0.5, w: 0.5, h: 0.5 }],
+    })) as { mask_asset_id: string }
+    const n = await pixels(f, norm.mask_asset_id)
+    expect([n.at(25, 20), n.at(10, 10)]).toEqual([255, 0])
+
+    const grown = (await f.invoke('create_mask', {
+      element_id: f.image,
+      rects: [{ x: 15, y: 10, w: 10, h: 10 }],
+      feather: 4,
+    })) as { mask_asset_id: string }
+    const g = await pixels(f, grown.mask_asset_id)
+    expect([g.at(12, 14), g.at(10, 14), g.at(26, 14), g.at(29, 14)]).toEqual([255, 0, 255, 0])
+  })
+
+  it('外部蒙版：按原图尺寸缩放并二值化；宽高比不一致被拒', async () => {
+    const f = await setup()
+    // 灰度 100 的一半区域 + 白色另一半，缩小一倍的版本
+    const ext = await sharp({
+      create: { width: 20, height: 15, channels: 3, background: { r: 100, g: 100, b: 100 } },
+    })
+      .composite([
+        {
+          input: await sharp({
+            create: { width: 10, height: 15, channels: 3, background: '#fff' },
+          })
+            .png()
+            .toBuffer(),
+          left: 10,
+          top: 0,
+        },
+      ])
+      .png()
+      .toBuffer()
+    const asset = await f.importImage(ext, 'ext-mask.png')
+    const out = (await f.invoke('create_mask', {
+      element_id: f.node,
+      mask_asset_id: asset.id,
+    })) as { mask_asset_id: string; applied: boolean; width: number }
+    const px = await pixels(f, out.mask_asset_id)
+    expect([px.info.width, px.info.height]).toEqual([40, 30])
+    expect([...px.values].sort((a, b) => a - b)).toEqual([0, 255])
+    expect([px.at(5, 5), px.at(35, 5)]).toEqual([0, 255])
+    expect(f.doc.get(f.node)!.params!.mask).toMatchObject({ width: 40, height: 30 })
+
+    const wrong = await f.importImage(
+      await sharp({ create: { width: 30, height: 30, channels: 3, background: '#fff' } })
+        .png()
+        .toBuffer(),
+      'sq.png',
+    )
+    await expect(
+      f.invoke('create_mask', { element_id: f.node, mask_asset_id: wrong.id }),
+    ).rejects.toThrow('宽高比不一致')
+  })
+
+  it('拒绝：没圈出区域、两类输入并存、节点没连原图、非图片元素', async () => {
+    const f = await setup()
+    await expect(
+      f.invoke('create_mask', { element_id: f.node, rects: [{ x: 500, y: 500, w: 5, h: 5 }] }),
+    ).rejects.toThrow('没有圈出任何区域')
+    await expect(f.invoke('create_mask', { element_id: f.node })).rejects.toThrow(
+      '必须且只能给一类',
+    )
+    await expect(
+      f.invoke('create_mask', {
+        element_id: f.node,
+        rects: [{ x: 0, y: 0, w: 5, h: 5 }],
+        mask_asset_id: f.src.id,
+      }),
+    ).rejects.toThrow('必须且只能给一类')
+    const bare = addNode(f.doc, 'plein/image-edit', { x: 0, y: 400 })
+    await expect(
+      f.invoke('create_mask', { element_id: bare, rects: [{ x: 0, y: 0, w: 5, h: 5 }] }),
+    ).rejects.toThrow('还没有连入原图')
+    const note = createElement(f.doc, { kind: 'markdown', text: 'x', x: 0, y: 0, w: 10, h: 10 })
+    await expect(
+      f.invoke('create_mask', { element_id: note, rects: [{ x: 0, y: 0, w: 5, h: 5 }] }),
+    ).rejects.toThrow('不是图片')
+    const other = addNode(f.doc, 'plein/text', { x: 0, y: 600 })
+    await expect(
+      f.invoke('create_mask', { element_id: other, rects: [{ x: 0, y: 0, w: 5, h: 5 }] }),
+    ).rejects.toThrow('有蒙版')
   })
 })
