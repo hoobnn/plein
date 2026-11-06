@@ -250,11 +250,16 @@ describe('OpenAI 官方平台', () => {
       ],
     })
   })
-  it('无参考时发送生成，固定画幅按像素映射且不透传多余字段', async () => {
+  it('声明外的字段直接报错，不会静默透传或丢弃', async () => {
     const f = fakeContext(openaiProvider, [imageReply])
-    expect(
-      await image(f, { extra: { aspectRatio: '16:9', quality: 'high', model: 'injected' } }),
-    ).toMatchObject({
+    await expect(image(f, { extra: { aspectRatio: '16:9', model: 'injected' } })).rejects.toThrow(
+      /model/,
+    )
+    expect(f.fetch).not.toHaveBeenCalled()
+  })
+  it('无参考时发送生成，固定画幅按像素映射', async () => {
+    const f = fakeContext(openaiProvider, [imageReply])
+    expect(await image(f, { extra: { aspectRatio: '16:9', quality: 'high' } })).toMatchObject({
       outputs: [{ type: 'file', mime: 'image/png', data: Buffer.from([1, 2, 3]) }],
     })
     expect(f.fetch.mock.calls[0]?.[0]).toBe('https://api.openai.com/v1/images/generations')

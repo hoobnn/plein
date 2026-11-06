@@ -33,7 +33,8 @@ describe('方舟套餐目录', () => {
       description: 'Agent Plan 套餐文本模型，仅用于内置 Agent；可用性取决于套餐档位',
       agentOnly: true,
     })
-    expect(find('minimax-m3')?.deprecated).toBe(true)
-    expect(find('kimi-k2.7-code')?.deprecated).toBe(true)
+    // 官方 Agent Plan 与方舟模型列表里已没有这两个模型，modelbay 删除了声明（2026-11-05 核对）
+    expect(find('minimax-m3')).toBeUndefined()
+    expect(find('kimi-k2.7-code')).toBeUndefined()
   })
 })

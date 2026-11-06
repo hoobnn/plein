@@ -1,4 +1,4 @@
-import type { AdapterContext, ModelDeclaration, PlatformAdapter } from '@modelbay/core'
+import type { AdapterContext, ModelDeclaration, PlatformAdapter } from 'modelbay'
 import type { ProviderRequest } from '@plein/plugin-sdk'
 import { describe, expect, it } from 'vite-plus/test'
 import { z } from 'zod'

@@ -91,7 +91,7 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
       ],
       response_format: {
         type: 'json_schema',
-        json_schema: { name: 'plein_output', schema, strict: true },
+        json_schema: { name: 'modelbay_output', schema, strict: true },
       },
     })
     expect(result).toEqual({

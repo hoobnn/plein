@@ -3,8 +3,8 @@ import type { ProviderRequest } from '@plein/plugin-sdk'
 import { z } from 'zod'
 import { adapterModels, adapterToProvider, optionsFromSchema } from './bridge'
 import { openaiProvider } from './openai'
-import { createOpenAIAdapter, models as openaiModels } from '@modelbay/openai'
-import type { AdapterContext, ModelDeclaration, PlatformAdapter } from '@modelbay/core'
+import { createOpenAIAdapter, models as openaiModels } from 'modelbay/openai'
+import type { AdapterContext, ModelDeclaration, PlatformAdapter } from 'modelbay'
 import { fakeContext } from './testing'
 
 describe('adapterToProvider：模型选项与元信息', () => {
@@ -48,6 +48,8 @@ describe('adapterToProvider：模型选项与元信息', () => {
       'gpt-6-astra',
       'gpt-6.1-terra',
       'gpt-6-luna',
+      'gpt-image-2.6-sunburst',
+      'gpt-image-2.6-flare',
       'gpt-image-2.5-sunburst',
       'gpt-image-2.5-flare',
     ])

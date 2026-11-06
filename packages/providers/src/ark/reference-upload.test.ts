@@ -6,10 +6,10 @@ import {
   referenceStorageFrom,
   referenceStorageHost,
   referenceUploader as uploaderFor,
-} from '@modelbay/ark/tos'
-import type { AdapterContext } from '@modelbay/core'
+} from 'modelbay/ark/node'
+import type { AdapterContext } from 'modelbay'
 
-/** 上传实现已迁到 @modelbay/ark/tos；这里按 plein 的对象前缀与调用形态适配，沿用原有断言。 */
+/** 上传实现已迁到 modelbay/ark/node；这里按 plein 的对象前缀与调用形态适配，沿用原有断言。 */
 function referenceUploader(ctx: unknown) {
   const adapterCtx = {
     ...(ctx as object),

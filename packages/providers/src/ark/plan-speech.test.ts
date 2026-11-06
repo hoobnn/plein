@@ -2,7 +2,7 @@ import { gzipSync, gunzipSync } from 'node:zlib'
 import { describe, expect, it, vi } from 'vite-plus/test'
 import { fakeContext } from '../testing'
 import { arkPlanProvider } from './index'
-import { asrPacket } from '@modelbay/ark/tos'
+import { asrPacket } from 'modelbay/ark/node'
 
 // 服务端格式独立构造：终包带负序号，JSON gzip 压缩。
 function reply(value: unknown, final = false) {
