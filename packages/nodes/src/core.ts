@@ -105,6 +105,7 @@ export const llmNode = defineNode({
     system: textarea('系统提示词'),
     prompt: textarea('提示词', '可用上游文本补充'),
     temperature: z.number().min(0).max(2).default(0.7).meta({ title: '温度' }),
+    options: modelOptions(),
     usedRefs: usedRefs(),
   }),
 })

@@ -136,6 +136,8 @@ const llm = defineExecutor(llmNode, async (ctx) => {
   const res = await ctx.providers.call('text.chat', pickModel(ctx, '对话'), {
     messages,
     temperature: params.temperature,
+    // 模型声明的专属参数（推理强度、回答详略、联网搜索等）
+    extra: modelOptions(params),
   })
   const out = res.outputs.flatMap((o) =>
     o.type === 'text' ? [o.text] : o.type === 'json' ? [JSON.stringify(o.value)] : [],

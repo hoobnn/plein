@@ -45,3 +45,32 @@ describe('对话模型看图', () => {
     expect(call).toHaveBeenCalled()
   })
 })
+
+describe('对话模型专属参数', () => {
+  const callWith = async (params: Record<string, unknown>) => {
+    const call = vi.fn(async () => ({
+      assets: [],
+      outputs: [{ type: 'text' as const, text: '回复' }],
+    }))
+    await executor.run({
+      params: llmNode.params.parse({ model: 'mock:chat', prompt: '你好', ...params }),
+      inputs: {},
+      providers: { call, models: () => [spec()] },
+    } as unknown as ExecutorContext)
+    return (call.mock.calls[0] as unknown as [string, string, { extra?: unknown }])[2]
+  }
+
+  it('只把所选模型那份专属参数作为 extra 交给平台', async () => {
+    const input = await callWith({
+      options: {
+        'mock:chat': { reasoning_effort: 'high', web_search: {} },
+        'mock:other': { verbosity: 'low' },
+      },
+    })
+    expect(input.extra).toEqual({ reasoning_effort: 'high', web_search: {} })
+  })
+
+  it('没设专属参数时 extra 为空对象', async () => {
+    expect((await callWith({})).extra).toEqual({})
+  })
+})
