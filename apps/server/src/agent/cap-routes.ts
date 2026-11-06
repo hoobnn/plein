@@ -104,7 +104,7 @@ export function capabilityRoutes(deps: Deps) {
         throw err
       }
       const changed = changes.end()
-      const result = toToolResult(out)
+      const result = toToolResult(out, Infinity)
       const text =
         typeof result === 'string'
           ? result
