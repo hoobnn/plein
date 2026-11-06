@@ -88,6 +88,8 @@ const TOOL_LABELS: Record<string, string> = {
   test_provider: '检查平台连接',
   refresh_remote_models: '刷新远端模型列表',
   set_default_model: '设置默认模型',
+  get_shots: '读取分镜表',
+  edit_shots: '修改分镜表',
   list_projects: '查看项目',
   create_project: '新建项目',
   rename_project: '重命名项目',

@@ -10,12 +10,14 @@ import {
   setText,
   updateElement,
 } from '@plein/doc'
+import { STORYBOARD_TYPE } from '@plein/nodes'
 import { z } from 'zod'
 import { modelParamOf } from '@plein/plugin-sdk'
 import { CapabilityError, defineCapability } from './define'
 import { renameElement } from './rename'
 import { link, need, placeNew } from './place'
 import { nodeElementOf } from './story/nodes'
+import { writeStoryboardShots } from './story/storyboard'
 import { summarize } from './summary'
 
 /** 画布读写能力：只依赖文档和节点目录，前后端共用 */
@@ -217,7 +219,7 @@ export const updateElementCap = defineCapability({
   name: 'update_element',
   title: '修改元素',
   description:
-    '修改元素：节点参数（按键合并，只改给出的键）、名称、Markdown 正文、位置尺寸、所属 Frame。改提示词后需要 run_node 才会出新结果。' +
+    '修改元素：节点参数（按键合并，只改给出的键）、名称、Markdown 正文、位置尺寸、所属 Frame。改提示词后需要 run_node 才会出新结果。分镜表的镜头逐镜修改请用 edit_shots，不要在这里整表替换 shots。' +
     '换模型不要在 params 里直接写 model：用 set_node_model，它会像界面一样同步校正画幅、分辨率、时长、种子等参数。' +
     '改名会同步所有 @ 引用（与 rename_element 相同），返回里的 renamed 列出被改写的引用数和受影响元素；清空名称（传空字符串）不做同步。',
   group: 'edit',
@@ -272,7 +274,15 @@ export const updateElementCap = defineCapability({
           warnings.push(
             `已直接写入 params.${modelKey}，没有校正与模型相关的参数（画幅、分辨率、时长、种子等），运行前可能被模型拒绝。换模型请用 set_node_model。`,
           )
-        setParams(doc, a.id, a.params)
+        // 分镜表整表替换也要先补记旧计划基线（和分镜编辑器同一条写入路径），
+        // 否则 sync_storyboard 分不清「计划变了」和「用户在节点上改过」
+        const { shots, ...rest } = a.params
+        if (el.nodeType === STORYBOARD_TYPE && Array.isArray(shots)) {
+          doc.ydoc.transact(() => {
+            writeStoryboardShots(doc, a.id, shots as never)
+            if (Object.keys(rest).length) setParams(doc, a.id, rest)
+          }, doc.origin)
+        } else setParams(doc, a.id, a.params)
       }
       if (a.text !== undefined) {
         if (el.kind !== 'markdown') throw new CapabilityError('只有 markdown 元素有正文')

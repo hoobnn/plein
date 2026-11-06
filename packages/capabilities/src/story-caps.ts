@@ -7,6 +7,7 @@ import { need } from './place'
 import { applyCast, castOf, describeCast } from './story/cast'
 import { dramaNotice, placeDramaTemplate } from './story/drama'
 import { type NodeFactory, nodeElementOf } from './story/nodes'
+import { shotCapabilities } from './shots'
 import { expandShots, planDiffs, shotsOf, syncExpanded } from './story/storyboard'
 
 /** 短剧创作流程：铺模板、抽取角色场景、展开 / 同步分镜。与右键菜单、分镜编辑器是同一套操作 */
@@ -158,4 +159,10 @@ export const syncStoryboard = defineCapability({
   },
 })
 
-export const storyCapabilities = [placeDrama, extractCast, expandStoryboard, syncStoryboard]
+export const storyCapabilities = [
+  placeDrama,
+  extractCast,
+  expandStoryboard,
+  syncStoryboard,
+  ...shotCapabilities,
+]

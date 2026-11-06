@@ -6,6 +6,7 @@ export * from './registry'
 export * from './summary'
 export * from './story'
 export * from './story-caps'
+export * from './shots'
 export * from './prompt-caps'
 export * from './read-view'
 
