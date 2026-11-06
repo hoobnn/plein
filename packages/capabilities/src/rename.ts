@@ -20,7 +20,7 @@ export function renameElement(doc: PleinDoc, id: string, value: string) {
   const name = value.trim()
   if (!name || name.length > 200 || /[\r\n@]/.test(name))
     throw new Error('名称需为 1–200 个字符，不能包含换行或 @')
-  if (element.name === name) return { references: 0, elements: 0 }
+  if (element.name === name) return { references: 0, elements: 0, ids: [] as string[] }
   const before = mentionTargetsIn(doc)
   const after = before.map((t) => (t.id === id ? { ...t, name } : t))
   const all = [...doc.elements()]
@@ -200,7 +200,8 @@ export function renameElement(doc: PleinDoc, id: string, value: string) {
     }
   }, doc.origin)
   doc.undo.stopCapturing()
-  return { references, elements: new Set([...patches, ...texts].map((p) => p.id)).size }
+  const ids = [...new Set([...patches, ...texts].map((p) => p.id))]
+  return { references, elements: ids.length, ids }
 }
 
 interface Edit {

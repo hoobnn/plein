@@ -9,7 +9,9 @@ import {
   updateElement,
 } from '@plein/doc'
 import { z } from 'zod'
+import { modelParamOf } from '@plein/plugin-sdk'
 import { CapabilityError, defineCapability } from './define'
+import { renameElement } from './rename'
 import { link, need, placeNew } from './place'
 import { nodeElementOf } from './story/nodes'
 import { summarize } from './summary'
@@ -213,7 +215,9 @@ export const updateElementCap = defineCapability({
   name: 'update_element',
   title: '修改元素',
   description:
-    '修改元素：节点参数（按键合并，只改给出的键）、名称、Markdown 正文、位置尺寸、所属 Frame。改提示词后需要 run_node 才会出新结果。',
+    '修改元素：节点参数（按键合并，只改给出的键）、名称、Markdown 正文、位置尺寸、所属 Frame。改提示词后需要 run_node 才会出新结果。' +
+    '换模型不要在 params 里直接写 model：用 set_node_model，它会像界面一样同步校正画幅、分辨率、时长、种子等参数。' +
+    '改名会同步所有 @ 引用（与 rename_element 相同），返回里的 renamed 列出被改写的引用数和受影响元素；清空名称（传空字符串）不做同步。',
   group: 'edit',
   where: 'doc',
   effect: 'edit',
@@ -239,6 +243,7 @@ export const updateElementCap = defineCapability({
   run: (ctx, a) =>
     ctx.withDoc((doc) => {
       const el = need(doc, a.id)
+      const warnings: string[] = []
       if (a.asset_id !== undefined) {
         const meta = ctx.assetMeta(a.asset_id)
         if (!meta || meta.kind !== el.kind || !['image', 'video', 'audio'].includes(el.kind))
@@ -257,6 +262,14 @@ export const updateElementCap = defineCapability({
           const check = def.params.safeParse({ ...el.params, ...a.params })
           if (!check.success) throw new CapabilityError(`参数不对：${z.prettifyError(check.error)}`)
         }
+        // 直接写模型不会校正依赖它的参数（画幅、分辨率、时长、种子……），提示改用 set_node_model
+        const modelKey = el.nodeType
+          ? modelParamOf(ctx.nodes.latest(el.nodeType)?.descriptor ?? { paramsSchema: {} })
+          : undefined
+        if (modelKey && modelKey in a.params && a.params[modelKey] !== el.params?.[modelKey])
+          warnings.push(
+            `已直接写入 params.${modelKey}，没有校正与模型相关的参数（画幅、分辨率、时长、种子等），运行前可能被模型拒绝。换模型请用 set_node_model。`,
+          )
         setParams(doc, a.id, a.params)
       }
       if (a.text !== undefined) {
@@ -264,6 +277,15 @@ export const updateElementCap = defineCapability({
         setText(doc, a.id, a.text)
       }
       if (a.parent_id !== undefined) setParent(doc, [a.id], a.parent_id)
+      // 改名走与界面相同的 renameElement：同步 @ 引用与绑定；清空名称不属于改名
+      let renamed: ReturnType<typeof renameElement> | undefined
+      if (a.name?.trim()) {
+        try {
+          renamed = renameElement(doc, a.id, a.name)
+        } catch (err) {
+          throw new CapabilityError(err instanceof Error ? err.message : String(err))
+        }
+      }
       const cur = need(doc, a.id)
       const world = doc.worldRect(a.id)!
       updateElement(doc, a.id, {
@@ -271,13 +293,39 @@ export const updateElementCap = defineCapability({
         ...(a.locked !== undefined ? { locked: a.locked } : {}),
         ...(a.color !== undefined ? { color: a.color ?? undefined } : {}),
         ...(a.asset_id !== undefined ? { assetId: a.asset_id } : {}),
-        ...(a.name !== undefined ? { name: a.name } : {}),
+        ...(a.name !== undefined && !a.name.trim() ? { name: a.name } : {}),
         ...(a.x !== undefined ? { x: Math.round(cur.x + a.x - world.x) } : {}),
         ...(a.y !== undefined ? { y: Math.round(cur.y + a.y - world.y) } : {}),
         ...(a.w !== undefined ? { w: Math.round(a.w) } : {}),
         ...(a.h !== undefined ? { h: Math.round(a.h) } : {}),
       })
-      return summarize(doc, need(doc, a.id), false)
+      return {
+        ...summarize(doc, need(doc, a.id), false),
+        ...(renamed ? { renamed: { references: renamed.references, elements: renamed.ids } } : {}),
+        ...(warnings.length ? { warnings } : {}),
+      }
+    }),
+})
+
+export const renameElementCap = defineCapability({
+  name: 'rename_element',
+  title: '重命名元素',
+  description:
+    '给元素改名，并同步所有引用它的 @名称（提示词、节点文本、分镜角色与对白、参考绑定），与界面重命名相同；已固化的历史输入和来源记录不改。名称 1–200 字，不能含换行或 @。' +
+    '返回 references（改写的引用数）和 elements（受影响的其他元素 id）。同名元素会按序号消歧（@名称#2），改名后可能让别处的引用变成 #n。',
+  group: 'edit',
+  where: 'doc',
+  effect: 'edit',
+  input: z.object({ id: id.describe('要改名的元素'), name: z.string().min(1).max(200) }),
+  run: (ctx, a) =>
+    ctx.withDoc((doc) => {
+      need(doc, a.id)
+      try {
+        const out = renameElement(doc, a.id, a.name)
+        return { id: a.id, name: a.name.trim(), references: out.references, elements: out.ids }
+      } catch (err) {
+        throw new CapabilityError(err instanceof Error ? err.message : String(err))
+      }
     }),
 })
 
@@ -363,6 +411,7 @@ export const canvasCapabilities = [
   createNode,
   createElement,
   updateElementCap,
+  renameElementCap,
   connectCap,
   disconnect,
   deleteElementsCap,

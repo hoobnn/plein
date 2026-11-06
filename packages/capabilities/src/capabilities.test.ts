@@ -104,6 +104,44 @@ describe('能力注册表', () => {
     expect(frames.total).toBe(1)
   })
 
+  it('rename_element 与 update_element 的 name 都同步 @ 引用，返回受影响的元素', async () => {
+    const { registry, ctx } = setup()
+    const role = {
+      id: ctx.withDoc((doc) =>
+        createElement(doc, {
+          kind: 'image',
+          assetId: 'a1',
+          name: '林夏',
+          x: 0,
+          y: 0,
+          w: 100,
+          h: 100,
+        }),
+      ),
+    }
+    const scene = (await registry.invoke('create_node', ctx, {
+      type: 'test/text',
+      params: { text: '@林夏 在天台' },
+    })) as { id: string }
+    const out = (await registry.invoke('rename_element', ctx, { id: role.id, name: '林夕' })) as {
+      references: number
+      elements: string[]
+    }
+    expect(out).toMatchObject({ id: role.id, name: '林夕', references: 1, elements: [scene.id] })
+    ctx.withDoc((doc) => expect(doc.get(scene.id)?.params?.text).toBe('@林夕 在天台'))
+    // update_element 带 name 走同一套同步，并在返回里说明
+    const viaUpdate = (await registry.invoke('update_element', ctx, {
+      id: role.id,
+      name: '林夏',
+    })) as { renamed?: { references: number; elements: string[] } }
+    expect(viaUpdate.renamed).toEqual({ references: 1, elements: [scene.id] })
+    ctx.withDoc((doc) => expect(doc.get(scene.id)?.params?.text).toBe('@林夏 在天台'))
+    // 不合法的名称说清楚原因，不静默写入
+    await expect(
+      registry.invoke('rename_element', ctx, { id: role.id, name: '含@符号' }),
+    ).rejects.toThrow('不能包含换行或 @')
+  })
+
   it('near 放在参照元素右侧，不压住别的元素', async () => {
     const { registry, ctx } = setup()
     const [a] = ctx.withDoc((doc) => [
