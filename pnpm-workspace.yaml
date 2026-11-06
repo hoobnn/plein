@@ -48,6 +48,16 @@ overrides:
   # 与 engine 已解析的 puppeteer-core 对齐，移除旧 chromium-bidi 引入的易受攻击 zod 3
   "@hyperframes/engine>puppeteer": 25.16.0
   "@hyperframes/producer>puppeteer": 25.16.0
+  # drizzle-kit 经已弃用的 @esbuild-kit/core-utils 锁 esbuild ~0.18（开发服务器可被任意网站读取），对齐 drizzle-kit 自带的 0.25
+  "@esbuild-kit/core-utils>esbuild": 0.25.12
+  # electron-builder 的 ajv 带 fast-uri 3.1.8（URI 欺骗等 4 项），3.1.9 修复
+  "fast-uri@<3.1.9": 3.1.9
+  # electron-builder 与 markdownlint-cli 锁 minimatch ~10，globparts 放大导致 DoS，修复只在 11.0.1 以上
+  "app-builder-lib>minimatch": 11.0.3
+  "@electron/universal>minimatch": 11.0.3
+  "markdownlint-cli>minimatch": 11.0.3
+  # markdownlint 的数学扩展锁 katex ^0.16，原型污染可绕过 trust 限制，修复只在 0.18.2 以上
+  "micromark-extension-math>katex": 0.19.1
 patchedDependencies:
   pixi.js@8.22.0: patches/pixi.js@8.22.0.patch
 peerDependencyRules:
