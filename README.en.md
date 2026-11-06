@@ -18,6 +18,8 @@ Start from a single idea, lay out the script, storyboard, shots and voiceover on
 
 </div>
 
+Plein is an open-source (AGPL-3.0) AI short-drama creation tool built around an infinite canvas: idea, script, characters, storyboard, shot images, video, voiceover and the final cut are all wired-up nodes that you can inspect, edit and re-run one at a time. It ships as a macOS (Apple silicon) desktop app and can also be self-hosted with Docker; your data stays on your machine, and generation uses your own accounts on Volcengine Ark, Doubao Speech, Alibaba Cloud Model Studio and MiniMax.
+
 > [!NOTE]
 > Plein is in a **testing and iteration phase**; the latest release for macOS (Apple silicon) is on [Releases](https://github.com/hoobnn/plein/releases/latest). The full pipeline has been verified end to end on real platforms (Alibaba Cloud Model Studio, Doubao Speech, MiniMax), but the data format and interactions may still change between versions, so export project packages regularly for important work.
 >
@@ -177,6 +179,22 @@ pnpm install && pnpm build && pnpm start   # http://localhost:8787
 The layout is identical across all three and can be copied between them: `plein.db` (SQLite), `assets/` (content-addressed media), `exports/` and the platform key file (mode 600).
 
 </details>
+
+## FAQ
+
+**What is Plein?** An open-source AI short-drama creation tool built around an infinite canvas. Script, storyboard, shots, video, voiceover and the final cut are nodes that can be re-run individually.
+
+**Is Plein free?** Yes, it is free and open source under AGPL-3.0. Image, video and voice generation uses your own model-platform accounts and is billed by those platforms; unchanged nodes hit the cache and are not billed again.
+
+**Which AI models does it support?** Volcengine Ark (Doubao Seed, Seedream, Seedance), Doubao Speech, Alibaba Cloud Model Studio (Qwen, Qwen Image, Wan, Qwen TTS) and MiniMax (M series, image-01, H3 video, speech and music). See [Model platforms](#model-platforms) for details. More platforms can be added as plugins.
+
+**What systems does it run on?** The desktop app needs an Apple silicon Mac on macOS 12 or later. Other systems can self-host with Docker and open `localhost:8787` in a browser. There is no prebuilt package for Intel Macs or Windows yet.
+
+**Where are my data and API keys stored?** In one SQLite file and one asset folder on your own machine, easy to back up. There is no cloud account; platform keys stay on the local server and never reach the browser.
+
+**Can an AI agent operate the canvas?** Yes: the built-in agent "Xiaoman", a locally signed-in Claude Code / Codex, or Cursor and Claude Desktop over MCP. Paid generation and deletions need your confirmation.
+
+**Is the UI available in English?** Not yet. The app UI and most docs are in Simplified Chinese only.
 
 ## Docs
 

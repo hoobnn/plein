@@ -4,7 +4,7 @@
 
 Key facts:
 
-- Website: https://plein.ikuyu.com/ (简体中文), https://plein.ikuyu.com/en/ (English)
+- Website: https://plein.ikuyu.com/ (简体中文), https://plein.ikuyu.com/en/ (English); FAQ at #faq on both pages
 - Source code: https://github.com/hoobnn/plein
 - Download: https://github.com/hoobnn/plein/releases/latest (macOS 12+, Apple silicon; signed and notarized, ships with ffmpeg, auto-updates)
 - Self-host: `git clone https://github.com/hoobnn/plein.git && cd plein && docker compose up -d`, then open http://localhost:8787
@@ -17,7 +17,7 @@ Key facts:
 
 ## Docs
 
-- [README (简体中文)](https://raw.githubusercontent.com/hoobnn/plein/main/README.md): features, quick start, model platforms, environment variables, data location, roadmap
+- [README (简体中文)](https://raw.githubusercontent.com/hoobnn/plein/main/README.md): definition, features, FAQ, quick start, model platforms, environment variables, data location
 - [README (English)](https://raw.githubusercontent.com/hoobnn/plein/main/README.en.md): the same in English
 - [模型平台接入 Model platforms](https://raw.githubusercontent.com/hoobnn/plein/main/docs/guide/providers.md): capabilities, API key setup, parameter mapping and known limits of each platform
 - [智能体与 MCP Agents and MCP](https://raw.githubusercontent.com/hoobnn/plein/main/docs/guide/agent.md): the built-in agent, local CLI agents and the MCP server
