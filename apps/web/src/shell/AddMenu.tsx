@@ -157,6 +157,12 @@ export function AddMenu({
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
+  // 列表被裁到窗口里时，底部渐隐提示还能往下滚
+  const [moreBelow, setMoreBelow] = useState(false)
+  const syncMore = useCallback(() => {
+    const list = listRef.current
+    setMoreBelow(!!list && list.scrollHeight - list.scrollTop - list.clientHeight > 4)
+  }, [])
   const insertingPluginTemplate = useRef(false)
 
   const insertPluginTemplate = useCallback(
@@ -310,7 +316,12 @@ export function AddMenu({
 
   useEffect(() => {
     listRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
-  }, [active, items])
+    syncMore()
+  }, [active, items, syncMore])
+  useEffect(() => {
+    window.addEventListener('resize', syncMore)
+    return () => window.removeEventListener('resize', syncMore)
+  }, [syncMore])
 
   const pick = (item: Item | undefined) => {
     if (!item) return
@@ -362,7 +373,13 @@ export function AddMenu({
           }}
         />
       </label>
-      <div ref={listRef} role="listbox" className="ui-scrollbar min-h-0 overflow-y-auto">
+      <div
+        ref={listRef}
+        role="listbox"
+        data-more-below={moreBelow || undefined}
+        onScroll={syncMore}
+        className="plein-add-list ui-scrollbar min-h-0 overflow-y-auto"
+      >
         {items.length === 0 && (
           <p className="px-3 pb-3 pt-1 text-sm text-ink-subtle">没有匹配的节点</p>
         )}

@@ -37,6 +37,10 @@
   animation: ui-pop-in var(--dur-base) var(--ease-spring);
   transform-origin: var(--pop-origin, top left);
 }
+/* 列表比菜单高、底部还有内容时渐隐，提示可以往下滚 */
+.plein-add-list[data-more-below] {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+}
 .plein-add-search {
   display: flex;
   flex: none;
