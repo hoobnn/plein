@@ -44,6 +44,7 @@ import { modelCapabilities } from './model-caps'
 import { projectCapabilities } from './project-caps'
 import { impactCapabilities } from './impact-caps'
 import { estimateCost } from './estimate-caps'
+import { providerCapabilities } from './provider-caps'
 import { editMedia, continueShot, makeCollage, rewrite, shotGroup, viewMedia } from './tools-media'
 import {
   cancelRun,
@@ -329,6 +330,7 @@ export const serverCapabilities = new CapabilityRegistry<ServerContext>([
   ...projectCapabilities,
   ...impactCapabilities,
   estimateCost,
+  ...providerCapabilities,
   captureStage,
   ...templateCapabilities,
   ...analysisCapabilities,
