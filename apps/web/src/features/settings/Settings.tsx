@@ -65,7 +65,7 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
       badge: providers.filter((p) => p.enabled && p.configured).length,
     },
     ...(localCli ? [{ id: 'local' as const, label: '本机 AI', icon: 'terminal' as const }] : []),
-    { id: 'skills', label: '技能与画布能力', icon: 'sparkle' },
+    { id: 'skills', label: '技能与画布能力', icon: 'wand' },
     // 对外开放 MCP 只在本机模式可用：其他模式下接口返回 403，不显示这一栏
     ...(externalMcp ? [{ id: 'mcp' as const, label: 'MCP', icon: 'plug' as const }] : []),
     { id: 'plugins', label: '插件', icon: 'puzzle', badge: plugins.length },
@@ -116,7 +116,7 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
           <SlideSwap
             index={sections.indexOf(current)}
             axis="y"
-            className="flex w-full max-w-3xl flex-col gap-6"
+            className="flex w-full max-w-4xl flex-col gap-6"
             preserveState
           >
             {current.id === 'appearance' && (

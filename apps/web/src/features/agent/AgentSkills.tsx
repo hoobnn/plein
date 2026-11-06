@@ -6,6 +6,7 @@ import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
 import { AnimatePresence } from '../../ui/motion'
 import { Select } from '../../ui/Select'
+import { Switch } from '../../ui/Switch'
 import { useAgent } from './store'
 
 const EFFECTS: Record<string, string> = {
@@ -286,18 +287,15 @@ export function SkillBrowser({
                         {skill.selection === 'required' ? ' · 需要选区' : ''}
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-label={`${skill.source === 'codex' ? '在 Codex 中启用' : '启用技能'}：${skill.title}`}
-                      aria-checked={skill.enabled}
-                      aria-busy={pending === skill.id}
-                      disabled={busy || !skill.canToggle}
-                      className={`ui-btn ui-btn-xs ${skill.enabled ? 'ui-btn-secondary text-accent' : 'ui-btn-quiet text-ink-subtle'}`}
-                      onClick={() => void change(skill)}
-                    >
-                      {skill.enabled ? '已启用' : '已停用'}
-                    </button>
+                    <span className="flex h-6 flex-none items-center gap-2 text-xs text-ink-subtle">
+                      <span aria-hidden="true">{skill.enabled ? '已启用' : '已停用'}</span>
+                      <Switch
+                        checked={skill.enabled}
+                        disabled={busy || !skill.canToggle}
+                        label={`${skill.source === 'codex' ? '在 Codex 中启用' : '启用技能'}：${skill.title}`}
+                        onChange={() => void change(skill)}
+                      />
+                    </span>
                   </div>
                   <p className="mt-2 text-xs leading-relaxed text-ink-muted">{skill.description}</p>
                   <div className="mt-2 flex flex-wrap items-center gap-2">

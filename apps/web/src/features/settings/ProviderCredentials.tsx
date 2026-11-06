@@ -205,50 +205,55 @@ function CredentialCard({
       data-credential={card.key}
     >
       {!compact && (
-        <div className="flex items-center gap-2">
-          <input
-            type="text"
-            className="ui-input min-w-0 flex-1"
-            aria-label={`「${name}」的标签`}
-            placeholder={saved ? saved.label : '个人 / 团队'}
-            value={card.label}
-            aria-invalid={labelRequired || undefined}
-            onChange={(e) => onLabel(card.key, e.target.value)}
-            onKeyDown={enter}
-          />
-          {multi && active && <span className="ui-tag">使用中</span>}
-          {multi && saved && !active && (
-            <button
-              type="button"
-              className="ui-btn ui-btn-secondary flex-none"
-              aria-label={`设为使用「${name}」`}
-              onClick={() => onUse(card.key)}
-            >
-              设为使用
-            </button>
-          )}
-          {saved ? (
-            <button
-              type="button"
-              className="ui-btn ui-btn-quiet ui-btn-danger flex-none"
-              aria-label={`删除「${name}」`}
-              onClick={() => onRemove(card.key)}
-            >
-              删除
-            </button>
-          ) : (
-            // 预填卡是新平台创建第一组的入口，不提供移除；手动加的草稿可以直接丢弃
-            card.baseline === undefined && (
+        <div className="flex flex-col gap-1.5">
+          <span className="ui-label" aria-hidden="true">
+            名称
+          </span>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              className="ui-input min-w-0 flex-1"
+              aria-label={`「${name}」的标签`}
+              placeholder={saved ? saved.label : '个人 / 团队'}
+              value={card.label}
+              aria-invalid={labelRequired || undefined}
+              onChange={(e) => onLabel(card.key, e.target.value)}
+              onKeyDown={enter}
+            />
+            {multi && active && <span className="ui-tag">使用中</span>}
+            {multi && saved && !active && (
               <button
                 type="button"
-                className="ui-btn ui-btn-quiet flex-none"
-                aria-label={`移除「${name}」`}
-                onClick={() => onDiscard(card.key)}
+                className="ui-btn ui-btn-secondary flex-none"
+                aria-label={`设为使用「${name}」`}
+                onClick={() => onUse(card.key)}
               >
-                移除
+                设为使用
               </button>
-            )
-          )}
+            )}
+            {saved ? (
+              <button
+                type="button"
+                className="ui-btn ui-btn-quiet ui-btn-danger flex-none"
+                aria-label={`删除「${name}」`}
+                onClick={() => onRemove(card.key)}
+              >
+                删除
+              </button>
+            ) : (
+              // 预填卡是新平台创建第一组的入口，不提供移除；手动加的草稿可以直接丢弃
+              card.baseline === undefined && (
+                <button
+                  type="button"
+                  className="ui-btn ui-btn-quiet flex-none"
+                  aria-label={`移除「${name}」`}
+                  onClick={() => onDiscard(card.key)}
+                >
+                  移除
+                </button>
+              )
+            )}
+          </div>
         </div>
       )}
       {/* 单组无从切换，只在删除/替换确认里说影响；≥2 组时才在卡片上常驻摘要 */}

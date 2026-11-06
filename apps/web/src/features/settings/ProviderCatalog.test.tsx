@@ -183,7 +183,7 @@ describe('平台目录恢复', () => {
 
     app.failCatalog()
     await user.click(screen.getByRole('combobox', { name: '默认文本模型' }))
-    await user.click(screen.getByRole('option', { name: 'Mock（开发测试用） · Mock 对话' }))
+    await user.click(screen.getByRole('option', { name: 'Mock 对话' }))
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('平台目录暂不可用'))
     expect(screen.getByRole('combobox', { name: '默认文本模型' }).textContent).toContain(
       'Mock 智能体',
@@ -215,8 +215,8 @@ describe('默认模型', () => {
     const trigger = await screen.findByRole('combobox', { name: '默认文本模型' })
     await user.click(trigger)
 
-    expect(screen.getByRole('option', { name: 'Mock（开发测试用） · Mock 对话' })).toBeTruthy()
-    expect(screen.queryByRole('option', { name: 'Mock（开发测试用） · 弃用对话' })).toBeNull()
+    expect(screen.getByRole('option', { name: 'Mock 对话' })).toBeTruthy()
+    expect(screen.queryByRole('option', { name: '弃用对话' })).toBeNull()
   })
 
   it('保存失败保留原选择，重新选择可真实保存', async () => {
@@ -240,7 +240,7 @@ describe('默认模型', () => {
     await screen.findByRole('combobox', { name: '默认文本模型' })
 
     await user.click(screen.getByRole('combobox', { name: '默认文本模型' }))
-    await user.click(screen.getByRole('option', { name: 'Mock（开发测试用） · Mock 对话' }))
+    await user.click(screen.getByRole('option', { name: 'Mock 对话' }))
     await waitFor(() =>
       expect(screen.getByRole('alert').textContent).toContain('默认模型暂不可保存'),
     )
@@ -251,7 +251,7 @@ describe('默认模型', () => {
 
     failing = false
     await user.click(screen.getByRole('combobox', { name: '默认文本模型' }))
-    await user.click(screen.getByRole('option', { name: 'Mock（开发测试用） · Mock 对话' }))
+    await user.click(screen.getByRole('option', { name: 'Mock 对话' }))
     await waitFor(() =>
       expect(screen.getByRole('combobox', { name: '默认文本模型' }).textContent).toContain(
         'Mock 对话',
@@ -280,7 +280,7 @@ describe('默认模型', () => {
     await screen.findByRole('combobox', { name: '默认文本模型' })
 
     await user.click(screen.getByRole('combobox', { name: '默认文本模型' }))
-    await user.click(screen.getByRole('option', { name: 'Mock（开发测试用） · Mock 对话' }))
+    await user.click(screen.getByRole('option', { name: 'Mock 对话' }))
     await waitFor(() =>
       expect(screen.getByRole('status').textContent).toContain('正在保存文本默认模型'),
     )

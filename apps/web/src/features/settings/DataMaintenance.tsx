@@ -1,6 +1,7 @@
 import type { BackupRestored, CleanupPreview } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useId, useRef, useState } from 'react'
+import { stampTime } from '../../ui/format'
 import { Switch } from '../../ui/Switch'
 import { queryClient } from '../../api/query'
 import { maintenanceApi } from './maintenance-client'
@@ -18,8 +19,7 @@ const bytes = (value: number) => {
   const unit = value >= 1024 ** 3 ? 'GB' : value >= 1024 ** 2 ? 'MB' : 'KB'
   return `${(value / (unit === 'GB' ? 1024 ** 3 : unit === 'MB' ? 1024 ** 2 : 1024)).toFixed(1)} ${unit}`
 }
-const date = (value: number | null) =>
-  value == null ? '尚无记录' : new Date(value).toLocaleString('zh-CN', { hour12: false })
+const date = (value: number | null) => (value == null ? '尚无记录' : stampTime(value))
 
 /** 设置中的数据维护；接口仅在本机模式开放。 */
 export function DataMaintenance() {
@@ -293,7 +293,7 @@ export function DataMaintenance() {
           <h3 className="text-sm font-semibold text-ink">存储空间</h3>
           <button
             type="button"
-            className="ui-btn ui-btn-quiet"
+            className="ui-btn ui-btn-quiet -mr-3 hover:bg-hover"
             disabled={locked}
             onClick={() => void space.refetch()}
           >

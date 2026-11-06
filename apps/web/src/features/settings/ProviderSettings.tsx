@@ -677,7 +677,7 @@ export function ProviderRow({
         type="button"
         disabled={locked}
         onClick={() => save()}
-        className="ui-btn ui-btn-quiet"
+        className="ui-btn ui-btn-quiet hover:bg-hover"
       >
         仅保存
       </button>
@@ -712,30 +712,33 @@ export function ProviderRow({
       >
         <ProviderIcon provider={provider.id} size={28} />
         <span className="min-w-0 flex-1">
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1">
             <span className="text-sm font-medium break-words">{provider.title}</span>
             <span className={`ui-tag ${state.tone}`} title="本地配置状态不代表具体模型权限或余额">
               {state.label}
             </span>
           </span>
-          <span className="mt-0.5 block text-xs text-ink-subtle" title={provider.description}>
+          <span className="block line-clamp-2 text-xs text-ink-subtle" title={provider.description}>
             {provider.description ?? `${provider.models.length} 个模型`}
           </span>
         </span>
         {/* 右侧主操作跟着标题一起可点：未配置先给配置入口，配置好后改成管理 */}
         <span
           aria-hidden="true"
-          className={`ui-btn ui-btn-xs flex-none ${open ? 'ui-btn-quiet' : 'ui-btn-secondary'}`}
+          className={`ui-btn ui-btn-xs min-w-20 flex-none justify-center ${open ? 'ui-btn-quiet' : 'ui-btn-secondary'}`}
         >
           {open ? '收起' : provider.configured ? '管理' : '配置密钥'}
         </span>
       </button>
-      <Switch
-        checked={provider.enabled}
-        disabled={locked}
-        label={`启用 ${provider.title}`}
-        onChange={setEnabled}
-      />
+      {/* 开关与首行的按钮同高居中，描述换行时仍对齐标题行 */}
+      <span className="flex h-6 items-center self-start">
+        <Switch
+          checked={provider.enabled}
+          disabled={locked}
+          label={`启用 ${provider.title}`}
+          onChange={setEnabled}
+        />
+      </span>
       {!open && (busy || status?.error) && (
         <p
           ref={closedFeedback}
@@ -794,7 +797,7 @@ export function ProviderRow({
                     type="button"
                     aria-expanded={modelsOpen}
                     onClick={() => setModelsOpen((current) => !current)}
-                    className="ui-btn ui-btn-quiet ui-btn-xs self-start"
+                    className="ui-btn ui-btn-quiet ui-btn-xs -ml-2 self-start hover:bg-hover"
                   >
                     {provider.models.length} 个模型 · {modelsOpen ? '收起' : '展开'}
                   </button>
@@ -814,7 +817,7 @@ export function ProviderRow({
                       type="button"
                       aria-expanded={moreOpen}
                       onClick={() => setMoreOpen((current) => !current)}
-                      className="ui-btn ui-btn-quiet ui-btn-xs self-start"
+                      className="ui-btn ui-btn-quiet ui-btn-xs -ml-2 self-start hover:bg-hover"
                     >
                       更多设置
                     </button>
@@ -954,7 +957,8 @@ function DefaultModels({
         )
         .map((m) => ({
           value: `${p.id}:${m.id}`,
-          label: `${p.title} · ${m.title ?? m.id}`,
+          // 只有一个平台可选时不必每行重复平台名
+          label: ready.length > 1 ? `${p.title} · ${m.title ?? m.id}` : (m.title ?? m.id),
           icon: <ProviderIcon provider={p.id} />,
         })),
     ),
