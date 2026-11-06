@@ -1,5 +1,18 @@
 import { expect, it, vi } from 'vite-plus/test'
-import { DRAMA_START, queueStartNode, takeStartNode, watchStartNode } from './startQueue'
+import {
+  DRAMA_START,
+  queueStartNode,
+  startProjectTitle,
+  takeStartNode,
+  watchStartNode,
+} from './startQueue'
+
+it('从模板新建项目沿用模板名，普通快速开始走默认名', () => {
+  expect(startProjectTitle(DRAMA_START)).toBe('短剧模板')
+  expect(startProjectTitle('plein/image')).toBeUndefined()
+  expect(startProjectTitle()).toBeUndefined()
+})
+
 it.each(['plein/llm', DRAMA_START])(
   '迟到的 %s 意图通知已经打开的画布且只消费一次',
   async (type) => {

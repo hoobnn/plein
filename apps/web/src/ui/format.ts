@@ -8,12 +8,17 @@ export const fullTime = (ts: number) => dateFmt.format(ts)
 /** 一周内写相对时间（刚刚、3 分钟前、昨天），更早写日期 */
 export function relativeTime(ts: number, now = Date.now()) {
   const s = Math.max(0, (now - ts) / 1000)
-  if (s < 10) return '刚刚'
-  if (s < 60) return relFmt.format(-Math.floor(s), 'second')
+  if (s < 60) return '刚刚'
   if (s < 3600) return relFmt.format(-Math.floor(s / 60), 'minute')
   if (s < 86400) return relFmt.format(-Math.floor(s / 3600), 'hour')
   if (s < 7 * 86400) return relFmt.format(-Math.floor(s / 86400), 'day')
   return dateFmt.format(ts)
+}
+
+/** 补零的完整时间「2026/11/07 14:05:03」：列表里的时间戳靠它对齐 */
+export function stampTime(ts: number) {
+  const d = new Date(ts)
+  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
 /** 当天写「今天 14:05」，更早写「3月5日 14:05」 */

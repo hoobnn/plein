@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { type MouseEvent, useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { cacheProject, invalidateProjects, queryClient, queryKeys } from '../api/query'
-import { DRAMA_START, queueStartNode } from '../canvas/startQueue'
+import { DRAMA_START, queueStartNode, startProjectTitle } from '../canvas/startQueue'
 import { navigate, routeHash } from '../router'
 import { forgetLocalCache } from '../canvas/localCache'
 import { useLibrary } from '../features/library/store'
@@ -37,7 +37,7 @@ const QUICK_START: Array<{
 }> = [
   {
     type: DRAMA_START,
-    title: '短剧模板',
+    title: startProjectTitle(DRAMA_START)!,
     hint: '从剧本、分镜到成片',
     detail: '铺出剧本、分镜、镜头、配音配乐和序列，只建结构，不调用模型',
     icon: 'workflow',
@@ -112,7 +112,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
     setError(null)
     setCreating(true)
     try {
-      const p = await api.createProject()
+      const p = await api.createProject(startProjectTitle(start))
       if (!p.lastCanvasId) throw new Error('项目建好了，但没有画布')
       if (start) queueStartNode(p.lastCanvasId, start)
       // 先把新项目塞进列表缓存：从画布回首页时它的卡片立刻就在，画布能缩回去

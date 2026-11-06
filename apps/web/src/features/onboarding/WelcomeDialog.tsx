@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { api } from '../../api/client'
 import { invalidateProjects, queryClient, queryKeys } from '../../api/query'
-import { DRAMA_START, queueStartNode } from '../../canvas/startQueue'
+import { DRAMA_START, queueStartNode, startProjectTitle } from '../../canvas/startQueue'
 import { navigate } from '../../router'
 import { useCatalog } from '../../stores/catalog'
 import { useCanvas } from '../../stores/canvas'
@@ -48,7 +48,7 @@ export function WelcomeDialog({ onClose }: { onClose(): void }) {
     setCreating(true)
     setError(null)
     try {
-      const p = await api.createProject()
+      const p = await api.createProject(startProjectTitle(type))
       if (!p.lastCanvasId) throw new Error('项目建好了，但没有画布')
       if (type) queueStartNode(p.lastCanvasId, type)
       queryClient.setQueryData<Project[]>(queryKeys.projects, (items) => [
