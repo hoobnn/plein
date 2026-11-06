@@ -29,6 +29,7 @@ import {
 import type { InputIssue, InputRef, InputRefKind } from '@plein/protocol'
 
 import { NodeRunError } from '../plugins/provider-protocol'
+import { type BriefFamily, bindingSuffix, bindingText, briefFamily } from './reference-brief'
 import { speechProviderTitle } from '../executors/audio'
 
 type Inputs = Record<string, PortValue[]>
@@ -595,7 +596,13 @@ export async function applyMentions(
     // 每类媒体各自编号：名称绑定、旧编号与 @ 引用都按最终送入顺序取号。
     const style = referenceLabelStyle(def.capability, provider)
     const media = [...(merged[port] ?? []), ...(merged.videos ?? []), ...(merged.audios ?? [])]
-    rewriteReferenceMentions(deferred, detailByHit, referenceMediaNumbering(style, media))
+    rewriteReferenceMentions(
+      deferred,
+      detailByHit,
+      referenceMediaNumbering(style, media),
+      // 没有专门写法的平台（含 mock）沿用「名字（编号）」
+      briefFamily(def.capability, provider) ?? 'image',
+    )
   }
   return { params, inputs: merged, refs: refList, notices, details, blocked }
 }
@@ -605,6 +612,7 @@ function rewriteReferenceMentions(
   deferred: Map<MentionText, Array<{ mention: Mention; hit?: Hit }>>,
   details: Map<string, InputRef>,
   numbering: { label(kind: ReferenceMediaKind, assetId: string): string | undefined },
+  family: BriefFamily,
 ) {
   for (const [source, occurrences] of deferred) {
     let text = source.value
@@ -624,8 +632,7 @@ function rewriteReferenceMentions(
       const name = hit?.sceneView
         ? `${mention.name}（${hit.sceneView.name}）`
         : pickLabel(mention.name, mention.pick ?? {})
-      // 资产卡写成「名字（编号）」；原文紧挨着已经写了同一个名字时只补编号，避免「叶舒叶舒」。
-      const suffix = tokens.length ? `（${tokens.join('、')}）` : ''
+      // 资产卡按平台推荐写法绑定编号；原文紧挨着已经写了同一个名字时只补编号，避免「叶舒叶舒」。
       const repeated = !!hit && text.slice(0, mention.start).endsWith(name)
       // 消歧失败的引用不猜对象：原文原样保留，同一句里的有效引用照常编号。
       const replacement = !hit
@@ -633,8 +640,8 @@ function rewriteReferenceMentions(
         : hit.el.kind === 'image' || hit.el.kind === 'video' || hit.el.kind === 'audio'
           ? tokens.join('、') || name
           : repeated
-            ? suffix
-            : name + suffix
+            ? bindingSuffix(family, name, tokens)
+            : bindingText(family, name, tokens)
       text = text.slice(0, mention.start) + replacement + text.slice(mention.end)
     }
     source.write(text)

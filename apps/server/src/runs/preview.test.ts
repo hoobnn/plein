@@ -15,6 +15,8 @@ import {
   writeRun,
 } from '@plein/doc'
 import {
+  referenceLabelStyle,
+  referenceMediaLabel,
   videoReferencePrompt,
   type AssetRef,
   type ProviderRequest,
@@ -1528,7 +1530,7 @@ it('消歧失败与有效引用混排、非参考模式视频：原文保留，�
   })
   const mixed = await preview(server, id, shot)
   expect(mixed.status).toBe('blocked')
-  expect(mixed.prompt).toBe('@林夏#2 和 小王（图1） 回头')
+  expect(mixed.prompt).toBe('图1是人物「小王」。\n\n@林夏#2 和 小王（图1） 回头')
   expect(mixed.blocked).toContainEqual({
     code: 'prepare_failed',
     message: '「@林夏#2」不存在，画布上「林夏」只有 @林夏',
@@ -1700,7 +1702,15 @@ it('原文在 @ 前已写同一个名字时只补编号，引用区间仍指向 
   })
   const input = await preview(server, id, video)
   expect(input.status).toBe('ready')
-  expect(input.prompt).toBe('叶舒（图片1） 与 安可（图片2）')
+  // MiniMax：职责行写在开头，正文只留名字
+  expect(input.prompt).toBe(
+    [
+      'Image 1 (图片1): character reference for "叶舒". Keep face, hairstyle and outfit consistent.',
+      'Image 2 (图片2): character reference for "安可". Keep face, hairstyle and outfit consistent.',
+      '',
+      '叶舒 与 安可',
+    ].join('\n'),
+  )
   expect(input.prompt).not.toContain('叶舒叶舒')
   expect(input.prompt).not.toContain('安可安可')
   expect(input.promptReferences?.map((item) => [item.text, item.indices])).toEqual([
@@ -1847,7 +1857,7 @@ it('上游文本与节点正文统一解析 @ 引用、去重并汇总未送入'
   const input = await preview(server, id, image)
   expect(input.status).toBe('ready')
   expect(input.prompt).toBe(
-    '主提示：林夏（图1）\n\n上游：林夏（图1） 回头，再说 林夏（图1），手拿铁盒',
+    '图1是人物「林夏」。\n\n主提示：林夏（图1）\n\n上游：林夏（图1） 回头，再说 林夏（图1），手拿铁盒',
   )
   expect(input.inputs.references?.map((ref) => ref.assetId)).toEqual([asset('a')])
   expect(input.sent?.map((ref) => [ref.index, ref.assetId])).toEqual([[1, asset('a')]])
@@ -1960,7 +1970,9 @@ it('@ 特效卡送入参考视频并写成名字加视频编号', async () => {
   })
   const input = await preview(server, id, video)
   expect(input.status).toBe('ready')
-  expect(input.prompt).toBe('参考 爆炸（视频1） 的运镜')
+  expect(input.prompt).toBe(
+    'Video 1 (视频1): camera-movement reference video "爆炸". Follow its camera motion and pacing.\n\n参考 爆炸 的运镜',
+  )
   expect(input.inputs.videos?.map((value) => value.assetId)).toEqual([asset('c')])
   expect(input.promptReferences).toEqual([
     expect.objectContaining({ text: '@爆炸', indices: [1], kind: 'video' }),
@@ -2449,3 +2461,140 @@ it('上游文本引用同一张卡的不同档案项 / 视角：未送入逐条�
     expect(item.reason).toBe('no_image')
   }
 }, 30_000)
+
+describe('参考素材说明段（同一组输入在各平台的最终提示词）', () => {
+  /** 2 张同角色图 + 1 张场景图 + 1 段运镜视频 + 用户正文 */
+  async function scenario(model: string, extra: Record<string, unknown> = {}) {
+    const { server } = await bootServer()
+    mockSettings(server, {})
+    const { id, doc } = await createCanvas(server)
+    const hero = card(doc, 'plein/character', '林夏', asset('a'), 0)
+    const second = createElement(doc, {
+      kind: 'image',
+      assetId: asset('b'),
+      x: 0,
+      y: -600,
+      w: 10,
+      h: 10,
+    })
+    connect(doc, [second, 'image'], [hero, 'references'])
+    card(doc, 'plein/scene', '天台', asset('c'), 200)
+    const clip = createElement(doc, {
+      kind: 'video',
+      name: '推近.mov',
+      assetId: asset('d'),
+      x: 400,
+      y: -300,
+      w: 100,
+      h: 100,
+    })
+    const effect = addNode(doc, 'plein/effect', {
+      name: '推近',
+      params: { description: '缓慢推近' },
+      x: 400,
+    })
+    connect(doc, [clip, 'video'], [effect, 'references'])
+    const video = addNode(doc, 'plein/video', {
+      params: {
+        model,
+        mode: 'reference',
+        prompt: '@林夏 走上 @天台，镜头沿用 @推近',
+        ...extra,
+      },
+    })
+    return { input: await preview(server, id, video) }
+  }
+  const label = (provider: string, kind: 'image' | 'video', n: number) =>
+    referenceMediaLabel(referenceLabelStyle('video.generate', provider), kind, n)
+  const bare = (text: string) => text.replace(/^@/, '')
+
+  it('方舟：先写素材作用，正文用「名字@编号」', async () => {
+    const { input } = await scenario('volc/ark:doubao-seedance-2-5-260628')
+    expect(input.status).toBe('ready')
+    const p = 'volc/ark'
+    const [i1, i2, i3, v1] = [
+      label(p, 'image', 1),
+      label(p, 'image', 2),
+      label(p, 'image', 3),
+      label(p, 'video', 1),
+    ]
+    expect(input.prompt).toBe(
+      [
+        `${i1}、${i2}：同一角色「林夏」的多张外貌参考，合并为一个主体，保持面部、发型、服装一致`,
+        `${i3}：场景「天台」的环境参考，保持空间布局与光线氛围`,
+        `${v1}：运镜与动作参考视频「推近」，沿用其镜头运动与节奏`,
+        '',
+        `林夏@${bare(i1)}、@${bare(i2)} 走上 天台@${bare(i3)}，镜头沿用 推近@${bare(v1)}`,
+      ].join('\n'),
+    )
+  })
+
+  it('MiniMax：开头分行写 Image N 职责，正文只留名字', async () => {
+    const { input } = await scenario('minimax/api:MiniMax-H3')
+    const p = 'minimax/api'
+    const tag = (kind: 'image' | 'video', n: number, en: string) => `${en} (${label(p, kind, n)})`
+    expect(input.prompt).toBe(
+      [
+        `${tag('image', 1, 'Image 1')}, ${tag('image', 2, 'Image 2')}: multiple views of the same character "林夏". Keep face, hairstyle and outfit consistent.`,
+        `${tag('image', 3, 'Image 3')}: scene reference "天台". Keep the layout, lighting and atmosphere.`,
+        `${tag('video', 1, 'Video 1')}: camera-movement reference video "推近". Follow its camera motion and pacing.`,
+        '',
+        '林夏 走上 天台，镜头沿用 推近',
+      ].join('\n'),
+    )
+  })
+
+  it('万相：用图N / 视频N 称呼素材', async () => {
+    const { input } = await scenario('aliyun/bailian:wan3.0-video')
+    expect(input.status).toBe('ready')
+    const p = 'aliyun/bailian'
+    const [i1, i2, i3, v1] = [
+      label(p, 'image', 1),
+      label(p, 'image', 2),
+      label(p, 'image', 3),
+      label(p, 'video', 1),
+    ]
+    expect(input.prompt).toBe(
+      [
+        `${i1}、${i2}：角色「林夏」的形象，保持面部与服装一致`,
+        `${i3}：场景「天台」，保持空间布局与光线氛围`,
+        `${v1}：运镜参考视频「推近」，沿用其镜头运动`,
+        '',
+        `${i1}、${i2} 走上 ${i3}，镜头沿用 ${v1}`,
+      ].join('\n'),
+    )
+  })
+
+  it('用户正文已写明作用的素材不重复说明', async () => {
+    const { input } = await scenario('volc/ark:doubao-seedance-2-5-260628', {
+      prompt: '@林夏 走上 @天台',
+    })
+    expect(input.prompt?.split('\n')).toHaveLength(4)
+    const { input: written } = await scenario('volc/ark:doubao-seedance-2-5-260628', {
+      prompt: `${label('volc/ark', 'image', 3)}是天台，@林夏 走上 @天台`,
+    })
+    expect(written.prompt).not.toContain('场景「天台」的环境参考')
+    expect(written.prompt).toContain('同一角色「林夏」')
+  })
+
+  it('编辑任务：直接称视频，说明段与自动文本不出现「参考」', async () => {
+    const model = 'volc/ark:doubao-seedance-2-5-260628'
+    const { input } = await scenario(model, {
+      options: { [model]: { omni_reference_task_type: 'edit' } },
+    })
+    const lines = (input.prompt ?? '').split('\n\n')[0]!
+    expect(lines).toContain('同一角色「林夏」的多张外貌素材')
+    expect(lines).toContain(`${label('volc/ark', 'video', 1)}：运镜与动作素材视频「推近」`)
+    expect(lines).not.toContain('参考')
+  })
+
+  it('方舟最终提示词超过 500 字给软提示，不拦截', async () => {
+    const { input } = await scenario('volc/ark:doubao-seedance-2-5-260628', {
+      prompt: `@林夏 走上 @天台。${'字'.repeat(500)}`,
+    })
+    expect(input.status).toBe('ready')
+    expect(input.notices.find((n) => n.code === 'prompt_length_hint')?.message).toContain('500 字')
+    const { input: short } = await scenario('volc/ark:doubao-seedance-2-5-260628')
+    expect(short.notices.some((n) => n.code === 'prompt_length_hint')).toBe(false)
+  })
+})

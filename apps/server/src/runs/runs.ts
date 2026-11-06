@@ -91,6 +91,13 @@ import type { Rooms } from '../sync/rooms'
 import { fillModels } from './models'
 import { type AppliedMentions, applyMentions, mentionEdges, mentionTargets } from './mentions'
 import {
+  briefFamily,
+  briefMaterials,
+  briefTask,
+  buildReferenceBrief,
+  promptLengthHint,
+} from './reference-brief'
+import {
   type BoundReference,
   type ReferenceImage,
   type ReferenceMedia,
@@ -792,7 +799,7 @@ export class NodeRuns implements BatchHost {
     if (promptLimit !== undefined && prompt && prompt.length > promptLimit) {
       blocked.push({
         code: 'prepare_failed',
-        message: `最终提示词 ${prompt.length} 字符，超过模型上限 ${promptLimit} 字符（超出 ${prompt.length - promptLimit} 字符）。限制包含节点正文、上游文本、参考图对应说明及分隔符，请在「实际输入」查看并缩短相关内容。`,
+        message: `最终提示词 ${prompt.length} 字符，超过模型上限 ${promptLimit} 字符（超出 ${prompt.length - promptLimit} 字符）。限制包含自动生成的素材说明、节点正文、上游文本及分隔符，请在「实际输入」查看并缩短相关内容。`,
       })
     }
     return {
@@ -2365,6 +2372,43 @@ export class NodeRuns implements BatchHost {
       signal,
     })
     for (const message of mediaIssues) blocked.push({ code: 'prepare_failed', message })
+    if (referenceMode) {
+      // 素材说明段放在最终提示词最前面：预览、缓存键与执行器看到的是同一份文本。
+      // 非空检查已在上面按用户自己写的正文做完，这里不会让空提示词蒙混过关。
+      const provider = parseModelRef(String(params.model ?? ''))?.provider
+      const family = briefFamily(def.capability, provider)
+      if (family) {
+        const imagePort = def.capability === 'image.generate' ? 'references' : 'images'
+        const brief = buildReferenceBrief({
+          family,
+          materials: briefMaterials({
+            doc,
+            media: [
+              ...(inputs[imagePort] ?? []).filter((item) => item.type === 'image'),
+              ...Object.values(inputs)
+                .flat()
+                .filter((item) => item.type === 'video' || item.type === 'audio'),
+            ],
+            details,
+            style: referenceLabelStyle(def.capability, provider),
+          }),
+          userText: String(params.prompt ?? ''),
+          ...(def.capability === 'video.generate' && briefTask(effective)
+            ? { task: briefTask(effective)! }
+            : {}),
+        })
+        if (brief)
+          params.prompt = [brief, String(params.prompt ?? '').trim()].filter(Boolean).join('\n\n')
+        const finalPrompt = [
+          String(params.prompt ?? ''),
+          ...(inputs.prompt ?? []).flatMap((v) => (v.type === 'text' ? [v.text] : [])),
+        ].join('\n\n')
+        const hint = promptLengthHint(family, finalPrompt, {
+          declaredLimit: spec?.limits?.promptMaxLength,
+        })
+        if (hint) notices.push({ code: 'prompt_length_hint', message: hint })
+      }
+    }
     const references = referencePreview({
       doc,
       el,

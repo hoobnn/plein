@@ -7,10 +7,17 @@ import {
   setParams,
   updateElement,
 } from '@plein/doc'
-import type { PortValue } from '@plein/plugin-sdk'
+import { type PortValue, referenceLabelStyle, referenceMediaLabel } from '@plein/plugin-sdk'
 import { describe, expect, it } from 'vite-plus/test'
 import { addCharacter, addNode } from '../testing'
 import { applyMentions } from './mentions'
+
+/** 方舟图片编号去掉前导 @（编号写法随 modelbay 升级变化，测试不写死） */
+const arkImage = (index: number) =>
+  referenceMediaLabel(referenceLabelStyle('video.generate', 'volc/ark'), 'image', index).replace(
+    /^@/,
+    '',
+  )
 
 const msg = (issues: Array<{ message: string }>) => issues.map((i) => i.message)
 
@@ -612,7 +619,7 @@ it('视频角色绑定以最终去重后的参考图顺序编号，保留手写�
   })
   const own: PortValue = { type: 'image', assetId: 'b'.repeat(64), kind: 'image' }
   const result = await applyMentions(doc, doc.get(n)!, videoNode, { images: [own] }, collect(doc))
-  expect(result.params.prompt).toContain('林夏（@image2）')
+  expect(result.params.prompt).toContain(`林夏@${arkImage(2)}`)
   expect(result.params.prompt).toContain('@video1')
   const reversed = await applyMentions(
     doc,
@@ -621,6 +628,6 @@ it('视频角色绑定以最终去重后的参考图顺序编号，保留手写�
     { images: [{ type: 'image', assetId: 'a'.repeat(64), kind: 'image' }, own] },
     collect(doc),
   )
-  expect(reversed.params.prompt).toContain('林夏（@image1）')
+  expect(reversed.params.prompt).toContain(`林夏@${arkImage(1)}`)
   expect(reversed.inputs.images).toHaveLength(2)
 })

@@ -104,6 +104,7 @@ export type InputIssueCode =
   | 'voice_unverified'
   | 'voice_ambiguous'
   | 'unsupported_refs'
+  | 'prompt_length_hint'
 
 export interface InputIssue {
   code: InputIssueCode
@@ -193,9 +194,9 @@ export interface PreparedInput {
   model?: { ref: string; provider: string; title: string; auto?: boolean; version?: string }
   /** 模型的参考图上限；没声明时不限 */
   referenceLimit?: number
-  /** 解析 @ 后的最终提示词（含上游文本和参考图对应说明，不隐式追加设定） */
+  /** 解析 @ 后的最终提示词（含自动生成的素材说明和上游文本，不隐式追加设定） */
   prompt?: string
-  /** 最终提示词的字符数上限；计数包含上游文本、参考图对应说明及分隔符 */
+  /** 最终提示词的字符数上限；计数包含素材说明、上游文本及分隔符 */
   promptLimit?: number
   /** 计入缓存的有效参数（不含提示词与内部字段） */
   params: Record<string, unknown>

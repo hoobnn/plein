@@ -307,13 +307,11 @@ it('折叠时展示字符数，说明收在字符右侧的可聚焦标记中', a
     />,
   )
   expect(screen.getByRole('button', { name: /最终提示词 7001 \/ 7000 字符/ })).toBeTruthy()
-  expect(screen.queryByText(/上游文本、参考图对应说明及分隔符/)).toBeNull()
+  expect(screen.queryByText(/上游文本及分隔符/)).toBeNull()
   await user.tab()
   await user.tab()
   expect(document.activeElement).toBe(screen.getByRole('note', { name: '提示词字符说明' }))
-  expect((await screen.findByRole('tooltip')).textContent).toContain(
-    '上游文本、参考图对应说明及分隔符',
-  )
+  expect((await screen.findByRole('tooltip')).textContent).toContain('上游文本及分隔符')
   expect(screen.getByRole('tooltip').textContent).toContain('合计不得超过 7000 字符')
   expect(screen.getByRole('button', { name: /最终提示词/ }).getAttribute('aria-expanded')).toBe(
     'false',

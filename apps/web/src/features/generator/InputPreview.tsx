@@ -142,7 +142,7 @@ function previewSummary(p: PreparedInput) {
           <Tooltip.Portal>
             <Tooltip.Positioner sideOffset={6} className="z-80">
               <Tooltip.Popup role="tooltip" className="ui-tooltip max-w-(--menu-w-lg) break-words">
-                最终提示词包含节点正文、上游文本、参考图对应说明及分隔符，按字符计数；不会自动追加引用卡片的文字设定。
+                最终提示词包含自动生成的素材说明、节点正文、上游文本及分隔符，按字符计数；不会自动追加引用卡片的文字设定。
                 {p.promptLimit !== undefined && `合计不得超过 ${p.promptLimit} 字符。`}
               </Tooltip.Popup>
             </Tooltip.Positioner>
