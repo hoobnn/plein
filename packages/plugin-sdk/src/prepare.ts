@@ -6,7 +6,11 @@
 
 /** 与 MCP 工具结果同形；形状声明在 SDK，宿主各自实现序列化 */
 export interface CapabilityToolResult {
-  content: Array<{ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }>
+  content: Array<
+    | { type: 'text'; text: string }
+    | { type: 'image'; data: string; mimeType: string }
+    | { type: 'resource_link'; uri: string; name: string; mimeType?: string; description?: string }
+  >
   isError?: boolean
 }
 

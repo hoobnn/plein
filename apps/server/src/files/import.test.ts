@@ -1,6 +1,6 @@
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import sharp from 'sharp'
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test'
@@ -16,7 +16,10 @@ let running: Awaited<ReturnType<typeof bootServer>>
 let root: string
 let outside: string
 let canvasId: string
-let rpc: (name: string, args?: Record<string, unknown>) => Promise<{ error: boolean; text: string }>
+let rpc: (
+  name: string,
+  args?: Record<string, unknown>,
+) => Promise<{ error: boolean; text: string; content: Array<Record<string, string>> }>
 let n = 0
 
 beforeAll(async () => {
@@ -46,9 +49,13 @@ beforeAll(async () => {
       }),
     })
     const r = (await res.json()) as {
-      result: { content: Array<{ text: string }>; isError?: boolean }
+      result: { content: Array<Record<string, string>>; isError?: boolean }
     }
-    return { error: r.result.isError === true, text: r.result.content[0]?.text ?? '' }
+    return {
+      error: r.result.isError === true,
+      text: r.result.content[0]?.text ?? '',
+      content: r.result.content,
+    }
   }
 })
 afterAll(() => running.close())
@@ -272,5 +279,117 @@ describe('request_upload 与上传端点', () => {
     const r = await rpc('request_upload', { name: 'big.mp4', mime: 'video/mp4', size: 1e13 })
     expect(r.error).toBe(true)
     expect(r.text).toContain('上限')
+  })
+})
+
+describe('取出文件', () => {
+  const get = (
+    url: string,
+    init: Omit<RequestInit, 'headers'> & { headers?: Record<string, string> } = {},
+  ) =>
+    running.server.app.request(new URL(url).pathname, {
+      ...init,
+      headers: { host: '127.0.0.1:8787', ...init.headers },
+    })
+  const importPng = async (color: string) => {
+    const r = await rpc('import_asset', {
+      source: { base64: (await png(color)).toString('base64'), name: `${color.slice(1)}.png` },
+    })
+    return asJson(r).asset_id
+  }
+
+  it('download_asset 返回 resource_link 与带票据的绝对地址，票据 GET 免令牌、可重复、支持 Range', async () => {
+    const assetId = await importPng('#11aa11')
+    const r = await rpc('download_asset', { id: assetId })
+    expect(r.error).toBe(false)
+    const link = r.content.find((c) => c.type === 'resource_link')!
+    expect(link.uri).toMatch(/^http:\/\/.+\/mcp\/files\/[\w-]+$/)
+    expect(link.mimeType).toBe('image/png')
+    expect(JSON.parse(r.text).download_url).toBe(link.uri)
+    const first = await get(link.uri!)
+    expect(first.status).toBe(200)
+    expect(first.headers.get('content-disposition')).toContain('attachment')
+    expect((await first.arrayBuffer()).byteLength).toBe(
+      running.server.assets.get('local', assetId)!.size,
+    )
+    const ranged = await get(link.uri!, { headers: { range: 'bytes=0-3' } })
+    expect(ranged.status).toBe(206)
+    expect((await get(link.uri!)).status).toBe(200)
+  })
+
+  it('get_asset 在外部入口也返回票据地址与 resource_link', async () => {
+    const assetId = await importPng('#22bb22')
+    const r = await rpc('perform_canvas_action', { action: 'get_asset', input: { id: assetId } })
+    expect(r.content.some((c) => c.type === 'resource_link')).toBe(true)
+    const info = JSON.parse(r.text) as { download_url: string; metadata: { id: string } }
+    expect(info.download_url).toContain('/mcp/files/')
+    expect(info.metadata.id).toBe(assetId)
+  })
+
+  it('不存在的资产不签发票据', async () => {
+    const r = await rpc('download_asset', { id: 'f'.repeat(64) })
+    expect(r.error).toBe(true)
+  })
+
+  it('票据绑定用户：换成别人的 owner 取不到；伪造与过期票据 404', async () => {
+    const assetId = await importPng('#33cc33')
+    const { tickets } = running.server.files!
+    const other = tickets.issueDownload('someone-else', { kind: 'asset', assetId })
+    expect((await get(other.url)).status).toBe(404)
+    expect((await get('http://x/mcp/files/forged')).status).toBe(404)
+    const mine = tickets.issueDownload('local', { kind: 'asset', assetId })
+    expect((await get(mine.url)).status).toBe(200)
+    const store = tickets as unknown as { downloads: Map<string, { expires: number }> }
+    for (const v of store.downloads.values()) v.expires = 0
+    expect((await get(mine.url)).status).toBe(404)
+  })
+
+  it('下载票据只读：不接受上传类方法', async () => {
+    const assetId = await importPng('#44dd44')
+    const t = running.server.files!.tickets.issueDownload('local', { kind: 'asset', assetId })
+    for (const method of ['PUT', 'POST', 'DELETE'])
+      expect([404, 405]).toContain((await get(t.url, { method, body: 'x' })).status)
+  })
+
+  it('save_to：目录内可保存且不覆盖；目录外、隐藏目录、已有文件被拒', async () => {
+    const assetId = await importPng('#55ee55')
+    const target = join(root, 'saved.png')
+    const ok = await rpc('download_asset', { id: assetId, save_to: target })
+    expect(ok.error).toBe(false)
+    expect(JSON.parse(ok.text).saved_to).toBe(join(realpathSync(root), 'saved.png'))
+    expect(readFileSync(target).length).toBe(running.server.assets.get('local', assetId)!.size)
+    for (const p of [
+      target,
+      join(outside, 'x.png'),
+      join(root, '.ssh', 'x.png'),
+      join(root, 'dirlink', 'x.png'),
+    ]) {
+      const r = await rpc('download_asset', { id: assetId, save_to: p })
+      expect(r.error, p).toBe(true)
+    }
+  })
+
+  it('export_sequence_project 返回可下载的票据地址', async () => {
+    const assetId = await importPng('#66ff66')
+    const r = await rpc('perform_canvas_action', {
+      action: 'export_sequence_project',
+      input: {
+        spec: {
+          width: 64,
+          height: 48,
+          fps: 24,
+          name: 'cut',
+          clips: [{ asset: { assetId, kind: 'image' }, in: 0, out: 1, volume: 1 }],
+          audio: [],
+        },
+      },
+    })
+    expect(r.error).toBe(false)
+    const link = r.content.find((c) => c.type === 'resource_link')!
+    expect(link.uri).toContain('/mcp/files/')
+    expect(link.mimeType).toBe('application/zip')
+    // 只登记过的内部路径可被代理：票据背后确实是导出路由
+    const res = await get(link.uri!, { method: 'HEAD' })
+    expect(res.status).toBe(200)
   })
 })

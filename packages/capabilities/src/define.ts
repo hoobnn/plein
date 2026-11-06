@@ -45,6 +45,14 @@ export type Group =
 export type ContentBlock =
   | { type: 'text'; text: string }
   | { type: 'image'; data: string; mimeType: string }
+  /** 可下载文件的链接（MCP resource_link）；uri 是带短期票据的地址 */
+  | {
+      type: 'resource_link'
+      uri: string
+      name: string
+      mimeType?: string
+      description?: string
+    }
 
 const CONTENT = Symbol('plein:content')
 

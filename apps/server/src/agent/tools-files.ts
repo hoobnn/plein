@@ -1,8 +1,21 @@
-import { CapabilityError, capabilityFor, need, placeNew, summarize } from '@plein/capabilities'
+import { createWriteStream } from 'node:fs'
+import { constants } from 'node:fs'
+import { copyFile, rm } from 'node:fs/promises'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
+import {
+  CapabilityError,
+  capabilityFor,
+  content,
+  need,
+  placeNew,
+  summarize,
+} from '@plein/capabilities'
 import { mediaSize } from '@plein/doc'
 import { z } from 'zod'
-import { ImportError, importSource } from '../files/services'
-import { TicketError } from '../files/tickets'
+import { LocalPathError, resolveSaveTarget } from '../files/local-path'
+import { type FileServices, ImportError, importSource } from '../files/services'
+import { type DownloadTarget, TicketError } from '../files/tickets'
 import type { ServerContext } from './tool-registry'
 
 const id = z.string().min(1).max(200)
@@ -123,4 +136,114 @@ export const requestUpload = serverCapability({
   },
 })
 
-export const fileCapabilities = [importAsset, requestUpload]
+const SAVE_TO = z
+  .string()
+  .min(1)
+  .max(4096)
+  .optional()
+  .describe('可选：同时保存到本机这个绝对路径（只在本机模式可用，限用户主目录内，不覆盖已有文件）')
+
+/** 把资产原件或内部下载路径存到本机目录（受与 import_asset(path) 相同的目录约束） */
+async function saveLocal(
+  ctx: ServerContext,
+  f: FileServices,
+  target: DownloadTarget,
+  saveTo: string,
+): Promise<string> {
+  if (!f.local) throw new CapabilityError('save_to 只在本机模式可用；请改用返回的 download_url')
+  let path: string
+  try {
+    path = await resolveSaveTarget(f.local, saveTo)
+  } catch (err) {
+    if (err instanceof LocalPathError) throw new CapabilityError(err.message)
+    throw err
+  }
+  try {
+    if (target.kind === 'asset') {
+      if (!ctx.env.assets.get(ctx.env.ownerId, target.assetId))
+        throw new CapabilityError(`资产 ${target.assetId} 不存在`)
+      await copyFile(ctx.env.assets.originalPath(target.assetId), path, constants.COPYFILE_EXCL)
+    } else {
+      if (!ctx.env.canvasApi) throw new CapabilityError('扩展画布服务不可用')
+      const res = await ctx.env.canvasApi(
+        ctx.env.ownerId,
+        new Request(`http://plein.internal${target.path}`, {
+          signal: ctx.env.execution?.abort.signal,
+        }),
+      )
+      if (!res.ok || !res.body) throw new CapabilityError('导出文件已过期，请重新导出')
+      await pipeline(
+        Readable.fromWeb(res.body as never),
+        createWriteStream(path, { flags: 'wx', mode: 0o600 }),
+      )
+    }
+  } catch (err) {
+    await rm(path, { force: true })
+    throw err
+  }
+  return path
+}
+
+/**
+ * 交付一个文件：签发短期只读下载票据，返回文字（含绝对地址）和 MCP resource_link 内容块；
+ * 本机模式可同时保存到本地路径。没有文件服务的入口由调用方保持原样输出。
+ */
+export async function deliverFile(
+  ctx: ServerContext,
+  target: DownloadTarget,
+  meta: { name: string; mime?: string; size?: number; extra?: Record<string, unknown> },
+  saveTo?: string,
+) {
+  const f = files(ctx)
+  const saved = saveTo ? await saveLocal(ctx, f, target, saveTo) : undefined
+  let ticket
+  try {
+    ticket = f.tickets.issueDownload(ctx.env.ownerId, { ...target, name: meta.name })
+  } catch (err) {
+    if (err instanceof TicketError) throw new CapabilityError(err.message)
+    throw err
+  }
+  const info = {
+    ...meta.extra,
+    name: meta.name,
+    ...(meta.mime ? { mime: meta.mime } : {}),
+    ...(meta.size !== undefined ? { size: meta.size } : {}),
+    download_url: ticket.url,
+    expires: new Date(ticket.expires).toISOString(),
+    ...(saved ? { saved_to: saved } : {}),
+  }
+  return content([
+    { type: 'text', text: JSON.stringify(info, null, 1) },
+    {
+      type: 'resource_link',
+      uri: ticket.url,
+      name: meta.name,
+      ...(meta.mime ? { mimeType: meta.mime } : {}),
+      description: '短期只读下载地址，直接 GET 即可，到期后重新调用本工具',
+    },
+  ])
+}
+
+export const downloadAsset = serverCapability({
+  name: 'download_asset',
+  title: '取出文件',
+  description:
+    '把资产库里的文件取出给外部使用：返回带短期票据的下载地址 download_url（同时以 MCP resource_link 内容块给出，GET 即可，不需要令牌或 Cookie；约 10 分钟内可重复下载，过期后重新调用）。资产 id 来自 import_asset、get_canvas 里元素的 assetId、节点结果或 search_media。本机模式可加 save_to 直接存到本地路径。',
+  group: 'media',
+  where: 'server',
+  effect: (a) => (a.save_to ? 'edit' : 'read'),
+  input: z.object({ id: id.describe('资产 id'), save_to: SAVE_TO }),
+  run: (ctx, a) => {
+    const asset = ctx.env.assets.get(ctx.env.ownerId, a.id)
+    if (!asset) throw new CapabilityError(`资产 ${a.id} 不存在`)
+    return deliverFile(
+      ctx,
+      { kind: 'asset', assetId: asset.id },
+      { name: asset.name, mime: asset.mime, size: asset.size, extra: { asset_id: asset.id } },
+      a.save_to,
+    )
+  },
+})
+
+export const fileCapabilities = [importAsset, requestUpload, downloadAsset]
+export { SAVE_TO as saveToField }

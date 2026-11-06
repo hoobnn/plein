@@ -57,7 +57,9 @@ export interface BuiltinTurn {
 
 const resultText = (r: ToolResult) => {
   const text = r.content
-    .map((c) => (c.type === 'text' ? c.text : '（图片内容在随后素材消息中）'))
+    .map((c) =>
+      c.type === 'text' ? c.text : c.type === 'image' ? '（图片内容在随后素材消息中）' : '',
+    )
     .join('\n')
   return textCost(text).bytes > RESULT_BYTES
     ? JSON.stringify({

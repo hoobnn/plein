@@ -16,6 +16,7 @@ import {
 } from '@plein/protocol'
 import { z } from 'zod'
 import type { ServerContext } from './tools'
+import { deliverFile, saveToField } from './tools-files'
 
 /** 复用 UI 路由的文件与资产库操作。只允许这里登记的操作，不开放任意 HTTP。 */
 const id = z.string().min(1).max(200)
@@ -44,9 +45,9 @@ const actions: Record<string, Action> = {
     pathname: /^\/api\/media\/caps$/,
   },
   get_asset: {
-    title: '读取素材元数据和下载地址',
+    title: '读取素材元数据和下载地址（外部入口返回带票据的绝对地址与 resource_link）',
     effect: 'read',
-    schema: item,
+    schema: item.extend({ save_to: saveToField }),
     method: 'GET',
     path: (a) => API.assetMeta(String(a.id)),
     pathname: /^\/api\/assets\/[^/]+\/meta$/,
@@ -214,13 +215,14 @@ const actions: Record<string, Action> = {
     body: (a) => a,
   },
   export_sequence_project: {
-    title: '导出 OTIO/FCPXML/SRT 与素材工程包（返回短期下载地址）',
+    title:
+      '导出 OTIO/FCPXML/SRT 与素材工程包（返回短期下载地址；外部入口返回带票据的绝对地址与 resource_link）',
     effect: 'edit',
-    schema: SequenceExportRequest,
+    schema: SequenceExportRequest.extend({ save_to: saveToField }),
     method: 'POST',
     path: () => API.sequenceExport,
     pathname: /^\/api\/media\/sequence-export$/,
-    body: (a) => a,
+    body: ({ save_to: _, ...request }) => request,
   },
 }
 const cap = capabilityFor<ServerContext>()
@@ -263,7 +265,9 @@ export const performCanvasAction = cap({
   title: '执行扩展画布操作',
   group: 'project',
   where: 'server',
-  effect: (a) => action(a.action).effect,
+  // 带 save_to 的取出会写本机文件，按 edit 处理
+  effect: (a) =>
+    action(a.action).effect === 'read' && a.input?.save_to ? 'edit' : action(a.action).effect,
   // 确认里写操作自己的标题（与列表里一致）
   approval: (a) => ({ reason: action(a.action).title, ids: [] }),
   description:
@@ -310,6 +314,31 @@ export const performCanvasAction = cap({
       throw new CapabilityError(
         String(result.message ?? result.error ?? `操作失败 ${response.status}`),
       )
+    const saveTo = typeof input.save_to === 'string' ? input.save_to : undefined
+    if (ctx.env.files && a.action === 'get_asset') {
+      return deliverFile(
+        ctx,
+        { kind: 'asset', assetId: String(input.id) },
+        {
+          name: String(result.name ?? input.id),
+          mime: typeof result.mime === 'string' ? result.mime : undefined,
+          size: typeof result.size === 'number' ? result.size : undefined,
+          extra: { asset_id: input.id, metadata: result },
+        },
+        saveTo,
+      )
+    }
+    if (ctx.env.files && a.action === 'export_sequence_project' && typeof result.url === 'string') {
+      return deliverFile(
+        ctx,
+        { kind: 'proxy', path: result.url },
+        {
+          name: `${input.spec ? String((input.spec as { name?: string }).name ?? 'sequence') : 'sequence'}.zip`,
+          mime: 'application/zip',
+        },
+        saveTo,
+      )
+    }
     return a.action === 'get_asset'
       ? { ...result, download_url: `${API.asset(String(input.id))}?download=1` }
       : result

@@ -125,6 +125,21 @@ Codex 目录来自本机 `skills/list`，显式选用时通过 `turn/start` 的 
 - `path`：只在本机免登录模式可用。必须是绝对路径，先解析符号链接再检查，真实路径需在允许目录内（默认用户主目录，可用 `PLEIN_IMPORT_ROOTS` 改），最后用 `O_NOFOLLOW` 打开，所以指向目录外的符号链接、检查后被调包的文件都读不到。额外拒绝隐藏目录与隐藏文件（`.ssh`、`.config` 等）、`~/Library` 以及 Plein 数据目录（里面有令牌和密钥）。
 - 上传票据绑定签发它的用户，一次性（用过不论成败即作废）、约 15 分钟过期，声明的 `size` 是上限（先看 Content-Length，再按实际字节数截断）；同一用户未使用的票据最多 32 张。
 
+### 文件取出画布
+
+- `download_asset({ id, save_to? })`：返回带短期票据的下载地址 `download_url`，同时给出 MCP `resource_link` 内容块。`get_asset` 与 `export_sequence_project`（经 `perform_canvas_action`）在外部入口返回同样的结果（旧的相对路径只在没有文件服务的入口保留）。
+- 下载地址形如 `/mcp/files/:ticket`，直接 GET 即可（不需要令牌或 Cookie，支持 Range）。票据绑定签发它的用户和具体资产（或登记在册的导出路径），只读，约 10 分钟过期，过期前可重复下载；签发后资产被删或归属变化，下载同样失败。剪辑工程导出走的是进程内的导出接口，不开放任意内部路径。
+- 本机模式下可加 `save_to`（绝对路径）直接保存到本地：受与 `import_asset(path)` 相同的目录约束，不覆盖已有文件，目标不能是符号链接。
+
+### 票据模块（`apps/server/src/files/tickets.ts`）
+
+`FileTickets` 是上传与下载共用的票据存储（进程内、只存哈希；重启后票据全部失效）：
+
+- `issueUpload({ ownerId, name, mime, maxBytes })` → `{ ticket, url, expires }`；`takeUpload(ticket)` 一次性取走，返回 `UploadGrant | null`。
+- `issueDownload(ownerId, target)` → `{ ticket, url, expires }`，`target` 为 `{ kind: 'asset', assetId, name? }` 或 `{ kind: 'proxy', path, name? }`（`path` 必须匹配 `PROXY_PATHS`）；`getDownload(ticket)` 过期前可重复读取。
+- `noteOrigin(origin)` 记下外部应用访问 `/mcp` 的地址用于拼绝对 URL；`uploadUrl` / `downloadUrl` 给出最终地址。
+- 工具层通过 `ToolEnv.files`（`FileServices`：`tickets`、`local`、`maxUpload`）使用；`deliverFile(ctx, target, meta, saveTo?)` 把一个文件交付为文字 + `resource_link`。
+
 地址里的主机来自外部应用访问 `/mcp` 时用的地址；设置了 `PLEIN_PUBLIC_URL` 时以它为准。
 
 ## 画布操作的完整契约
