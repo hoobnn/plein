@@ -76,7 +76,7 @@
   align-items: center;
   gap: 4px;
   padding: 2px 8px 2px 2px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: var(--text-2xs);
   font-weight: 500;
   color: var(--ink);
@@ -87,7 +87,7 @@
   width: 24px;
   height: 24px;
   flex: none;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   object-fit: cover;
 }
 .lib-card-peek-row > img,
@@ -360,8 +360,8 @@
   top: 8px;
   left: 8px;
   display: flex;
-  width: 20px;
-  height: 20px;
+  width: var(--h-2xs);
+  height: var(--h-2xs);
   align-items: center;
   justify-content: center;
   border-radius: 50%;
@@ -544,7 +544,7 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-2);
   box-shadow:
     0 0 0 3px var(--surface),

@@ -5,6 +5,7 @@ import { visibleFiles } from '../canvas/dropped'
 import { useCanvas } from '../stores/canvas'
 import { Icon, type IconName } from '../ui/icons'
 import { shortcut } from '../ui/keys'
+import { MENU_H, MENU_W } from '../ui/layout'
 import { Popover } from '../ui/Popover'
 import { AnimatePresence } from '../ui/motion'
 import { useDismiss } from '../ui/useDismiss'
@@ -98,7 +99,7 @@ function NodeMenu({ engine, canImport }: { engine: Engine; canImport: boolean })
             }}
             onClose={() => setOpen(false)}
             className="absolute bottom-12 -left-1"
-            style={{ width: 240, maxHeight: 'min(440px, calc(100vh - 120px))' }}
+            style={{ width: MENU_W.md, maxHeight: `min(${MENU_H}px, calc(100vh - 120px))` }}
           />
         )}
       </AnimatePresence>
@@ -374,7 +375,12 @@ export function ViewControls() {
       </div>
       <AnimatePresence>
         {legend && (
-          <Popover anchor={legend} onClose={() => setLegend(null)} label="连线说明" width={280}>
+          <Popover
+            anchor={legend}
+            onClose={() => setLegend(null)}
+            label="连线说明"
+            width={MENU_W.lg}
+          >
             <div className="space-y-3 p-3 text-xs">
               <div className="font-medium">颜色表示传递的数据</div>
               <div className="grid grid-cols-3 gap-3">

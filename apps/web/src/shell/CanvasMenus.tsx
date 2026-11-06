@@ -16,11 +16,10 @@ import { saveAsTemplate } from '../features/templates/actions'
 import { requestElementRename } from '../canvas/rename'
 import { dialogOpen } from '../ui/Dialog'
 import { Icon } from '../ui/icons'
-
-const MENU_W = 280
+import { MENU_H, MENU_W } from '../ui/layout'
 
 /** 菜单定位：贴着光标，超出视口时往回收 */
-function placeAt(x: number, y: number, h: number, w = MENU_W) {
+function placeAt(x: number, y: number, h: number, w: number = MENU_W.lg) {
   return {
     left: Math.max(8, Math.min(x, window.innerWidth - w - 8)),
     top: Math.max(8, Math.min(y, window.innerHeight - h - 8)),
@@ -103,8 +102,8 @@ export function CanvasMenus({ canImport }: { canImport: boolean }) {
   )
 }
 
-const PICKER_W = 240
-const PICKER_H = 440
+const PICKER_W = MENU_W.md
+const PICKER_H = MENU_H
 
 /** 双击空白、拉线到空白：在光标处弹添加节点菜单，选中后落在光标处（拉线时自动连上） */
 function NodePicker({
@@ -285,7 +284,7 @@ function CreateSubmenu({
           style={{
             ...position,
             opacity: position ? 1 : 0,
-            width: 'min(260px, calc(100vw - 16px))',
+            width: `min(${MENU_W.lg}px, calc(100vw - 16px))`,
           }}
           onKeyDown={(event) => {
             event.stopPropagation()
@@ -335,7 +334,7 @@ function ContextMenu({
   const ref = useDismiss(onClose, { wheel: true })
   const closing = useOverlayClosing()
   const motion = useOverlayMotion(scaleVariants)
-  const position = useMenuPosition(ref, menu.client, 220)
+  const position = useMenuPosition(ref, menu.client, MENU_W.sm)
   useEffect(() => {
     if (closing) {
       // 退场动画保留 DOM，但焦点不能留在已关闭的菜单中拦住下一次画布操作。
@@ -538,7 +537,7 @@ function ContextMenu({
       {...motion}
       style={{
         ...position,
-        width: 220,
+        width: MENU_W.sm,
         maxWidth: 'calc(100vw - 16px)',
         maxHeight: 'calc(100dvh - 16px)',
         overflowY: menu.target === null ? 'visible' : 'auto',

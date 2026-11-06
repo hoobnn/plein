@@ -1,6 +1,6 @@
 /* 轻量行内标签，不增加字宽，保持与原生输入完全相同的换行。 */
 .plein-mention {
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: color-mix(in srgb, var(--accent) 8%, transparent);
   color: var(--accent);
   text-decoration: none;
@@ -50,7 +50,7 @@
   flex: none;
   align-items: center;
   width: max-content;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   padding: 0 4px;
   background: color-mix(in srgb, var(--accent) 14%, var(--surface));
   color: var(--accent);
@@ -598,7 +598,7 @@
     min-width: min(max(var(--anchor-width), 160px), var(--available-width, calc(100vw - 16px)));
     max-width: var(--available-width, calc(100vw - 16px));
     /* 下方剩不到五项的高度时不再压扁，溢出让定位器翻到上方；矮窗口里最低高度随视口收小 */
-    max-height: min(480px, max(var(--available-height), min(168px, 40vh)));
+    max-height: min(var(--pop-max-h), max(var(--available-height), min(168px, 40vh)));
   }
   .ui-menu-item[aria-pressed="true"],
   .ui-menu-item[aria-checked="true"] {
@@ -780,8 +780,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    height: 20px;
-    min-width: 20px;
+    height: var(--h-2xs);
+    min-width: var(--h-2xs);
     padding: 0 6px;
     border-radius: var(--radius-xs);
     font-family: var(--font-sans);
@@ -848,8 +848,8 @@
     flex: none;
     align-items: center;
     justify-content: center;
-    width: 20px;
-    height: 20px;
+    width: var(--h-2xs);
+    height: var(--h-2xs);
     border-radius: var(--radius-xs);
     color: var(--ink-subtle);
     transition:
@@ -893,7 +893,7 @@
     max-width: 100%;
     align-items: center;
     gap: 4px;
-    height: 20px;
+    height: var(--h-2xs);
     padding: 0 6px;
     border-radius: var(--radius-sm);
     font-size: var(--text-2xs);
@@ -924,8 +924,8 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    height: 20px;
-    min-width: 20px;
+    height: var(--h-2xs);
+    min-width: var(--h-2xs);
     padding: 0 6px;
     border-radius: var(--radius-sm);
     font-size: var(--text-2xs);
@@ -939,8 +939,8 @@
   /* 加载中：默认 20，用 size-3 / size-4 缩小（线宽随之变细） */
   .ui-spinner {
     flex: none;
-    width: 20px;
-    height: 20px;
+    width: var(--h-2xs);
+    height: var(--h-2xs);
     border-radius: 50%;
     border: 2px solid var(--accent-soft);
     border-top-color: var(--accent);
@@ -1264,7 +1264,7 @@
   flex: none;
   height: 3px;
   overflow: hidden;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--ink-subtle) 22%, transparent);
   transition: background-color var(--dur-slow) var(--ease-standard);
 }

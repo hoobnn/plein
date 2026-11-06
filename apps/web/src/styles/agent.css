@@ -300,7 +300,7 @@
   gap: 4px;
   height: 22px;
   padding: 0 8px 0 3px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--accent);
   color: var(--on-accent);
   font-size: var(--text-2xs);

@@ -103,7 +103,8 @@ export function Popover({
                 maxWidth: 'var(--available-width, calc(100vw - 16px))',
                 // 放不下时保留最低高度，让定位器翻到另一侧，而不是压成一条；矮窗口里随视口收小
                 // 最低高度不能高过窗口的三成：两侧都放不下时，弹层要留在窗口里，不能溢出屏幕
-                maxHeight: 'min(480px, 70vh, max(var(--available-height, 70vh), min(200px, 30vh)))',
+                maxHeight:
+                  'min(var(--pop-max-h), 70vh, max(var(--available-height, 70vh), min(200px, 30vh)))',
               }}
               className="ui-menu ui-motion ui-scrollbar pointer-events-auto flex origin-(--transform-origin) flex-col gap-2.5 overflow-y-auto rounded-lg bg-menu p-2.5 text-sm text-ink shadow-3 ring-1 ring-line outline-none"
             >
