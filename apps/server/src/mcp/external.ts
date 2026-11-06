@@ -341,16 +341,19 @@ export class ExternalMcp {
   ): Promise<ToolResult | string> {
     const registry = capabilitiesOf(this.deps.host)
     const cap = registry.get(name)!
-    const { canvas_id, confirm, client_request_id, ...rest } = raw as {
-      canvas_id?: string
+    const { confirm, client_request_id, ...rest } = raw as {
       confirm?: boolean
       client_request_id?: string
     } & Record<string, unknown>
-    let args: Record<string, unknown> = rest
+    // 工作区工具（rename_canvas、delete_canvas 等）的 canvas_id 是自己的参数，原样交给能力；
+    // 其余工具的 canvas_id 是外部入口追加的「操作哪块画布」，从参数里取走
+    const workspace = workspaceToolNames.has(name)
+    const { canvas_id, ...own } = rest as { canvas_id?: string } & Record<string, unknown>
+    let args: Record<string, unknown> = workspace ? rest : own
     // 批量分镜：不带 token 的第一次调用只出清单和费用，审阅后带 token 才提交
     if (name === 'run_storyboard' && !args.token && !args.preview_only)
       args = { ...args, preview_only: true }
-    const canvasId = workspaceToolNames.has(name) ? (this.watching() ?? '') : this.canvas(canvas_id)
+    const canvasId = workspace ? (this.watching() ?? '') : this.canvas(canvas_id)
     const parsed = cap.input.safeParse(args)
     if (!parsed.success) throw new CapabilityError(`参数不对：${z.prettifyError(parsed.error)}`)
     const ctxProbe = serverContext(this.env(canvasId))

@@ -119,7 +119,7 @@ export const deleteProject = workspace(
       '永久删除一个项目和它下面的全部画布（不能撤销；资产库条目保留）。先用 list_projects 和 list_canvases 确认要删的是哪个、里面有什么，并让用户明确同意后再调用。不能删除本会话正在操作的画布所在的项目。',
     input: z.object({ project_id: id }),
     run: async (ctx, a) => {
-      if (ctx.env.execution) {
+      if (ctx.env.canvasId) {
         const inside = await callInternal<Canvas[]>(
           ctx,
           {
@@ -251,7 +251,7 @@ export const deleteCanvas = workspace(
       '永久删除一张画布和里面的全部内容（不能撤销）。先用 list_canvases 确认画布 id，并让用户明确同意后再调用。不能删除本会话正在操作的画布；项目里的最后一张画布也可以删，项目本身保留。',
     input: z.object({ canvas_id: id }),
     run: async (ctx, a) => {
-      if (ctx.env.execution && a.canvas_id === ctx.env.canvasId)
+      if (ctx.env.canvasId && a.canvas_id === ctx.env.canvasId)
         throw new CapabilityError('不能删除本会话正在操作的画布')
       await callInternal(
         ctx,

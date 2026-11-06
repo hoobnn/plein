@@ -145,6 +145,25 @@ describe('外部 MCP 协议层', () => {
     expect(denied.sc?.error.code).toBe('forbidden_scope')
   })
 
+  it('工作区工具的 canvas_id 是自己的参数：外部可以重命名、删除画布', async () => {
+    const c = client((await issue()).token)
+    const raw = async (name: string, args: Record<string, unknown>) =>
+      (await c.rpc('tools/call', { name, arguments: args })).result
+    const made = await raw('create_canvas', { title: '外部新建' })
+    const id = JSON.parse(made.content[0].text).canvas_id as string
+    const renamed = await raw('rename_canvas', { canvas_id: id, title: '外部改名' })
+    expect(renamed.isError).not.toBe(true)
+    const listed = JSON.parse((await raw('list_canvases', {})).content[0].text)
+    expect(JSON.stringify(listed)).toContain('外部改名')
+    const ask = await raw('delete_canvas', { canvas_id: id })
+    expect(JSON.parse(ask.content[0].text).status).toBe('needs_approval')
+    const done = await raw('delete_canvas', { canvas_id: id, confirm: true })
+    expect(done.isError).not.toBe(true)
+    expect(
+      JSON.stringify(JSON.parse((await raw('list_canvases', {})).content[0].text)),
+    ).not.toContain(id)
+  })
+
   it('每日运行次数上限', async () => {
     const issued = await issue(['read', 'run'], { dailyRunLimit: 1 })
     const c = client(issued.token)

@@ -195,7 +195,7 @@ export async function deliverFile(
   saveTo?: string,
 ) {
   const f = files(ctx)
-  const saved = saveTo ? await saveLocal(ctx, f, target, saveTo) : undefined
+  // 先签票据：代理路径不在白名单时直接拒绝，不会先写出本地文件
   let ticket
   try {
     ticket = f.tickets.issueDownload(ctx.env.ownerId, { ...target, name: meta.name })
@@ -203,6 +203,7 @@ export async function deliverFile(
     if (err instanceof TicketError) throw new CapabilityError(err.message)
     throw err
   }
+  const saved = saveTo ? await saveLocal(ctx, f, target, saveTo) : undefined
   const info = {
     ...meta.extra,
     name: meta.name,

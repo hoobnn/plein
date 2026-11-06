@@ -79,7 +79,7 @@ describe('项目与画布管理能力', () => {
 
   it('只能操作自己的项目与画布，且不能删本会话正在用的画布', async () => {
     const f = await fixture()
-    const other: ToolEnv = { ...f.env, ownerId: 'other' }
+    const other: ToolEnv = { ...f.env, ownerId: 'other', canvasId: '' }
     await expect(f.invoke('delete_canvas', { canvas_id: f.id }, other)).rejects.toThrow('不存在')
     expect(await f.invoke('list_canvases', {}, other)).toEqual([])
     const session = { ...f.env, execution: { abort: new AbortController() } } as unknown as ToolEnv

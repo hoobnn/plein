@@ -10,7 +10,7 @@ import {
 } from '../agent/mcp'
 import { PLEIN_SKILLS } from '../agent/skills'
 import type { ServerContext } from '../agent/tools'
-import type { CapabilityRegistry } from '@plein/capabilities'
+import { CapabilityError, type CapabilityRegistry } from '@plein/capabilities'
 import type { Canvas } from '@plein/protocol'
 
 /** resources/list 每页条数、最多列出的最近画布数 */
@@ -212,9 +212,10 @@ export function resourceProvider(
           return [{ uri, mimeType: JSON_TYPE, text: textOf(out) }]
         } catch (err) {
           if (err instanceof RpcError) throw err
-          // 能力抛出的可预期错误（元素不存在、版本已变）原样说明
-          const message = (err as Error).message
-          throw new RpcError(-32602, message, { uri })
+          // 能力抛出的可预期错误（元素不存在、版本已变）原样说明；其余异常细节只写服务端日志
+          if (err instanceof CapabilityError) throw new RpcError(-32602, err.message, { uri })
+          console.warn('[mcp] resources/read 失败', uri, err)
+          throw new RpcError(-32603, '读取失败，请稍后重试', { uri })
         }
       },
     },
