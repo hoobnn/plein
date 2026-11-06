@@ -183,7 +183,7 @@ describe('多模态参考名称', () => {
       sent: (sources, assets) => [
         {
           index: 1,
-          token: '@image1',
+          token: '@图片1',
           role: 'firstFrame',
           assetId: assets[0]!,
           elementId: sources[0]!,
@@ -192,7 +192,7 @@ describe('多模态参考名称', () => {
         },
         {
           index: 2,
-          token: '@image2',
+          token: '@图片2',
           role: 'lastFrame',
           assetId: assets[1]!,
           elementId: sources[1]!,
@@ -205,9 +205,9 @@ describe('多模态参考名称', () => {
     const badges = groups.slice(0, 2).map((group) => group.querySelector('[data-token]')!)
     expect(badges.map((badge) => badge.textContent)).toEqual(['首帧', '尾帧'])
     // token 仍保留原值，只是不再显示成平台编号
-    expect(badges.map((badge) => badge.getAttribute('data-token'))).toEqual(['@image1', '@image2'])
-    expect(screen.queryByText('@image1')).toBeNull()
-    expect(screen.queryByText('@image2')).toBeNull()
+    expect(badges.map((badge) => badge.getAttribute('data-token'))).toEqual(['@图片1', '@图片2'])
+    expect(screen.queryByText('@图片1')).toBeNull()
+    expect(screen.queryByText('@图片2')).toBeNull()
   })
 
   it.each([
@@ -226,7 +226,7 @@ describe('多模态参考名称', () => {
 
   it.each([
     ['minimax/api:MiniMax-H3', ['图片1', '图片2']],
-    ['volc/ark:doubao-seedance-2-0-260128', ['@image1', '@image2']],
+    ['volc/ark:doubao-seedance-2-0-260128', ['@图片1', '@图片2']],
   ] as const)('服务端没给 sent 时图片徽标沿用平台编号（%s）', (model, expected) => {
     setup({ model })
     const groups = within(screen.getByLabelText('实际送入的参考素材')).getAllByRole('group')
@@ -348,7 +348,7 @@ describe('多模态参考名称', () => {
         },
         {
           index: 10,
-          token: '@image' + '10',
+          token: '@图片10',
           assetId: assets[1]!,
           elementId: sources[1]!,
           name: '素材1',
@@ -363,9 +363,9 @@ describe('多模态参考名称', () => {
     ]
     expect(tokens.map((token) => token.textContent)).toEqual([
       '图片10',
-      '@image' + '10',
-      '@video1',
-      '@audio1',
+      '@图片10',
+      '@视频1',
+      '@音频1',
     ])
     for (const token of tokens) {
       expect(token.closest('button')).toBeNull()

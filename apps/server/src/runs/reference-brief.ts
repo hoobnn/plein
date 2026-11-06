@@ -3,6 +3,7 @@ import { mentionName } from '@plein/nodes'
 import {
   type PortValue,
   type ReferenceLabelStyle,
+  referenceLabelStyle,
   referenceMediaNumbering,
 } from '@plein/plugin-sdk'
 import type { InputRef } from '@plein/protocol'
@@ -18,23 +19,27 @@ type ReferenceMediaKind = 'image' | 'video' | 'audio'
  * 编号字符串一律由调用方传入（来自 modelbay 的标签函数），这里不自己拼平台编号。
  */
 
-/** 措辞模板的平台族；与 modelbay 的编号风格无关，按厂商和节点能力区分 */
+/** 措辞模板的平台族；与 modelbay 的编号风格一一对应 */
 export type BriefFamily = 'ark' | 'minimax' | 'wan' | 'image'
 
-/** 编辑 / 延长任务：说明段与自动文本里不出现「参考」 */
-export type BriefTask = 'edit' | 'extend'
+/** 编号风格 → 措辞模板；'video'（mock 等没有专门写法的平台）不生成素材说明段 */
+const FAMILY_BY_STYLE: Partial<Record<ReferenceLabelStyle, BriefFamily>> = {
+  image: 'image',
+  'ark-video': 'ark',
+  'minimax-video': 'minimax',
+  'bailian-video': 'wan',
+}
 
 export function briefFamily(
   capability: string | undefined,
   provider: string | undefined,
 ): BriefFamily | undefined {
-  if (capability === 'image.generate') return 'image'
-  if (capability !== 'video.generate') return undefined
-  if (provider === 'minimax/api') return 'minimax'
-  if (provider === 'aliyun/bailian') return 'wan'
-  if (provider === 'volc/ark' || provider === 'volc/ark-plan') return 'ark'
-  return undefined
+  if (capability !== 'image.generate' && capability !== 'video.generate') return undefined
+  return FAMILY_BY_STYLE[referenceLabelStyle(capability, provider)]
 }
+
+/** 编辑 / 延长任务：说明段与自动文本里不出现「参考」 */
+export type BriefTask = 'edit' | 'extend'
 
 /** 编辑 / 延长任务取自模型选项里的 omni_reference_task_type */
 export function briefTask(params: Record<string, unknown>): BriefTask | undefined {

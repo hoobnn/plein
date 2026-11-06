@@ -203,8 +203,8 @@ it.each([
   {
     model: 'volc/ark:doubao-seedance-2-0-260128',
     provider: 'volc/ark',
-    video: '@video1',
-    audio: '@audio1',
+    video: '@视频1',
+    audio: '@音频1',
   },
 ])('编辑器按媒体类型显示 $provider 的视频与音频徽标', (item) => {
   mockResizeObserver()

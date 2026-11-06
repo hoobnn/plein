@@ -1091,7 +1091,7 @@ it('无持久绑定的旧 @imageN 按送入顺序映射，越界时阻断', asyn
       type: 'plein/video',
       model: 'volc/ark:doubao-seedance-2-0-260128',
       port: 'images',
-      label: '@image1',
+      label: '@图片1',
     },
   ]
   for (const item of cases) {
@@ -1107,6 +1107,13 @@ it('无持久绑定的旧 @imageN 按送入顺序映射，越界时阻断', asyn
     ])
     expect(ready.unsent?.some((ref) => ref.name === 'image1')).toBe(false)
     expect(ready.notices.some((notice) => notice.code === 'stale_binding')).toBe(false)
+    // 新写法 @图片1 同样识别，映射结果与旧写法一致；越界仍阻断
+    setParams(doc, node, { prompt: '@图片1 的人走路' })
+    const modern = await preview(server, id, node)
+    expect(modern.status).toBe('ready')
+    expect(modern.prompt).toBe(`${item.label} 的人走路`)
+    setParams(doc, node, { prompt: '@图片9 的人走路' })
+    expect((await preview(server, id, node)).status).toBe('blocked')
   }
   const image = addNode(doc, 'plein/image', {
     params: { model: 'plein/mock:image', prompt: '@image9 的人走路' },
@@ -1399,9 +1406,10 @@ it('面板实际输入的提示词与平台收到的一致（mock 与 minimax / 
   expect(minimaxVideo.prompt).not.toContain('@video')
   expect(byProvider('minimax/api')[0]?.prompt).toBe(minimaxVideo.prompt)
 
-  // ark：面板与平台都是 @image1 / @video1 写法
-  expect(arkVideo.prompt).toContain('@image1')
-  expect(arkVideo.prompt).toContain('@video1')
+  // ark：旧写法 @video1 在面板上已改写成 @视频1，卡片绑定为 @图片1，平台收到的同一份
+  expect(arkVideo.prompt).toContain('@图片1')
+  expect(arkVideo.prompt).toContain('@视频1')
+  expect(arkVideo.prompt).not.toContain('@video')
   expect(byProvider('volc/ark')[0]?.prompt).toBe(arkVideo.prompt)
 }, 60_000)
 
@@ -1792,8 +1800,8 @@ it.each([
     type: 'plein/video',
     model: 'volc/ark:doubao-seedance-2-0-260128',
     port: 'images',
-    first: '@image1',
-    second: '@image2',
+    first: '@图片1',
+    second: '@图片2',
   },
 ])('$platform：历史绑定、正文旧编号与上游引用分别只映射一次', async (item) => {
   const { server } = await bootServer()
@@ -1906,8 +1914,8 @@ it('@ 视频与音频元素保留扩展名，并按实际送入顺序编号', as
     { model: 'minimax/api:MiniMax-H3', video: ['视频2', '视频1'], audio: '音频1' },
     {
       model: 'volc/ark:doubao-seedance-2-0-260128',
-      video: ['@video2', '@video1'],
-      audio: '@audio1',
+      video: ['@视频2', '@视频1'],
+      audio: '@音频1',
     },
   ]) {
     const video = addNode(doc, 'plein/video', {

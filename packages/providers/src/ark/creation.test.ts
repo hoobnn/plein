@@ -212,7 +212,7 @@ describe('Seedance 多模态通路与任务类型', () => {
             capability: 'video.generate',
             model,
             input: {
-              prompt: '@图片1 参考 @video1 运镜和 @audio1',
+              prompt: '@image1 参考 @video1 运镜和 @音频1',
               references: [image, video, audio],
             },
           },
@@ -227,7 +227,8 @@ describe('Seedance 多模态通路与任务类型', () => {
         'reference_video',
         'reference_audio',
       ])
-      expect(body.content[0].text).toBe('@image1 参考 @video1 运镜和 @audio1')
+      // 旧写法（@image1 / @video1）与新写法（@音频1）混用也都改成方舟的 @图片N / @视频N / @音频N
+      expect(body.content[0].text).toBe('@图片1 参考 @视频1 运镜和 @音频1')
       expect(body.content[2].video_url.url).toMatch(
         /^https:\/\/test-bucket\.tos-cn-beijing\.volces\.com\//,
       )

@@ -72,7 +72,7 @@ function countByKind(items: InputSentReference[]) {
 
 /**
  * 图片 / 视频 / 音频在最终提示词里的编号写法：图片节点写「图1」，
- * MiniMax 写「图片1」「视频1」，方舟系写「@image1」「@video1」。
+ * MiniMax 写「图片1」「视频1」，方舟系写「@图片1」「@视频1」，万相写「图1」「视频1」。
  */
 function mediaToken(
   node: NodeInfo,

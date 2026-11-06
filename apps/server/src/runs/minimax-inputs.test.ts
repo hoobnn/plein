@@ -17,7 +17,7 @@ const available = ['ffmpeg', 'ffprobe'].every(
 afterEach(() => vi.restoreAllMocks())
 
 describe.skipIf(!available)('MiniMax 真实素材经过宿主到 HTTP 请求的本地验收', () => {
-  it('仅尾帧、三类参考使用真实文件；非法尺寸、编码和帧率在联网前阻断', async () => {
+  it('首帧、三类参考使用真实文件，仅尾帧被拒；非法尺寸、编码和帧率在联网前阻断', async () => {
     const { server } = await bootServer()
     server.plugins.configs.update('minimax/api', {
       enabled: true,
@@ -97,17 +97,22 @@ describe.skipIf(!available)('MiniMax 真实素材经过宿主到 HTTP 请求的�
       expect(preview.status).toBe('ready')
       return server.runs.wait(server.runs.start(id, target, 'local'))
     }
-    expect(await run('lastFrame', [frame])).toBe('succeeded')
+    // H3 不开放仅尾帧：运行前直接拒绝，不发请求
+    const lastOnly = await prepare('lastFrame', [frame])
+    expect(lastOnly.preview.status).toBe('blocked')
+    expect(lastOnly.preview.blocked).toEqual([
+      { code: 'prepare_failed', message: 'MiniMax-H3 不支持「仅尾帧」模式，请更换模式或模型' },
+    ])
+    expect(await run('image', [frame])).toBe('succeeded')
     const body = (index: number) => JSON.parse(String(http.mock.calls[index]![1]!.body))
     expect(body(0).content).toEqual([
       { type: 'text', text: '缓慢移动并以参考画面结束' },
       {
         type: 'image_url',
-        role: 'last_frame',
+        role: 'first_frame',
         image_url: { url: expect.stringMatching(/^data:image\/png;base64,/) },
       },
     ])
-    expect(body(0).ratio).toBe('adaptive')
     expect(await run('reference', [frame, good, audio])).toBe('succeeded')
     expect(body(1).content.map((item: { role?: string }) => item.role)).toEqual([
       undefined,
@@ -116,7 +121,7 @@ describe.skipIf(!available)('MiniMax 真实素材经过宿主到 HTTP 请求的�
       'reference_audio',
     ])
     // 尺寸、帧率与编码不合要求的素材在运行前就被挡住，用户不用等上游报错
-    const smallFrame = await prepare('lastFrame', [small])
+    const smallFrame = await prepare('image', [small])
     expect(smallFrame.preview.status).toBe('blocked')
     expect(smallFrame.preview.blocked?.map((issue) => issue.message).join('；')).toContain(
       '128×128',

@@ -769,6 +769,7 @@ export class NodeRuns implements BatchHost {
       if (provider === 'minimax/api') prompt = videoReferencePrompt(prompt, 'minimax')
       else if (provider === 'volc/ark' || provider === 'volc/ark-plan')
         prompt = videoReferencePrompt(prompt, 'ark')
+      else if (provider === 'aliyun/bailian') prompt = videoReferencePrompt(prompt, 'bailian')
     }
     const shown: Record<string, unknown> = {
       ...cacheParams(params),

@@ -182,7 +182,7 @@ describe('用户正文已写明作用时不重复', () => {
 describe('资产卡绑定写法', () => {
   it('方舟用「名字@编号」，多张图列出全部；万相直接称编号；MiniMax 只留名字', () => {
     expect(bindingText('ark', '林夏', ['图片1'])).toBe('林夏@图片1')
-    expect(bindingText('ark', '林夏', ['@image1', '@image2'])).toBe('林夏@image1、@image2')
+    expect(bindingText('ark', '林夏', ['@图片1', '@图片2'])).toBe('林夏@图片1、@图片2')
     expect(bindingText('wan', '林夏', ['图1'])).toBe('图1')
     expect(bindingText('minimax', '林夏', ['图片1'])).toBe('林夏')
     expect(bindingText('image', '林夏', ['图1', '图2'])).toBe('林夏（图1、图2）')
