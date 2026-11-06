@@ -4,6 +4,7 @@ import {
   centerOf,
   clickElement,
   deselect,
+  settleCamera,
   edgesInto,
   elements,
   handleOf,
@@ -435,6 +436,8 @@ test.describe('画布操作浏览器断点', { tag: '@core' }, () => {
         kind,
       )
       await clickElement(page, id)
+      // 选中后生成面板放不下时相机延迟平移，等它走完再取坐标，否则双击会落在被推走的画面上
+      if (kind === 'storyboard') await settleCamera(page)
       const at = await centerOf(page, id)
       await page.mouse.dblclick(at.x, at.y)
       const editor = page.getByRole('dialog', {

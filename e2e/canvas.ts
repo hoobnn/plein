@@ -259,6 +259,25 @@ export async function clickElement(page: Page, id: string) {
 }
 
 /**
+ * 等生成面板的自动平移走完。选中节点后面板放不下时，相机在 320ms 后平移（期间面板透明、
+ * data-pending）；平移途中取的屏幕坐标会过期，随后的点击和拖动会落空。
+ * 取坐标做手势之前调用：没有面板时只等已有的平移过渡结束。
+ */
+export async function settleCamera(page: Page) {
+  const panel = page.getByTestId('node-editor')
+  if (await panel.count()) await expect(panel).not.toHaveAttribute('data-pending', '')
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const g = (window.__plein.engine as unknown as { glideRemaining: { x: number; y: number } })
+          .glideRemaining
+        return Math.abs(g.x) + Math.abs(g.y)
+      }),
+    )
+    .toBeLessThan(0.5)
+}
+
+/**
  * 固定尺寸编辑器不会自动避开视口；编辑操作前像用户一样把它平移回可见区域。
  * 面板里的内容可能比面板还高，指定 target 时再把它滚进面板内。
  */

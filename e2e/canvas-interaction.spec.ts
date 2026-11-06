@@ -4,6 +4,7 @@ import {
   addNode,
   clickElement,
   deselect,
+  settleCamera,
   elements,
   newProject,
   revealGenerator,
@@ -192,6 +193,7 @@ test.describe('画布实际渲染与输入关键旅程', { tag: '@core' }, () =>
         await expect.poll(read).toEqual(before)
 
         // 实际拖走遮挡，再从同一个输出端口连线；不能只把隐藏端口永久禁掉。
+        await settleCamera(page)
         const coverAt = await page.evaluate((id) => {
           const e = window.__plein.engine as unknown as Engine
           const r = e.doc.worldRect(id)!
@@ -207,6 +209,7 @@ test.describe('画布实际渲染与输入关键旅程', { tag: '@core' }, () =>
         const uncovered = await read()
         await deselect(page)
         await expect(page.getByTestId('generator')).toHaveCount(0)
+        await settleCamera(page)
         const ports = await page.evaluate(({ source, target }) => {
           const e = window.__plein.engine as unknown as Engine
           const a = e.doc.worldRect(source)!
