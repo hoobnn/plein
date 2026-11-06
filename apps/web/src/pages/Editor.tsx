@@ -51,6 +51,7 @@ import { navigate } from '../router'
 import { AnimatePresence } from '../ui/motion'
 import { zoomView } from '../ui/viewTransition'
 import { Toast } from '../ui/Toast'
+import { CHROME_INSET, minWidth, panelFootprint } from '../ui/layout'
 import { useShallow } from 'zustand/react/shallow'
 
 const SYNC_LABELS: Record<SyncStatus, string> = {
@@ -130,7 +131,11 @@ export function Editor({
   const sidebarWidth = useSidebar((s) => s.width)
   const assistantOpen = useAgent((s) => s.open)
   const tasksOpen = useCanvas((s) => s.tasks)
-  const externalRightPanelWidth = assistantOpen ? 424 : tasksOpen ? 372 : 0
+  const externalRightPanelWidth = assistantOpen
+    ? panelFootprint('lg')
+    : tasksOpen
+      ? panelFootprint('md')
+      : 0
   const [guideWidth, setGuideWidth] = useState(0)
   const rightPanelWidth = externalRightPanelWidth || guideWidth
   const [sidebarOverlay, setSidebarOverlay] = useState(false)
@@ -154,13 +159,13 @@ export function Editor({
   }, [sidebar, roomForPanels])
   // 侧栏浮在画布上：告诉相机左边被挡住多少，适应画布、定位时把内容放在右边的可见区域
   useLayoutEffect(() => {
-    engine?.camera.setInsets({ left: sidebar ? sidebarWidth + 12 : 0 })
+    engine?.camera.setInsets({ left: sidebar ? sidebarWidth + CHROME_INSET : 0 })
   }, [engine, sidebar, sidebarWidth])
 
   // 右侧浮动面板共用可见区域，避免各自清理时覆盖另一面板的边距。
   useLayoutEffect(() => {
     if (!engine) return
-    const desktop = window.matchMedia('(min-width: 640px)')
+    const desktop = window.matchMedia(minWidth('compact'))
     const sync = () => engine.camera.setInsets({ right: desktop.matches ? rightPanelWidth : 0 })
     sync()
     desktop.addEventListener('change', sync)
@@ -294,7 +299,10 @@ const SIDEBAR_KEY = 'mod+\\'
 /** 两侧面板之间至少保留 320px 画布；临时隐藏不改写侧栏偏好。 */
 function usePanelSpace(sidebarWidth: number, rightPanelWidth: number, canvasWidth = 320) {
   const media = useMemo(
-    () => window.matchMedia(`(min-width: ${sidebarWidth + 12 + rightPanelWidth + canvasWidth}px)`),
+    () =>
+      window.matchMedia(
+        `(min-width: ${sidebarWidth + CHROME_INSET + rightPanelWidth + canvasWidth}px)`,
+      ),
     [sidebarWidth, rightPanelWidth, canvasWidth],
   )
   const subscribe = useCallback(

@@ -377,11 +377,11 @@
     transform: none;
   }
 }
-/* 助手面板浮在右侧（宽 400、距右 12）：宽屏时首页内容让出这一列，「新建项目」等主要操作不被盖住；
+/* 助手面板浮在右侧（--panel-w-lg 加 --chrome-inset，与 ui/layout.ts 的 panelFootprint 同值）：宽屏时首页内容让出这一列，「新建项目」等主要操作不被盖住；
    窄屏面板铺满宽度，照旧浮在上面 */
 @media (min-width: 1024px) {
   .home-main[data-agent-open] {
-    margin-right: 428px;
+    margin-right: calc(var(--panel-w-lg) + var(--chrome-inset));
   }
 }
 @media (max-width: 1023px) {

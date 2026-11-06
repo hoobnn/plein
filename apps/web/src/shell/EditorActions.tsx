@@ -5,6 +5,7 @@ import { useCheckpoints } from '../features/checkpoints/store'
 import { useLibrary } from '../features/library/store'
 import { useTheme } from '../stores/theme'
 import { Icon } from '../ui/icons'
+import { minWidth } from '../ui/layout'
 import { ThemeToggle, THEME_OPTIONS } from '../ui/ThemeToggle'
 import { useDialogMenu } from '../ui/useDialogMenu'
 
@@ -22,7 +23,7 @@ export function EditorActions({
   const menu = useDialogMenu()
   const { close } = menu
   useEffect(() => {
-    const wide = window.matchMedia('(min-width: 1280px)')
+    const wide = window.matchMedia(minWidth('xl'))
     const changed = () => {
       if (wide.matches) close()
     }
@@ -95,7 +96,7 @@ export function EditorActions({
           modal={false}
           open={menu.open}
           onOpenChange={(next, details) => {
-            if (next && window.matchMedia('(min-width: 1280px)').matches) {
+            if (next && window.matchMedia(minWidth('xl')).matches) {
               details.cancel()
               return
             }

@@ -215,7 +215,7 @@ export function Tasks() {
               e.stopPropagation()
             }
           }}
-          className="ui-float ui-pop ui-pop-right ui-motion pointer-events-auto absolute inset-y-16 right-3 z-30 flex w-90 flex-col rounded-xl max-sm:left-3 max-sm:w-auto"
+          className="ui-float ui-pop ui-pop-right ui-motion pointer-events-auto absolute inset-y-16 right-3 z-30 flex w-panel-md flex-col rounded-xl max-compact:left-3 max-compact:w-auto max-compact:max-w-none"
         >
           <header className="flex h-12 flex-none items-center gap-2 border-b border-line pr-2 pl-4">
             <h2 className="text-sm font-semibold">任务</h2>

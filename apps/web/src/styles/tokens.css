@@ -225,6 +225,24 @@
   height: var(--h-xl);
 }
 
+/* 右侧浮层面板：固定档宽，同时不超过可用宽度；900 以下由各面板自己改为铺满 */
+@utility w-panel-sm {
+  width: var(--panel-w-sm);
+  max-width: calc(100% - 2 * var(--chrome-inset));
+}
+@utility w-panel-md {
+  width: var(--panel-w-md);
+  max-width: calc(100% - 2 * var(--chrome-inset));
+}
+@utility w-panel-lg {
+  width: var(--panel-w-lg);
+  max-width: calc(100% - 2 * var(--chrome-inset));
+}
+/* 创作引导浮在右上：顶栏之下，底部留 86 给底部工具条 */
+@utility max-h-guide {
+  max-height: calc(100% - var(--chrome-top) - 86px);
+}
+
 :root {
   /* 控件高度：xs 24 · sm 28 · md 32（默认）· lg 36（工具条按钮）· xl 40 */
   --h-xs: 24px;

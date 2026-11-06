@@ -493,7 +493,7 @@ function UpdateNotice({ state, onDismiss }: { state: DesktopUpdateState; onDismi
   return (
     <m.aside
       {...useOverlayMotion(popUpVariants)}
-      className="ui-pop ui-pop-up ui-motion fixed right-4 bottom-4 z-30 flex w-80 max-w-[calc(100%-2rem)] flex-col gap-3 rounded-xl border border-line bg-surface p-4 shadow-3"
+      className="ui-pop ui-pop-up ui-motion fixed right-4 bottom-4 z-30 flex w-panel-sm flex-col gap-3 rounded-xl border border-line bg-surface p-4 shadow-3"
       aria-label="应用更新提醒"
     >
       <div className="flex items-start gap-2">
