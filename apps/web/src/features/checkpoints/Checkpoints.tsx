@@ -250,7 +250,7 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
     }
   }
   return (
-    <Modal label="创作检查点" onClose={close} isolateKeys className="h-[min(850px,100%)] max-w-6xl">
+    <Modal label="创作检查点" onClose={close} isolateKeys size="lg" tall>
       <ModalHeader
         title="创作检查点"
         onClose={close}
@@ -316,9 +316,9 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
           正在删除检查点…关闭窗口后仍会继续执行。
         </p>
       )}
-      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+      <div className="flex min-h-0 flex-1 flex-col compact:flex-row">
         <div
-          className={`ui-scrollbar min-h-0 overflow-y-auto p-4 ${selected ? 'max-md:max-h-36 max-md:flex-none md:w-80 md:flex-none md:border-r md:border-line' : 'flex-1'}`}
+          className={`ui-scrollbar min-h-0 overflow-y-auto p-4 ${selected ? 'max-compact:max-h-36 max-compact:flex-none compact:w-80 compact:flex-none compact:border-r compact:border-line' : 'flex-1'}`}
           aria-busy={loading}
         >
           {!page.items.length ? (

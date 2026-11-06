@@ -134,7 +134,7 @@ export function RecipeLibrary({
       </div>
       <AnimatePresence>
         {opened && (
-          <Modal label="创作配方" onClose={close} isolateKeys className="max-w-4xl">
+          <Modal label="创作配方" onClose={close} isolateKeys size="md">
             <ModalHeader title="创作配方" onClose={close} />
             <div className="flex min-h-0 flex-col gap-3 px-5 pb-5">
               <p className="ui-help flex-none">

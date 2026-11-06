@@ -74,13 +74,7 @@ export function useCompositionSourcePicker(scope: unknown, enabled: boolean, con
 function Picker({ choice, disabled }: { choice: Choice; disabled: boolean }) {
   const [selected, setSelected] = useState(choice.sources[0]!.compositionSource.manifestAssetId)
   return (
-    <Modal
-      label="选择素材源版本"
-      onClose={() => choice.finish()}
-      top
-      isolateKeys
-      className="max-w-lg"
-    >
+    <Modal label="选择素材源版本" onClose={() => choice.finish()} top isolateKeys size="sm">
       <ModalHeader title="选择素材源版本" onClose={() => choice.finish()} />
       <div className="flex flex-col gap-4 p-5">
         <p className="text-sm text-ink-muted">

@@ -27,7 +27,9 @@ export function LibraryModal({ children }: { children: ReactNode }) {
       onClose={() => close.current()}
       isolateKeys
       top
-      className="lib-dialog h-[min(860px,100%)] max-w-6xl"
+      size="lg"
+      tall
+      className="lib-dialog"
     >
       <CloseContext.Provider value={close}>{children}</CloseContext.Provider>
     </Modal>

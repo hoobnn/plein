@@ -214,7 +214,7 @@ export default function PanoramaDialog({
     />
   )
   return (
-    <Modal label="全景浏览与视角截图" onClose={close} top isolateKeys className="max-w-4xl">
+    <Modal label="全景浏览与视角截图" onClose={close} top isolateKeys size="md">
       <ModalHeader title={`${item.name} · 全景`} onClose={close} />
       <div className="ui-scrollbar flex min-h-0 flex-col gap-4 overflow-y-auto p-5">
         <p className="ui-help">拖动查看朝向，滚轮调整垂直视角。方向键微调，+ / − 调整视角。</p>

@@ -50,7 +50,7 @@ function ScenePrepContent({ engine, sceneId }: { engine: Engine; sceneId: string
   const close = () => useCanvas.getState().openScenePrep(null)
   if (!model)
     return (
-      <Modal label="场景准备" onClose={close} isolateKeys className="max-w-xl">
+      <Modal label="场景准备" onClose={close} isolateKeys size="sm">
         <ModalHeader title="场景准备" onClose={close} />
         <EmptyState title="场景已不存在" fill />
       </Modal>
@@ -107,7 +107,8 @@ function ScenePrepContent({ engine, sceneId }: { engine: Engine; sceneId: string
       label={`场景准备：${model.name}`}
       onClose={close}
       isolateKeys
-      className="h-full max-w-6xl"
+      size="lg"
+      className="h-full"
     >
       <ModalHeader
         title={`场景准备 · ${model.name}`}

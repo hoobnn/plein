@@ -564,7 +564,8 @@ function Guide({
               label="创作下一步"
               onClose={() => setModalOpen(false)}
               isolateKeys
-              className="h-full max-w-sm"
+              size="sm"
+              className="h-full"
             >
               {panel}
             </Modal>

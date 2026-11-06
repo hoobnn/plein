@@ -276,7 +276,7 @@ function GuardedEditor({
     engine.doc.undo.stopCapturing()
   }
   return (
-    <Modal label="序列参数问题" onClose={onClose} isolateKeys className="max-w-xl">
+    <Modal label="序列参数问题" onClose={onClose} isolateKeys size="sm">
       <ModalHeader title="序列参数需要修复" onClose={onClose}>
         <button
           type="button"
@@ -1116,7 +1116,7 @@ function Editor({
   const row = current >= 0 ? rows[current] : undefined
 
   return (
-    <Modal label="序列" onClose={onClose} className="seq-editor h-full max-w-7xl">
+    <Modal label="序列" onClose={onClose} size="xl" className="seq-editor h-full">
       <ModalHeader
         title={el?.name ?? '序列'}
         onClose={onClose}

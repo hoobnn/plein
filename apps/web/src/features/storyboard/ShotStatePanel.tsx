@@ -31,7 +31,7 @@ export function ShotStatePanel(props: {
   onClose(): void
 }) {
   return (
-    <Modal top label="镜头目的与起止计划" onClose={props.onClose} className="max-w-240">
+    <Modal top label="镜头目的与起止计划" onClose={props.onClose} size="lg">
       <ModalHeader title="镜头目的与起止计划" onClose={props.onClose} />
       <ShotPlanForm {...props} />
     </Modal>
@@ -280,7 +280,7 @@ export function ShotPlanForm({
         </div>
       </details>
       {subject && (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 compact:grid-cols-2">
           {(['start', 'end'] as const).map((phase) => (
             <fieldset
               key={phase}

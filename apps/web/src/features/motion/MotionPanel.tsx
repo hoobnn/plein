@@ -93,7 +93,7 @@ export function MotionPanel({
   const parsed = MotionParams.safeParse(engine.doc.get(id)?.params ?? {})
   if (!parsed.success)
     return (
-      <Modal label="动态合成参数问题" onClose={onClose} isolateKeys className="max-w-xl">
+      <Modal label="动态合成参数问题" onClose={onClose} isolateKeys size="sm">
         <ModalHeader title="动态合成参数需要修复" onClose={onClose} />
         <div className="flex flex-col gap-4 p-5">
           <p>{errorText(parsed.error)}</p>
@@ -364,7 +364,7 @@ function Editor({
             : '已采用，可接入序列'
 
   return (
-    <Modal label="动态合成" onClose={onClose} isolateKeys className="motion-editor">
+    <Modal label="动态合成" onClose={onClose} isolateKeys size="xl" tall className="motion-editor">
       <ModalHeader
         title="动态合成"
         onClose={onClose}

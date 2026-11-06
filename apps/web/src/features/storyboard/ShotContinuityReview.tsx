@@ -118,7 +118,7 @@ function PairReview({
     staleTime: Infinity,
   })
   return (
-    <Modal label="连续性审看" onClose={onClose} className="max-w-250">
+    <Modal label="连续性审看" onClose={onClose} size="lg">
       <ModalHeader title={`连续性 · 镜头 ${before.shot.no} → ${after.shot.no}`} onClose={onClose} />
       <div className="ui-scrollbar min-h-0 overflow-auto p-5">
         <p className="mb-3 text-xs text-ink-muted">
@@ -194,7 +194,7 @@ function PairReview({
           after={b}
           onPlayback={(side, range) => setPlayed((old) => ({ ...old, [side]: range }))}
         />
-        <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <div className="mt-3 grid gap-3 compact:grid-cols-2">
           <ShotObservationForm
             engine={engine}
             canvasId={canvasId}

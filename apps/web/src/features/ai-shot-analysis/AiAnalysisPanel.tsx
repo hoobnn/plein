@@ -261,7 +261,7 @@ export function AiAnalysisPanel({
           .filter((node) => node.nodeType === 'plein/shot-summary-draft')
           .flatMap((node) => node.results ?? [])
   return (
-    <Modal label="AI 拉片草稿" onClose={onClose} isolateKeys className="max-w-6xl">
+    <Modal label="AI 拉片草稿" onClose={onClose} isolateKeys size="lg">
       <ModalHeader title="AI 拉片草稿" meta="默认关闭 · 逐镜与归纳独立保存" onClose={onClose} />
       <div className="min-h-0 space-y-5 overflow-y-auto p-5">
         <p className="ui-help">

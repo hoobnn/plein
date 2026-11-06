@@ -71,7 +71,7 @@ export function WelcomeDialog({ onClose }: { onClose(): void }) {
   }
 
   return (
-    <Modal label="欢迎使用 Plein" onClose={dismiss} className="max-w-150">
+    <Modal label="欢迎使用 Plein" onClose={dismiss} size="sm">
       <header className="flex flex-none items-start gap-3 px-6 pt-6 pb-4">
         <span className="plein-logo size-9 flex-none" aria-hidden="true" />
         <div className="min-w-0 flex-1">

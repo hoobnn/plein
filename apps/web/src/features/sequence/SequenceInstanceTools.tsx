@@ -424,13 +424,7 @@ export function SequenceInstanceTools(props: Context & { row: ArrangedClip }) {
           )) && <p>原叙事绑定已缺失，仅保留原身份；需显式重新选择。</p>}
       {error && <p role="alert">{error}</p>}
       {mode && (
-        <Modal
-          label="固定素材与实例操作"
-          top
-          isolateKeys
-          onClose={closeOperation}
-          className="max-w-xl"
-        >
+        <Modal label="固定素材与实例操作" top isolateKeys onClose={closeOperation} size="sm">
           <ModalHeader
             title={
               {

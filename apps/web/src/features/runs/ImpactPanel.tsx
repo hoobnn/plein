@@ -278,7 +278,7 @@ function Panel({
   )
 
   return (
-    <Modal label="查看影响" onClose={onClose} className="max-w-180">
+    <Modal label="查看影响" onClose={onClose} size="md">
       <ModalHeader
         title="修改的影响"
         onClose={onClose}

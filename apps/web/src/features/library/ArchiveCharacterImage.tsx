@@ -181,7 +181,7 @@ export function ArchiveDialog({
     }
   }
   return (
-    <Modal label="归档到角色" onClose={onClose} top isolateKeys className="max-w-lg">
+    <Modal label="归档到角色" onClose={onClose} top isolateKeys size="sm">
       <ModalHeader title="归档到角色" onClose={onClose} />
       <div className="ui-scrollbar flex min-h-0 flex-col gap-4 overflow-y-auto p-5">
         <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">

@@ -47,7 +47,8 @@ export function AgentSkillsButton({
             onClose={() => setOpen(false)}
             top
             isolateKeys
-            className="h-[min(700px,100%)] max-w-200"
+            size="md"
+            tall
           >
             <ModalHeader title="技能与画布能力" onClose={() => setOpen(false)} />
             <div className="ui-scrollbar min-h-0 flex-1 overflow-y-auto p-4">

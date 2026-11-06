@@ -135,7 +135,7 @@ export function StoryboardSync({
 
   const btn = 'ui-btn ui-btn-secondary'
   return (
-    <Modal label="计划差异" onClose={onClose} isolateKeys className="max-w-150">
+    <Modal label="计划差异" onClose={onClose} isolateKeys size="sm">
       <ModalHeader title="计划与节点的差异" onClose={onClose}>
         <button
           type="button"

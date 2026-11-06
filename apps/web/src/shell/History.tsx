@@ -263,7 +263,7 @@ function HistoryPanel({ engine }: { engine: Engine }) {
   }
 
   return (
-    <Modal label="生成历史" onClose={close} isolateKeys className="h-[min(86vh,820px)] max-w-280">
+    <Modal label="生成历史" onClose={close} isolateKeys size="lg" tall>
       <ModalHeader
         title="生成历史"
         onClose={close}

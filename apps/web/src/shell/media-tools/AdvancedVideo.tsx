@@ -195,7 +195,7 @@ export function AdvancedVideo({
       Number.isFinite(Number(values[key] ?? defaults[key as keyof typeof defaults])),
     )
   return (
-    <Modal label={title} onClose={onClose} top isolateKeys className="max-w-xl">
+    <Modal label={title} onClose={onClose} top isolateKeys size="sm">
       <ModalHeader title={title} onClose={onClose} />
       <div className="ui-scrollbar flex min-h-0 flex-col gap-4 overflow-y-auto p-5">
         <p className="ui-help">

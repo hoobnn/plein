@@ -163,7 +163,7 @@ export function BatchChecklist({
         if (!busy) onClose()
       }}
       isolateKeys
-      className="max-w-280"
+      size="lg"
     >
       <ModalHeader
         title={`${roles[request.role]}生成清单`}

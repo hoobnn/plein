@@ -443,7 +443,7 @@ export function PromptBox({
             isolateKeys
             initialFocus={expandedRef}
             onClose={() => setExpanded(false)}
-            className="max-w-5xl"
+            size="lg"
           >
             <ModalHeader title="编辑提示词" onClose={() => setExpanded(false)} />
             <div className="ui-scrollbar overflow-auto">

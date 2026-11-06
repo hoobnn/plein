@@ -81,7 +81,7 @@ export function Shortcuts() {
   return (
     <AnimatePresence>
       {open && (
-        <Modal label="快捷键" onClose={close} align="bottom" className="max-w-220">
+        <Modal label="快捷键" onClose={close} align="bottom" size="md">
           <ModalHeader title="快捷键" onClose={close} divider={false} />
           <div className="grid min-h-0 gap-x-8 gap-y-6 overflow-y-auto px-5 pb-5 sm:grid-cols-2 lg:grid-cols-3">
             {GROUPS.map((g) => (

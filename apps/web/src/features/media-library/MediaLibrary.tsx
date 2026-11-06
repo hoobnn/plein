@@ -248,7 +248,7 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
   }
   return (
     <>
-      <Modal label="素材" onClose={close} isolateKeys className="h-[min(840px,100%)] max-w-6xl">
+      <Modal label="素材" onClose={close} isolateKeys size="lg" tall>
         <ModalHeader
           title="素材"
           onClose={close}
@@ -346,7 +346,7 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
         <div className="flex min-h-0 flex-1">
           <div
             ref={list}
-            className={`ui-scrollbar min-w-0 flex-1 overflow-y-auto p-5 ${selected && !queryTooLong ? 'hidden md:block' : ''}`}
+            className={`ui-scrollbar min-w-0 flex-1 overflow-y-auto p-5 ${selected && !queryTooLong ? 'hidden compact:block' : ''}`}
             aria-busy={busy || searching}
           >
             {!visibleItems.length ? (
@@ -420,10 +420,10 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
             )}
           </div>
           {selected && !queryTooLong && (
-            <div className="ui-scrollbar w-full min-w-0 flex-none overflow-y-auto border-line p-4 md:w-80 md:border-l">
+            <div className="ui-scrollbar w-full min-w-0 flex-none overflow-y-auto border-line p-4 compact:w-80 compact:border-l">
               <button
                 type="button"
-                className="ui-btn ui-btn-secondary mb-3 md:hidden"
+                className="ui-btn ui-btn-secondary mb-3 compact:hidden"
                 onClick={() => {
                   returnTo.current = selected.id
                   setSelected(null)
@@ -711,13 +711,7 @@ function MediaDetail({
 function MediaPreview({ asset, onClose }: { asset: MediaLibraryItem; onClose(): void }) {
   const [scale, setScale] = useState(1)
   return (
-    <Modal
-      label="素材预览"
-      onClose={onClose}
-      top
-      isolateKeys
-      className="h-[min(860px,100%)] max-w-6xl"
-    >
+    <Modal label="素材预览" onClose={onClose} top isolateKeys size="lg" tall>
       <ModalHeader title={asset.name} onClose={onClose}>
         {asset.kind === 'image' && (
           <>

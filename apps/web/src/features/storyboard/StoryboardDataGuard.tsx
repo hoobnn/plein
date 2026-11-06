@@ -52,7 +52,7 @@ export function StoryboardDataGuard({
     engine.doc.undo.stopCapturing()
   }
   return (
-    <Modal label="分镜数据问题" onClose={onClose} isolateKeys className="max-w-2xl">
+    <Modal label="分镜数据问题" onClose={onClose} isolateKeys size="sm">
       <ModalHeader title="分镜数据需要修复" onClose={onClose}>
         <button
           type="button"

@@ -131,7 +131,7 @@ export function ShotAnalysisPanel({
     }
   }
   return (
-    <Modal label="本地拉片" onClose={onClose} isolateKeys className="max-w-6xl">
+    <Modal label="本地拉片" onClose={onClose} isolateKeys size="lg">
       <ModalHeader
         title="本地拉片"
         meta={

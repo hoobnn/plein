@@ -1,7 +1,3 @@
-.motion-editor {
-  width: min(1280px, 100%);
-  height: min(850px, 100%);
-}
 .motion-layout {
   display: grid;
   grid-template-columns: 310px minmax(0, 1fr);
@@ -221,7 +217,7 @@
   color: var(--ink-muted);
   margin: 0;
 }
-@media (max-width: 700px) {
+@media (max-width: 639px) {
   .motion-editor {
     height: 100%;
   }

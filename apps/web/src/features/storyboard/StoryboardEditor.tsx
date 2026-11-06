@@ -524,7 +524,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     ? goalDurationNote(goalDurationCheck(engine.doc, canvasId, id, planned))
     : ''
   return (
-    <Modal label="分镜表" onClose={onClose} className="storyboard-editor max-w-[1800px]">
+    <Modal label="分镜表" onClose={onClose} size="xl" className="storyboard-editor">
       <ModalHeader
         title={el?.name ?? '分镜'}
         onClose={onClose}

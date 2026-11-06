@@ -141,10 +141,7 @@ function previewSummary(p: PreparedInput) {
           </Tooltip.Trigger>
           <Tooltip.Portal>
             <Tooltip.Positioner sideOffset={6} className="z-80">
-              <Tooltip.Popup
-                role="tooltip"
-                className="ui-tooltip max-w-[min(280px,calc(100vw-16px))] break-words"
-              >
+              <Tooltip.Popup role="tooltip" className="ui-tooltip max-w-(--menu-w-lg) break-words">
                 最终提示词包含节点正文、上游文本、参考图对应说明及分隔符，按字符计数；不会自动追加引用卡片的文字设定。
                 {p.promptLimit !== undefined && `合计不得超过 ${p.promptLimit} 字符。`}
               </Tooltip.Popup>
@@ -280,14 +277,14 @@ export function InputPreview({
               <section className="flex flex-wrap items-center gap-1.5">
                 <h4 className="ui-section-title mr-1">有效参数</h4>
                 {data.voice && (
-                  <span className="ui-chip h-auto max-w-full min-h-[var(--h-xs)] py-0.5">
+                  <span className="ui-chip h-auto max-w-full min-h-(--h-xs) py-0.5">
                     <span className="ui-scrollbar min-w-0 max-h-24 overflow-y-auto whitespace-pre-wrap break-all">
                       音色 {data.voice.voiceId}
                     </span>
                   </span>
                 )}
                 {params.map(([k, v]) => (
-                  <span key={k} className="ui-chip h-auto max-w-full min-h-[var(--h-xs)] py-0.5">
+                  <span key={k} className="ui-chip h-auto max-w-full min-h-(--h-xs) py-0.5">
                     <span className="ui-scrollbar min-w-0 max-h-24 overflow-y-auto whitespace-pre-wrap break-all">
                       {fields.get(k)?.title ?? k}{' '}
                       {fields.get(k)?.labels?.[String(v)] ??

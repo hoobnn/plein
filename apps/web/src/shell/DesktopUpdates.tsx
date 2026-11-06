@@ -121,7 +121,7 @@ export function DesktopUpdates() {
             top
             isolateKeys
             onClose={() => useUpdate.setState({ open: false })}
-            className="max-w-150"
+            size="sm"
           >
             <ModalHeader title="应用更新" onClose={() => useUpdate.setState({ open: false })} />
             <div className="flex min-h-0 flex-col p-5">

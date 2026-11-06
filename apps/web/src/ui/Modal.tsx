@@ -27,6 +27,8 @@ export function Modal({
   top = false,
   isolateKeys = false,
   fullScreen = false,
+  size,
+  tall = false,
   initialFocus,
   className = '',
   children,
@@ -41,6 +43,10 @@ export function Modal({
   isolateKeys?: boolean
   /** 占满应用窗口，适合需要大面积操作的编辑器 */
   fullScreen?: boolean
+  /** 宽度档位：sm 640 · md 880 · lg 1120 · xl 1440（--dialog-w-*），始终不超过视口；不传则由 className 自定 */
+  size?: 'sm' | 'md' | 'lg' | 'xl'
+  /** 固定为统一的面板高度（--dialog-h），内容多的资料库、设置、检查点用；其余按内容高度 */
+  tall?: boolean
   /** 编辑类面板可直接聚焦正文，省去再次点击 */
   initialFocus?: React.RefObject<HTMLElement | null>
   /** 面板的尺寸和布局 */
@@ -131,6 +137,8 @@ export function Modal({
             render={<m.div {...popupMotion} />}
             data-plein-modal-layer={closing ? undefined : top ? 50 : 40}
             data-fullscreen={fullScreen || undefined}
+            data-size={size}
+            data-tall={tall || undefined}
             aria-label={label}
             onKeyDown={(e) => {
               // 按钮上的原生撤销可能重新激活并修改背景中最后编辑过的文本框。

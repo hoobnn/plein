@@ -205,7 +205,8 @@ function Palette({ canvasId, onClose }: { canvasId: string | null; onClose(): vo
       label="命令面板"
       onClose={onClose}
       isolateKeys
-      className="plein-palette max-w-140 self-start sm:mt-[12vh]"
+      size="sm"
+      className="plein-palette self-start sm:mt-24"
     >
       <div className="flex items-center gap-2 border-b border-line px-4">
         <span className="text-ink-subtle">

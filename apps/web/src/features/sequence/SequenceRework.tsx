@@ -165,7 +165,7 @@ export function SequenceRework({
       )}
       {draftId && <p>返工草稿保留在画布上，可继续查看生成任务与历史。</p>}
       {open && (
-        <Modal label="剪辑片段返工" top isolateKeys onClose={close} className="max-w-5xl">
+        <Modal label="剪辑片段返工" top isolateKeys onClose={close} size="lg">
           <ModalHeader title="剪辑片段返工" onClose={close} />
           <div className="overflow-auto p-4 space-y-4">
             <p className="text-sm">
@@ -189,7 +189,7 @@ export function SequenceRework({
             </button>
             {draft && !draft.locked && node && writable() ? (
               <div
-                className="flex h-[440px] min-h-0 flex-col overflow-hidden rounded-xl border border-line"
+                className="flex h-110 min-h-0 flex-col overflow-hidden rounded-xl border border-line"
                 aria-label="返工生成输入"
               >
                 <GeneratorPanel

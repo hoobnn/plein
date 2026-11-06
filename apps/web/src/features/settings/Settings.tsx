@@ -79,7 +79,9 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
       label="设置"
       onClose={onClose}
       top
-      className="settings-dialog h-[min(780px,100%-48px)] w-full max-w-none sm:w-[min(1080px,100%-48px)] sm:flex-row"
+      size="lg"
+      tall
+      className="settings-dialog sm:flex-row"
     >
       <nav
         aria-label="设置分区"

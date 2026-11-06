@@ -328,7 +328,7 @@ export function MaskEditor({
     // 生成器里的入口有 AnimatePresence，媒体工具那条（creation.overlay）没有；
     // 宿主放在浮层自己这里，两条入口都能拿到 Motion 渲染器。
     <LazyMotion>
-      <Modal label="画重绘区域" onClose={close} isolateKeys top className="h-full max-w-6xl">
+      <Modal label="画重绘区域" onClose={close} isolateKeys top size="lg" className="h-full">
         <ModalHeader
           title="画重绘区域"
           meta={

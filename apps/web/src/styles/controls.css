@@ -679,6 +679,22 @@
   .ui-dialog-scrim {
     animation: ui-fade-in var(--dur-base) var(--ease-standard);
   }
+  /* 宽度档位和统一高度（Modal 的 size / tall），w-full 在外层给出，所以窄屏自动收到视口宽度 */
+  .ui-dialog[data-size="sm"] {
+    max-width: var(--dialog-w-sm);
+  }
+  .ui-dialog[data-size="md"] {
+    max-width: var(--dialog-w-md);
+  }
+  .ui-dialog[data-size="lg"] {
+    max-width: var(--dialog-w-lg);
+  }
+  .ui-dialog[data-size="xl"] {
+    max-width: var(--dialog-w-xl);
+  }
+  .ui-dialog[data-tall] {
+    height: var(--dialog-h);
+  }
   .ui-dialog {
     --pop-from: translateY(6px) scale(0.985);
     --pop-to: translateY(3px) scale(0.99);

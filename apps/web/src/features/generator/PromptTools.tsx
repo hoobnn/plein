@@ -160,7 +160,7 @@ export function PromptTools({
       </div>
       <AnimatePresence>
         {draft && (
-          <Modal label="提示词建议" onClose={close} top isolateKeys className="max-w-5xl">
+          <Modal label="提示词建议" onClose={close} top isolateKeys size="lg">
             <ModalHeader
               title={draft.mode === 'translate' ? '翻译建议' : '优化建议'}
               onClose={close}
@@ -196,7 +196,7 @@ export function PromptTools({
                 采用建议
               </button>
             </ModalHeader>
-            <div className="grid min-h-80 gap-4 overflow-auto p-5 md:grid-cols-2">
+            <div className="grid min-h-80 gap-4 overflow-auto p-5 compact:grid-cols-2">
               <label className="flex flex-col gap-2 text-sm">
                 原提示词
                 <textarea

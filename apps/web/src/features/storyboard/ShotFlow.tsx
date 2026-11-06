@@ -280,7 +280,7 @@ export function ShotFlow({
           </div>
         ) : (
           <table
-            className="shot-flow-table w-full min-w-[1360px] border-collapse text-sm"
+            className="shot-flow-table w-full min-w-340 border-collapse text-sm"
             aria-label="逐镜头分镜表"
           >
             <colgroup>
@@ -554,7 +554,7 @@ export function ShotPromptDialog({
     onClose()
   }
   return (
-    <Modal label="镜头最终提示词" onClose={close} isolateKeys top className="max-w-4xl">
+    <Modal label="镜头最终提示词" onClose={close} isolateKeys top size="md">
       <ModalHeader title={`第 ${current?.no ?? '已删除'} 镜 · 最终提示词`} onClose={close} />
       <div className="ui-scrollbar min-h-0 flex-1 space-y-5 overflow-auto p-5">
         {!current ? (

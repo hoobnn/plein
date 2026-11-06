@@ -938,7 +938,7 @@ function ReferenceTile({
         transition,
         zIndex: isDragging ? 1 : undefined,
       }}
-      className="relative flex w-[5.5rem] flex-none flex-col items-start gap-0.5 text-2xs text-ink-subtle"
+      className="relative flex w-22 flex-none flex-col items-start gap-0.5 text-2xs text-ink-subtle"
     >
       <div className="relative w-full">
         <button

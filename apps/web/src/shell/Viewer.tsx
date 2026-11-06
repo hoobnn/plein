@@ -176,13 +176,7 @@ function Review({ viewer }: { viewer: View }) {
   const label = (r: NodeResult) =>
     `候选 ${candidates.indexOf(r) + 1}${currentResult(element!, r.port)?.id === r.id ? ' · 已采用' : ''}`
   return (
-    <Modal
-      label={`查看「${name}」`}
-      onClose={close}
-      top
-      isolateKeys
-      className="h-[90vh] max-w-[96vw]"
-    >
+    <Modal label={`查看「${name}」`} onClose={close} top isolateKeys className="h-9/10 max-w-none">
       <div
         ref={controls}
         role="group"

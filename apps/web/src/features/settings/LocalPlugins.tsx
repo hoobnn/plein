@@ -398,7 +398,7 @@ export function LocalPlugins() {
         )}
       </div>
       {preview && (
-        <Modal label="安装本机插件" onClose={closePreview} top isolateKeys className="max-w-150">
+        <Modal label="安装本机插件" onClose={closePreview} top isolateKeys size="sm">
           <div className="ui-scrollbar flex min-h-0 flex-col gap-3 overflow-y-auto p-6">
             <h2 className="text-lg font-semibold">安装 {preview.manifest.name}</h2>
             <p className="text-sm text-ink-muted">
