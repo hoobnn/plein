@@ -11,6 +11,7 @@ export {
   type Scheduler,
   SYSTEM_ORIGIN,
 } from './doc'
+export * from './grid'
 export * from './layout'
 export * from './inputs'
 export * from './sizes'

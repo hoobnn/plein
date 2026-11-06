@@ -41,6 +41,7 @@ import { templateCapabilities } from './template-caps'
 import { captureStage } from './client-render'
 import { actionCapabilities } from './action-caps'
 import { fileCapabilities } from './tools-files'
+import { imageCapabilities } from './tools-image'
 import { workspaceCapabilities } from './workspace-caps'
 import { modelCapabilities } from './model-caps'
 import { projectCapabilities } from './project-caps'
@@ -369,6 +370,7 @@ export const serverCapabilities = new CapabilityRegistry<ServerContext>([
   estimateCost,
   ...providerCapabilities,
   ...fileCapabilities,
+  ...imageCapabilities,
   captureStage,
   ...templateCapabilities,
   ...analysisCapabilities,

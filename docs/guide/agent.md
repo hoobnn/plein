@@ -165,6 +165,7 @@ Agent 按语义调用画布功能。文档编辑复用 `packages/capabilities` �
 - `estimate_cost`：运行前估价，不调用平台。`scope` 为 `node`、`upstream`、`downstream`、`frame`，目标范围和「沿用仍有效结果」的判定与对应的运行工具一致；逐节点标 `run`（一定调用）、`maybe`（上游重做后输入变了才会调用）、`reused`（沿用），费用按币种分别合计，模型没配价格的调用记入 `unknown`，不当作 0。
 - `list_providers` / `set_provider_enabled` / `test_provider` / `refresh_remote_models` / `set_default_model`：平台与默认模型设置，复用设置页的路由。读取只返回启用状态和每个密钥「是否已填写」，永远不返回密钥明文（设置里疑似密钥的字段也会掩码）；写入只开放启用开关，密钥录入留在设置页。`test_provider` 只检查配置或连接，不证明具体模型、权限或余额可用。
 - `get_shots` / `edit_shots`：分镜表逐镜编辑。`edit_shots` 的 `ops` 支持 `add`（接在最后）、`patch`（只改给出的字段，记为手改）、`move`（移到第 N 位并按新顺序重排镜号）、`remove`（已展开的节点和产物保留，标为脱离计划，走确认），带 `expected_version`，全部成功才写入、一次撤销。写入走分镜编辑器同一条路径，会先补记旧计划基线，`sync_storyboard` 才能分清「计划变了」和「节点被手改」；`update_element` 整表替换 `shots` 时也走这条路径，但逐镜修改应使用 `edit_shots`。
+- `split_grid`：把宫格图按行列切成单张图片，排在原图右侧并打成记录原图的分镜组，返回 `frame_id`、每格元素与资产 id。服务端用 sharp 切片（先按 EXIF 方向展开），分界与排布来自 `@plein/doc` 的 `gridPlan`，界面「宫格切分」用同一份，两端边界一致；本地加工，不调模型。
 - `capture_stage`：按时刻截取 3D 构图，保留完整场景与轨迹来源。客户端未打开、超时或目标锁定时明确失败；不会调用生成模型。
 
 `list_canvas_actions` 提供扩展操作目录。先指定 `action` 查看完整 schema，再用 `perform_canvas_action` 传入同名操作及 `input`：
