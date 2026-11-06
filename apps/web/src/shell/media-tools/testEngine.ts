@@ -16,6 +16,8 @@ export function mediaTestEngine(doc: PleinDoc): Engine {
     onActivate: subscribe,
     setTool: vi.fn(),
     zoomToFit: vi.fn(),
+    glideBy: vi.fn(),
+    glideRemaining: { x: 0, y: 0 },
     visibleIds: [],
     highDetail: false,
     camera: {

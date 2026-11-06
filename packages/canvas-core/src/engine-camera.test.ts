@@ -120,3 +120,28 @@ it('连续平滑定位取最后目标，滚轮和中键在首帧之前立即接�
     host.dispatchEvent(cancel)
   }
 })
+
+describe('相机平滑平移（glideBy）', () => {
+  it('缩放不变地走到目标，途中报告剩余距离，到达后清零', async () => {
+    const { engine, tick } = await setup()
+    const start = view(engine)
+    engine.glideBy(-120, 60)
+    tick(1000 + 50)
+    const mid = engine.glideRemaining
+    expect(Math.abs(mid.x)).toBeGreaterThan(0)
+    expect(Math.abs(mid.x)).toBeLessThan(120)
+    tick(1000 + 400)
+    expect(engine.glideRemaining).toEqual({ x: 0, y: 0 })
+    expect(view(engine)).toEqual({ x: start.x - 120, y: start.y + 60, zoom: start.zoom })
+  })
+  it('用户滚轮或按下指针立即接管，不再继续走向旧目标', async () => {
+    const { engine, tick, host } = await setup()
+    engine.glideBy(300, 0)
+    tick(1000 + 60)
+    host.dispatchEvent(new Event('wheel'))
+    const manual = view(engine)
+    tick(1000 + 600)
+    expect(view(engine)).toEqual(manual)
+    expect(engine.glideRemaining).toEqual({ x: 0, y: 0 })
+  })
+})

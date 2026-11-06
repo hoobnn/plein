@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vite-plus/test'
-import { canvasBottomSpace, fitCanvasToolbar, fitFloatingPanel } from './floatingPanel'
+import {
+  canvasBottomSpace,
+  fitCanvasToolbar,
+  fitFloatingPanel,
+  placeGeneratorPanel,
+} from './floatingPanel'
 
 describe('浮动操作区避让侧栏与任务面板', () => {
   it('底部空间按实际画布宽度计算，侧栏展开后也不能盖住生成器或快捷键', () => {
@@ -51,5 +56,107 @@ describe('浮动操作区避让侧栏与任务面板', () => {
         'center',
       ),
     ).toEqual({ right: 380, top: 270, maxWidth: 512 })
+  })
+})
+
+describe('节点生成面板的放置', () => {
+  const bounds = { left: 297, top: 64, right: 1268, bottom: 736 }
+  const rect = (left: number, top: number, w: number, h: number) => ({
+    left,
+    top,
+    right: left + w,
+    bottom: top + h,
+  })
+
+  it('下方放得下就放下方，不动相机', () => {
+    const p = placeGeneratorPanel({
+      node: rect(500, 150, 400, 220),
+      bounds,
+      width: 960,
+      height: 600,
+    })
+    expect(p.placement).toBe('below')
+    expect(p.top).toBe(382)
+    expect(p.height).toBe(354)
+    expect(p.pan).toEqual({ x: 0, y: 0 })
+  })
+  it('下方不足最小可用高度时改放上方，并让开节点标签', () => {
+    const p = placeGeneratorPanel({
+      node: rect(500, 450, 400, 150),
+      bounds,
+      width: 960,
+      height: 400,
+    })
+    expect(p.placement).toBe('above')
+    expect(p.top + p.height).toBe(450 - 32)
+    expect(p.pan).toEqual({ x: 0, y: 0 })
+  })
+  it('上下都放不下时平移相机，让面板回到下方并拿到尽量多的高度', () => {
+    const p = placeGeneratorPanel({
+      node: rect(500, 246, 372, 209),
+      bounds,
+      width: 960,
+      height: 600,
+    })
+    expect(p.placement).toBe('below')
+    expect(p.pan.x).toBe(0)
+    expect(p.pan.y).toBeLessThan(0)
+    // 节点顶边不越过标签位置
+    expect(246 + p.pan.y).toBeGreaterThanOrEqual(64 + 32)
+    expect(p.top + p.height).toBeLessThanOrEqual(bounds.bottom)
+    expect(p.height).toBeGreaterThanOrEqual(320)
+  })
+  it('节点太高无法与最小高度的面板同屏时，面板压住节点下半部并留出输出端口', () => {
+    const node = rect(500, 150, 380, 420)
+    const p = placeGeneratorPanel({
+      node,
+      bounds: { ...bounds, bottom: 656 },
+      width: 960,
+      height: 600,
+    })
+    expect(p.placement).toBe('overlap')
+    const midAfterPan = (node.top + node.bottom) / 2 + p.pan.y
+    expect(p.top).toBeGreaterThanOrEqual(midAfterPan + 16)
+    expect(p.top + p.height).toBe(656)
+    expect(p.height).toBeGreaterThanOrEqual(320)
+  })
+  it('节点落在右侧边缘时平移进可见宽度，面板宽度按可用宽度收', () => {
+    const p = placeGeneratorPanel({
+      node: rect(1200, 200, 300, 200),
+      bounds,
+      width: 960,
+      height: 440,
+    })
+    expect(p.pan.x).toBe(1268 - 1500)
+    expect(p.width).toBe(960)
+    expect(p.left + p.width).toBeLessThanOrEqual(1268)
+    const narrow = placeGeneratorPanel({
+      node: rect(400, 200, 300, 200),
+      bounds: { ...bounds, right: 800 },
+      width: 960,
+      height: 440,
+    })
+    expect(narrow.width).toBe(800 - 297)
+    expect(narrow.left).toBe(297)
+  })
+  it('节点藏在侧栏后面时平移到左边距，比可见区域还宽的节点不横向平移', () => {
+    expect(
+      placeGeneratorPanel({ node: rect(100, 200, 300, 200), bounds, width: 600, height: 300 }).pan
+        .x,
+    ).toBe(197)
+    expect(
+      placeGeneratorPanel({ node: rect(100, 200, 1500, 200), bounds, width: 600, height: 300 }).pan
+        .x,
+    ).toBe(0)
+  })
+  it('小面板（高度低于最小可用高度）按自身高度判断是否放得下', () => {
+    const p = placeGeneratorPanel({
+      node: rect(500, 520, 300, 100),
+      bounds,
+      width: 560,
+      height: 96,
+    })
+    expect(p.placement).toBe('below')
+    expect(p.height).toBe(96)
   })
 })

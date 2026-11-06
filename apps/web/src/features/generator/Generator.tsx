@@ -4,7 +4,7 @@ import { ASSET_NODE_TYPES, firstPlaceholder, presetsFor, type VideoMode } from '
 import type { Catalog } from '@plein/protocol'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useEngineVersion, useFollow } from '../../canvas/hooks'
-import { canvasBottomSpace } from '../../canvas/floatingPanel'
+import { canvasBottomSpace, placeGeneratorPanel } from '../../canvas/floatingPanel'
 import { adaptToModel, constrainFields, selectedModel } from '../../canvas/modelParams'
 import {
   applyAspect,
@@ -54,7 +54,9 @@ const EDITOR_W = 960
 const EDITOR_H = 440
 const ASSET_EDITOR_W = 720
 const INLINE_EDITOR_W = 640
-const MIN_EDITOR_H = 180
+/** 面板离左右浮层、顶栏的间距（--chrome-inset）与顶栏占用高度（--chrome-top） */
+const PANEL_INSET = 12
+const PANEL_TOP = 64
 /** 默认面板高度随窗口增长的上限：再大的窗口也留出上半屏看画布。 */
 const EDITOR_MAX_H = 720
 /** 默认面板高度随窗口增长的比例：小窗口也至少留出 1/4 给画布。 */
@@ -99,7 +101,11 @@ function GeneratorHost({ engine }: { engine: Engine }) {
   )
 }
 
-/** 编辑器固定在卡片下方；相机变化时只更新锚点，不翻转或切换成窗口停靠。 */
+/**
+ * 节点编辑器的放置：下方放得下放下方，否则上方，都不够就让相机平移，
+ * 平移也不够时压住节点下半部（留出输出端口）。相机变化时只更新锚点；
+ * 浮在画布上的底栏、侧栏与右侧浮层作为边距，面板不会被它们遮住。
+ */
 function NodeBelow({
   engine,
   nodeId,
@@ -113,47 +119,69 @@ function NodeBelow({
   size: { width: number; height: number; grow?: boolean }
   children: ReactNode
 }) {
-  const place = () => {
+  /** 以当前相机（加上平移过渡尚未走完的部分）为准算出面板位置。 */
+  const plan = (pending: { x: number; y: number }) => {
     const rect = engine.doc.worldRect(nodeId)
     if (!rect) return null
     const tl = engine.worldToClient(rect.x, rect.y)
     const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
-    // 编辑器固定在卡片下方、不翻到上方，也不压住自己的卡片：卡片上的输出端口
-    // 要能直接拖线。横向让开侧栏、纵向避开底栏，窗口不够大就按可用空间收，
-    // 内容在面板里滚动，右边的关闭按钮和底部的生成按钮始终够得着。
-    const left = engine.camera.insets.left
-    const right = window.innerWidth - engine.camera.insets.right
-    const bottom = window.innerHeight - canvasBottomSpace(window.innerWidth, left).generator
-    const width = Math.max(1, Math.min(size.width, right - left))
-    const top = br.y + 12
+    const { insets } = engine.camera
+    const bounds = {
+      left: insets.left + PANEL_INSET,
+      right: window.innerWidth - insets.right - PANEL_INSET,
+      top: Math.max(insets.top, PANEL_TOP),
+      bottom: window.innerHeight - canvasBottomSpace(window.innerWidth, insets.left).generator,
+    }
     // 默认生成面板（grow）高度随窗口增长（上限 EDITOR_MAX_H）：几百到上千字的长提示词
     // 在编辑区内部滚动，而不是把面板压成几行；登记过专属尺寸的面板保持声明值。
-    // 卡片下方放得下多少就占多少；实在放不下就保持高度、伸到窗口外，
-    // 也不能盖住卡片：卡片上的输出端口要能直接拖线。
     const desired = size.grow
       ? Math.max(
           size.height,
           Math.min(Math.round(window.innerHeight * EDITOR_WINDOW_RATIO), EDITOR_MAX_H),
         )
       : size.height
-    const height = Math.min(desired, Math.max(bottom - top, Math.min(MIN_EDITOR_H, desired)))
+    return placeGeneratorPanel({
+      node: {
+        left: tl.x + pending.x,
+        top: tl.y + pending.y,
+        right: br.x + pending.x,
+        bottom: br.y + pending.y,
+      },
+      bounds,
+      width: size.width,
+      height: desired,
+    })
+  }
+  const place = () => {
+    const pending = engine.glideRemaining
+    const next = plan(pending)
+    if (!next) return null
+    // 相机还在平移时，面板跟着节点走向最终位置，不在途中翻来翻去。
     return {
-      left: Math.max(left, Math.min((tl.x + br.x - width) / 2, right - width)),
-      top,
-      width,
-      height,
-      maxHeight: height,
+      left: next.left - pending.x,
+      top: next.top - pending.y,
+      width: next.width,
+      height: next.height,
+      maxHeight: next.height,
     }
   }
+  // 新建节点或选中节点后，节点与面板超出可见区域就平滑平移进来。
+  // oxlint-disable react-hooks/exhaustive-deps -- 只在换节点时检查一次，之后由用户控制相机
+  useEffect(() => {
+    const { x, y } = plan({ x: 0, y: 0 })?.pan ?? { x: 0, y: 0 }
+    engine.glideBy(x, y)
+  }, [engine, nodeId])
+  // oxlint-enable react-hooks/exhaustive-deps
   const ref = useFollow<HTMLElement>(engine, place)
   const style = place()
   if (!style) return null
+  const placement = plan(engine.glideRemaining)?.placement ?? 'below'
   return (
     <aside
       ref={ref}
       aria-label="节点编辑器"
       data-testid="node-editor"
-      data-placement="below"
+      data-placement={placement}
       className="plein-node-editor pointer-events-auto fixed z-20 flex min-h-0 flex-col overflow-hidden rounded-canvas-card border border-line bg-surface"
       style={style}
     >

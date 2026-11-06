@@ -111,6 +111,8 @@ export interface ArrangeResult {
 const STROKE_ZOOM_SLACK = 0.1
 /** 镜头过渡（flyTo）时长 */
 const FLIGHT_MS = 560
+/** 平移过渡（glideBy）时长 */
+const GLIDE_MS = 240
 /** 静止时仍低频提交一帧，让 Pixi 的渲染后 GPU 回收按原期限运行。 */
 const IDLE_MAINTENANCE_MS = 30_000
 
@@ -139,6 +141,12 @@ export class Engine {
   private flight: {
     from: { x: number; y: number; zoom: number }
     to: { x: number; y: number; zoom: number }
+    start: number
+  } | null = null
+  /** 进行中的平移过渡（glideBy）：屏幕像素，相机缩放不变 */
+  private glide: {
+    from: { x: number; y: number }
+    to: { x: number; y: number }
     start: number
   } | null = null
   /** 动画自身更新相机时不取消自己；其他来源的导航立即接管。 */
@@ -255,7 +263,10 @@ export class Engine {
       input.dispose,
       interactions.dispose,
       this.camera.onChange(() => {
-        if (!this.advancingFlight) this.flight = null
+        if (!this.advancingFlight) {
+          this.flight = null
+          this.glide = null
+        }
         this.cameraDirty = true
       }),
       this.selection.onChange(() => {
@@ -300,6 +311,7 @@ export class Engine {
     // 用户自己动镜头时中断过渡动画
     const stopFlight = () => {
       this.flight = null
+      this.glide = null
     }
     host.addEventListener('wheel', stopFlight, { passive: true })
     host.addEventListener('pointerdown', stopFlight)
@@ -672,6 +684,47 @@ export class Engine {
 
   private flightIds: string[] = []
 
+  /**
+   * 相机平滑平移 (dx, dy) 屏幕像素，缩放不变，不高亮。用户一滚轮或按下指针就中断；
+   * 系统要求减少动态效果时直接跳过去。
+   */
+  glideBy(dx: number, dy: number) {
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return
+    const { camera } = this
+    const to = { x: camera.x + dx, y: camera.y + dy }
+    const reduce =
+      typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (reduce) {
+      camera.panBy(dx, dy)
+      return
+    }
+    this.flight = null
+    this.glide = { from: { x: camera.x, y: camera.y }, to, start: performance.now() }
+  }
+
+  /** 平移过渡还剩多少没走完（屏幕像素）；浮动面板按它预估节点的最终位置 */
+  get glideRemaining() {
+    const g = this.glide
+    return g ? { x: g.to.x - this.camera.x, y: g.to.y - this.camera.y } : { x: 0, y: 0 }
+  }
+
+  private stepGlide(now: number) {
+    const g = this.glide
+    if (!g) return
+    const t = Math.min(1, (now - g.start) / GLIDE_MS)
+    const e = 1 - (1 - t) ** 3
+    this.advancingFlight = true
+    try {
+      this.camera.panBy(
+        g.from.x + (g.to.x - g.from.x) * e - this.camera.x,
+        g.from.y + (g.to.y - g.from.y) * e - this.camera.y,
+      )
+    } finally {
+      this.advancingFlight = false
+    }
+    if (t >= 1) this.glide = null
+  }
+
   private stepFlight(now: number) {
     const f = this.flight
     if (!f) return
@@ -712,6 +765,7 @@ export class Engine {
 
   private frame() {
     if (this.flight) this.stepFlight(performance.now())
+    if (this.glide) this.stepGlide(performance.now())
     // 缩放停下来的那一帧：按最终缩放把线宽画准
     if (!this.cameraDirty && this.strokeZoom !== this.camera.zoom) this.redrawStrokes()
     const moved = this.cameraDirty || this.contentDirty || this.geometryDirty
