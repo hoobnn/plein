@@ -253,31 +253,56 @@ describe('嵌套对象字段', () => {
     },
   }
 
-  it('值存成对象而不是字符串，嵌套枚举照常渲染', async () => {
+  it('勾选启用后才写入，值存成对象而不是字符串，嵌套枚举照常渲染', async () => {
     const { submitted, user } = renderForm(schema)
+    expect(screen.queryByRole('textbox')).toBeNull()
+    await user.click(screen.getByRole('checkbox', { name: /SVG 作者设置/ }))
+    expect(submitted.at(-1)).toEqual({ svg: {} })
+    expect(screen.getByText('缺少必填项：model')).toBeTruthy()
+
     fireEvent.change(screen.getByRole('textbox', { name: /模型/ }), {
       target: { value: 'gpt-x' },
     })
     expect(submitted.at(-1)).toEqual({ svg: { model: 'gpt-x' } })
+    expect(screen.queryByText(/缺少必填项/)).toBeNull()
 
+    await user.click(screen.getByRole('checkbox', { name: /推理/ }))
     await choose(user, '强度', 'high')
     expect(submitted.at(-1)).toEqual({ svg: { model: 'gpt-x', reasoning: { effort: 'high' } } })
   })
 
-  it('子字段清空后整个对象一并撤销，不留空对象', () => {
-    const { submitted } = renderForm(schema, { svg: { model: 'gpt-x' } })
-    expect(screen.queryByText(/缺少必填项/)).toBeNull()
-    fireEvent.change(screen.getByRole('textbox', { name: /模型/ }), { target: { value: '' } })
+  it('空对象也是有效值（如联网搜索用默认设置），取消勾选才撤销', async () => {
+    const { submitted, user } = renderForm(
+      { properties: { web_search: { type: 'object', title: '联网搜索', properties: {} } } },
+      { web_search: {} },
+    )
+    expect(screen.getByRole<HTMLInputElement>('checkbox', { name: '联网搜索' }).checked).toBe(true)
+    await user.click(screen.getByRole('checkbox', { name: '联网搜索' }))
     expect(submitted.at(-1)).toEqual({})
   })
 
-  it('已填值但缺必填项时提示', () => {
-    renderForm(schema, { svg: { reasoning: { effort: 'low' } } })
-    expect(screen.getByText('缺少必填项：model')).toBeTruthy()
+  it('枚举字符串数组渲染成多选，全部取消后撤销该参数', async () => {
+    const { submitted, user } = renderForm({
+      properties: {
+        sources: {
+          type: 'array',
+          title: '搜索来源',
+          items: { type: 'string', enum: ['douyin', 'doubao'] },
+        },
+      },
+    })
+    await user.click(screen.getByRole('checkbox', { name: 'douyin' }))
+    await user.click(screen.getByRole('checkbox', { name: 'doubao' }))
+    expect(submitted.at(-1)).toEqual({ sources: ['douyin', 'doubao'] })
+    await user.click(screen.getByRole('checkbox', { name: 'douyin' }))
+    await user.click(screen.getByRole('checkbox', { name: 'doubao' }))
+    expect(submitted.at(-1)).toEqual({})
   })
 
   it('数组等没有控件的结构不渲染成文本框', () => {
-    renderForm({ properties: { tags: { type: 'array', title: '标签' } } })
+    renderForm({
+      properties: { tags: { type: 'array', title: '标签', items: { type: 'object' } } },
+    })
     expect(screen.queryByRole('textbox')).toBeNull()
     expect(screen.getByText('该参数暂不支持在界面中编辑')).toBeTruthy()
   })

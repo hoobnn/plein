@@ -29,6 +29,8 @@ interface FieldSchema {
   /** 嵌套对象：递归渲染成子表单 */
   properties?: Record<string, FieldSchema>
   required?: string[]
+  /** 数组元素：枚举字符串渲染成多选 */
+  items?: FieldSchema
   /** 声明里的扩展：实际尺寸由画幅换算，字段本身没有固定默认值 */
   'x-aspectRatioSizes'?: Record<string, string>
   /** 枚举值的显示名 */
@@ -98,15 +100,38 @@ export function SchemaForm({
               required={schema.required?.includes(key)}
               schema={f}
               value={isRecord(value[key]) ? value[key] : {}}
+              enabled={isRecord(value[key])}
+              onToggle={(on) => set(key, on ? {} : undefined)}
               readValue={() => {
                 const latest = (readValue ? readValue() : value)[key]
                 return isRecord(latest) ? latest : {}
               }}
-              onChange={(next) => set(key, Object.keys(next).length ? next : undefined)}
+              onChange={(next) => set(key, next)}
               onNumberEdit={onNumberEdit}
               onNumberEditEnd={onNumberEditEnd}
               dense={dense}
             />
+          )
+        } else if (f.type === 'array' && f.items?.enum && f.items.type === 'string') {
+          const picked = Array.isArray(current) ? (current as unknown[]) : []
+          control = (
+            <div role="group" aria-label={label} className="flex flex-wrap gap-x-4 gap-y-1">
+              {f.items.enum.map((option) => (
+                <label key={String(option)} className="flex items-center gap-1 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={picked.includes(option)}
+                    onChange={(e) => {
+                      const next = e.target.checked
+                        ? [...picked, option]
+                        : picked.filter((item) => item !== option)
+                      set(key, next.length ? next : undefined)
+                    }}
+                  />
+                  {f.items?.labels?.[String(option)] ?? String(option)}
+                </label>
+              ))}
+            </div>
           )
         } else if (f.type === 'array' || f.type === 'object') {
           // 没有对应控件的结构：说明清楚，别渲染成文本框存成字符串
@@ -212,15 +237,20 @@ export function SchemaForm({
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === 'object' && !Array.isArray(v)
 
-/** 嵌套对象：可折叠的分组，里面按同样的规则渲染；已填值的分组默认展开 */
+/**
+ * 嵌套对象：先勾选「启用」才会写入参数（空对象也是有效值，如「联网搜索」传空对象即用默认设置），
+ * 启用后展开子表单，里面按同样的规则渲染。
+ */
 function ObjectGroup({
   label,
   help,
   required,
   schema,
   value,
+  enabled,
   readValue,
   onChange,
+  onToggle,
   onNumberEdit,
   onNumberEditEnd,
   dense,
@@ -230,37 +260,41 @@ function ObjectGroup({
   required?: boolean
   schema: FieldSchema
   value: Record<string, unknown>
+  enabled: boolean
   readValue(): Record<string, unknown>
   onChange(next: Record<string, unknown>): void
+  onToggle(on: boolean): void
   onNumberEdit?(): void
   onNumberEditEnd?(): void
   dense: boolean
 }) {
   const missing = (schema.required ?? []).filter((k) => value[k] === undefined || value[k] === '')
-  const filled = Object.keys(value).length > 0
   return (
-    <details className="ui-field rounded-lg border border-line p-2" open={filled || undefined}>
-      <summary className="ui-label cursor-pointer">
+    <div className="ui-field rounded-lg border border-line p-2">
+      <label className="ui-label flex items-center gap-2">
+        <input type="checkbox" checked={enabled} onChange={(e) => onToggle(e.target.checked)} />
         {label}
         {required && ' *'}
-        {filled && missing.length > 0 && (
-          <span className="ui-help text-danger ml-2">缺少必填项：{missing.join('、')}</span>
-        )}
-      </summary>
+      </label>
       {help && <span className="ui-help">{help}</span>}
-      <div className="mt-2">
-        <SchemaForm
-          schema={schema}
-          value={value}
-          readValue={readValue}
-          onChange={onChange}
-          onNumberEdit={onNumberEdit}
-          onNumberEditEnd={onNumberEditEnd}
-          dense={dense}
-          nested
-        />
-      </div>
-    </details>
+      {enabled && (
+        <div className="mt-2">
+          <SchemaForm
+            schema={schema}
+            value={value}
+            readValue={readValue}
+            onChange={onChange}
+            onNumberEdit={onNumberEdit}
+            onNumberEditEnd={onNumberEditEnd}
+            dense={dense}
+            nested
+          />
+          {missing.length > 0 && (
+            <span className="ui-help text-danger">缺少必填项：{missing.join('、')}</span>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 
