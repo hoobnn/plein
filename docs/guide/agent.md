@@ -75,6 +75,7 @@ Codex 目录来自本机 `skills/list`，显式选用时通过 `turn/start` 的 
 
 在设置 →「MCP」里生成一个长期令牌，再按你用的客户端（Claude Code、Claude Desktop、Cursor 等）复制对应的连接配置。外部应用拿到的能力和小满完全相同；调用时不传 `canvas_id`，就操作你正在看的那块画布，没有打开的画布时用最近改过的那块。
 
+- 初次使用按这个顺序了解能力：`list_canvas_capabilities`（工具目录与契约）→ `list_canvas_actions`（扩展操作）→ `list_node_types`（节点类型、参数、端口）→ `list_models`（模型目录与约束）。连接说明里也写了这个顺序。
 - 同样只在本机免登录模式下开放。
 - 令牌只在生成时显示一次，服务端只保存它的 SHA-256；重新生成会让旧令牌失效。
 - 外部应用的改动不进任何会话的撤销栈，确认环节交给外部应用自己的界面。
@@ -84,6 +85,9 @@ Codex 目录来自本机 `skills/list`，显式选用时通过 `turn/start` 的 
 Agent 按语义调用画布功能。文档编辑复用 `packages/capabilities` 与 `packages/doc` 命令；文件、音色、字幕和资产库操作复用界面正在使用的服务端路由；WebGL 构图截图由打开当前画布的客户端渲染，服务端核对资产和目标后写回。内置助手、本机 CLI 和外部 MCP 使用同一目录。
 
 - `list_canvas_capabilities`：读取当前工具目录，指定 `name` 可查询完整输入契约。`list_node_types` 指定 `type` 时返回完整嵌套参数 schema，适用于场景、关键帧、角色档案、分镜、字幕和混音等参数。
+- `list_models` / `set_node_model`：模型目录与节点换模型。`list_models` 按能力列模型，不带 `ref` 返回摘要（是否启用、特性、价格、主要约束），带 `ref` 返回完整 limits 与模型专属参数的 `options_schema`；`enabled_only` 只列已启用平台。`set_node_model` 与界面换模型使用同一份校正逻辑（`packages/capabilities` 的 `adaptToModel`）：不支持的分辨率改回默认，不支持的画幅（含当前模式不接受的 auto）换成支持的，时长和张数夹进范围，草稿模式等收窄分辨率；模型不暴露的参数（如种子）保留但标为 `ignored_params`，模型专属参数按模型 ref 分别保存。返回 `changed`（参数前后值）和 `notes`（原因）。`update_element` 直接写 `params.model` 不会校正，返回里带提示改用 `set_node_model`。
+- `rename_element`：改名并同步所有 @ 引用，与界面重命名相同，返回改写的引用数和受影响元素；`update_element` 带 `name` 走同一实现（清空名称除外）。
+- `rewrite_prompt`：除 `mode`、`apply` 外支持 `structure`（auto / default / h3）、`detail`（refine / expand）和改写用的对话模型 `model`。生成模型取自节点 `params.model`，参考素材取自节点实际输入（与 `inspect_node_input` 同源），所以 auto 在 MiniMax H3 的多模态参考任务上会用六段结构。
 - `get_sequence` / `edit_sequence`：读取剪辑实例，按版本凭据修改、排序、固定候选、复制固定片段、加入或替换固定素材、移除一次使用。固定片段使用真实素材时长；替换只影响指定实例，旧素材保留。
 - `edit_production` / `edit_delivery_notes`：选择试制镜头和目标序列、追加制作目标及决策版本、编辑指定交付版本的反馈。Agent 的目标与决策明确记录 `source=agent`，不产生用户确认。
 - `list_canvas_templates` / `place_canvas_template`：铺设插件或用户保存的工作流模板，复用界面的依赖预检、连线校验与引用映射；只创建结构，不运行。
