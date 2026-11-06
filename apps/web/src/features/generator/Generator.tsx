@@ -179,22 +179,40 @@ function NodeBelow({
       return
     }
     setArmed(false)
-    // 等待期间用户自己动了相机：说明他有别的打算，放弃这次自动平移，面板照常显示
-    const off = engine.camera.onChange(() => {
+    // 等待期间用户自己动了相机：说明他有别的打算，放弃这次自动平移，面板照常显示。
+    // 又按下了指针（双击的第二下、开始拖动）：先暂停，松开后重新计时，
+    // 不能在拖动到一半时把相机推走。
+    let timer = 0
+    const start = () => {
       window.clearTimeout(timer)
-      off()
+      timer = window.setTimeout(() => {
+        cleanup()
+        const again = plan({ x: 0, y: 0 })?.pan ?? { x: 0, y: 0 }
+        engine.glideBy(again.x, again.y)
+        setArmed(true)
+      }, PAN_DELAY_MS)
+    }
+    const pause = () => window.clearTimeout(timer)
+    const giveUp = () => {
+      pause()
+      cleanup()
       setArmed(true)
-    })
-    const timer = window.setTimeout(() => {
-      off()
-      const again = plan({ x: 0, y: 0 })?.pan ?? { x: 0, y: 0 }
-      engine.glideBy(again.x, again.y)
-      setArmed(true)
-    }, PAN_DELAY_MS)
+    }
+    const offCamera = engine.camera.onChange(giveUp)
+    window.addEventListener('pointerdown', pause, true)
+    window.addEventListener('pointerup', start, true)
+    window.addEventListener('pointercancel', start, true)
+    const cleanup = () => {
+      offCamera()
+      window.removeEventListener('pointerdown', pause, true)
+      window.removeEventListener('pointerup', start, true)
+      window.removeEventListener('pointercancel', start, true)
+    }
+    start()
     // 面板关闭（取消选中、换节点）后不再继续推相机，避免点空白处时画布还在漂
     return () => {
-      window.clearTimeout(timer)
-      off()
+      pause()
+      cleanup()
       engine.stopGlide()
     }
   }, [engine, nodeId])
