@@ -20,7 +20,7 @@ afterAll(() => running.close())
 // oxlint-disable-next-line typescript/no-explicit-any -- 测试里按需取 JSON-RPC 响应字段
 type Json = Record<string, any>
 interface Rpc {
-  result?: Json
+  result: Json
   error?: { code: number; message: string; data?: Json }
 }
 
@@ -221,10 +221,10 @@ describe('外部 MCP 协议层', () => {
     expect(JSON.parse(cap.contents[0].text)).toMatchObject({ name: 'get_canvas', effect: 'read' })
     const missing = await c.rpc('resources/read', { uri: 'plein://canvas/nope' })
     expect(missing.error?.code).toBe(-32602)
-    expect(missing.error?.data.uri).toBe('plein://canvas/nope')
+    expect(missing.error?.data?.uri).toBe('plein://canvas/nope')
 
     const noRead = client((await issue(['edit'])).token)
-    expect((await noRead.rpc('resources/list')).error?.data.code).toBe('forbidden_scope')
+    expect((await noRead.rpc('resources/list')).error?.data?.code).toBe('forbidden_scope')
   })
 
   it('resources/list 分页', async () => {
