@@ -29,8 +29,12 @@ export async function renderStage(ctx: ServerContext, scene: unknown): Promise<s
       signal?.removeEventListener('abort', abort)
       const requests = { ...awareness.getLocalState()?.canvasRenderRequests }
       delete requests[requestId]
-      const state = { ...awareness.getLocalState(), canvasRenderRequests: requests }
-      awareness.setLocalState(Object.keys(requests).length ? state : null)
+      const { canvasRenderRequests: _, ...rest } = awareness.getLocalState() ?? {}
+      const state = Object.keys(requests).length
+        ? { ...rest, canvasRenderRequests: requests }
+        : rest
+      // 状态里还有别的字段（外部 MCP 推给界面的动作）时保留
+      awareness.setLocalState(Object.keys(state).length ? state : null)
     }
     const abort = () => {
       cleanup()

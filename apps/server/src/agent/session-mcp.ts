@@ -67,10 +67,10 @@ export function configureTurn(env: SessionEnv, s: Live, turn: TurnExecution, sel
         turn.persist()
         s.changes.recordGroup(groupId)
       },
-      ui: (action, ids) => {
+      ui: (call) => {
         turn.assertOpen()
         if (!s.listeners.size) return false
-        for (const fn of s.listeners) fn({ type: 'ui', action, ids })
+        for (const fn of s.listeners) fn({ type: 'ui', ...call })
         return true
       },
     },

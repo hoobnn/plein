@@ -290,3 +290,5 @@ export type AgentEvent =
   | { type: 'touch'; ids: string[] }
   /** 智能体请用户的画布执行界面动作：平滑定位到元素 / 选中元素 */
   | { type: 'ui'; action: 'focus' | 'select'; ids: string[] }
+  /** 把镜头移到指定世界坐标（屏幕中央）和缩放 */
+  | { type: 'ui'; action: 'viewport'; x: number; y: number; zoom: number }

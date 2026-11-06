@@ -35,6 +35,7 @@ import { cancelNode, runNode } from '../features/runs/run'
 import { watchVideoAspect } from './videoAspect'
 import { watchStageAspect } from './stageAspect'
 import { watchAgentRender } from './agentRender'
+import { watchAgentUi } from './agentUi'
 import { watchStageHistory } from '../features/stage/history'
 import { watchMotionHistory } from '../features/motion/history'
 import { droppedFiles, MAX_IMPORT_FILES } from './dropped'
@@ -173,11 +174,15 @@ export function CanvasView({
           const off = attachImport(engine, host)
           const offWheel = attachWheelContinuation(host)
           const offView = awareness ? publishView(engine, awareness as ViewAwareness) : () => {}
+          const offAgentUi = awareness
+            ? watchAgentUi(awareness as Parameters<typeof watchAgentUi>[0], engine)
+            : () => {}
           const offTheme = useTheme.subscribe((s, prev) => {
             if (s.name !== prev.name) engine.setTheme(canvasTheme(s.name))
           })
           cleanups.push(() => {
             offView()
+            offAgentUi()
             offStale()
             offAspect()
             offStageAspect()

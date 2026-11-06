@@ -216,6 +216,7 @@ export const useAgent = create<AgentStore>((set, get) => {
         const engine = get().canvasId === cur.canvasId ? useCanvas.getState().engine : null
         if (!engine) return
         if (e.action === 'select') engine.selection.set(e.ids)
+        else if (e.action === 'viewport') engine.camera.lookAt(e.x, e.y, e.zoom)
         else engine.flyTo(e.ids)
         return
       }

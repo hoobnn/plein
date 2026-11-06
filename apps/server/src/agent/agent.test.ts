@@ -486,8 +486,8 @@ describe('确认关卡与界面能力', () => {
           origin: changes.origin,
           onRun: (n, r) => changes.recordRun(n, r),
           onGroup: (g) => changes.recordGroup(g),
-          ui: (action, ids) => {
-            ui.push([action, ids])
+          ui: (call) => {
+            if (call.action !== 'viewport') ui.push([call.action, call.ids])
             return true
           },
         },

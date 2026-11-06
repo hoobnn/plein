@@ -108,6 +108,7 @@ const TOOL_LABELS: Record<string, string> = {
   ui_get_viewport: '查看视口',
   ui_focus: '带你看',
   ui_select: '选中',
+  ui_set_viewport: '移动镜头',
   await_approval: '等你确认',
   propose_plan: '列出计划',
   update_plan: '更新计划进度',

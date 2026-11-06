@@ -85,11 +85,14 @@ export interface ToolEnv {
   /** 本轮发送或命令调用时附带的选区快照；未附带时为空，不回退实时选区。 */
   selection?: readonly string[]
   /** 推给用户屏幕的界面动作；返回 false 表示没有人在看这块画布 */
-  ui?(action: UiAction, ids: string[]): boolean
+  ui?(call: UiCall): boolean
 }
 
-/** 能让用户屏幕执行的界面动作 */
-export type UiAction = 'focus' | 'select'
+/** 能让用户屏幕执行的界面动作：定位 / 选中元素（ids 为空 = 清空选区）、设置视口 */
+export type UiCall =
+  | { action: 'focus' | 'select'; ids: string[] }
+  | { action: 'viewport'; x: number; y: number; zoom: number }
+export type UiAction = UiCall['action']
 
 /** 前端经 awareness 发布的界面状态（选区、视口），见 apps/web/src/canvas/CanvasView.tsx */
 export interface ViewState {
@@ -245,7 +248,7 @@ const getViewport = serverCapability({
   input: z.object({ limit: z.number().int().min(1).max(100).default(40) }),
   run: (ctx, { limit }) => {
     const view = viewOf(ctx.env.rooms, ctx.env.canvasId)
-    if (!view) return '用户现在没有打开这块画布'
+    if (!view) return NO_VIEWER
     const v = view.viewport
     return ctx.withDoc((doc) => {
       const inside = [...doc.elements()].filter((el) => {
@@ -261,7 +264,10 @@ const getViewport = serverCapability({
   },
 })
 
-const uiAction = (action: UiAction, title: string, description: string) =>
+const NO_VIEWER =
+  '用户现在没有在浏览器或桌面端打开这块画布，界面动作没有执行。让用户打开画布后重试；不影响画布内容。'
+
+const uiAction = (action: 'focus' | 'select', title: string, description: string) =>
   serverCapability({
     name: `ui_${action}`,
     title,
@@ -269,20 +275,47 @@ const uiAction = (action: UiAction, title: string, description: string) =>
     group: 'ui',
     where: 'client',
     effect: 'read',
-    input: z.object({ ids: z.array(id).min(1).max(200) }),
+    // 选中允许空数组：清空用户的选区
+    input: z.object({
+      ids: z
+        .array(id)
+        .min(action === 'select' ? 0 : 1)
+        .max(200),
+    }),
     run: (ctx, { ids }) => {
       const known = ctx.withDoc((doc) => ids.filter((i) => doc.get(i)))
-      if (!known.length) throw new CapabilityError('这些元素都不存在')
-      return ctx.env.ui?.(action, known) ? '已在用户屏幕上完成' : '用户现在没有打开这块画布'
+      if (ids.length && !known.length) throw new CapabilityError('这些元素都不存在')
+      return ctx.env.ui?.({ action, ids: known }) ? '已在用户屏幕上完成' : NO_VIEWER
     },
   })
+
+const setViewport = serverCapability({
+  name: 'ui_set_viewport',
+  title: '设置视口',
+  description:
+    '把用户的镜头移到指定位置：x、y 是要落在屏幕中央的世界坐标，zoom 是缩放（0.05–8，1 为实际大小）。用 ui_get_viewport 读当前视口。',
+  group: 'ui',
+  where: 'client',
+  effect: 'read',
+  input: z.object({
+    x: z.number().finite(),
+    y: z.number().finite(),
+    zoom: z.number().min(0.05).max(8),
+  }),
+  run: (ctx, { x, y, zoom }) =>
+    ctx.env.ui?.({ action: 'viewport', x, y, zoom }) ? '已在用户屏幕上完成' : NO_VIEWER,
+})
 
 const focus = uiAction(
   'focus',
   '带用户看',
   '把用户的镜头平滑移动到这些元素并让它们闪一下。做完一件事后用它把用户带到结果那里。',
 )
-const select = uiAction('select', '选中', '在用户的画布上选中这些元素，方便用户接着操作。')
+const select = uiAction(
+  'select',
+  '选中',
+  '在用户的画布上选中这些元素，方便用户接着操作；ids 传空数组清空选区。',
+)
 
 const listCanvasCapabilities = serverCapability({
   name: 'list_canvas_capabilities',
@@ -354,6 +387,7 @@ export const serverCapabilities = new CapabilityRegistry<ServerContext>([
   getViewport,
   focus,
   select,
+  setViewport,
 ])
 
 const withPlugins = new WeakMap<PluginHost, CapabilityRegistry<ServerContext>>()
