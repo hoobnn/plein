@@ -1,7 +1,7 @@
 import { definePlugin, defineServerPlugin, PLUGIN_API_VERSION } from '@plein/plugin-sdk'
 import { emptyProductionGoal, productionGoalHeads } from '@plein/doc'
 import { Readable } from 'node:stream'
-import { createElement, connect, sequenceInstancesOf, updateElement } from '@plein/doc'
+import { addResults, createElement, connect, sequenceInstancesOf, updateElement } from '@plein/doc'
 import { describe, expect, it } from 'vite-plus/test'
 import sharp from 'sharp'
 import { addNode, bootServer, createCanvas } from '../testing'
@@ -272,6 +272,47 @@ describe('画布与 Agent 能力契约', () => {
     const node = addNode(f.doc, 'plein/image')
     await f.invoke('adopt_result', { id: node, result_id: null })
     expect(f.doc.get(node)!.adopted).toBeUndefined()
+  })
+
+  it('delete_results 删除历史候选，报告当前输出是否改变，需要确认', async () => {
+    const f = await fixture()
+    const node = addNode(f.doc, 'plein/image')
+    const result = (id: string) =>
+      ({ id, runId: `run-${id}`, port: 'out', type: 'text', value: { text: id } }) as never
+    addResults(f.doc, node, [result('a')])
+    addResults(f.doc, node, [result('b')])
+    const kept = (await f.invoke('delete_results', { id: node, result_ids: ['a', 'zzz'] })) as {
+      removed: number
+      current_changed: boolean
+      not_found: string[]
+    }
+    expect(kept).toMatchObject({ removed: 1, current_changed: false, not_found: ['zzz'] })
+    expect(f.doc.get(node)!.results?.map((r) => r.id)).toEqual(['b'])
+    const gone = (await f.invoke('delete_results', { id: node, result_ids: ['b'] })) as {
+      current_changed: boolean
+    }
+    expect(gone.current_changed).toBe(true)
+    expect(f.doc.get(node)!.adopted).toBeNull()
+    await expect(f.invoke('delete_results', { id: node, result_ids: ['b'] })).rejects.toThrow(
+      'get_element',
+    )
+    const changes = new AgentChanges('parity', f.id, 'local', f.server.rooms, f.server.runs)
+    changes.begin('turn')
+    const tools = agentTools(f.env, {
+      changes,
+      approvals: new Approvals(() => {}),
+      mode: () => 'rules',
+    })
+    const r = await callTool(
+      tools.find((t) => t.name === 'delete_results')!,
+      {
+        id: node,
+        result_ids: ['x'],
+      },
+    )
+    expect(JSON.parse(r.content[0]!.type === 'text' ? r.content[0]!.text : '{}').status).toBe(
+      'needs_approval',
+    )
   })
 
   it('检查点保存和恢复复用正式服务，原画布保留，素材检索隔离用户', async () => {

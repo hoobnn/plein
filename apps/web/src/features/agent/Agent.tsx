@@ -77,6 +77,7 @@ const TOOL_LABELS: Record<string, string> = {
   wait_for_run: '等待结果',
   cancel_run: '取消运行',
   adopt_result: '采用结果',
+  delete_results: '删除历史结果',
   view_media: '查看效果',
   edit_media: '加工素材',
   run_flow: '运行上下游',

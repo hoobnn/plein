@@ -2,7 +2,9 @@ import {
   adoptResult,
   deleteElements,
   mediaSize,
+  removalChangesCurrent,
   removeEdges,
+  removeResults,
   setParams,
   setParent,
   setText,
@@ -402,6 +404,42 @@ export const adopt = defineCapability({
     }),
 })
 
+export const deleteResults = defineCapability({
+  name: 'delete_results',
+  title: '删除历史结果',
+  description:
+    '删除节点生成历史里的候选结果记录（与历史面板的删除一致）。只删画布里的记录，不删素材文件；删到节点当前采用的结果时，节点回到「尚未采用」，不会自动换成别的候选。可在本轮撤销。先用 get_element 看 results 里的 id；返回 removed 个数、current_changed（是否改变了节点当前输出）和没找到的 id。',
+  group: 'edit',
+  where: 'doc',
+  effect: 'destructive',
+  approval: () => ({ reason: '删除生成历史里的结果记录', ids: [] }),
+  input: z.object({
+    id,
+    result_ids: z.array(id).min(1).max(200).describe('要删除的结果 id，来自节点的 results'),
+  }),
+  run: (ctx, { id, result_ids }) =>
+    ctx.withDoc((doc) => {
+      const el = need(doc, id)
+      const have = new Set((el.results ?? []).map((r) => r.id))
+      const missing = result_ids.filter((r) => !have.has(r))
+      const present = new Set(result_ids.filter((r) => have.has(r)))
+      if (!present.size)
+        throw new CapabilityError(
+          `节点 ${id} 没有这些结果：${missing.join('、')}，先用 get_element 查看 results`,
+        )
+      const currentChanged = removalChangesCurrent(el, present)
+      const removed = removeResults(
+        doc,
+        [...present].map((resultId) => ({ elementId: id, resultId })),
+      )
+      return {
+        removed,
+        current_changed: currentChanged,
+        ...(missing.length ? { not_found: missing } : {}),
+      }
+    }),
+})
+
 /** 画布读写的全部能力，顺序即工具列表顺序 */
 export const canvasCapabilities = [
   getCanvas,
@@ -416,4 +454,5 @@ export const canvasCapabilities = [
   disconnect,
   deleteElementsCap,
   adopt,
+  deleteResults,
 ]
