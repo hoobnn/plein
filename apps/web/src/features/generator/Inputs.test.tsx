@@ -140,6 +140,23 @@ describe('多模态参考名称', () => {
     ])
   })
 
+  it('文生视频模式下连了素材：显示警告并只给当前模型支持的切换入口', async () => {
+    const f = setup({ params: { mode: 'text', model: 'minimax/api:MiniMax-H3' } })
+    const warning = screen.getByTestId('mode-mismatch')
+    expect(warning.textContent).toContain('4 项')
+    expect(warning.className).toContain('text-warning')
+    await f.user.click(within(warning).getByRole('button', { name: '切换为图生视频' }))
+    act(() => doc.flush())
+    expect(doc.get(f.id)?.params?.mode).toBe('image')
+    // 已切走：文生视频的警告消失
+    expect(screen.queryByTestId('mode-mismatch')).toBeNull()
+  })
+
+  it('其他模式或没连素材时不显示文生视频警告', () => {
+    setup()
+    expect(screen.queryByTestId('mode-mismatch')).toBeNull()
+  })
+
   it('服务端 sent 之外的参考视频和音频也留在顶部唯一列表，并按类型编号', () => {
     setup({
       sent: (sources, assets) => [

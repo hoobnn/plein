@@ -28,6 +28,7 @@ import { filterReferenceCandidates, referenceCandidates } from './referenceCandi
 import { referenceMedia, submittedMedia } from './submittedMedia'
 import { bindReferenceName, referenceName, replaceReferenceName } from './referenceNames'
 import { RoleReferencePicker } from './RoleReferencePicker'
+import { VIDEO_MODE_LABELS } from '@plein/nodes'
 import { useRef, useState } from 'react'
 import { assetUrls } from '../../api/client'
 import { importFiles } from '../../canvas/import'
@@ -395,6 +396,30 @@ export function Inputs({
     video: modelLimits?.referenceMedia?.video,
     audio: modelLimits?.referenceMedia?.audio,
   }
+  // 文生视频模式不送入任何连入的素材：连了却不送要明说，并给出当前模型能用的模式
+  const connected = {
+    images: ups.get('images')?.length ?? 0,
+    videos: ups.get('videos')?.length ?? 0,
+    audios: ups.get('audios')?.length ?? 0,
+  }
+  const modeSwitch =
+    node.capability === 'video.generate' && (mode ?? node.defaults?.mode ?? 'text') === 'text'
+      ? (
+          [
+            { mode: 'image', label: '切换为图生视频', usable: connected.images >= 1 },
+            {
+              mode: 'reference',
+              label: '切换为参考模式',
+              usable: connected.images + connected.videos + connected.audios >= 1,
+            },
+          ] as const
+        ).filter(
+          (option) =>
+            option.usable &&
+            (modelLimits?.videoModes === undefined || modelLimits.videoModes.includes(option.mode)),
+        )
+      : []
+  const idleConnected = connected.images + connected.videos + connected.audios
   const countsText = (['image', 'video', 'audio'] as const)
     .filter((kind) => counts[kind] > 0 || kindLimits[kind] !== undefined)
     .map((kind) =>
@@ -615,6 +640,34 @@ export function Inputs({
             {preparationError ? '输入确认失败，请在实际输入处重试' : '正在确认参考素材…'}
           </p>
         )}
+        {node.capability === 'video.generate' &&
+          (mode ?? node.defaults?.mode ?? 'text') === 'text' &&
+          idleConnected > 0 && (
+            <div
+              role="status"
+              data-testid="mode-mismatch"
+              className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-0.5 text-xs text-warning"
+            >
+              <Icon name="warning" size={14} />
+              <span className="min-w-0">
+                已连入 {idleConnected} 项参考素材，但「{VIDEO_MODE_LABELS.text}」模式不会送入模型
+              </span>
+              {modeSwitch.map((option) => (
+                <button
+                  key={option.mode}
+                  type="button"
+                  className="ui-btn ui-btn-xs ui-btn-secondary"
+                  onClick={() => {
+                    engine.doc.undo.stopCapturing()
+                    setParam(engine.doc, el.id, 'mode', option.mode)
+                    engine.doc.undo.stopCapturing()
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          )}
         <section
           className="plein-generator-references flex min-w-0 flex-col gap-1"
           aria-label="参考素材"
@@ -938,7 +991,7 @@ function ReferenceTile({
         transition,
         zIndex: isDragging ? 1 : undefined,
       }}
-      className="relative flex w-22 flex-none flex-col items-start gap-0.5 text-2xs text-ink-subtle"
+      className="relative flex w-22 flex-none flex-col items-start gap-0.5 text-xs text-ink-subtle"
     >
       <div className="relative w-full">
         <button
@@ -954,7 +1007,7 @@ function ReferenceTile({
               onMove?.(e.key === 'ArrowLeft' ? -1 : 1)
             }
           }}
-          className="relative block size-11 shrink-0 overflow-hidden rounded-md bg-surface-2 shadow-1"
+          className="relative block size-12 shrink-0 overflow-hidden rounded-md bg-surface-2 shadow-1"
         >
           {img ? (
             <img src={img} alt="" className="size-full object-cover" />
@@ -968,7 +1021,7 @@ function ReferenceTile({
         <span
           data-token={item.token}
           data-role={item.role}
-          className="pointer-events-none absolute top-0.5 left-0.5 z-10 rounded bg-black/65 px-1 py-px text-2xs font-medium whitespace-nowrap text-white tabular-nums"
+          className="pointer-events-none absolute top-0.5 left-0.5 z-10 rounded bg-black/65 px-1 py-px text-xs font-medium whitespace-nowrap text-white tabular-nums"
         >
           {badge}
         </span>
@@ -1003,7 +1056,7 @@ function ReferenceTile({
       {origin.length > 0 && (
         <span className="flex w-full flex-wrap gap-1">
           {origin.map((label) => (
-            <span key={label} className="rounded bg-surface-2 px-1 text-2xs text-ink-subtle">
+            <span key={label} className="rounded bg-surface-2 px-1 text-xs text-ink-subtle">
               {label}
             </span>
           ))}
