@@ -36,6 +36,19 @@ function Harness({
 const nameInput = () => screen.getByRole<HTMLInputElement>('textbox', { name: '节点名称' })
 const current = () => screen.getByTestId('current').textContent
 
+describe('节点名称的同步说明', () => {
+  it('说明平时不占标题行，聚焦改名时才出现，失焦后收起，悬停仍可读到', () => {
+    renderApp(<NameField value="角色" hint="改名时同步当前画布引用" onChange={() => {}} />)
+    const input = nameInput()
+    expect(screen.queryByText('改名时同步当前画布引用')).toBeNull()
+    expect(input.title).toBe('改名时同步当前画布引用')
+    fireEvent.focus(input)
+    expect(screen.getByText('改名时同步当前画布引用')).toBeTruthy()
+    fireEvent.blur(input)
+    expect(screen.queryByText('改名时同步当前画布引用')).toBeNull()
+  })
+})
+
 describe('节点名称的编辑', () => {
   it('失焦保存去掉首尾空格的名字', () => {
     const saved: string[] = []

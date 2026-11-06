@@ -18,6 +18,8 @@ export function NameField({
   onChange(v: string): boolean | void
 }) {
   const [edit, setEdit] = useState({ base: value, draft: value })
+  // 同步说明只在改名时才有用：平时常驻会占住标题行，改成聚焦输入框时才出现
+  const [focused, setFocused] = useState(false)
   const conflictId = useId()
   useEffect(() => {
     setEdit((prev) =>
@@ -44,7 +46,10 @@ export function NameField({
           value={draft}
           maxLength={200}
           onChange={(e) => setEdit({ base, draft: e.target.value })}
+          title={hint}
+          onFocus={() => setFocused(true)}
           onBlur={() => {
+            setFocused(false)
             if (!conflict) commit()
           }}
           onKeyDown={(e) => {
@@ -66,7 +71,7 @@ export function NameField({
           }}
           className="min-w-0 flex-1 rounded-sm bg-transparent text-base font-semibold text-ink outline-none"
         />
-        {hint && (
+        {hint && focused && (
           <span title={hint} className="max-w-1/2 truncate text-xs text-ink-subtle">
             {hint}
           </span>
