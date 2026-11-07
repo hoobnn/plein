@@ -35,6 +35,7 @@ import {
   type Live,
   type SessionEnv,
   type SessionHost,
+  MAX_QUEUED,
   contextOf,
   settingsOf,
 } from './session-types'
@@ -90,8 +91,8 @@ export class AgentSessions {
       // 闭包转发：mcpUrl 与 detect 都在实例上动态读取，测试替换后立即生效
       mcpUrl: () => this.mcpUrl,
       detect: (refresh) => this.detect(refresh),
-      beginTurn: (s, text, selection, model, skill, prompt) =>
-        this.beginTurn(s, text, selection, model, skill, prompt),
+      beginTurn: (s, text, selection, model, skill, prompt, itemId) =>
+        this.beginTurn(s, text, selection, model, skill, prompt, itemId),
       endTurn: (s, turn) => this.endTurn(s, turn),
       prompt: (s, text, selection, skill) => this.prompt(s, text, selection, skill),
       stop: (id, reason) => this.stop(id, reason),
@@ -310,7 +311,14 @@ export class AgentSessions {
   ) {
     const s = this.load(id)
     if (!s || s.row.owner_id !== ownerId) throw new AgentError('not_found', '会话不存在')
-    if (s.busy) throw new AgentError('busy', '上一条消息还在处理中')
+    if (s.busy) {
+      // 内置智能体运行中：消息排队，下一步（或下一轮）再交给模型；CLI 驱动仍要等这一轮结束
+      if (s.row.agent === 'builtin' && s.active?.state === 'running' && s.abort) {
+        if (skillId) throw new AgentError('invalid_input', '运行中不能为排队的消息指定技能')
+        return this.enqueue(s, text, selection)
+      }
+      throw new AgentError('busy', '上一条消息还在处理中')
+    }
     if (!this.deps.enabled && s.row.agent !== 'builtin')
       throw new AgentError('disabled', '本机智能体未启用')
     s.busy = true
@@ -353,6 +361,56 @@ export class AgentSessions {
         this.endTurn(s, dispatched)
       } else if (!s.active) s.busy = false
       throw err
+    }
+  }
+
+  /** 把运行中收到的消息排进队列：对话里先显示为「已排队」 */
+  private enqueue(s: Live, text: string, selection?: string[]) {
+    if (s.queued.length >= MAX_QUEUED)
+      throw new AgentError('busy', `排队的消息已有 ${MAX_QUEUED} 条，等小满处理后再发`)
+    const selected = selection
+      ? this.deps.rooms.withDoc(s.row.canvas_id, (doc) =>
+          [...selection].filter((nodeId) => !!doc.get(nodeId)),
+        )
+      : undefined
+    const item = {
+      id: newId('it'),
+      type: 'user' as const,
+      text,
+      ...(selected?.length ? { selection: selected } : {}),
+      queued: true,
+      at: Date.now(),
+    }
+    s.queued.push({ item, prompt: this.prompt(s, text, selected), selection: selected })
+    push(this.env, s, item)
+  }
+
+  /** 一轮正常结束后，排队里还剩的消息接着作为下一轮；其余结局丢弃并告知 */
+  private flushQueued(s: Live, turn: TurnExecution) {
+    if (!s.queued.length) return
+    if (turn.state !== 'completed') {
+      const dropped = s.queued.splice(0)
+      const ids = new Set(dropped.map((q) => q.item.id))
+      s.items = s.items.filter((i) => !ids.has(i.id))
+      notice(
+        this.env,
+        s,
+        `本轮没有正常结束，${dropped.length} 条排队的消息已取消，需要的话请重新发送。`,
+      )
+      emit(s, { type: 'session', session: this.view(s) })
+      return
+    }
+    const next = s.queued.shift()!
+    s.busy = true
+    s.revision++
+    try {
+      startBuiltin(this.host, s, next.item.text, next.selection, undefined, next.item.id)
+    } catch (err) {
+      if (!s.active) s.busy = false
+      s.queued.length = 0
+      s.items = s.items.filter((i) => !(i.type === 'user' && i.queued))
+      fail(this.env, s, (err as Error).message)
+      emit(s, { type: 'session', session: this.view(s) })
     }
   }
 
@@ -442,6 +500,7 @@ export class AgentSessions {
     model?: string,
     skill?: AgentSkill,
     prompt?: string,
+    itemId?: string,
   ) {
     keep(s)
     const turn = new TurnExecution(
@@ -458,7 +517,7 @@ export class AgentSessions {
     s.changes.begin(s.turn)
     if (s.items.length === 0) s.row.title = text.replace(/\s+/g, ' ').slice(0, 40)
     push(this.env, s, {
-      id: newId('it'),
+      id: itemId ?? newId('it'),
       type: 'user',
       text,
       selection,
@@ -498,6 +557,7 @@ export class AgentSessions {
     s.active = null
     setRunning(this.env, s, false)
     scheduleRelease(this.env, s)
+    this.flushQueued(s, turn)
   }
 
   private prompt(s: Live, text: string, selection?: string[], skill?: AgentSkillDetail) {
@@ -526,6 +586,8 @@ export class AgentSessions {
       items = JSON.parse(row.items) as AgentItem[]
     } catch {}
     // 撤销栈只在内存里：重新加载的会话，之前的改动都不能再撤销
+    // 排队中的消息没有随进程保留，重新加载时去掉
+    items = items.filter((it) => !(it.type === 'user' && it.queued))
     items = items.map((it) =>
       it.type === 'tool' && it.status === 'running'
         ? {
@@ -560,6 +622,7 @@ export class AgentSessions {
       plan,
       mode: 'rules',
       releaseTimer: null,
+      queued: [],
     }
     this.live.set(id, s)
     return s

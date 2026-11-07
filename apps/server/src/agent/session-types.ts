@@ -53,7 +53,19 @@ export interface Live {
   /** 这一轮的确认方式 */
   mode: AgentApprovalMode
   releaseTimer: NodeJS.Timeout | null
+  /** 内置智能体运行中收到的消息：下一步前注入本轮，本轮结束时还剩的转成下一轮 */
+  queued: QueuedMessage[]
 }
+
+/** 排队中的用户消息：item 已显示在对话里（带 queued 标记），prompt 是排队时拼好的完整提示词 */
+export interface QueuedMessage {
+  item: Extract<AgentItem, { type: 'user' }>
+  prompt: string
+  selection?: string[]
+}
+
+/** 同一时刻最多排几条 */
+export const MAX_QUEUED = 5
 
 /** 服务端启动智能体需要的依赖 */
 export interface AgentDeps {
@@ -103,6 +115,7 @@ export interface SessionHost {
     model?: string,
     skill?: AgentSkill,
     prompt?: string,
+    itemId?: string,
   ): TurnExecution
   /** 一轮结束（不论成败）：收尾工具、改动集、状态和租约 */
   endTurn(s: Live, turn: TurnExecution): void

@@ -726,3 +726,57 @@ it('删除正在打开的历史后迟到详情不恢复，删空列表回到输�
   expect(input.value).toBe('切换期间的草稿')
   expect(removed).toEqual(['target', 's1'])
 })
+
+it('内置智能体运行中可输入并发送，消息排队；停止按钮并排保留', async () => {
+  prime(session('s1', { status: 'running' }))
+  const sent: unknown[] = []
+  mockFetch(async (request) => {
+    const path = new URL(request.url).pathname
+    if (request.method === 'GET' && path === '/api/canvases/c1/agent/sessions')
+      return Response.json([])
+    if (request.method === 'GET' && path === '/api/agent/models/builtin')
+      return Response.json({ models: [] })
+    if (request.method === 'POST' && path === '/api/agent/sessions/s1/messages') {
+      sent.push(await request.json())
+      return new Response(null, { status: 202 })
+    }
+  })
+  const { user } = renderDock()
+  const panel = await openPanel(user)
+  expect(within(panel).getByRole('button', { name: '停止' })).toBeTruthy()
+  const send = within(panel).getByRole<HTMLButtonElement>('button', { name: '发送' })
+  expect(send.disabled).toBe(true)
+  await user.type(within(panel).getByPlaceholderText('让小满帮你做点什么…'), '再补充一句')
+  expect(send.disabled).toBe(false)
+  await user.click(send)
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]).toMatchObject({ text: '再补充一句' })
+})
+
+it('CLI 驱动运行中仍不能发送，只有停止按钮', async () => {
+  prime(session('s1', { status: 'running', agent: 'claude' }))
+  mockFetch((request) => {
+    if (new URL(request.url).pathname === '/api/agent/models/claude')
+      return Response.json({ models: [] })
+  })
+  const { user } = renderDock()
+  const panel = await openPanel(user)
+  expect(within(panel).getByRole('button', { name: '停止' })).toBeTruthy()
+  expect(within(panel).queryByRole('button', { name: '发送' })).toBeNull()
+})
+
+it('排队的用户消息带「已排队」，注入后去掉', () => {
+  const items: AgentItem[] = [{ id: 'u1', type: 'user', text: '稍后处理', queued: true, at: 1 }]
+  const view = renderApp(<Transcript items={items} running intro="" worker="小满" />)
+  expect(screen.getByText(/已排队/)).toBeTruthy()
+  view.unmount()
+  renderApp(
+    <Transcript
+      items={[{ id: 'u1', type: 'user', text: '稍后处理', at: 1 }]}
+      running
+      intro=""
+      worker="小满"
+    />,
+  )
+  expect(screen.queryByText(/已排队/)).toBeNull()
+})

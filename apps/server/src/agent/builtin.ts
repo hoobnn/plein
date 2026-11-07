@@ -76,6 +76,8 @@ export interface BuiltinTurn {
   onToolStart(call: ChatToolCall): void
   onToolEnd(call: ChatToolCall, result: ToolResult): void
   onContext?(context: AgentContext): void
+  /** 取走用户在运行中排队的消息；每个 step 开始前调用，返回的提示词作为 user 消息追加进本轮 */
+  takeQueued?(): string[]
 }
 
 const resultText = (r: ToolResult) =>
@@ -183,6 +185,7 @@ export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
   for (let step = 0; step < MAX_STEPS; step++) {
     if (t.signal.aborted) return
     t.execution?.assertOpen()
+    for (const queued of t.takeQueued?.() ?? []) append({ role: 'user', content: queued })
     const budgeted = budgetMessages(t.system, t.history, current, tools, (context) =>
       t.onContext?.({
         ...context,

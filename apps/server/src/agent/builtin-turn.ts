@@ -13,7 +13,15 @@ import {
   type SessionHost,
   settingsOf,
 } from './session-types'
-import { configuration, fail, finishTool, notice, push, pushLive } from './session-events'
+import {
+  configuration,
+  fail,
+  finishTool,
+  notice,
+  push,
+  pushLive,
+  takeQueued,
+} from './session-events'
 
 /**
  * 内置智能体：在服务端进程里跑模型 ↔ 工具循环，工具与 CLI 走的 MCP 是同一份。
@@ -24,6 +32,7 @@ export function startBuiltin(
   text: string,
   selection?: string[],
   skill?: AgentSkillDetail,
+  itemId?: string,
 ): void {
   const env = host.env
   const model = builtinModel(env.deps.host, settingsOf(s.row).model)
@@ -50,7 +59,7 @@ export function startBuiltin(
           : []),
       ]
   const prompt = host.prompt(s, text, selection, skill)
-  const execution = host.beginTurn(s, text, selection, model.ref, skill, prompt)
+  const execution = host.beginTurn(s, text, selection, model.ref, skill, prompt, itemId)
   const abort = execution.abort
   s.abort = abort
   s.stopped = false
@@ -70,6 +79,8 @@ export function startBuiltin(
     signal: abort.signal,
     execution,
     vision: model.vision,
+    takeQueued: () =>
+      s.active === execution && execution.state === 'running' ? takeQueued(env, s) : [],
     onContext: (context) => {
       if (s.active === execution && execution.state === 'running') configuration(env, s, context)
     },

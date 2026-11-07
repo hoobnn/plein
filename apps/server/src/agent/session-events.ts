@@ -87,6 +87,18 @@ export function finishTool(
   push(env, s, { ...base, status: error ? 'error' : 'done', output: output?.slice(0, 600) })
 }
 
+/**
+ * 取走排队的消息（下一步前注入本轮）：对话里的那条去掉「已排队」，返回要追加进转录的提示词。
+ */
+export function takeQueued(env: SessionEnv, s: Live): string[] {
+  const taken = s.queued.splice(0)
+  for (const q of taken) {
+    const { queued: _, ...item } = q.item
+    push(env, s, item)
+  }
+  return taken.map((q) => q.prompt)
+}
+
 /** 一轮结束：记下改动集，前面几轮不再能撤（只能从最近一轮往回撤） */
 export function finishTurn(env: SessionEnv, s: Live): void {
   s.approvals.expireAll()

@@ -600,7 +600,8 @@ export const useAgent = create<AgentStore>((set, get) => {
         get().selecting ||
         get().pendingActions[`${get().session?.id}/configure`] ||
         get().sending[canvasId] ||
-        get().session?.status === 'running'
+        // 内置智能体运行中允许继续发：服务端把消息排队
+        (get().session?.status === 'running' && get().session?.agent !== 'builtin')
       )
         return
       let mine = selectSeq

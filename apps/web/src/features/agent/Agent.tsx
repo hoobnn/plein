@@ -726,6 +726,11 @@ function Item({ item }: { item: AgentItem }) {
     return (
       <div className="ml-10 self-end rounded-xl rounded-br-xs bg-surface-3 px-3 py-2 text-sm whitespace-pre-wrap">
         {item.text}
+        {item.queued && (
+          <span role="status" className="mt-1 block text-xs text-ink-subtle">
+            已排队 · 小满处理完当前这一步后会看到
+          </span>
+        )}
         {item.skill && (
           <span className="mt-1 block text-xs text-ink-subtle">技能：{item.skill.title}</span>
         )}
@@ -1152,7 +1157,8 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
 
   const submit = () => {
     const t = text.trim()
-    if (!t || running || sending || selecting || configuring || historyBlocked) return
+    // 内置智能体运行中也能发：消息排队，下一步交给模型；CLI 驱动要等这一轮结束
+    if (!t || (running && local) || sending || selecting || configuring || historyBlocked) return
     void useAgent.getState().send(t, selectedIds.length ? selectedIds : undefined)
   }
 
@@ -1230,7 +1236,7 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
             }
           }}
         />
-        {running ? (
+        {running && (
           <button
             type="button"
             aria-label="停止"
@@ -1242,11 +1248,12 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
           >
             <Icon name="stop" size={14} />
           </button>
-        ) : (
+        )}
+        {(!running || !local) && (
           <button
             type="button"
             aria-label="发送"
-            title="发送（Enter）"
+            title={running ? '发送（排队，下一步交给小满）' : '发送（Enter）'}
             className="ui-btn ui-btn-lg ui-btn-primary ui-icon-btn"
             disabled={!text.trim() || sending || selecting || configuring || historyBlocked}
             aria-busy={sending}

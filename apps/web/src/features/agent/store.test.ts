@@ -297,6 +297,22 @@ describe('画布技能与本轮目标', () => {
   })
 })
 
+describe('运行中发送', () => {
+  it('内置智能体运行中照常调用发送接口（服务端排队），CLI 驱动运行中不发送', async () => {
+    vi.mocked(api.sendAgentMessage).mockResolvedValue()
+    useAgent.setState({
+      canvasId: 'c1',
+      agent: 'builtin',
+      session: { ...session('s1'), status: 'running', agent: 'builtin' },
+    })
+    await useAgent.getState().send('插一句')
+    expect(api.sendAgentMessage).toHaveBeenCalledTimes(1)
+    useAgent.setState({ session: { ...session('s1'), status: 'running', agent: 'claude' } })
+    await useAgent.getState().send('不会发出')
+    expect(api.sendAgentMessage).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('助手草稿与发送生命周期', () => {
   it('关闭重开保留当前画布的参考排除，主动处理选区只重置当前画布', () => {
     useAgent.setState({ canvasId: 'c1', status: { enabled: true, agents: [] } })

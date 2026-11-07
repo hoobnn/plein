@@ -153,6 +153,8 @@ export type AgentItem =
       text: string
       selection?: string[]
       skill?: Pick<AgentSkill, 'id' | 'name' | 'title' | 'source'>
+      /** 内置智能体运行中发的消息：已排队，到下一步（或下一轮）才交给模型；注入后去掉 */
+      queued?: boolean
       at: number
     }
   | { id: string; type: 'text'; text: string; at: number }
