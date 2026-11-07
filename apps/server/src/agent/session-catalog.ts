@@ -46,12 +46,18 @@ export class SessionCatalog {
 
   async models(agent: AgentKind, refresh = false): Promise<AgentModelCatalog> {
     if (agent === 'builtin') {
-      const models = this.env.deps.host
+      const host = this.env.deps.host
+      const models = host
         .models('text.chat', { agent: true })
         .filter((m) => m.features?.includes('tools'))
-      const selected = builtinModel(this.env.deps.host)
+      const selected = builtinModel(host)
+      // 不同平台常有同名模型（如方舟按量与 Agent Plan），标题带上平台名才分得清
+      const providerTitle = (id: string) => host.registry.providers.get(id)?.def.title ?? id
       return {
-        models: models.map((m) => ({ id: m.ref, title: m.title })),
+        models: models.map((m) => ({
+          id: m.ref,
+          title: `${m.title} · ${providerTitle(m.provider)}`,
+        })),
         ...(selected ? { defaultModel: selected.ref } : {}),
       }
     }
