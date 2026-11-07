@@ -843,12 +843,12 @@ describe('内置智能体自动压缩上下文', () => {
       expect(row(off.id).context_summary).toBeNull()
       expect(agents.get(off.id, 'local')!.context).toMatchObject({ compactAt: 'off' })
 
-      // 估算约 6.7 万 token：默认 60% 的阈值会压缩，80% 不会
-      const mid = await seeded([8000, 8000, 10, 10])
+      // 历史约 5.6 万 token 加核心工具约 1 万：默认 60% 的阈值会压缩，80% 不会
+      const mid = await seeded([14000, 14000, 10, 10])
       const midCalls = summaryCalls()
       await send(mid.id, '现在有哪些元素')
       expect(midCalls.some(Boolean)).toBe(true)
-      const high = await seeded([8000, 8000, 10, 10], { compactAt: 0.8 })
+      const high = await seeded([14000, 14000, 10, 10], { compactAt: 0.8 })
       const highCalls = summaryCalls()
       await send(high.id, '现在有哪些元素')
       expect(highCalls.some(Boolean)).toBe(false)
