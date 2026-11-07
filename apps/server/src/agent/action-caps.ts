@@ -1,7 +1,10 @@
+import { createReadStream } from 'node:fs'
+import { Readable } from 'node:stream'
 import { CapabilityError, capabilityFor } from '@plein/capabilities'
 import { PanoramaCaptureRequest } from '@plein/nodes'
 import {
   API,
+  PROJECT_PACKAGE_EXT,
   CreateLibraryItem,
   UpdateLibraryItem,
   CreateTemplate,
@@ -16,6 +19,7 @@ import {
 } from '@plein/protocol'
 import { z } from 'zod'
 import type { ServerContext } from './tools'
+import { LocalPathError, openLocalFile } from '../files/local-path'
 import { deliverFile, saveToField } from './tools-files'
 
 /** 复用 UI 路由的文件与资产库操作。只允许这里登记的操作，不开放任意 HTTP。 */
@@ -26,15 +30,111 @@ type Action = {
   title: string
   effect: 'read' | 'edit' | 'run' | 'destructive'
   schema: z.ZodObject
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE'
-  path: (a: Record<string, unknown>) => string
+  /** 不是单条路由的操作（多步或流式）自己实现；这时不需要下面的 method / path / pathname */
+  custom?: (ctx: ServerContext, input: Record<string, unknown>) => Promise<unknown>
+  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
+  path?: (a: Record<string, unknown>) => string
   /**
    * 允许请求的路径形状。参数里的 id 可能带 ../ 或 ?，URL 解析会把它们折成别的路由，
    * 所以按解析后的 pathname 复核，只放行登记在册的那条路由。
    */
-  pathname: RegExp
+  pathname?: RegExp
   body?: (a: Record<string, unknown>) => unknown
 }
+async function internalJson(ctx: ServerContext, path: string, init: RequestInit = {}) {
+  if (!ctx.env.canvasApi) throw new CapabilityError('扩展画布服务不可用')
+  const res = await ctx.env.canvasApi(
+    ctx.env.ownerId,
+    new Request(`http://plein.internal${path}`, {
+      ...init,
+      signal: ctx.env.execution?.abort.signal,
+    }),
+  )
+  if (res.status === 204) return {}
+  const body = (await res.json().catch(() => ({}))) as Record<string, unknown>
+  if (!res.ok)
+    throw new CapabilityError(String(body.message ?? body.error ?? `操作失败 ${res.status}`))
+  return body
+}
+
+/** 导出项目包：先取概要确认能导，再签发下载票据；包本身由下载时流式生成，不在这里缓存 */
+async function exportProjectPackage(ctx: ServerContext, input: Record<string, unknown>) {
+  const projectId = String(input.project_id)
+  const history = input.include_history === true
+  const project = await internalJson(ctx, API.project(projectId))
+  const summary = await internalJson(ctx, API.projectPackageSummary(projectId, history))
+  if (summary.tooLarge)
+    throw new CapabilityError(
+      '项目包超过单个包的 4 GB 上限，缩小范围（不带历史候选）或改用整目录备份',
+    )
+  const path = API.projectPackage(projectId, history)
+  if (!ctx.env.files) return { summary, download_path: path }
+  return deliverFile(
+    ctx,
+    { kind: 'proxy', path },
+    {
+      name: `${String(project.title ?? 'project')}${PROJECT_PACKAGE_EXT}`,
+      mime: 'application/zip',
+      extra: { project_id: projectId, summary },
+    },
+    typeof input.save_to === 'string' ? input.save_to : undefined,
+  )
+}
+
+/** 导入项目包：与界面相同，先上传预检（校验、暂存），再确认写入；文件取自资产库或本机路径 */
+async function importProjectPackage(ctx: ServerContext, input: Record<string, unknown>) {
+  const assetId = typeof input.asset_id === 'string' ? input.asset_id : undefined
+  const path = typeof input.path === 'string' ? input.path : undefined
+  if ((assetId === undefined) === (path === undefined))
+    throw new CapabilityError('asset_id 与 path 必须且只能给一个')
+  let stream: Readable
+  let close: () => Promise<void> = async () => {}
+  if (assetId !== undefined) {
+    const asset = ctx.env.assets.get(ctx.env.ownerId, assetId)
+    if (!asset) throw new CapabilityError(`资产 ${assetId} 不存在`)
+    stream = createReadStream(ctx.env.assets.originalPath(asset.id))
+  } else {
+    const local = ctx.env.files?.local
+    if (!local)
+      throw new CapabilityError('path 只在本机模式可用；请先用 request_upload 上传，再传 asset_id')
+    try {
+      const file = await openLocalFile(local, path!, ctx.env.files!.maxUpload)
+      stream = file.handle.createReadStream({ autoClose: false })
+      close = () => file.handle.close()
+    } catch (err) {
+      if (err instanceof LocalPathError) throw new CapabilityError(err.message)
+      throw err
+    }
+  }
+  let preview: Record<string, unknown>
+  try {
+    preview = await internalJson(ctx, API.projectImports, {
+      method: 'POST',
+      body: Readable.toWeb(stream) as ReadableStream,
+      duplex: 'half',
+    } as RequestInit)
+  } finally {
+    await close()
+  }
+  const token = String(preview.token)
+  const { token: _token, expiresAt: _expires, ...review } = preview
+  if (input.preview_only === true) {
+    await internalJson(ctx, API.projectImport(token), { method: 'DELETE' })
+    return { status: 'preview', ...review }
+  }
+  const result = await internalJson(ctx, API.projectImport(token), { method: 'POST' })
+  return {
+    status: 'imported',
+    project_id: result.projectId,
+    title: result.title,
+    canvas_id: result.canvasId,
+    copy: preview.copy,
+    counts: preview.counts,
+    notices: preview.notices,
+    missing: preview.missing,
+  }
+}
+
 const actions: Record<string, Action> = {
   get_media_caps: {
     title: '查看本机媒体处理能力',
@@ -224,6 +324,31 @@ const actions: Record<string, Action> = {
     pathname: /^\/api\/media\/sequence-export$/,
     body: ({ save_to: _, ...request }) => request,
   },
+  export_project_package: {
+    title: '导出项目包（.plein；返回短期下载地址；外部入口返回带票据的绝对地址与 resource_link）',
+    effect: 'edit',
+    schema: z.object({
+      project_id: id,
+      include_history: z
+        .boolean()
+        .default(false)
+        .describe('带上全部历史候选，默认只含当前采用的结果'),
+      save_to: saveToField,
+    }),
+    custom: exportProjectPackage,
+  },
+  import_project_package: {
+    title: '导入项目包（.plein；以新项目写入，同一项目已存在时作为新副本）',
+    effect: 'edit',
+    schema: z.object({
+      asset_id: id
+        .optional()
+        .describe('已用 import_asset / request_upload 送进资产库的项目包；与 path 二选一'),
+      path: z.string().min(1).max(4096).optional().describe('本机绝对路径（仅本机模式）'),
+      preview_only: z.boolean().default(false).describe('只校验并返回概要，不写入'),
+    }),
+    custom: importProjectPackage,
+  },
 }
 const cap = capabilityFor<ServerContext>()
 function action(name: string) {
@@ -292,16 +417,17 @@ export const performCanvasAction = cap({
     const spec = action(a.action)
     const parsed = spec.schema.safeParse(a.input)
     if (!parsed.success) throw new CapabilityError(`参数不对：${z.prettifyError(parsed.error)}`)
-    if (!ctx.env.canvasApi) throw new CapabilityError('扩展画布服务不可用')
     const input = parsed.data as Record<string, unknown>
+    if (spec.custom) return spec.custom(ctx, input)
+    if (!ctx.env.canvasApi) throw new CapabilityError('扩展画布服务不可用')
     const body = spec.body?.(input)
-    const url = new URL(`http://plein.internal${spec.path(input)}`)
+    const url = new URL(`http://plein.internal${spec.path!(input)}`)
     // 参数里的 id 可能带 ../ 或 ?，URL 解析会把它们折成别的路由；按解析后的 pathname 复核。
-    if (!spec.pathname.test(url.pathname)) throw new CapabilityError('操作路径不合法')
+    if (!spec.pathname!.test(url.pathname)) throw new CapabilityError('操作路径不合法')
     const response = await ctx.env.canvasApi(
       ctx.env.ownerId,
       new Request(url, {
-        method: spec.method,
+        method: spec.method!,
         ...(body === undefined
           ? {}
           : { body: JSON.stringify(body), headers: { 'content-type': 'application/json' } }),

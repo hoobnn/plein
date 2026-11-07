@@ -182,6 +182,9 @@ Agent 按语义调用画布功能。文档编辑复用 `packages/capabilities` �
 | 音色设计、复刻、登记和管理           | `list_voices`、`create_voice`、`update_voice`、`refresh_voice`、`delete_voice`          |
 | 对白时间戳识别及任务恢复             | `recognize_subtitles`、`get_subtitle_recognition`、`recover_subtitle_recognition`       |
 | OTIO、FCPXML、SRT 和素材工程包       | `export_sequence_project`                                                               |
+| 项目包（.plein）导出与导入           | `export_project_package`、`import_project_package`                                      |
+
+`export_project_package` 先取导出概要（超过 4 GB 上限时拒绝），再签发 `.plein` 的下载票据，可选带历史候选。`import_project_package` 与界面一致，先预检再写入新项目；包文件来自 `asset_id`（先用 `request_upload` / `import_asset` 送入资产库）或本机 `path`，`preview_only` 只校验并返回概要，不写入。
 
 扩展操作的参数与界面使用相同协议。媒体加工 `edit_media` 也直接从加工协议生成参数，包含区域修补、片段替换、尾帧和保持音高，不另维护缩减版字段。
 

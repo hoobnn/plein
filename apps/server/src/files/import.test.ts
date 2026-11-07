@@ -416,3 +416,62 @@ describe('取出文件', () => {
     expect(res.status).toBe(200)
   })
 })
+
+describe('项目包导出与导入', () => {
+  const get = (url: string) =>
+    running.server.app.request(new URL(url).pathname, { headers: { host: '127.0.0.1:8787' } })
+  const projectOf = async () =>
+    (
+      (await (await request(running.server, `/api/canvases/${canvasId}`)).json()) as {
+        projectId: string
+      }
+    ).projectId
+  const projectCount = async () =>
+    ((await (await request(running.server, '/api/projects')).json()) as unknown[]).length
+  const act = (action: string, input: Record<string, unknown>) =>
+    rpc('perform_canvas_action', { action, input })
+
+  it('export_project_package 返回 .plein 下载票据；import_project_package 经资产或本机路径导入', async () => {
+    const projectId = await projectOf()
+    const exported = await act('export_project_package', { project_id: projectId })
+    expect(exported.error).toBe(false)
+    const info = JSON.parse(exported.text) as { download_url: string; name: string }
+    expect(info.name.endsWith('.plein')).toBe(true)
+    expect(exported.content.some((c) => c.type === 'resource_link')).toBe(true)
+    const res = await get(info.download_url)
+    expect(res.status).toBe(200)
+    const pkg = Buffer.from(await res.arrayBuffer())
+
+    // 本机路径
+    const file = join(root, 'proj.plein')
+    writeFileSync(file, pkg)
+    const before = await projectCount()
+    const preview = await act('import_project_package', { path: file, preview_only: true })
+    expect(preview.error).toBe(false)
+    expect(JSON.parse(preview.text).status).toBe('preview')
+    expect(await projectCount()).toBe(before)
+    const done = await act('import_project_package', { path: file })
+    expect(done.error).toBe(false)
+    const out = JSON.parse(done.text) as { status: string; project_id: string; copy: boolean }
+    expect(out.status).toBe('imported')
+    expect(out.copy).toBe(true)
+    expect(out.project_id).not.toBe(projectId)
+    expect(await projectCount()).toBe(before + 1)
+
+    // 已上传的资产
+    const asset = asJson(
+      await rpc('import_asset', { source: { base64: pkg.toString('base64'), name: 'p.plein' } }),
+    )
+    const again = await act('import_project_package', { asset_id: asset.asset_id })
+    expect(JSON.parse(again.text).status).toBe('imported')
+  })
+
+  it('导入：来源必须二选一，不是项目包时给出原因，缺失项目导出失败', async () => {
+    expect((await act('import_project_package', {})).error).toBe(true)
+    const junk = join(root, 'junk.plein')
+    writeFileSync(junk, 'not a zip')
+    const bad = await act('import_project_package', { path: junk })
+    expect(bad.error).toBe(true)
+    expect((await act('export_project_package', { project_id: 'pj_missing' })).error).toBe(true)
+  })
+})

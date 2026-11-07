@@ -155,7 +155,16 @@ export async function createServer(config: Config): Promise<Server> {
   const canvasRoutesApp = canvasRoutes(db, rooms, preview)
   const runApi = runRoutes(db, runs)
   const pluginApi = pluginRoutes(plugins, { jobs: runs.store, voices, dataDir: config.dataDir })
+  const packageApi = packageRoutes({
+    db,
+    rooms,
+    assets,
+    host: plugins,
+    dataDir: config.dataDir,
+    mediaIndex,
+  })
   internal.route('/', projectApi)
+  internal.route('/', packageApi)
   internal.route('/', canvasRoutesApp)
   internal.route('/', runApi)
   internal.route('/', pluginApi)
@@ -233,10 +242,7 @@ export async function createServer(config: Config): Promise<Server> {
   app.use('/api/*', auth.requireAuth)
   app.use('/sync/*', auth.requireAuth)
   app.route('/', projectApi)
-  app.route(
-    '/',
-    packageRoutes({ db, rooms, assets, host: plugins, dataDir: config.dataDir, mediaIndex }),
-  )
+  app.route('/', packageApi)
   app.route('/', canvasRoutesApp)
   if (maintenance) app.route('/', maintenanceRoutes(maintenance))
   // 素材来源路由要排在 creative 之前：资产文件路由 /api/assets/:id/:variant?

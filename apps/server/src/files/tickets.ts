@@ -14,7 +14,10 @@ export type DownloadTarget =
   | { kind: 'proxy'; path: string; name?: string }
 
 /** proxy 目标允许的内部路径。只放行登记在册的只读下载路由 */
-export const PROXY_PATHS: readonly RegExp[] = [/^\/api\/media\/sequence-export\/[A-Za-z0-9-]+$/]
+export const PROXY_PATHS: readonly RegExp[] = [
+  /^\/api\/media\/sequence-export\/[A-Za-z0-9-]+$/,
+  /^\/api\/projects\/[^/?]+\/package(\?history=1)?$/,
+]
 
 export interface UploadGrant {
   ownerId: string
