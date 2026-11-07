@@ -152,7 +152,7 @@ export async function createServer(config: Config): Promise<Server> {
   // 项目、画布、影响面板与平台设置：与界面共用同一份路由实例，只经已登记的工具路径访问
   const preview = previewer(db)
   const projectApi = projectRoutes(db, rooms, preview)
-  const canvasRoutesApp = canvasRoutes(db, rooms, preview)
+  const canvasRoutesApp = canvasRoutes(db, rooms, preview, mediaIndex)
   const runApi = runRoutes(db, runs)
   const pluginApi = pluginRoutes(plugins, { jobs: runs.store, voices, dataDir: config.dataDir })
   const packageApi = packageRoutes({

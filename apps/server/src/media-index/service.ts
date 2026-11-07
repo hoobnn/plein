@@ -241,6 +241,9 @@ export class MediaIndex {
   refreshJobSafely(id: string) {
     this.projectSafely(() => this.refreshJob(id))
   }
+  refreshCanvasSafely(id: string) {
+    this.projectSafely(() => this.refreshCanvas(id))
+  }
   refreshLibrarySafely(id: string) {
     this.projectSafely(() => this.refreshLibrary(id))
   }

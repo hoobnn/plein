@@ -23,6 +23,8 @@ export const API = {
   projectImport: (token: string) => `/api/project-imports/${encodeURIComponent(token)}`,
   canvases: '/api/canvases',
   canvas: (id: string) => `/api/canvases/${encodeURIComponent(id)}`,
+  /** 复制画布：POST，body 为 DuplicateCanvas，返回新画布 */
+  canvasDuplicate: (id: string) => `/api/canvases/${encodeURIComponent(id)}/duplicate`,
   /** 资产库：GET 列表（?kind=），POST 新建，body 为 CreateLibraryItem */
   library: '/api/library',
   libraryItem: (id: string) => `/api/library/${encodeURIComponent(id)}`,

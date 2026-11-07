@@ -1,6 +1,8 @@
-import { API, CreateCanvas, UpdateCanvas } from '@plein/protocol'
+import { API, CreateCanvas, DuplicateCanvas, UpdateCanvas } from '@plein/protocol'
 import { Hono } from 'hono'
 import type { AuthEnv } from '../auth'
+import type { MediaIndex } from '../media-index/service'
+import { CanvasOpError, duplicateCanvas, moveCanvasTo } from './duplicate'
 import {
   deleteCanvas,
   getCanvas,
@@ -15,7 +17,8 @@ import type { DB } from '../storage/db'
 import type { Previewer } from '../storage/previews'
 import type { Rooms } from '../sync/rooms'
 
-export function canvasRoutes(db: DB, rooms: Rooms, preview: Previewer) {
+export function canvasRoutes(db: DB, rooms: Rooms, preview: Previewer, mediaIndex?: MediaIndex) {
+  const ops = { db, rooms, mediaIndex }
   const get = (owner: string, id: string) => getCanvas(db, owner, id)
   const notFound = { error: 'not_found', message: '画布不存在' }
 
@@ -46,8 +49,28 @@ export function canvasRoutes(db: DB, rooms: Rooms, preview: Previewer) {
       if (!body.success) return c.json({ error: 'invalid', message: body.error.message }, 400)
       const id = c.req.param('id')
       const owner = c.var.principal.id
-      const changed = updateCanvasTitle(db, owner, id, body.data.title)
-      return changed ? c.json(toCanvas(get(owner, id)!)) : c.json(notFound, 404)
+      if (!get(owner, id)) return c.json(notFound, 404)
+      try {
+        // 先移动（会校验目标项目），再改标题，免得移动失败时标题已经改了
+        if (body.data.projectId) moveCanvasTo(ops, owner, id, body.data.projectId)
+        if (body.data.title) updateCanvasTitle(db, owner, id, body.data.title)
+      } catch (err) {
+        if (err instanceof CanvasOpError)
+          return c.json({ error: 'not_found', message: err.message }, err.status)
+        throw err
+      }
+      return c.json(toCanvas(get(owner, id)!))
+    })
+    .post('/api/canvases/:id/duplicate', async (c) => {
+      const body = DuplicateCanvas.safeParse((await c.req.json().catch(() => ({}))) ?? {})
+      if (!body.success) return c.json({ error: 'invalid', message: body.error.message }, 400)
+      try {
+        return c.json(duplicateCanvas(ops, c.var.principal.id, c.req.param('id'), body.data), 201)
+      } catch (err) {
+        if (err instanceof CanvasOpError)
+          return c.json({ error: 'not_found', message: err.message }, err.status)
+        throw err
+      }
     })
     .delete('/api/canvases/:id', (c) => {
       const id = c.req.param('id')

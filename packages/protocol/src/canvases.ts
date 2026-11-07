@@ -20,5 +20,20 @@ export const CreateCanvas = z.object({
 })
 export type CreateCanvas = z.input<typeof CreateCanvas>
 
-export const UpdateCanvas = z.object({ title: z.string().trim().min(1).max(200) })
+/** 改标题和 / 或移到另一个项目（移动不改画布内容）；至少给一项 */
+export const UpdateCanvas = z
+  .object({
+    title: z.string().trim().min(1).max(200).optional(),
+    projectId: z.string().min(1).max(100).optional(),
+  })
+  .refine((v) => v.title !== undefined || v.projectId !== undefined, {
+    message: '至少要改标题或目标项目',
+  })
 export type UpdateCanvas = z.infer<typeof UpdateCanvas>
+
+/** 复制画布：默认放在原项目、标题加「副本」 */
+export const DuplicateCanvas = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+  projectId: z.string().min(1).max(100).optional(),
+})
+export type DuplicateCanvas = z.infer<typeof DuplicateCanvas>
