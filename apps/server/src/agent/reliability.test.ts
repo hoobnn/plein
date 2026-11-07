@@ -620,3 +620,117 @@ describe('budgetMessages in-turn compression', () => {
     expect(() => budgetMessages('s', [], current, [])).toThrow('context_budget_exhausted')
   })
 })
+
+describe('execution facts and persistence', () => {
+  const openStore = () => {
+    const db = wrapDb(new Database(':memory:'))
+    db.insert(canvases)
+      .values({ id: 'canvas', owner_id: 'local', title: 't', created_at: 1, updated_at: 1 })
+      .run()
+    db.insert(agentSessions)
+      .values({
+        id: 'session',
+        canvas_id: 'canvas',
+        owner_id: 'local',
+        agent: 'builtin',
+        title: 't',
+        items: '[]',
+        created_at: 1,
+        updated_at: 1,
+      })
+      .run()
+    return { db, store: new TurnStore(db) }
+  }
+
+  it('saves the transcript incrementally and identically to a full serialization', () => {
+    const { db, store } = openStore()
+    const turn = new TurnExecution(
+      'inc',
+      () => true,
+      (t) => store.save(t),
+    )
+    store.begin('session', turn)
+    let serialized = 0
+    const counted = (content: string): ChatMessage =>
+      ({
+        role: 'user',
+        content,
+        toJSON() {
+          serialized++
+          return { role: 'user', content }
+        },
+      }) as ChatMessage
+    for (const text of ['a', 'b', 'c']) turn.append(counted(text))
+    // 每条只序列化一次，而不是每次保存都重来
+    expect(serialized).toBe(3)
+    turn.close('completed')
+    const row = db.select().from(agentTurns).get()!
+    expect(row.transcript).toBe(JSON.stringify(turn.transcript))
+    db.$client.close()
+  })
+
+  it('records per-step timing, retries, real usage and the failing ProviderError', async () => {
+    let calls = 0
+    const host = {
+      call: async () => {
+        calls++
+        if (calls === 1) throw new ProviderError('rate_limit', '限流')
+        if (calls === 2)
+          return {
+            outputs: [{ type: 'text', text: 'ok' }] as ProviderOutput[],
+            usage: { inputTokens: 1234, outputTokens: 56 },
+          }
+        throw new ProviderError('auth', '密钥无效')
+      },
+    } as unknown as PluginHost
+    const contexts: Array<{ source: string; tokens?: number }> = []
+    const t = new TurnExecution(
+      'steps',
+      () => true,
+      () => {},
+    )
+    t.append({ role: 'user', content: 'go' })
+    await runBuiltinTurn(
+      quietTurn(host, {
+        execution: t,
+        onContext: (c: { source: string; tokens?: number }) => contexts.push(c),
+      }),
+    )
+    expect(t.facts.steps).toHaveLength(1)
+    expect(t.facts.steps[0]).toMatchObject({
+      retries: 1,
+      usage: { inputTokens: 1234, outputTokens: 56 },
+    })
+    expect(t.facts.steps[0]!.durationMs).toBeGreaterThanOrEqual(0)
+    expect(t.facts.steps[0]!.error).toBeUndefined()
+    // 真实用量替换估算
+    expect(contexts.at(-1)).toMatchObject({ source: 'provider', tokens: 1234 })
+    expect(contexts[0]!.source).toBe('estimate')
+
+    const failed = new TurnExecution(
+      'failed',
+      () => true,
+      () => {},
+    )
+    failed.append({ role: 'user', content: 'go' })
+    await expect(runBuiltinTurn(quietTurn(host, { execution: failed }))).rejects.toThrow('密钥无效')
+    expect(failed.facts.error).toEqual({ code: 'auth', message: '密钥无效', retryable: false })
+    expect(failed.facts.steps[0]!.error).toMatchObject({ code: 'auth', retryable: false })
+  })
+
+  it('records tool durations in facts', async () => {
+    const t = new TurnExecution(
+      'dur',
+      () => true,
+      () => {},
+    )
+    await t.invoke('slow', {}, async () => (await new Promise((r) => setTimeout(r, 20)), 'x'))
+    await expect(
+      t.invoke('bad', {}, async () => {
+        throw new Error('boom')
+      }),
+    ).rejects.toThrow('boom')
+    expect(t.facts.calls[0]!.durationMs).toBeGreaterThanOrEqual(15)
+    expect(typeof t.facts.calls[1]!.durationMs).toBe('number')
+  })
+})

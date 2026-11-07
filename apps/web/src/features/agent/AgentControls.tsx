@@ -209,7 +209,11 @@ function ContextDetails({
       ? Math.min(100, (context.tokens! / context.limit) * 100)
       : undefined
   const source =
-    context?.source === 'estimate' ? '本地估算 · Plein 请求预算' : 'CLI 报告 · 最近一次请求'
+    context?.source === 'estimate'
+      ? '本地估算 · Plein 请求预算'
+      : builtin
+        ? '模型报告 · 最近一次请求（上限为 Plein 请求预算）'
+        : 'CLI 报告 · 最近一次请求'
   return (
     <div className="flex flex-col gap-3 p-3 text-xs">
       <div>

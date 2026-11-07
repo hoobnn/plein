@@ -10,7 +10,17 @@ const historicalCallId = (turn: string, id: string) =>
   `call_${createHash('sha256').update(`${turn}\0${id}`).digest('hex').slice(0, 32)}`
 
 export class TurnStore {
+  /** 每轮已序列化的转录消息：转录只追加，保存时只序列化新增的几条 */
+  private serialized = new WeakMap<TurnExecution, string[]>()
   constructor(private db: DB) {}
+  private transcriptJson(turn: TurnExecution) {
+    let parts = this.serialized.get(turn)
+    if (!parts || parts.length > turn.transcript.length) parts = []
+    for (let i = parts.length; i < turn.transcript.length; i++)
+      parts.push(JSON.stringify(turn.transcript[i]))
+    this.serialized.set(turn, parts)
+    return `[${parts.join(',')}]`
+  }
   begin(sessionId: string, turn: TurnExecution, model?: string) {
     const latest = this.db
       .select({ created_at: agentTurns.created_at })
@@ -39,7 +49,7 @@ export class TurnStore {
       .set({
         state: turn.state,
         reason: turn.reason,
-        transcript: JSON.stringify(turn.transcript),
+        transcript: this.transcriptJson(turn),
         execution: JSON.stringify(turn.facts),
         closed_at: turn.state === 'running' || turn.state === 'stopping' ? null : Date.now(),
       })

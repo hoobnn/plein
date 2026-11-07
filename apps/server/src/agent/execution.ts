@@ -11,6 +11,8 @@ export interface TurnFacts {
     args: unknown
     status: 'started' | 'done' | 'error' | 'outcome_unknown'
     result?: ToolResult
+    /** 从开始执行到结束（含失败）的毫秒数 */
+    durationMs?: number
   }>
   approvals: Array<{ id: string; tool: string; status: string; choice?: unknown; plan?: unknown }>
   runs: Array<{ nodeId: string; runId: string }>
@@ -19,6 +21,21 @@ export interface TurnFacts {
   toolCalls: number
   /** 模型调用因限流、超时等被自动重试的次数 */
   retries: number
+  /** 每次模型调用一条（含空回复重试），按发生顺序 */
+  steps: TurnStep[]
+  /** 本轮因模型调用失败而结束时的错误（保留错误码与是否可重试，不只消息） */
+  error?: { code: string; message: string; retryable: boolean }
+}
+export interface TurnStep {
+  startedAt: number
+  durationMs: number
+  /** 模型返回的结束原因（调用结果带了才有） */
+  finish?: string
+  /** 平台报告的真实用量（调用结果带了才有） */
+  usage?: { inputTokens?: number; outputTokens?: number }
+  /** 这次调用前的自动重试次数 */
+  retries: number
+  error?: { code: string; message: string; retryable?: boolean }
 }
 export const emptyFacts = (): TurnFacts => ({
   calls: [],
@@ -28,6 +45,7 @@ export const emptyFacts = (): TurnFacts => ({
   requests: 0,
   toolCalls: 0,
   retries: 0,
+  steps: [],
 })
 
 /** Identity is immutable. A credential and all callbacks belong to this object for its entire lifetime. */
@@ -126,11 +144,13 @@ export class TurnExecution {
     }
     this.facts.calls.push(call)
     this.persist()
+    const began = Date.now()
     try {
       const value = await fn()
       const result =
         typeof value === 'string' ? { content: [{ type: 'text' as const, text: value }] } : value
       call.status = result.isError ? 'error' : 'done'
+      call.durationMs = Date.now() - began
       call.result = {
         ...result,
         content: result.content.map((block) =>
@@ -143,6 +163,7 @@ export class TurnExecution {
       return value
     } catch (err) {
       call.status = this.abort.signal.aborted ? 'outcome_unknown' : 'error'
+      call.durationMs = Date.now() - began
       call.result = { isError: true, content: [{ type: 'text', text: (err as Error).message }] }
       this.persist()
       throw err

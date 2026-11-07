@@ -2,7 +2,7 @@ import type { AssetRef, ChatMessage, ChatTool, ChatToolCall } from '@plein/plugi
 import { ProviderError } from '@plein/plugin-sdk'
 import type { PluginHost } from '../plugins/host'
 import { callTool, inputSchema, type McpTool, type ToolResult } from './mcp'
-import type { TurnExecution } from './execution'
+import type { TurnExecution, TurnStep } from './execution'
 import type { AgentContext } from '@plein/protocol'
 import { budgetMessages, TEXT_TOKENS, truncateResultText } from './context-budget'
 
@@ -181,27 +181,31 @@ export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
   let imageCount = 0,
     imageBytes = 0,
     emptyRetried = false
+  let estimate: { bytes: number; messages: number; omittedRounds: number } | undefined
 
   for (let step = 0; step < MAX_STEPS; step++) {
     if (t.signal.aborted) return
     t.execution?.assertOpen()
     for (const queued of t.takeQueued?.() ?? []) append({ role: 'user', content: queued })
-    const budgeted = budgetMessages(t.system, t.history, current, tools, (context) =>
+    const budgeted = budgetMessages(t.system, t.history, current, tools, (context) => {
+      estimate = context
       t.onContext?.({
         ...context,
         source: 'estimate',
         limit: TEXT_TOKENS,
         model: t.model,
         updatedAt: Date.now(),
-      }),
-    )
+      })
+    })
     // 只剩最后几步时提醒模型收尾；这条消息只进本步请求，不写入转录
     const messages: ChatMessage[] =
       MAX_STEPS - step === WRAP_UP_STEPS
         ? [...budgeted, { role: 'user', content: WRAP_UP_NOTICE }]
         : budgeted
+    const record: TurnStep = { startedAt: Date.now(), durationMs: 0, retries: 0 }
     if (t.execution) {
       t.execution.facts.requests++
+      t.execution.facts.steps.push(record)
       t.execution.persist()
     }
     const key = `s${step}`
@@ -226,10 +230,24 @@ export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
         )
         break
       } catch (err) {
+        record.durationMs = Date.now() - record.startedAt
         if (t.signal.aborted) return
-        if (attempt >= delays.length || !retryable(err)) throw err
+        if (attempt >= delays.length || !retryable(err)) {
+          const failure = {
+            code: err instanceof ProviderError ? err.code : 'unknown',
+            message: (err as Error).message,
+            retryable: err instanceof ProviderError && err.retryable,
+          }
+          record.error = failure
+          if (t.execution) {
+            t.execution.facts.error = failure
+            t.execution.persist()
+          }
+          throw err
+        }
         // 这一次已流式输出的半截文字作废
         if (streamed) t.onText(key, '', false)
+        record.retries++
         if (t.execution) {
           t.execution.facts.retries++
           t.execution.persist()
@@ -239,6 +257,25 @@ export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
         t.execution?.assertOpen()
       }
     }
+    record.durationMs = Date.now() - record.startedAt
+    const finish = (res as { finishReason?: unknown }).finishReason
+    if (typeof finish === 'string') record.finish = finish
+    const usage = res.usage
+    if (usage && (usage.inputTokens !== undefined || usage.outputTokens !== undefined))
+      record.usage = {
+        ...(usage.inputTokens !== undefined ? { inputTokens: usage.inputTokens } : {}),
+        ...(usage.outputTokens !== undefined ? { outputTokens: usage.outputTokens } : {}),
+      }
+    // 平台报告了真实输入 token 时，用它替换本步的估算（输入 token 即这次请求占用的上下文）
+    if (usage?.inputTokens !== undefined && estimate)
+      t.onContext?.({
+        ...estimate,
+        source: 'provider',
+        tokens: usage.inputTokens,
+        limit: TEXT_TOKENS,
+        model: t.model,
+        updatedAt: Date.now(),
+      })
     const text = res.outputs.flatMap((o) => (o.type === 'text' ? [o.text] : [])).join('\n')
     const calls = res.outputs.flatMap((o) => (o.type === 'tool_calls' ? o.calls : []))
     if (!text.trim() && !calls.length && step === 0) {
