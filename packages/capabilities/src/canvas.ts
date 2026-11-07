@@ -253,7 +253,9 @@ export const updateElementCap = defineCapability({
         if (!meta || meta.kind !== el.kind || !['image', 'video', 'audio'].includes(el.kind))
           throw new CapabilityError('需要与媒体元素类型相同的有效资产')
         if (el.videoSegment)
-          throw new CapabilityError('固定视频素材不可替换，请用 replace_sequence_segment')
+          throw new CapabilityError(
+            '固定视频素材不能直接换 asset_id，请用 edit_sequence 的 replace（action=replace，clip_id 加 video_id）',
+          )
       }
       if (a.text !== undefined && el.kind !== 'markdown')
         throw new CapabilityError('只有 markdown 元素有正文')
