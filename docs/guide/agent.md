@@ -106,7 +106,7 @@ Codex 目录来自本机 `skills/list`，显式选用时通过 `turn/start` 的 
 
 ### 界面动作
 
-画布在浏览器或桌面端打开时，`ui_focus`、`ui_select`、`ui_set_viewport` 经协同通道推给打开这块画布的标签页执行；没有标签页打开时返回明确提示且不影响画布内容。`ui_select` 传空数组清空选区；`ui_set_viewport({ x, y, zoom })` 的 `x`、`y` 是落在屏幕中央的世界坐标，`zoom` 范围 0.05–8。
+画布在浏览器或桌面端打开时，`ui_focus`、`ui_select`、`ui_set_viewport` 经协同通道推给打开这块画布的标签页执行；没有标签页打开时返回明确提示且不影响画布内容。`ui_select` 传空数组清空选区；`ui_set_viewport({ x, y, zoom })` 的 `x`、`y` 是落在屏幕中央的世界坐标，`zoom` 范围 0.05–8。`ui_undo({ steps?, redo? })` 让打开这块画布的界面执行撤销或重做（1–20 步），与用户按 ⌘Z / ⇧⌘Z 是同一个撤销栈，因此会回退用户自己的操作，只在用户明确要求时使用；它与「撤销这一轮」不同，后者只回退小满本轮的改动。返回实际执行步数与 `can_undo` / `can_redo`，栈为空时返回 `done: 0`。
 
 ### resources 与 prompts
 

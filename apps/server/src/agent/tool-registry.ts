@@ -25,6 +25,7 @@ import type { NodeRuns } from '../runs/runs'
 import { storyboardBatchesOf, type StoryboardBatches } from '../runs/storyboard-batch'
 import type { LibraryStore } from '../library/store'
 import type { Rooms } from '../sync/rooms'
+import { requestUndo } from './ui-bridge'
 import type { CheckpointService } from '../checkpoints/service'
 import type { FileServices } from '../files/services'
 import type { MediaIndex } from '../media-index/service'
@@ -312,6 +313,27 @@ const setViewport = serverCapability({
     ctx.env.ui?.({ action: 'viewport', x, y, zoom }) ? '已在用户屏幕上完成' : NO_VIEWER,
 })
 
+const undoUi = serverCapability({
+  name: 'ui_undo',
+  title: '撤销 / 重做',
+  description:
+    '让用户界面执行撤销或重做（redo: true），与用户按 ⌘Z / ⇧⌘Z 是同一个撤销栈，会回退用户自己的操作，不只是你的改动。只在用户明确要求撤销 / 恢复画布操作时使用，不要主动撤销用户的改动。撤销小满本轮自己的改动用“撤销这一轮”，不用它。steps 为步数（1–20，默认 1）；撤销栈为空时返回 done: 0。',
+  group: 'ui',
+  where: 'client',
+  effect: 'edit',
+  input: z.object({
+    steps: z.number().int().min(1).max(20).default(1),
+    redo: z.boolean().default(false),
+  }),
+  run: async (ctx, { steps, redo }) => {
+    const reply = await requestUndo(ctx.env.rooms, ctx.env.canvasId, { steps, redo })
+    if (!reply) return NO_VIEWER
+    return reply.done
+      ? { ...reply, redo }
+      : { ...reply, redo, note: redo ? '没有可重做的操作' : '没有可撤销的操作' }
+  },
+})
+
 const focus = uiAction(
   'focus',
   '带用户看',
@@ -397,6 +419,7 @@ export const serverCapabilities = new CapabilityRegistry<ServerContext>([
   focus,
   select,
   setViewport,
+  undoUi,
 ])
 
 const withPlugins = new WeakMap<PluginHost, CapabilityRegistry<ServerContext>>()
