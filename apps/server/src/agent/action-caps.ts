@@ -24,6 +24,8 @@ import { deliverFile, saveToField } from './tools-files'
 
 /** 复用 UI 路由的文件与资产库操作。只允许这里登记的操作，不开放任意 HTTP。 */
 const id = z.string().min(1).max(200)
+/** 自己拼内部路径的操作不经过 pathname 复核，id 只放行安全字符，避免 ../ 或 ? 折到别的路由 */
+const safeId = z.string().regex(/^[A-Za-z0-9_-]{1,200}$/, 'id 只能含字母、数字、- 和 _')
 const empty = z.object({})
 const item = z.object({ id })
 type Action = {
@@ -328,7 +330,7 @@ const actions: Record<string, Action> = {
     title: '导出项目包（.plein；返回短期下载地址；外部入口返回带票据的绝对地址与 resource_link）',
     effect: 'edit',
     schema: z.object({
-      project_id: id,
+      project_id: safeId,
       include_history: z
         .boolean()
         .default(false)

@@ -473,5 +473,6 @@ describe('项目包导出与导入', () => {
     const bad = await act('import_project_package', { path: junk })
     expect(bad.error).toBe(true)
     expect((await act('export_project_package', { project_id: 'pj_missing' })).error).toBe(true)
+    expect((await act('export_project_package', { project_id: '../canvases/x' })).error).toBe(true)
   })
 })
