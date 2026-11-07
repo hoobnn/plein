@@ -31,7 +31,7 @@ test('项目改名、加画布、首页重命名和删除', { tag: '@core' }, as
   await waitEngine(page)
   await page.getByRole('button', { name: '切换画布' }).click()
   const menu = page.getByRole('dialog', { name: '画布' })
-  await expect(menu.getByRole('button')).toHaveCount(5) // 两张画布 + 新建、重命名、删除
+  await expect(menu.getByRole('button')).toHaveCount(7) // 两张画布 + 新建、复制、移动、重命名、删除
   await page.keyboard.press('Escape')
 
   // 回首页：改过的名字和画布数都是新的
