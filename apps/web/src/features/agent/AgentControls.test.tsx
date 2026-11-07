@@ -260,3 +260,130 @@ it('业务忙碌时禁用模型与推理配置，仍可只读查看上下文', a
   await user.click(screen.getByRole('button', { name: '上下文管理' }))
   expect(screen.getByRole<HTMLButtonElement>('button', { name: '重置上下文' }).disabled).toBe(true)
 })
+
+const builtinCatalog = {
+  defaultModel: 'm1',
+  models: [
+    { id: 'm1', title: '模型一' },
+    { id: 'm2', title: '模型二' },
+  ],
+}
+
+const builtinSession = (patch: Partial<AgentSession> = {}) =>
+  session('b1', {
+    agent: 'builtin',
+    settings: {},
+    context: {
+      source: 'estimate',
+      tokens: 40000,
+      limit: 120000,
+      bytes: 90000,
+      bytesLimit: 480000,
+      limitDeclared: true,
+      compactAt: 0.6,
+      messages: 4,
+    },
+    ...patch,
+  })
+
+it('内置智能体的上下文面板显示按模型推出的预算，并保存自动压缩选择', async () => {
+  const original = builtinSession()
+  useAgent.setState({ canvasId: 'c1', agent: 'builtin', session: original })
+  const patches: unknown[] = []
+  mockFetch((request) => {
+    const path = new URL(request.url).pathname
+    if (request.method === 'GET' && path === '/api/canvases/c1/agent/sessions')
+      return Response.json([original])
+    if (request.method === 'GET' && path === '/api/agent/models/builtin')
+      return Response.json(builtinCatalog)
+    if (request.method === 'PATCH' && path === '/api/agent/sessions/b1')
+      return request.json().then((body) => {
+        patches.push(body)
+        return Response.json({ ...original, settings: body })
+      })
+  })
+  const { user } = renderApp(<AgentControls disabled={false} selectionCount={0} />)
+  await user.click(await screen.findByRole('button', { name: '上下文管理' }))
+  const dialog = await screen.findByRole('dialog', { name: '上下文管理' })
+  expect(dialog.textContent).toContain('40,000 / 120,000 tokens')
+  expect(dialog.textContent).toContain('90,000 bytes / 469 KiB')
+  expect(dialog.textContent).not.toContain('未声明上下文窗口')
+  const compact = screen.getByRole<HTMLButtonElement>('combobox', { name: '自动压缩' })
+  expect(compact.textContent).toContain('60%（默认）')
+  await user.click(compact)
+  await user.click(await screen.findByRole('option', { name: '关闭' }))
+  await waitFor(() => expect(patches).toEqual([{ compactAt: 'off' }]))
+  expect(useAgent.getState().modelPreferences.builtin).toEqual({ compactAt: 'off' })
+  await user.click(screen.getByRole('combobox', { name: '自动压缩' }))
+  await user.click(await screen.findByRole('option', { name: '60%（默认）' }))
+  await waitFor(() => expect(patches).toEqual([{ compactAt: 'off' }, {}]))
+})
+
+it('未声明窗口的模型提示按默认预算；切换模型保留自动压缩选择', async () => {
+  const original = builtinSession({
+    settings: { model: 'm1', compactAt: 0.8 },
+    context: {
+      source: 'estimate',
+      tokens: 1000,
+      limit: 96000,
+      bytes: 3000,
+      bytesLimit: 262144,
+      limitDeclared: false,
+      compactAt: 0.8,
+      calibration: 0.72,
+      messages: 2,
+    },
+  })
+  useAgent.setState({ canvasId: 'c1', agent: 'builtin', session: original })
+  const patches: unknown[] = []
+  mockFetch((request) => {
+    const path = new URL(request.url).pathname
+    if (request.method === 'GET' && path === '/api/canvases/c1/agent/sessions')
+      return Response.json([original])
+    if (request.method === 'GET' && path === '/api/agent/models/builtin')
+      return Response.json(builtinCatalog)
+    if (request.method === 'PATCH' && path === '/api/agent/sessions/b1')
+      return request.json().then((body) => {
+        patches.push(body)
+        return Response.json({ ...original, settings: body })
+      })
+  })
+  const { user } = renderApp(<AgentControls disabled={false} selectionCount={0} />)
+  const model = await screen.findByRole<HTMLButtonElement>('combobox', { name: '对话模型' })
+  await waitFor(() => expect(model.textContent).toContain('模型一'))
+  await user.click(screen.getByRole('button', { name: '上下文管理' }))
+  const dialog = await screen.findByRole('dialog', { name: '上下文管理' })
+  expect(dialog.textContent).toContain('模型未声明上下文窗口，按默认预算')
+  expect(dialog.textContent).toContain('×0.72')
+  expect(dialog.textContent).toContain('256 KiB')
+  expect(screen.getByRole('combobox', { name: '自动压缩' }).textContent).toContain('80%')
+  await user.click(model)
+  await user.click(await screen.findByRole('option', { name: '模型二' }))
+  await waitFor(() => expect(patches).toEqual([{ model: 'm2', compactAt: 0.8 }]))
+})
+
+it('新对话沿用该智能体上次的自动压缩选择；CLI 智能体没有这个选项', async () => {
+  useAgent.setState({
+    canvasId: 'c1',
+    agent: 'builtin',
+    session: null,
+    modelPreferences: { builtin: { compactAt: 0.5 } },
+  })
+  mockFetch((request) => {
+    if (new URL(request.url).pathname === '/api/agent/models/builtin')
+      return Response.json(builtinCatalog)
+  })
+  const first = renderApp(<AgentControls disabled={false} selectionCount={0} />)
+  await first.user.click(await screen.findByRole('button', { name: '上下文管理' }))
+  expect((await screen.findByRole('combobox', { name: '自动压缩' })).textContent).toContain('50%')
+  first.unmount()
+
+  useAgent.setState({ agent: 'codex', session: session() })
+  mockFetch((request) => {
+    if (new URL(request.url).pathname === '/api/agent/models/codex') return Response.json(catalog)
+  })
+  const second = renderApp(<AgentControls disabled={false} selectionCount={0} />)
+  await second.user.click(await screen.findByRole('button', { name: '上下文管理' }))
+  await screen.findByRole('dialog', { name: '上下文管理' })
+  expect(screen.queryByRole('combobox', { name: '自动压缩' })).toBeNull()
+})

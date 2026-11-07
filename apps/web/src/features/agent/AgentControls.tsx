@@ -1,4 +1,4 @@
-import type { AgentContext } from '@plein/protocol'
+import type { AgentContext, AgentSettings } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
@@ -21,6 +21,20 @@ const EFFORT_LABELS: Record<string, string> = {
 }
 
 const number = (n: number) => n.toLocaleString('zh-CN')
+
+/** 缺省（不写 compactAt）即 60%，与服务端默认一致 */
+const DEFAULT_COMPACT = '0.6'
+const COMPACT_OPTIONS = [
+  { value: 'off', label: '关闭' },
+  { value: '0.5', label: '50%' },
+  { value: DEFAULT_COMPACT, label: '60%（默认）' },
+  { value: '0.7', label: '70%' },
+  { value: '0.8', label: '80%' },
+  { value: '0.9', label: '90%' },
+]
+const compactValue = (compactAt: AgentSettings['compactAt']) =>
+  compactAt === undefined ? DEFAULT_COMPACT : String(compactAt)
+const kib = (bytes: number) => `${number(Math.round(bytes / 1024))} KiB`
 
 function contextLabel(context?: AgentContext) {
   if (!context || context.source === 'unavailable' || context.tokens === undefined) return '上下文'
@@ -96,7 +110,12 @@ export function AgentControls({
           value={settings.model ?? ''}
           options={options}
           disabled={blocked || catalog.isPending}
-          onChange={(model) => void setSettings(model ? { model } : {})}
+          onChange={(model) =>
+            void setSettings({
+              ...(model ? { model } : {}),
+              ...(settings.compactAt === undefined ? {} : { compactAt: settings.compactAt }),
+            })
+          }
           className="h-7 min-w-0 max-w-48 flex-1 text-xs"
         />
         {(efforts.length > 0 || settings.reasoningEffort) && (
@@ -121,6 +140,7 @@ export function AgentControls({
               void setSettings({
                 ...(settings.model ? { model: settings.model } : {}),
                 ...(reasoningEffort ? { reasoningEffort } : {}),
+                ...(settings.compactAt === undefined ? {} : { compactAt: settings.compactAt }),
               })
             }
             className="h-7 max-w-26 text-xs"
@@ -180,6 +200,16 @@ export function AgentControls({
               selectionCount={selectionCount}
               disabled={blocked || !session}
               pending={pending}
+              compactAt={settings.compactAt}
+              onCompactAt={(value) => {
+                const { compactAt: _, ...rest } = settings
+                void setSettings(
+                  value === DEFAULT_COMPACT
+                    ? rest
+                    : { ...rest, compactAt: value === 'off' ? 'off' : Number(value) },
+                )
+              }}
+              compactDisabled={blocked}
             />
           </Popover>
         )}
@@ -195,6 +225,9 @@ function ContextDetails({
   selectionCount,
   disabled,
   pending,
+  compactAt,
+  onCompactAt,
+  compactDisabled,
 }: {
   context?: AgentContext
   model: string
@@ -202,6 +235,9 @@ function ContextDetails({
   selectionCount: number
   disabled: boolean
   pending: boolean
+  compactAt: AgentSettings['compactAt']
+  onCompactAt(value: string): void
+  compactDisabled: boolean
 }) {
   const known = context?.source !== 'unavailable' && context?.tokens !== undefined
   const percent =
@@ -250,12 +286,22 @@ function ContextDetails({
             )}
             {context?.bytes !== undefined && (
               <p className="mt-2 text-ink-subtle">
-                请求文本 {number(context.bytes)} bytes / 256 KiB
+                请求文本 {number(context.bytes)} bytes / {kib(context.bytesLimit ?? 256 * 1024)}
               </p>
             )}
             {context?.source === 'estimate' && (
               <p className="mt-2 leading-relaxed text-ink-subtle">
                 估算包含系统指令、对话和工具定义；这里的上限是 Plein 的请求预算。
+              </p>
+            )}
+            {builtin && context?.limitDeclared === false && (
+              <p className="mt-2 leading-relaxed text-ink-subtle">
+                模型未声明上下文窗口，按默认预算。
+              </p>
+            )}
+            {builtin && context?.calibration !== undefined && (
+              <p className="mt-2 leading-relaxed text-ink-subtle">
+                估算已按平台报告的实际用量校准（×{context.calibration.toFixed(2)}）。
               </p>
             )}
             {context?.source === 'provider' && !context.limit && (
@@ -280,6 +326,35 @@ function ContextDetails({
         <dt>{builtin ? '请求消息' : '历史对话'}</dt>
         <dd>{builtin ? (context ? `${context.messages} 条` : '发送后统计') : '由本机 CLI 维护'}</dd>
       </dl>
+      {builtin && (
+        <div className="flex items-center justify-between gap-3 text-ink-muted">
+          <span className="flex-none">自动压缩</span>
+          <Select
+            aria-label="自动压缩"
+            value={compactValue(compactAt)}
+            disabled={compactDisabled}
+            options={[
+              ...COMPACT_OPTIONS,
+              ...(COMPACT_OPTIONS.some((o) => o.value === compactValue(compactAt))
+                ? []
+                : [
+                    {
+                      value: compactValue(compactAt),
+                      label: `${Math.round(Number(compactAt) * 100)}%`,
+                      disabled: true,
+                    },
+                  ]),
+            ]}
+            onChange={onCompactAt}
+            className="h-7 w-32 text-xs"
+          />
+        </div>
+      )}
+      {builtin && (
+        <p className="-mt-1 leading-relaxed text-ink-subtle">
+          历史请求达到上下文预算的这个比例时，把较早的对话压缩成摘要。每一步都会重发整段上下文，大窗口模型建议调低。
+        </p>
+      )}
       {builtin && !!context?.compactedAt && (
         <p className="leading-relaxed text-ink-subtle">
           较早的 {context.compactedTurns ?? 0} 轮对话已在{' '}
