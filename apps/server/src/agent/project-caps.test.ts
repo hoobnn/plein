@@ -77,6 +77,35 @@ describe('项目与画布管理能力', () => {
     ).rejects.toThrow('list_projects')
   })
 
+  it('复制画布与移动画布到别的项目，越权和不存在的项目被拒绝', async () => {
+    const f = await fixture()
+    const target = (await f.invoke('create_project', { title: '乙' })) as { project_id: string }
+    const copy = (await f.invoke('duplicate_canvas', {
+      canvas_id: f.id,
+      title: '备份',
+      project_id: target.project_id,
+    })) as { canvas_id: string; title: string; project_id: string }
+    expect(copy).toMatchObject({ title: '备份', project_id: target.project_id })
+    expect(copy.canvas_id).not.toBe(f.id)
+    const plain = (await f.invoke('duplicate_canvas', { canvas_id: f.id })) as { title: string }
+    expect(plain.title).toMatch(/ 副本$/)
+
+    const moved = (await f.invoke('move_canvas', {
+      canvas_id: f.id,
+      project_id: target.project_id,
+    })) as { project_id: string }
+    expect(moved.project_id).toBe(target.project_id)
+    await expect(
+      f.invoke('move_canvas', { canvas_id: f.id, project_id: 'pj_nope' }),
+    ).rejects.toThrow('list_projects')
+
+    const other: ToolEnv = { ...f.env, ownerId: 'other', canvasId: '' }
+    await expect(f.invoke('duplicate_canvas', { canvas_id: f.id }, other)).rejects.toThrow('不存在')
+    await expect(
+      f.invoke('move_canvas', { canvas_id: f.id, project_id: target.project_id }, other),
+    ).rejects.toThrow('不存在')
+  })
+
   it('只能操作自己的项目与画布，且不能删本会话正在用的画布', async () => {
     const f = await fixture()
     const other: ToolEnv = { ...f.env, ownerId: 'other', canvasId: '' }

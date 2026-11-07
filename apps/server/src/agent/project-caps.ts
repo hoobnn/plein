@@ -14,6 +14,7 @@ const page = {
 const iso = (ms: number) => new Date(ms).toISOString()
 const PROJECT_PATH = /^\/api\/projects\/[^/]+$/
 const CANVAS_PATH = /^\/api\/canvases\/[^/]+$/
+const CANVAS_DUPLICATE_PATH = /^\/api\/canvases\/[^/]+\/duplicate$/
 const HINT_PROJECT = '先用 list_projects 查询项目 id'
 const HINT_CANVAS = '先用 list_canvases 查询画布 id'
 
@@ -238,6 +239,65 @@ export const renameCanvas = workspace(
   }),
 )
 
+export const duplicateCanvas = workspace(
+  cap({
+    name: 'duplicate_canvas',
+    title: '复制画布',
+    group: 'project',
+    where: 'server',
+    effect: 'edit',
+    description:
+      '复制一张画布（元素、连线、分镜、序列和已有结果都带上；检查点、撤销历史、智能体会话不带，素材文件共享不复制），返回新画布的 canvas_id。默认放在原项目、标题加「副本」；可用 project_id 放进别的项目。画布 id 来自 list_canvases。',
+    input: z.object({
+      canvas_id: id,
+      title: title.optional().describe('新画布标题；不填用「原标题 副本」'),
+      project_id: id.optional().describe('放进哪个项目；不填放在原项目'),
+    }),
+    run: async (ctx, a) => {
+      const c = await callInternal<Canvas>(
+        ctx,
+        {
+          method: 'POST',
+          path: API.canvasDuplicate(a.canvas_id),
+          pathname: CANVAS_DUPLICATE_PATH,
+          body: {
+            ...(a.title ? { title: a.title } : {}),
+            ...(a.project_id ? { projectId: a.project_id } : {}),
+          },
+        },
+        `${HINT_CANVAS}；${HINT_PROJECT}`,
+      )
+      return { canvas_id: c.id, title: c.title, project_id: c.projectId }
+    },
+  }),
+)
+
+export const moveCanvas = workspace(
+  cap({
+    name: 'move_canvas',
+    title: '移动画布',
+    group: 'project',
+    where: 'server',
+    effect: 'edit',
+    description:
+      '把画布移到另一个项目，画布内容不变。画布 id 来自 list_canvases，项目 id 来自 list_projects。',
+    input: z.object({ canvas_id: id, project_id: id }),
+    run: async (ctx, a) => {
+      const c = await callInternal<Canvas>(
+        ctx,
+        {
+          method: 'PATCH',
+          path: API.canvas(a.canvas_id),
+          pathname: CANVAS_PATH,
+          body: { projectId: a.project_id },
+        },
+        `${HINT_CANVAS}；${HINT_PROJECT}`,
+      )
+      return { canvas_id: c.id, project_id: c.projectId }
+    },
+  }),
+)
+
 const CANVAS_DELETE = '删除画布及其全部内容（不能撤销）'
 export const deleteCanvas = workspace(
   cap({
@@ -271,5 +331,7 @@ export const projectCapabilities = [
   listCanvases,
   createCanvas,
   renameCanvas,
+  duplicateCanvas,
+  moveCanvas,
   deleteCanvas,
 ]

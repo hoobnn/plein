@@ -97,6 +97,8 @@ const TOOL_LABELS: Record<string, string> = {
   list_canvases: '查看画布列表',
   create_canvas: '新建画布',
   rename_canvas: '重命名画布',
+  duplicate_canvas: '复制画布',
+  move_canvas: '移动画布',
   delete_canvas: '删除画布',
   view_media: '查看效果',
   edit_media: '加工素材',
