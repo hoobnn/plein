@@ -626,8 +626,8 @@ importers:
   packages/plugin-sdk:
     dependencies:
       modelbay:
-        specifier: 0.2.2
-        version: 0.2.2(@volcengine/tos-sdk@2.9.1(supports-color@7.2.0))(sharp@0.35.5(@types/node@26.6.6))(ws@8.22.0)(zod@4.6.7)
+        specifier: 0.3.0
+        version: 0.3.0(@volcengine/tos-sdk@2.9.1(supports-color@7.2.0))(sharp@0.35.5(@types/node@26.6.6))(ws@8.22.0)(zod@4.6.7)
       zod:
         specifier: 'catalog:'
         version: 4.6.7
@@ -658,8 +658,8 @@ importers:
         specifier: ^2.9.1
         version: 2.9.1(supports-color@7.2.0)
       modelbay:
-        specifier: 0.2.2
-        version: 0.2.2(@volcengine/tos-sdk@2.9.1(supports-color@7.2.0))(sharp@0.35.5(@types/node@26.6.6))(ws@8.22.0)(zod@4.6.7)
+        specifier: 0.3.0
+        version: 0.3.0(@volcengine/tos-sdk@2.9.1(supports-color@7.2.0))(sharp@0.35.5(@types/node@26.6.6))(ws@8.22.0)(zod@4.6.7)
       sharp:
         specifier: ^0.35.5
         version: 0.35.5(@types/node@26.6.6)
@@ -4120,8 +4120,8 @@ packages:
     resolution: {integrity: sha512-FP+p8RB8OWpF3YZBCrP5gtADmtXApB5AMLn+vdyA+PyxCjrCs00mjyUozssO33cwDeT3wNGdLxJ5M//YqtHAJw==}
     hasBin: true
 
-  modelbay@0.2.2:
-    resolution: {integrity: sha512-kKAUsf3gQ36FZzwxbTaDRN+Do4QgBjr90aORDIbWC3oGVczTi9iFwB7Zre2kKrKOSB7faqJFGPt1Dp2osqGwgA==}
+  modelbay@0.3.0:
+    resolution: {integrity: sha512-huXVCO3x1i4nB67xJjBtOOCVg7KSjYOOrXL33yDixn06TfdYH8C2YdP23/WeBaV1wXxrsWqLjtLhpYYZrC6Jng==}
     peerDependencies:
       '@volcengine/tos-sdk': ^2.9.1
       sharp: ^0.35.0
@@ -8171,7 +8171,7 @@ snapshots:
     dependencies:
       minimist: 1.2.8
 
-  modelbay@0.2.2(@volcengine/tos-sdk@2.9.1(supports-color@7.2.0))(sharp@0.35.5(@types/node@26.6.6))(ws@8.22.0)(zod@4.6.7):
+  modelbay@0.3.0(@volcengine/tos-sdk@2.9.1(supports-color@7.2.0))(sharp@0.35.5(@types/node@26.6.6))(ws@8.22.0)(zod@4.6.7):
     dependencies:
       '@ai-sdk/openai': 4.0.106(zod@4.6.7)
       '@ai-sdk/openai-compatible': 3.0.81(zod@4.6.7)

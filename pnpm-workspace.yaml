@@ -31,7 +31,7 @@ minimumReleaseAgeExclude:
   - "@hyperframes/studio-server@0.8.186"
   - "@hyperframes/player@0.8.186"
   - react-resizable-panels@4.16.1
-  - modelbay@0.2.2
+  - modelbay@0.3.0
 overrides:
   vite@*: "catalog:"
   # @volcengine/tos-sdk 把 axios 锁在 ^0.21.1，0.21.4 带 10 项 high 漏洞；0.x 分支的修复版为 >=0.32.0

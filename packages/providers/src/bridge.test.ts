@@ -41,6 +41,13 @@ describe('adapterToProvider：模型选项与元信息', () => {
     expect(chat.options?.shape.reasoning_effort?.meta()?.title).toBe('思考强度')
   })
 
+  it('对话模型带出声明的上下文窗口与最大输出，内置智能体据此定预算', () => {
+    const chat = openaiProvider.models.find((m) => m.id === 'gpt-6.1-sol')!
+    expect(chat.contextWindow).toBeGreaterThan(0)
+    expect(chat.maxOutputTokens).toBeGreaterThan(0)
+    expect(chat.maxOutputTokens!).toBeLessThanOrEqual(chat.contextWindow!)
+  })
+
   it('模型 id 用渠道内 ID，按声明顺序', () => {
     const ids = adapterModels(createOpenAIAdapter(openaiModels), 'openai').map((m) => m.id)
     expect(ids).toEqual([

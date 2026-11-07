@@ -13,7 +13,7 @@
     "typecheck": "tsc -p ."
   },
   "dependencies": {
-    "modelbay": "0.2.2",
+    "modelbay": "0.3.0",
     "zod": "catalog:"
   },
   "devDependencies": {
