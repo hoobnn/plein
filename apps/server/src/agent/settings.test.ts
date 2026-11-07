@@ -89,7 +89,7 @@ describe('agent model and context management', () => {
     expect(fresh.context).toMatchObject({
       source: 'estimate',
       model: 'plein/mock:agent-vision',
-      limit: 32000,
+      limit: 96000,
       tokens: expect.any(Number),
       bytes: expect.any(Number),
     })

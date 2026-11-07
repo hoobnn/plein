@@ -4,7 +4,7 @@ import type { PluginHost } from '../plugins/host'
 import { callTool, inputSchema, type McpTool, type ToolResult } from './mcp'
 import type { TurnExecution } from './execution'
 import type { AgentContext } from '@plein/protocol'
-import { budgetMessages, RESULT_BYTES, textCost } from './context-budget'
+import { budgetMessages, RESULT_BYTES, TEXT_TOKENS, textCost } from './context-budget'
 
 /**
  * 内置智能体：不装 Claude Code / Codex，直接用已启用平台的对话模型（声明了 tools 特性的）驱动同一套画布能力。
@@ -93,7 +93,7 @@ export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
       t.onContext?.({
         ...context,
         source: 'estimate',
-        limit: 32000,
+        limit: TEXT_TOKENS,
         model: t.model,
         updatedAt: Date.now(),
       }),
