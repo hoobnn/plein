@@ -41,6 +41,8 @@ export interface Live {
   mcp: McpServer
   /** 画布工具（MCP 和内置智能体共用一份，含确认关卡） */
   tools: McpTool[]
+  /** 内置智能体已加载的非核心工具名（按加载先后）；只在内存里，重置上下文时清空 */
+  loadedTools: string[]
   /** 内置智能体这一轮的取消开关 */
   abort: AbortController | null
   listeners: Set<(e: AgentEvent) => void>

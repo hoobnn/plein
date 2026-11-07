@@ -3,7 +3,8 @@ import type { AgentItem, AgentSkillDetail } from '@plein/protocol'
 import { CapabilityError } from '@plein/capabilities'
 import { ProviderError, type ChatMessage } from '@plein/plugin-sdk'
 import { brief, toolText } from './drivers/util'
-import { builtinModel, chatTools, runBuiltinTurn } from './builtin'
+import { builtinModel, chatTools, closestTools, runBuiltinTurn } from './builtin'
+import { builtinToolset } from './builtin-tools'
 import { calibrationOf } from './calibration'
 import { budgetOf, type ContextBudget, outputReserve } from './context-budget'
 import {
@@ -79,6 +80,7 @@ export function startBuiltin(
       ...(summary ? { summary: summaryPrompt(summary) } : {}),
       prompt,
       tools: s.tools,
+      loaded: s.loadedTools,
       signal: abort.signal,
       execution,
       vision: model.vision,
@@ -167,11 +169,17 @@ async function prepareHistory(
   let summary = parseSummary(s.row.context_summary)
   let turns = env.turns.turns(s.row.id, s.row.context_cutoff)
   const scale = calibrationOf(model)
-  const plan = planCompaction(INSTRUCTIONS, summary, turns, chatTools(s.tools), {
-    budget,
-    scale,
-    ...(compactAt === undefined ? {} : { compactAt }),
-  })
+  const plan = planCompaction(
+    INSTRUCTIONS,
+    summary,
+    turns,
+    chatTools(builtinToolset(s.tools, s.loadedTools, closestTools).send()),
+    {
+      budget,
+      scale,
+      ...(compactAt === undefined ? {} : { compactAt }),
+    },
+  )
   if (plan) {
     const { older, recent } = plan
     const noticeId = newId('notice')

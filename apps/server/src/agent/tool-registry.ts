@@ -349,7 +349,7 @@ const listCanvasCapabilities = serverCapability({
   name: 'list_canvas_capabilities',
   title: '查询画布能力契约',
   description:
-    '查询实时能力目录（含插件）。不填 name 返回名称、用途、分组与运行位置；指定 name 返回完整输入 JSON Schema。先查契约再操作，不猜参数；节点的嵌套参数用 list_node_types 指定 type 查询。',
+    '查询实时能力目录（含插件）。不填 name 返回名称、用途、分组与运行位置；指定 name 返回完整输入 JSON Schema。先查契约再操作，不猜参数；节点的嵌套参数用 list_node_types 指定 type 查询。若当前环境只带了一组核心工具，名字不在其中的工具先用 load_tools 加载再调用。',
   group: 'read',
   where: 'server',
   effect: 'read',

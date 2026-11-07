@@ -4,6 +4,7 @@ import type { PluginHost } from '../plugins/host'
 import { callTool, inputSchema, type McpTool, type ToolResult } from './mcp'
 import type { TurnExecution, TurnStep } from './execution'
 import type { AgentContext } from '@plein/protocol'
+import { builtinToolset, markLoaded } from './builtin-tools'
 import { calibrated, calibrationOf, recordUsage } from './calibration'
 import {
   budgetMessages,
@@ -84,6 +85,8 @@ export interface BuiltinTurn {
   /** 这一轮用户说的话（含选区说明） */
   prompt: string
   tools: McpTool[]
+  /** 已加载的非核心工具名（按加载先后）；会话内存里跨轮保留，缺省为空 */
+  loaded?: string[]
   signal: AbortSignal
   execution?: TurnExecution
   /** 覆盖重试等待时间（测试用） */
@@ -186,8 +189,8 @@ export const chatTools = (tools: McpTool[]): ChatTool[] =>
 
 /** 跑一轮；模型调用失败时抛 ProviderError，取消时静默结束 */
 export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
-  const tools = chatTools(t.tools)
-  const byName = new Map(t.tools.map((tool) => [tool.name, tool]))
+  const toolset = builtinToolset(t.tools, t.loaded ?? [], closestTools)
+  const byName = new Map(toolset.all.map((tool) => [tool.name, tool]))
   const current = t.execution?.transcript ?? [{ role: 'user' as const, content: t.prompt }]
   const append = (message: ChatMessage) => {
     if (t.execution) t.execution.append(message)
@@ -205,6 +208,8 @@ export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
         ],
         isError: true,
       }
+    // 模型直接调用了存在但未加载的工具：照常执行，并从下一步起带上它的定义
+    markLoaded(toolset.loader, [call.name])
     return callTool(tool, call.arguments, { callId: call.id })
   }
   let imageCount = 0,
@@ -230,6 +235,7 @@ export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
     for (const queued of t.takeQueued?.() ?? []) append({ role: 'user', content: queued })
     // 每步取一次校准系数：同一步内预算判断与显示口径一致
     const scale = calibrationOf(t.model)
+    const tools = chatTools(toolset.send())
     const budgeted = budgetMessages(
       t.summary ? [t.system, t.summary] : t.system,
       t.history,

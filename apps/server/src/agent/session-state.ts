@@ -237,6 +237,7 @@ export class AgentSessions {
     s.row.context_cutoff = this.turns.cutoff(id)
     s.row.context_reset_at = Date.now()
     s.row.context_summary = null
+    s.loadedTools.length = 0
     configuration(this.env, s, {
       source: 'unavailable',
       messages: 0,
@@ -631,6 +632,7 @@ export class AgentSessions {
       token: '',
       mcp,
       tools,
+      loadedTools: [],
       abort: null,
       listeners: new Set(),
       stopped: false,
