@@ -11,15 +11,25 @@ import type { StoryboardBatchPlan } from './storyboard-batch'
 export const AgentKind = z.enum(['builtin', 'claude', 'codex'])
 export type AgentKind = z.infer<typeof AgentKind>
 
+/**
+ * 内置智能体的自动压缩阈值，历史请求估算达到它时压缩较早的对话：
+ * - 数字：占模型上下文预算的比例（0.3–0.95）；
+ * - { tokens }：固定的 token 数，超过模型预算的 95% 时按 95% 算；
+ * - 'off'：不自动压缩，只剩按预算省略历史的兜底。
+ */
+export const CompactAt = z.union([
+  z.number().min(0.3).max(0.95),
+  z.object({ tokens: z.number().int().min(16_000).max(4_000_000) }).strict(),
+  z.literal('off'),
+])
+export type CompactAt = z.infer<typeof CompactAt>
+
 /** 会话覆盖配置；空对象表示跟随当前智能体默认配置。 */
 export const AgentSettings = z.object({
   model: z.string().trim().min(1).max(200).optional(),
   reasoningEffort: z.string().trim().min(1).max(32).optional(),
-  /**
-   * 内置智能体的自动压缩阈值：历史请求估算达到模型上下文预算的这个比例时压缩较早的对话。
-   * 缺省 0.6；'off' 不自动压缩，只剩按预算省略历史的兜底。CLI 智能体忽略它。
-   */
-  compactAt: z.union([z.number().min(0.3).max(0.95), z.literal('off')]).optional(),
+  /** 内置智能体的自动压缩阈值，见 CompactAt；缺省为预算的 0.6。CLI 智能体忽略它。 */
+  compactAt: CompactAt.optional(),
 })
 export type AgentSettings = z.infer<typeof AgentSettings>
 
@@ -87,8 +97,8 @@ export interface AgentContext {
   bytesLimit?: number
   /** 内置助手：模型是否声明了上下文窗口；false 表示按默认预算 */
   limitDeclared?: boolean
-  /** 内置助手当前生效的自动压缩阈值（占预算的比例或 'off'） */
-  compactAt?: number | 'off'
+  /** 内置助手当前生效的自动压缩阈值（比例、固定 token 数或 'off'） */
+  compactAt?: CompactAt
   /** 内置助手的估算校准系数（平台真实用量 / 本地估算），尚无样本时缺省 */
   calibration?: number
   messages: number

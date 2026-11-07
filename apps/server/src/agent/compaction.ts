@@ -1,3 +1,4 @@
+import type { CompactAt } from '@plein/protocol'
 import type { ChatMessage, ChatTool } from '@plein/plugin-sdk'
 import { ProviderError } from '@plein/plugin-sdk'
 import type { PluginHost } from '../plugins/host'
@@ -12,18 +13,23 @@ import { HISTORY_TURNS, type HistoryTurn } from './turn-store'
  */
 
 /**
- * 自动压缩阈值（占预算的比例）：历史请求估算超过它就压缩。缺省 0.6：
- * 系统指令和工具清单约占四万 token，再给本轮的工具交换留出四成。
- * 'off' 表示不自动压缩，只剩按预算省略历史的兜底。
+ * 自动压缩阈值：历史请求估算超过它就压缩。可以是占预算的比例、固定的 token 数或 'off'（见协议的 CompactAt）。
+ * 缺省为预算的 0.6，给本轮的工具交换留出四成。
  */
-export type CompactAt = number | 'off'
+export type { CompactAt }
 export const DEFAULT_COMPACT_AT = 0.6
+/** 固定 token 数的阈值最多到预算的这个比例，免得历史本身就把预算占满 */
+const MAX_SHARE = 0.95
 /** 默认预算、默认比例下的阈值（token） */
 export const COMPACT_AT = Math.floor(DEFAULT_BUDGET.tokens * DEFAULT_COMPACT_AT)
 
-/** 预算与比例换算出的压缩阈值（token）；'off' 时没有阈值 */
+/** 换算成 token 的压缩阈值；'off' 时没有阈值 */
 export function compactThreshold(budget: ContextBudget, compactAt: CompactAt = DEFAULT_COMPACT_AT) {
-  return compactAt === 'off' ? undefined : Math.floor(budget.tokens * compactAt)
+  if (compactAt === 'off') return undefined
+  const cap = Math.floor(budget.tokens * MAX_SHARE)
+  return typeof compactAt === 'number'
+    ? Math.min(cap, Math.floor(budget.tokens * compactAt))
+    : Math.min(cap, compactAt.tokens)
 }
 /**
  * 压缩后原样保留的最近轮次最多占阈值余量（阈值减去系统指令、摘要和工具清单）的这个比例，
@@ -67,7 +73,7 @@ const cost = (messages: ChatMessage[], tools: ChatTool[] = [], scale = 1) =>
 /**
  * 是否压缩、压哪些：历史请求超过阈值或已到轮数上限时，从最新一轮往前按预算留下最近几轮，其余并入摘要。
  * 不需要压缩（或除最近一轮外没有可并入的）时返回 undefined；compactAt 为 'off' 时永远不压缩。
- * 阈值由模型预算乘以 compactAt 得到，估算先乘校准系数 scale。
+ * 阈值由 compactThreshold 按模型预算换算，估算先乘校准系数 scale。
  */
 export function planCompaction(
   system: string,

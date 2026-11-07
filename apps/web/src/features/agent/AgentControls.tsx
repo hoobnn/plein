@@ -1,4 +1,4 @@
-import type { AgentContext, AgentSettings } from '@plein/protocol'
+import type { AgentContext, AgentSettings, CompactAt } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
@@ -31,9 +31,18 @@ const COMPACT_OPTIONS = [
   { value: '0.7', label: '70%' },
   { value: '0.8', label: '80%' },
   { value: '0.9', label: '90%' },
+  { value: 'tokens', label: '固定 token 数' },
 ]
+/** 固定 token 数的默认值与范围，与协议的 CompactAt 一致 */
+const DEFAULT_COMPACT_TOKENS = 150_000
+const COMPACT_TOKENS_MIN = 16_000
+const COMPACT_TOKENS_MAX = 4_000_000
 const compactValue = (compactAt: AgentSettings['compactAt']) =>
-  compactAt === undefined ? DEFAULT_COMPACT : String(compactAt)
+  compactAt === undefined
+    ? DEFAULT_COMPACT
+    : typeof compactAt === 'object'
+      ? 'tokens'
+      : String(compactAt)
 const kib = (bytes: number) => `${number(Math.round(bytes / 1024))} KiB`
 
 function contextLabel(context?: AgentContext) {
@@ -203,11 +212,7 @@ export function AgentControls({
               compactAt={settings.compactAt}
               onCompactAt={(value) => {
                 const { compactAt: _, ...rest } = settings
-                void setSettings(
-                  value === DEFAULT_COMPACT
-                    ? rest
-                    : { ...rest, compactAt: value === 'off' ? 'off' : Number(value) },
-                )
+                void setSettings(value === undefined ? rest : { ...rest, compactAt: value })
               }}
               compactDisabled={blocked}
             />
@@ -236,7 +241,8 @@ function ContextDetails({
   disabled: boolean
   pending: boolean
   compactAt: AgentSettings['compactAt']
-  onCompactAt(value: string): void
+  /** undefined 表示回到默认 */
+  onCompactAt(value: CompactAt | undefined): void
   compactDisabled: boolean
 }) {
   const known = context?.source !== 'unavailable' && context?.tokens !== undefined
@@ -345,14 +351,39 @@ function ContextDetails({
                     },
                   ]),
             ]}
-            onChange={onCompactAt}
+            onChange={(value) =>
+              onCompactAt(
+                value === DEFAULT_COMPACT
+                  ? undefined
+                  : value === 'off'
+                    ? 'off'
+                    : value === 'tokens'
+                      ? {
+                          tokens:
+                            typeof compactAt === 'object'
+                              ? compactAt.tokens
+                              : DEFAULT_COMPACT_TOKENS,
+                        }
+                      : Number(value),
+              )
+            }
             className="h-7 w-32 text-xs"
           />
         </div>
       )}
+      {builtin && typeof compactAt === 'object' && (
+        <CompactTokens
+          key={compactAt.tokens}
+          tokens={compactAt.tokens}
+          disabled={compactDisabled}
+          onCommit={(tokens) => onCompactAt({ tokens })}
+        />
+      )}
       {builtin && (
         <p className="-mt-1 leading-relaxed text-ink-subtle">
-          历史请求达到上下文预算的这个比例时，把较早的对话压缩成摘要。每一步都会重发整段上下文，大窗口模型建议调低。
+          历史请求达到上下文预算的这个比例，或达到固定的 token
+          数时，把较早的对话压缩成摘要（固定值最多按预算的 95%
+          算）。每一步都会重发整段上下文，大窗口模型建议调低。
         </p>
       )}
       {builtin && !!context?.compactedAt && (
@@ -395,5 +426,42 @@ function ContextDetails({
         </button>
       </div>
     </div>
+  )
+}
+
+/** 固定 token 数的压缩阈值：失焦或回车时提交，越界收拢到允许范围，无效输入恢复原值 */
+function CompactTokens({
+  tokens,
+  disabled,
+  onCommit,
+}: {
+  tokens: number
+  disabled: boolean
+  onCommit(tokens: number): void
+}) {
+  const [draft, setDraft] = useState(String(tokens))
+  const commit = () => {
+    const value = Number(draft)
+    if (!draft || !Number.isFinite(value)) return setDraft(String(tokens))
+    const next = Math.min(COMPACT_TOKENS_MAX, Math.max(COMPACT_TOKENS_MIN, Math.round(value)))
+    setDraft(String(next))
+    if (next !== tokens) onCommit(next)
+  }
+  return (
+    <label className="-mt-1 flex items-center justify-end gap-2 text-ink-muted">
+      <input
+        className="ui-input h-7 w-28 text-right text-xs tabular-nums"
+        inputMode="numeric"
+        aria-label="压缩阈值（token）"
+        value={draft}
+        disabled={disabled}
+        onChange={(e) => setDraft(e.target.value.replace(/\D/g, ''))}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit()
+        }}
+      />
+      <span>tokens</span>
+    </label>
   )
 }

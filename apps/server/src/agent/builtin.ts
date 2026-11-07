@@ -3,7 +3,7 @@ import { ProviderError } from '@plein/plugin-sdk'
 import type { PluginHost } from '../plugins/host'
 import { callTool, inputSchema, type McpTool, type ToolResult } from './mcp'
 import type { TurnExecution, TurnStep } from './execution'
-import type { AgentContext } from '@plein/protocol'
+import type { AgentContext, CompactAt } from '@plein/protocol'
 import { builtinToolset, markLoaded } from './builtin-tools'
 import { calibrated, calibrationOf, recordUsage } from './calibration'
 import {
@@ -97,7 +97,7 @@ export interface BuiltinTurn {
   /** 每步发给模型的输出上限（token），缺省 8192 */
   maxTokens?: number
   /** 自动压缩阈值，只用于在上下文统计里显示；缺省 0.6 */
-  compactAt?: number | 'off'
+  compactAt?: CompactAt
   saveImage?(image: { data: string; mimeType: string }): Promise<AssetRef>
   /** 模型输出的文字：step 内流式累积，同一步同一个 key */
   onText(key: string, text: string, done: boolean): void

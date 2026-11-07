@@ -319,6 +319,38 @@ it('内置智能体的上下文面板显示按模型推出的预算，并保存�
   await waitFor(() => expect(patches).toEqual([{ compactAt: 'off' }, {}]))
 })
 
+it('自动压缩可以改成固定 token 数，输入框越界时收拢到允许范围', async () => {
+  const original = builtinSession()
+  useAgent.setState({ canvasId: 'c1', agent: 'builtin', session: original })
+  const patches: unknown[] = []
+  mockFetch((request) => {
+    const path = new URL(request.url).pathname
+    if (request.method === 'GET' && path === '/api/canvases/c1/agent/sessions')
+      return Response.json([original])
+    if (request.method === 'GET' && path === '/api/agent/models/builtin')
+      return Response.json(builtinCatalog)
+    if (request.method === 'PATCH' && path === '/api/agent/sessions/b1')
+      return request.json().then((body) => {
+        patches.push(body)
+        return Response.json({ ...original, settings: body })
+      })
+  })
+  const { user } = renderApp(<AgentControls disabled={false} selectionCount={0} />)
+  await user.click(await screen.findByRole('button', { name: '上下文管理' }))
+  await user.click(await screen.findByRole('combobox', { name: '自动压缩' }))
+  await user.click(await screen.findByRole('option', { name: '固定 token 数' }))
+  await waitFor(() => expect(patches).toEqual([{ compactAt: { tokens: 150000 } }]))
+  const input = await screen.findByRole<HTMLInputElement>('textbox', { name: '压缩阈值（token）' })
+  expect(input.value).toBe('150000')
+  await user.clear(input)
+  await user.type(input, '80000{Enter}')
+  await waitFor(() => expect(patches.at(-1)).toEqual({ compactAt: { tokens: 80000 } }))
+  const again = await screen.findByRole<HTMLInputElement>('textbox', { name: '压缩阈值（token）' })
+  await user.clear(again)
+  await user.type(again, '100{Enter}')
+  await waitFor(() => expect(patches.at(-1)).toEqual({ compactAt: { tokens: 16000 } }))
+})
+
 it('未声明窗口的模型提示按默认预算；切换模型保留自动压缩选择', async () => {
   const original = builtinSession({
     settings: { model: 'm1', compactAt: 0.8 },

@@ -128,6 +128,19 @@ describe('planCompaction thresholds', () => {
     expect(at30).toBeDefined()
   })
 
+  it('a fixed token count works on any window, capped at 95% of the budget', () => {
+    const big = { tokens: 1_000_000, bytes: TEXT_BYTES, declared: true }
+    expect(compactThreshold(big, { tokens: 150_000 })).toBe(150_000)
+    expect(compactThreshold(DEFAULT_BUDGET, { tokens: 150_000 })).toBe(91200)
+    // 约 25000 token：固定 24000 触发，28000 不触发，与窗口大小无关
+    expect(
+      planCompaction('s', undefined, history, [], { budget: big, compactAt: { tokens: 24000 } }),
+    ).toBeDefined()
+    expect(
+      planCompaction('s', undefined, history, [], { budget: big, compactAt: { tokens: 28000 } }),
+    ).toBeUndefined()
+  })
+
   it("'off' never compacts, even far over the budget", () => {
     const budget = { tokens: 4000, bytes: TEXT_BYTES, declared: true }
     expect(planCompaction('s', undefined, history, [], { budget, compactAt: 0.3 })).toBeDefined()

@@ -113,7 +113,16 @@ describe('agent model and context management', () => {
     const fresh = await f.turn('只看现在有哪些元素')
     expect(fresh.context).toMatchObject({ source: 'estimate', limit: 96000, limitDeclared: false })
 
-    for (const bad of [0.2, 0.96, 'on', '0.6', null])
+    for (const bad of [
+      0.2,
+      0.96,
+      'on',
+      '0.6',
+      null,
+      { tokens: 1000 },
+      { tokens: 1.5e5 + 0.5 },
+      { ratio: 0.5 },
+    ])
       expect((await patch({ compactAt: bad })).status).toBe(400)
 
     const saved = (await (await patch({ compactAt: 0.8 })).json()) as AgentSession
@@ -124,6 +133,9 @@ describe('agent model and context management', () => {
       tokens: fresh.context!.tokens,
       compactAt: 0.8,
     })
+    const fixed = (await (await patch({ compactAt: { tokens: 150000 } })).json()) as AgentSession
+    expect(fixed.settings).toEqual({ compactAt: { tokens: 150000 } })
+    expect(fixed.context?.compactAt).toEqual({ tokens: 150000 })
     const off = (await (await patch({ compactAt: 'off' })).json()) as AgentSession
     expect(off.settings).toEqual({ compactAt: 'off' })
     expect(off.context?.compactAt).toBe('off')
