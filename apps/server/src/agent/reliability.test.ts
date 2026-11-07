@@ -576,3 +576,47 @@ describe('builtin empty replies and wrap-up', () => {
     expect(JSON.stringify(t.transcript)).not.toContain('系统提示：')
   })
 })
+
+describe('budgetMessages in-turn compression', () => {
+  const exchange = (id: string, size: number): ChatMessage[] => [
+    { role: 'assistant', content: '', toolCalls: [{ id, name: 'read', arguments: {} }] },
+    { role: 'tool', toolCallId: id, toolName: 'read', content: id + '中'.repeat(size) },
+  ]
+  it('replaces earliest tool results one at a time, keeping pairs, recent tools and inputs intact', () => {
+    const per = 15000
+    const current: ChatMessage[] = [
+      { role: 'user', content: 'go' },
+      ...exchange('a', per),
+      ...exchange('b', per),
+      ...exchange('c', per),
+      ...exchange('d', per),
+    ]
+    const snapshot = structuredClone(current)
+    const out = budgetMessages('s', [], current, [])
+    expect(current).toEqual(snapshot)
+    const tools = out.filter((m) => m.role === 'tool')
+    expect(tools).toHaveLength(4)
+    expect(tools[0]!.content).toBe(
+      `[较早的工具结果已省略以节省上下文：read，原 ${per + 1} 字符；需要时重新调用读取]`,
+    )
+    expect(tools[0]!.toolCallId).toBe('a')
+    // 每替换一条就重新评估，够用就停：b 仍是原文；最近两条、assistant 与 user 消息原样保留
+    expect(tools.slice(1).map((m) => (m.content as string).length)).toEqual([
+      per + 1,
+      per + 1,
+      per + 1,
+    ])
+    expect(out.filter((m) => m.role === 'assistant')).toHaveLength(4)
+    expect(out.find((m) => m.role === 'user')!.content).toBe('go')
+  })
+  it('still throws when nothing more can be compressed', () => {
+    // 最近两条 tool 消息本身就超预算，压缩更早的也救不回来
+    const current: ChatMessage[] = [
+      { role: 'user', content: 'go' },
+      ...exchange('a', TEXT_TOKENS),
+      ...exchange('b', TEXT_TOKENS),
+      ...exchange('c', TEXT_TOKENS),
+    ]
+    expect(() => budgetMessages('s', [], current, [])).toThrow('context_budget_exhausted')
+  })
+})

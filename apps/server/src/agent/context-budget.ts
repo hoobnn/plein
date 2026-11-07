@@ -33,7 +33,17 @@ export function requestWithinBudget(messages: ChatMessage[], tools: ChatTool[]) 
   const cost = textCost({ messages, tools })
   return cost.bytes <= TEXT_BYTES && cost.tokens + messages.length * 16 <= TEXT_TOKENS
 }
-/** Complete user-led rounds only; current tool exchanges are never cut apart. */
+/** 压缩本轮内容时保留原样的最近 tool 消息条数 */
+const KEEP_RECENT_TOOLS = 2
+
+const contentLength = (m: ChatMessage) =>
+  typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content).length
+
+/**
+ * Complete user-led rounds only; history is never cut apart.
+ * 历史丢完仍超预算时，从本轮最早的 tool 消息起把内容换成一行占位（消息本身保留，tool_call 与结果仍成对），
+ * 最近 2 条 tool 消息与 assistant / user 消息不动。返回新数组，不改传入的消息。
+ */
 export function budgetMessages(
   system: string,
   history: ChatMessage[],
@@ -59,6 +69,11 @@ export function budgetMessages(
     groups.at(-1)!.push(message)
   }
   let omitted = 0
+  let cur = current
+  const compressible = current
+    .flatMap((m, i) => (m.role === 'tool' ? [i] : []))
+    .slice(0, -KEEP_RECENT_TOOLS)
+  let compressed = 0
   for (;;) {
     const messages: ChatMessage[] = [
       { role: 'system', content: system },
@@ -71,7 +86,7 @@ export function budgetMessages(
           ]
         : []),
       ...groups.slice(omitted).flat(),
-      ...current,
+      ...cur,
     ]
     if (requestWithinBudget(messages, tools)) {
       const cost = textCost({ messages, tools })
@@ -83,10 +98,20 @@ export function budgetMessages(
       })
       return messages
     }
-    if (omitted >= groups.length)
+    if (omitted < groups.length) {
+      omitted++
+      continue
+    }
+    if (compressed >= compressible.length)
       throw new CapabilityError(
         'context_budget_exhausted: 当前需求和工具交换已达到处理预算，已完成的操作保留，请缩小范围后继续',
       )
-    omitted++
+    const index = compressible[compressed++]!
+    const old = cur[index]!
+    cur = cur.slice()
+    cur[index] = {
+      ...old,
+      content: `[较早的工具结果已省略以节省上下文：${old.toolName ?? '未知工具'}，原 ${contentLength(old)} 字符；需要时重新调用读取]`,
+    }
   }
 }

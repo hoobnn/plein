@@ -1,5 +1,6 @@
 import { Readable } from 'node:stream'
 import type { AgentItem, AgentSkillDetail } from '@plein/protocol'
+import { CapabilityError } from '@plein/capabilities'
 import { ProviderError, type ChatMessage } from '@plein/plugin-sdk'
 import { brief, toolText } from './drivers/util'
 import { builtinModel, runBuiltinTurn } from './builtin'
@@ -109,6 +110,12 @@ export function startBuiltin(
       if (s.stopped || execution.state === 'stopping') return
       execution.reason = (err as Error).message
       if (err instanceof ProviderError) fail(env, s, err.message)
+      else if (err instanceof CapabilityError && err.message.startsWith('context_budget_exhausted'))
+        fail(
+          env,
+          s,
+          '本轮读取和操作的内容太多，已超出模型上下文预算；已完成的操作保留。请缩小范围（比如分页、只看需要的元素）后说“接着做”，或新开一个会话。',
+        )
       else {
         console.warn('[agent] 内置智能体出错：', err)
         fail(env, s, `内置智能体出错：${(err as Error).message}`)
