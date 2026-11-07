@@ -1,4 +1,4 @@
-import type { Canvas } from '@plein/protocol'
+import type { Canvas, Project } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api } from '../../api/client'
@@ -46,6 +46,13 @@ export function ProjectSwitcher({ canvas }: { canvas: Canvas }) {
   })
   const canvases = canvasList.data ?? []
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  // 菜单里的第二页：选择要移到的项目
+  const [moving, setMoving] = useState(false)
+  const projectList = useQuery({
+    queryKey: queryKeys.projects,
+    queryFn: () => api.projects(),
+    enabled: moving,
+  })
   const [retryError, setRetryError] = useState<Error | null>(null)
   const listError = canvasList.error ?? retryError
   const loadCanvases = async () => {
@@ -69,7 +76,10 @@ export function ProjectSwitcher({ canvas }: { canvas: Canvas }) {
     return item.id.slice(-size)
   }
 
-  const close = () => setAnchor(null)
+  const close = () => {
+    setAnchor(null)
+    setMoving(false)
+  }
   const renameProject = async () => {
     const target = project
     if (!target) return
@@ -126,6 +136,29 @@ export function ProjectSwitcher({ canvas }: { canvas: Canvas }) {
         void invalidateProjects()
       },
     })
+  }
+  const duplicateCurrent = async () => {
+    const isCurrent = captureCanvasVisit(canvas.id)
+    close()
+    try {
+      const copy = await api.duplicateCanvas(canvas.id)
+      void invalidateProjects()
+      useCanvas.getState().notify(`已复制为「${copy.title}」`)
+      if (isCurrent()) navigate({ name: 'canvas', id: copy.id })
+    } catch (err) {
+      if (isCurrent()) fail(err)
+    }
+  }
+  const moveTo = async (target: Project) => {
+    const isCurrent = captureCanvasVisit(canvas.id)
+    close()
+    try {
+      await cacheCanvas(await api.moveCanvas(canvas.id, target.id))
+      void invalidateProjects()
+      useCanvas.getState().notify(`已移到项目「${target.title}」`)
+    } catch (err) {
+      if (isCurrent()) fail(err)
+    }
   }
   const removeCanvas = async () => {
     const isCurrent = captureCanvasVisit(canvas.id)
@@ -193,81 +226,135 @@ export function ProjectSwitcher({ canvas }: { canvas: Canvas }) {
       <AnimatePresence>
         {anchor && (
           <Popover anchor={anchor} onClose={close} label="画布" width={240} placement="below">
-            <div className="ui-menu-label">画布</div>
-            {canvasList.isFetching && !listError && (
-              <p role="status" className="px-3 py-2 text-xs text-ink-subtle">
-                {canvasList.data ? '正在刷新画布…' : '正在加载画布…'}
-              </p>
-            )}
-            {listError && (
-              <div role="alert" className="flex flex-col gap-2 px-3 py-2 text-xs text-danger">
-                <p className="break-words">
-                  {canvasList.data ? '画布列表刷新失败' : '画布列表加载失败'}：{listError.message}
-                </p>
+            {moving ? (
+              <>
+                <button type="button" onClick={() => setMoving(false)} className="ui-menu-item">
+                  <Icon name="chevronLeft" size={14} />
+                  移动到项目
+                </button>
+                <div className="ui-sep" />
+                {projectList.isFetching && !projectList.data && (
+                  <p role="status" className="px-3 py-2 text-xs text-ink-subtle">
+                    正在加载项目…
+                  </p>
+                )}
+                {projectList.error && (
+                  <p role="alert" className="px-3 py-2 text-xs text-danger">
+                    项目列表加载失败：{projectList.error.message}
+                  </p>
+                )}
+                <div className="ui-scrollbar max-h-72 overflow-y-auto">
+                  {(projectList.data ?? [])
+                    .filter((p) => p.id !== canvas.projectId)
+                    .map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        title={p.title}
+                        onClick={() => void moveTo(p)}
+                        className="ui-menu-item"
+                      >
+                        <Icon name="folder" size={14} />
+                        <span className="flex-1 truncate">{p.title}</span>
+                      </button>
+                    ))}
+                </div>
+                {projectList.data && projectList.data.length <= 1 && (
+                  <p className="px-3 py-2 text-xs text-ink-subtle">没有其他项目可移动</p>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="ui-menu-label">画布</div>
+                {canvasList.isFetching && !listError && (
+                  <p role="status" className="px-3 py-2 text-xs text-ink-subtle">
+                    {canvasList.data ? '正在刷新画布…' : '正在加载画布…'}
+                  </p>
+                )}
+                {listError && (
+                  <div role="alert" className="flex flex-col gap-2 px-3 py-2 text-xs text-danger">
+                    <p className="break-words">
+                      {canvasList.data ? '画布列表刷新失败' : '画布列表加载失败'}：
+                      {listError.message}
+                    </p>
+                    <button
+                      type="button"
+                      className="ui-btn ui-btn-secondary ui-btn-sm self-start"
+                      aria-label="重新加载画布"
+                      disabled={canvasList.isFetching}
+                      onClick={() => void loadCanvases()}
+                    >
+                      {canvasList.isFetching ? '正在重试…' : '重新加载'}
+                    </button>
+                  </div>
+                )}
+                {!canvasList.isFetching && !listError && canvasList.data && !canvases.length && (
+                  <p className="px-3 py-2 text-xs text-ink-subtle">
+                    暂无可切换的画布，可新建画布后继续。
+                  </p>
+                )}
+                <div className="ui-scrollbar max-h-72 overflow-y-auto">
+                  {canvases.map((c) => {
+                    const suffix = suffixFor(c)
+                    const label = suffix ? `${c.title} · ${suffix}` : c.title
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        aria-label={label}
+                        title={label}
+                        aria-current={c.id === canvas.id || undefined}
+                        onClick={() => {
+                          close()
+                          if (c.id !== canvas.id) navigate({ name: 'canvas', id: c.id })
+                        }}
+                        className="ui-menu-item"
+                      >
+                        <span className="flex-1 truncate">{c.title}</span>
+                        {suffix && (
+                          <span
+                            aria-hidden="true"
+                            className="shrink-0 font-mono text-xs text-ink-subtle"
+                          >
+                            {suffix}
+                          </span>
+                        )}
+                        {c.id === canvas.id && <Icon name="check" size={14} />}
+                      </button>
+                    )
+                  })}
+                </div>
+                <div className="ui-sep" />
+                <button type="button" onClick={() => void addCanvas()} className="ui-menu-item">
+                  <Icon name="plus" size={14} />
+                  新建画布
+                </button>
+                <button type="button" onClick={() => void renameCanvas()} className="ui-menu-item">
+                  <Icon name="pencil" size={14} />
+                  重命名当前画布
+                </button>
                 <button
                   type="button"
-                  className="ui-btn ui-btn-secondary ui-btn-sm self-start"
-                  aria-label="重新加载画布"
-                  disabled={canvasList.isFetching}
-                  onClick={() => void loadCanvases()}
+                  onClick={() => void duplicateCurrent()}
+                  className="ui-menu-item"
                 >
-                  {canvasList.isFetching ? '正在重试…' : '重新加载'}
+                  <Icon name="copy" size={14} />
+                  复制当前画布
                 </button>
-              </div>
+                <button type="button" onClick={() => setMoving(true)} className="ui-menu-item">
+                  <Icon name="folder" size={14} />
+                  移动到…
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void removeCanvas()}
+                  className="ui-menu-item hover:text-danger"
+                >
+                  <Icon name="trash" size={14} />
+                  删除当前画布
+                </button>
+              </>
             )}
-            {!canvasList.isFetching && !listError && canvasList.data && !canvases.length && (
-              <p className="px-3 py-2 text-xs text-ink-subtle">
-                暂无可切换的画布，可新建画布后继续。
-              </p>
-            )}
-            <div className="ui-scrollbar max-h-72 overflow-y-auto">
-              {canvases.map((c) => {
-                const suffix = suffixFor(c)
-                const label = suffix ? `${c.title} · ${suffix}` : c.title
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    aria-label={label}
-                    title={label}
-                    aria-current={c.id === canvas.id || undefined}
-                    onClick={() => {
-                      close()
-                      if (c.id !== canvas.id) navigate({ name: 'canvas', id: c.id })
-                    }}
-                    className="ui-menu-item"
-                  >
-                    <span className="flex-1 truncate">{c.title}</span>
-                    {suffix && (
-                      <span
-                        aria-hidden="true"
-                        className="shrink-0 font-mono text-xs text-ink-subtle"
-                      >
-                        {suffix}
-                      </span>
-                    )}
-                    {c.id === canvas.id && <Icon name="check" size={14} />}
-                  </button>
-                )
-              })}
-            </div>
-            <div className="ui-sep" />
-            <button type="button" onClick={() => void addCanvas()} className="ui-menu-item">
-              <Icon name="plus" size={14} />
-              新建画布
-            </button>
-            <button type="button" onClick={() => void renameCanvas()} className="ui-menu-item">
-              <Icon name="pencil" size={14} />
-              重命名当前画布
-            </button>
-            <button
-              type="button"
-              onClick={() => void removeCanvas()}
-              className="ui-menu-item hover:text-danger"
-            >
-              <Icon name="trash" size={14} />
-              删除当前画布
-            </button>
           </Popover>
         )}
       </AnimatePresence>

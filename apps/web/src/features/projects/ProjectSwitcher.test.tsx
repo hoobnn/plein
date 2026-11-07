@@ -378,3 +378,37 @@ it('删除最后一张画布成功后回首页', async () => {
   await f.user.click(within(dialog).getByRole('button', { name: '删除' }))
   await waitFor(() => expect(location.hash).toBe('#/'))
 })
+
+// ── 复制与移动 ──
+
+it('复制当前画布：请求复制接口并打开新画布', async () => {
+  const copy: Canvas = { ...canvas, id: 'canvas-copy', title: '第一张画布 副本' }
+  let body: unknown
+  const f = await openMenu([canvas], {
+    'POST /api/canvases/canvas-1/duplicate': async (request) => {
+      body = await request.json()
+      return Response.json(copy, { status: 201 })
+    },
+  })
+  await f.user.click(within(f.menu).getByRole('button', { name: '复制当前画布' }))
+  await waitFor(() => expect(location.hash).toBe('#/c/canvas-copy'))
+  expect(body).toEqual({})
+})
+
+it('移动到…：选目标项目后发 PATCH projectId，当前项目不在候选里', async () => {
+  const other: Project = { ...project, id: 'project-2', title: '另一个项目' }
+  let body: unknown
+  const f = await openMenu([canvas], {
+    'GET /api/projects': () => Response.json([project, other]),
+    'PATCH /api/canvases/canvas-1': async (request) => {
+      body = await request.json()
+      return Response.json({ ...canvas, projectId: other.id })
+    },
+  })
+  await f.user.click(within(f.menu).getByRole('button', { name: '移动到…' }))
+  expect(await within(f.menu).findByRole('button', { name: '另一个项目' })).toBeTruthy()
+  expect(within(f.menu).queryByRole('button', { name: project.title })).toBeNull()
+  await f.user.click(within(f.menu).getByRole('button', { name: '另一个项目' }))
+  await waitFor(() => expect(body).toEqual({ projectId: 'project-2' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '画布' })).toBeNull())
+})

@@ -133,6 +133,10 @@ export const api = {
   canvas: (id: string) => request<Canvas>(API.canvas(id)),
   renameCanvas: (id: string, title: string) =>
     request<Canvas>(API.canvas(id), json('PATCH', { title })),
+  duplicateCanvas: (id: string, body: { title?: string; projectId?: string } = {}) =>
+    request<Canvas>(API.canvasDuplicate(id), json('POST', body)),
+  moveCanvas: (id: string, projectId: string) =>
+    request<Canvas>(API.canvas(id), json('PATCH', { projectId })),
   deleteCanvas: (id: string) => request<void>(API.canvas(id), { method: 'DELETE' }),
   templates: () => request<UserTemplate[]>(API.templates),
   /** data 是 ClipboardData（Frame 及其内容），服务端按 TemplateData 校验 */
