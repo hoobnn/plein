@@ -159,6 +159,37 @@ export const runFlow = serverCapability({
   },
 })
 
+export const runNodes = serverCapability({
+  name: 'run_nodes',
+  title: '批量运行节点',
+  description:
+    '一次运行多个指定节点（1 到 50 个），和界面多选后“运行”是同一套调度：这些节点总是重新运行，它们 @ 引用的卡片的上游先跑，已有结果且没改动的沿用；不带其他上游。会产生费用，通常需要用户确认。立即返回 group_id，用 wait_for_group 等结果。',
+  group: 'run',
+  where: 'server',
+  effect: 'run',
+  approval: (a, ctx) => ({
+    reason: `批量运行 ${a.ids.length} 个节点：${a.ids
+      .slice(0, 3)
+      .map((nodeId) => elName(ctx, nodeId))
+      .join('、')}${a.ids.length > 3 ? ' 等' : ''}`,
+    ids: a.ids,
+  }),
+  input: z.object({
+    ids: z.array(id).min(1).max(50).describe('要运行的节点 id，重复项会合并'),
+  }),
+  run: (ctx, a) => {
+    const { env } = ctx
+    try {
+      const started = env.runs.runBatch(env.canvasId, a.ids[0]!, a.ids, env.ownerId)
+      env.onGroup?.(started.groupId)
+      return { group_id: started.groupId, total: started.total }
+    } catch (err) {
+      if (err instanceof NodeRunError) throw new CapabilityError(err.message)
+      throw err
+    }
+  },
+})
+
 export const runFrame = serverCapability({
   name: 'run_frame',
   title: '整组运行',

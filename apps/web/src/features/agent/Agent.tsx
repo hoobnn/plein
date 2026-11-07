@@ -101,6 +101,7 @@ const TOOL_LABELS: Record<string, string> = {
   view_media: '查看效果',
   edit_media: '加工素材',
   run_flow: '运行上下游',
+  run_nodes: '批量运行节点',
   run_frame: '整组运行',
   wait_for_group: '等待整组结果',
   list_stale: '检查过期结果',
