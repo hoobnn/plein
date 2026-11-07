@@ -173,13 +173,13 @@ describe('外部 MCP 协议层', () => {
     expect(miss.sc?.error.code).not.toBe('rate_limited')
   })
 
-  it('输出超限不返回原文，提示分页', async () => {
+  it('输出超限只保留开头并提示分页', async () => {
     const c = client((await issue()).token)
     const made = await c.call('create_element', { kind: 'markdown', text: 'x'.repeat(60_000) })
     const id = made.json().id as string
     const big = await c.call('get_element', { id })
-    expect(big.isError).toBe(true)
-    expect(big.sc?.error.code).toBe('too_large')
+    expect(big.isError).toBeFalsy()
+    expect(big.text).toContain('结果已截断')
     expect(big.text).toContain('get_element_field')
   })
 

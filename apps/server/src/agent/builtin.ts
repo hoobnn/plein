@@ -4,7 +4,7 @@ import type { PluginHost } from '../plugins/host'
 import { callTool, inputSchema, type McpTool, type ToolResult } from './mcp'
 import type { TurnExecution } from './execution'
 import type { AgentContext } from '@plein/protocol'
-import { budgetMessages, RESULT_BYTES, TEXT_TOKENS, textCost } from './context-budget'
+import { budgetMessages, TEXT_TOKENS, truncateResultText } from './context-budget'
 
 /**
  * 内置智能体：不装 Claude Code / Codex，直接用已启用平台的对话模型（声明了 tools 特性的）驱动同一套画布能力。
@@ -80,20 +80,14 @@ export interface BuiltinTurn {
   onContext?(context: AgentContext): void
 }
 
-const resultText = (r: ToolResult) => {
-  const text = r.content
-    .map((c) =>
-      c.type === 'text' ? c.text : c.type === 'image' ? '（图片内容在随后素材消息中）' : '',
-    )
-    .join('\n')
-  return textCost(text).bytes > RESULT_BYTES
-    ? JSON.stringify({
-        error: 'tool_result_too_large',
-        message:
-          '结果超过 32 KiB，请用 get_canvas_page 或 get_element_field 分页读取；不要把预览当完整原文。',
-      })
-    : text
-}
+const resultText = (r: ToolResult) =>
+  truncateResultText(
+    r.content
+      .map((c) =>
+        c.type === 'text' ? c.text : c.type === 'image' ? '（图片内容在随后素材消息中）' : '',
+      )
+      .join('\n'),
+  )
 
 /** 跑一轮；模型调用失败时抛 ProviderError，取消时静默结束 */
 export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {

@@ -7,7 +7,9 @@ import { agentSessions, agentTurns, canvases } from '../storage/schema'
 import { TurnExecution } from './execution'
 import { TurnStore } from './turn-store'
 import { runBuiltinTurn } from './builtin'
-import { budgetMessages, RESULT_BYTES, TEXT_TOKENS } from './context-budget'
+import { budgetMessages, RESULT_BYTES, TEXT_TOKENS, truncateResultText } from './context-budget'
+import { toToolResult } from './mcp'
+import { content } from '@plein/capabilities'
 import { z } from 'zod'
 
 describe('turn identity and durable facts', () => {
@@ -268,7 +270,7 @@ describe('builtin context and media', () => {
     expect(JSON.stringify(t.transcript)).not.toContain('AQID')
     expect(JSON.stringify(t.transcript)).toContain('1.0 秒')
   })
-  it('keeps oversized tool JSON valid and explicitly rejects unsupported vision', async () => {
+  it('truncates oversized tool results instead of dropping them and rejects unsupported vision', async () => {
     const captured: ChatMessage[][] = []
     const host = {
       call: async (_c: string, _m: string, input: { messages: ChatMessage[] }) => {
@@ -316,9 +318,11 @@ describe('builtin context and media', () => {
       onToolEnd: () => {},
     })
     const messages = captured[1]!.filter((m) => m.role === 'tool')
-    expect(JSON.parse(messages[0]!.content as string)).toMatchObject({
-      error: 'tool_result_too_large',
-    })
+    const large = messages[0]!.content as string
+    expect(large).toContain('结果已截断')
+    expect(large).toContain('get_canvas_page')
+    expect(Buffer.byteLength(large)).toBeLessThanOrEqual(RESULT_BYTES)
+    expect(large.startsWith('{"text":"xxx')).toBe(true)
     expect(messages[1]!.content).toContain('vision_unsupported')
   })
 })
@@ -397,5 +401,31 @@ describe('builtin model call retry', () => {
     } as unknown as PluginHost
     await runBuiltinTurn(quietTurn(host, { signal: abort.signal, retryDelaysMs: [60_000] }))
     expect(calls).toBe(1)
+  })
+})
+
+describe('tool result truncation', () => {
+  it('cuts on a character boundary, stays within the limit and is idempotent', () => {
+    const text = '中'.repeat(RESULT_BYTES)
+    const out = truncateResultText(text)
+    expect(Buffer.byteLength(out)).toBeLessThanOrEqual(RESULT_BYTES)
+    expect(out).not.toContain('\ufffd')
+    expect(out).toContain(`原 ${Math.ceil((RESULT_BYTES * 3) / 1024)} KiB，保留前 32 KiB`)
+    expect(truncateResultText(out)).toBe(out)
+    expect(truncateResultText('short')).toBe('short')
+  })
+  it('toToolResult truncates strings and content blocks, keeping images', () => {
+    const big = 'a'.repeat(RESULT_BYTES + 10)
+    expect(String(toToolResult(big))).toContain('结果已截断')
+    const r = toToolResult(
+      content([
+        { type: 'text', text: big },
+        { type: 'image', data: 'AQID', mimeType: 'image/png' },
+      ]),
+    ) as { isError?: boolean; content: Array<{ type: string; text?: string }> }
+    expect(r.isError).toBeUndefined()
+    expect(r.content[0]!.text).toContain('结果已截断')
+    expect(r.content[1]!.type).toBe('image')
+    expect(toToolResult(big, Infinity)).toBe(big)
   })
 })

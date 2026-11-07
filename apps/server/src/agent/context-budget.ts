@@ -16,6 +16,19 @@ export function textCost(value: unknown) {
     tokens: Math.ceil(ascii / 4 + (text.length - ascii) * 2),
   }
 }
+/**
+ * 工具结果超过上限时保留开头：按 UTF-8 字节截断（不切坏多字节字符），末尾追加一行说明。
+ * 截断后的总长（含说明）不超过 limit，所以重复调用是幂等的；limit 传 Infinity 关闭。
+ */
+export function truncateResultText(text: string, limit = RESULT_BYTES): string {
+  const buf = Buffer.from(text)
+  if (buf.byteLength <= limit) return text
+  const note = `\n结果已截断（原 ${Math.ceil(buf.byteLength / 1024)} KiB，保留前 ${Math.floor(limit / 1024)} KiB）；需要完整内容请用 get_canvas_page / get_element_field 等分页工具`
+  let end = Math.max(0, limit - Buffer.byteLength(note))
+  // buf[end] 是第一个被丢弃的字节；它若是续字节，说明切在字符中间，退回到该字符开头
+  while (end > 0 && (buf[end]! & 0xc0) === 0x80) end--
+  return buf.subarray(0, end).toString('utf8') + note
+}
 export function requestWithinBudget(messages: ChatMessage[], tools: ChatTool[]) {
   const cost = textCost({ messages, tools })
   return cost.bytes <= TEXT_BYTES && cost.tokens + messages.length * 16 <= TEXT_TOKENS

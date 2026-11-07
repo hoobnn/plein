@@ -7,7 +7,7 @@ import {
 } from '@plein/capabilities'
 import { z } from 'zod'
 import { classifyError, type ErrorCode, statusCode } from './error-codes'
-import { RESULT_BYTES } from './context-budget'
+import { RESULT_BYTES, truncateResultText } from './context-budget'
 
 /**
  * 极简 MCP 服务端（Streamable HTTP，无状态，只用 JSON 响应）：
@@ -101,7 +101,7 @@ export function annotationsOf(cap: CapabilityDefinition<z.ZodObject, never>): To
 
 /**
  * 能力的返回值转成 MCP 工具结果。
- * 文本超过上限（与内置智能体同口径 32 KiB）时不返回原文，提示改用分页工具；limit 传 Infinity 关闭。
+ * 文本超过上限（与内置智能体同口径 32 KiB）时保留开头并在末尾说明已截断；limit 传 Infinity 关闭。
  */
 export function toToolResult(out: unknown, limit = RESULT_BYTES): ToolResult | string {
   const result: ToolResult | string = isContent(out)
@@ -109,22 +109,16 @@ export function toToolResult(out: unknown, limit = RESULT_BYTES): ToolResult | s
     : typeof out === 'string'
       ? out
       : JSON.stringify(out, null, 1)
-  const texts =
-    typeof result === 'string'
-      ? [result]
-      : result.content.flatMap((c) => (c.type === 'text' ? [c.text] : []))
-  const bytes = texts.reduce((n, t) => n + Buffer.byteLength(t), 0)
-  if (bytes <= limit) return result
+  if (typeof result === 'string') return truncateResultText(result, limit)
+  // 与内置智能体拼接多段文本的口径一致：按换行连接后整体截断
+  const joined = result.content.flatMap((c) => (c.type === 'text' ? [c.text] : [])).join('\n')
+  const truncated = truncateResultText(joined, limit)
+  if (truncated === joined) return result
   return {
-    isError: true,
+    ...result,
     content: [
-      {
-        type: 'text',
-        text: JSON.stringify({
-          error: 'tool_result_too_large',
-          message: `结果 ${Math.ceil(bytes / 1024)} KiB，超过 ${Math.floor(limit / 1024)} KiB 上限，未返回。读取类请用 get_canvas_page / get_element_field 等分页工具；若这是修改类调用，修改已经生效，请用读取工具核对。`,
-        }),
-      },
+      { type: 'text', text: truncated },
+      ...result.content.filter((c) => c.type !== 'text'),
     ],
   }
 }
