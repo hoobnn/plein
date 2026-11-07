@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import type { ChatMessage, ProviderOutput } from '@plein/plugin-sdk'
+import { ProviderError, type ChatMessage, type ProviderOutput } from '@plein/plugin-sdk'
 import { describe, expect, it } from 'vite-plus/test'
 import type { PluginHost } from '../plugins/host'
 import { wrapDb } from '../storage/db'
@@ -320,5 +320,82 @@ describe('builtin context and media', () => {
       error: 'tool_result_too_large',
     })
     expect(messages[1]!.content).toContain('vision_unsupported')
+  })
+})
+
+const quietTurn = (host: unknown, extra: Partial<Parameters<typeof runBuiltinTurn>[0]> = {}) =>
+  ({
+    host: host as PluginHost,
+    model: 'm',
+    ownerId: 'local',
+    system: '',
+    history: [],
+    prompt: 'go',
+    signal: new AbortController().signal,
+    tools: [],
+    retryDelaysMs: [1, 1, 1],
+    onText: () => {},
+    onToolStart: () => {},
+    onToolEnd: () => {},
+    ...extra,
+  }) satisfies Parameters<typeof runBuiltinTurn>[0]
+
+describe('builtin model call retry', () => {
+  it('retries rate limits, clears streamed text and counts retries in facts', async () => {
+    let calls = 0
+    const texts: string[] = []
+    const host = {
+      call: async (_c: string, _m: string, _i: unknown, o: { onDelta: (d: string) => void }) => {
+        calls++
+        if (calls < 3) {
+          o.onDelta('半截')
+          throw new ProviderError('rate_limit', '限流')
+        }
+        return { outputs: [{ type: 'text', text: 'ok' }] as ProviderOutput[] }
+      },
+    } as unknown as PluginHost
+    const t = new TurnExecution(
+      'retry',
+      () => true,
+      () => {},
+    )
+    t.append({ role: 'user', content: 'go' })
+    await runBuiltinTurn(quietTurn(host, { execution: t, onText: (_k, text) => texts.push(text) }))
+    expect(calls).toBe(3)
+    expect(t.facts.retries).toBe(2)
+    expect(texts).toEqual(['半截', '', '半截', '', 'ok'])
+    expect(JSON.parse(JSON.stringify(t.facts)).retries).toBe(2)
+  })
+  it('retries retryable errors but not auth, and gives up after three retries', async () => {
+    let calls = 0
+    const always = (err: ProviderError) =>
+      ({
+        call: async () => {
+          calls++
+          throw err
+        },
+      }) as unknown as PluginHost
+    await expect(
+      runBuiltinTurn(quietTurn(always(new ProviderError('auth', '密钥无效')))),
+    ).rejects.toThrow('密钥无效')
+    expect(calls).toBe(1)
+    calls = 0
+    await expect(
+      runBuiltinTurn(quietTurn(always(new ProviderError('unknown', '抖动', { retryable: true })))),
+    ).rejects.toThrow('抖动')
+    expect(calls).toBe(4)
+  })
+  it('stops waiting when the signal aborts', async () => {
+    const abort = new AbortController()
+    let calls = 0
+    const host = {
+      call: async () => {
+        calls++
+        abort.abort()
+        throw new ProviderError('timeout', '超时')
+      },
+    } as unknown as PluginHost
+    await runBuiltinTurn(quietTurn(host, { signal: abort.signal, retryDelaysMs: [60_000] }))
+    expect(calls).toBe(1)
   })
 })

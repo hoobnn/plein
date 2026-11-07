@@ -17,6 +17,8 @@ export interface TurnFacts {
   groups: string[]
   requests: number
   toolCalls: number
+  /** 模型调用因限流、超时等被自动重试的次数 */
+  retries: number
 }
 export const emptyFacts = (): TurnFacts => ({
   calls: [],
@@ -25,6 +27,7 @@ export const emptyFacts = (): TurnFacts => ({
   groups: [],
   requests: 0,
   toolCalls: 0,
+  retries: 0,
 })
 
 /** Identity is immutable. A credential and all callbacks belong to this object for its entire lifetime. */

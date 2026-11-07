@@ -14,7 +14,30 @@ import { budgetMessages, RESULT_BYTES, TEXT_TOKENS, textCost } from './context-b
 
 /** 一轮最多几步（一步 = 一次模型调用） */
 export const MAX_STEPS = 30
-/** 工具结果发回模型时的长度上限：画布大时 get_canvas 可能很长 */
+/** 模型调用失败后值得重试的错误类别：限流、超时、服务端暂不可用 */
+export const RETRYABLE_CODES: ReadonlySet<string> = new Set([
+  'rate_limit',
+  'timeout',
+  'unavailable',
+])
+/** 重试前的等待（毫秒），长度即最多重试次数 */
+export const RETRY_DELAYS_MS: readonly number[] = [1000, 2000, 4000]
+
+const retryable = (err: unknown) =>
+  err instanceof ProviderError && (err.retryable || RETRYABLE_CODES.has(err.code))
+
+/** 等待 ms 毫秒；signal 取消时提前结束 */
+const sleep = (ms: number, signal: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    if (signal.aborted) return resolve()
+    const done = () => {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', done)
+      resolve()
+    }
+    const timer = setTimeout(done, ms)
+    signal.addEventListener('abort', done, { once: true })
+  })
 
 export interface BuiltinModel {
   ref: string
@@ -46,6 +69,8 @@ export interface BuiltinTurn {
   tools: McpTool[]
   signal: AbortSignal
   execution?: TurnExecution
+  /** 覆盖重试等待时间（测试用） */
+  retryDelaysMs?: readonly number[]
   vision?: boolean
   saveImage?(image: { data: string; mimeType: string }): Promise<AssetRef>
   /** 模型输出的文字：step 内流式累积，同一步同一个 key */
@@ -103,26 +128,39 @@ export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
       t.execution.persist()
     }
     const key = `s${step}`
-    let streamed = ''
-    let res: Awaited<ReturnType<PluginHost['call']>>
-    try {
-      res = await t.host.call(
-        'text.chat',
-        t.model,
-        { messages, tools, toolChoice: 'auto', temperature: 0.3, maxTokens: 8192 },
-        {
-          ownerId: t.ownerId,
-          usage: 'agent',
-          signal: t.signal,
-          onDelta: (d) => {
-            streamed += d
-            t.onText(key, streamed, false)
+    const delays = t.retryDelaysMs ?? RETRY_DELAYS_MS
+    let res: Awaited<ReturnType<PluginHost['call']>> | undefined
+    for (let attempt = 0; ; attempt++) {
+      let streamed = ''
+      try {
+        res = await t.host.call(
+          'text.chat',
+          t.model,
+          { messages, tools, toolChoice: 'auto', temperature: 0.3, maxTokens: 8192 },
+          {
+            ownerId: t.ownerId,
+            usage: 'agent',
+            signal: t.signal,
+            onDelta: (d) => {
+              streamed += d
+              t.onText(key, streamed, false)
+            },
           },
-        },
-      )
-    } catch (err) {
-      if (t.signal.aborted) return
-      throw err
+        )
+        break
+      } catch (err) {
+        if (t.signal.aborted) return
+        if (attempt >= delays.length || !retryable(err)) throw err
+        // 这一次已流式输出的半截文字作废
+        if (streamed) t.onText(key, '', false)
+        if (t.execution) {
+          t.execution.facts.retries++
+          t.execution.persist()
+        }
+        await sleep(delays[attempt]!, t.signal)
+        if (t.signal.aborted) return
+        t.execution?.assertOpen()
+      }
     }
     const text = res.outputs.flatMap((o) => (o.type === 'text' ? [o.text] : [])).join('\n')
     const calls = res.outputs.flatMap((o) => (o.type === 'tool_calls' ? o.calls : []))
