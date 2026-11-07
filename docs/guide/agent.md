@@ -127,7 +127,7 @@ Codex 目录来自本机 `skills/list`，显式选用时通过 `turn/start` 的 
 
 ### 文件取出画布
 
-- `download_asset({ id, save_to? })`：返回带短期票据的下载地址 `download_url`，同时给出 MCP `resource_link` 内容块。`get_asset` 与 `export_sequence_project`（经 `perform_canvas_action`）在外部入口返回同样的结果（旧的相对路径只在没有文件服务的入口保留）。
+- `download_asset({ id, save_to? })`：返回带短期票据的下载地址 `download_url`，同时给出 MCP `resource_link` 内容块。传 `ids`（最多 50 个，与 `id` 二选一，不能配 `save_to`）时逐个处理，返回 `items`，失败项带 `error`。`get_asset` 与 `export_sequence_project`（经 `perform_canvas_action`）在外部入口返回同样的结果（旧的相对路径只在没有文件服务的入口保留）。
 - 下载地址形如 `/mcp/files/:ticket`，直接 GET 即可（不需要令牌或 Cookie，支持 Range）。票据绑定签发它的用户和具体资产（或登记在册的导出路径），只读，约 10 分钟过期，过期前可重复下载；签发后资产被删或归属变化，下载同样失败。剪辑工程导出走的是进程内的导出接口，不开放任意内部路径。
 - 本机模式下可加 `save_to`（绝对路径）直接保存到本地：受与 `import_asset(path)` 相同的目录约束，不覆盖已有文件，目标不能是符号链接。
 
@@ -162,6 +162,7 @@ Agent 按语义调用画布功能。文档编辑复用 `packages/capabilities` �
 - `list_projects` / `create_project` / `rename_project` / `delete_project` / `list_canvases` / `create_canvas` / `rename_canvas` / `delete_canvas`：项目与画布管理，复用项目与画布路由及所有权校验，三种驱动共用。不依赖当前画布，外部 MCP 在空工作区也能调用。`list_canvases` 带所属项目，可按 `project_id` 过滤并用 `offset` / `limit` 翻页；两个删除工具是破坏性操作，走确认，且不能删除本会话正在操作的画布。
 - `delete_results`：删除节点生成历史里的候选记录，语义与历史面板一致（只删记录不删素材，删到当前采用项时回到「尚未采用」，不自动换候选），返回 `current_changed` 说明是否改变了当前输出。破坏性操作，走确认。
 - `get_impact` / `keep_stale` / `revoke_keep` / `run_impact`：影响面板。`get_impact` 只读，返回过期节点及原因、建议、可沿用的候选、费用汇总（缺价格的计入 `cost.unknown`）和每个节点的 `input_hash`；`keep_stale` 带这个哈希确认保留现有结果，输入在那之后又变了会拒绝；`run_impact` 只运行指定节点（默认优先沿用已有候选），需要确认，返回 `group_id` 后用 `wait_for_group` 等结果。
+- `run_nodes`：一次运行多个指定节点（1 到 50 个），与界面多选运行共用 `runs.runBatch`：这些节点总是重新运行，它们 @ 引用的卡片的上游先跑；需要确认，返回 `group_id` 后用 `wait_for_group` 等结果。
 - `estimate_cost`：运行前估价，不调用平台。`scope` 为 `node`、`upstream`、`downstream`、`frame`，目标范围和「沿用仍有效结果」的判定与对应的运行工具一致；逐节点标 `run`（一定调用）、`maybe`（上游重做后输入变了才会调用）、`reused`（沿用），费用按币种分别合计，模型没配价格的调用记入 `unknown`，不当作 0。
 - `list_providers` / `set_provider_enabled` / `test_provider` / `refresh_remote_models` / `set_default_model`：平台与默认模型设置，复用设置页的路由。读取只返回启用状态和每个密钥「是否已填写」，永远不返回密钥明文（设置里疑似密钥的字段也会掩码）；写入只开放启用开关，密钥录入留在设置页。`test_provider` 只检查配置或连接，不证明具体模型、权限或余额可用。
 - `get_shots` / `edit_shots`：分镜表逐镜编辑。`edit_shots` 的 `ops` 支持 `add`（接在最后）、`patch`（只改给出的字段，记为手改）、`move`（移到第 N 位并按新顺序重排镜号）、`remove`（已展开的节点和产物保留，标为脱离计划，走确认），带 `expected_version`，全部成功才写入、一次撤销。写入走分镜编辑器同一条路径，会先补记旧计划基线，`sync_storyboard` 才能分清「计划变了」和「节点被手改」；`update_element` 整表替换 `shots` 时也走这条路径，但逐镜修改应使用 `edit_shots`。

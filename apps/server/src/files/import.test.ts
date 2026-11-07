@@ -317,6 +317,29 @@ describe('取出文件', () => {
     expect((await get(link.uri!)).status).toBe(200)
   })
 
+  it('download_asset ids 逐个返回结果：失败项带 error，id 与 ids 二选一', async () => {
+    const a = await importPng('#a1a1a1')
+    const b = await importPng('#b2b2b2')
+    const missing = 'f'.repeat(64)
+    const r = await rpc('download_asset', { ids: [a, missing, b] })
+    expect(r.error).toBe(false)
+    const items = JSON.parse(r.text).items as Array<{
+      asset_id: string
+      download_url?: string
+      error?: string
+    }>
+    expect(items.map((i) => i.asset_id)).toEqual([a, missing, b])
+    expect(items[0]!.download_url).toContain('/mcp/files/')
+    expect(items[1]!.error).toContain('不存在')
+    expect(r.content.filter((c) => c.type === 'resource_link')).toHaveLength(2)
+    expect((await get(items[2]!.download_url!)).status).toBe(200)
+    expect((await rpc('download_asset', { id: a, ids: [b] })).error).toBe(true)
+    expect((await rpc('download_asset', {})).error).toBe(true)
+    expect((await rpc('download_asset', { ids: [a], save_to: join(root, 'x.png') })).error).toBe(
+      true,
+    )
+  })
+
   it('get_asset 在外部入口也返回票据地址与 resource_link', async () => {
     const assetId = await importPng('#22bb22')
     const r = await rpc('perform_canvas_action', { action: 'get_asset', input: { id: assetId } })

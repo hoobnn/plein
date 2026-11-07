@@ -7,6 +7,7 @@ import {
   CapabilityError,
   capabilityFor,
   content,
+  type ContentBlock,
   need,
   placeNew,
   summarize,
@@ -229,20 +230,43 @@ export const downloadAsset = serverCapability({
   name: 'download_asset',
   title: '取出文件',
   description:
-    '把资产库里的文件取出给外部使用：返回带短期票据的下载地址 download_url（同时以 MCP resource_link 内容块给出，GET 即可，不需要令牌或 Cookie；约 10 分钟内可重复下载，过期后重新调用）。资产 id 来自 import_asset、get_canvas 里元素的 assetId、节点结果或 search_media。本机模式可加 save_to 直接存到本地路径。',
+    '把资产库里的文件取出给外部使用：返回带短期票据的下载地址 download_url（同时以 MCP resource_link 内容块给出，GET 即可，不需要令牌或 Cookie；约 10 分钟内可重复下载，过期后重新调用）。资产 id 来自 import_asset、get_canvas 里元素的 assetId、节点结果或 search_media。本机模式可加 save_to 直接存到本地路径。批量取用 ids（最多 50 个，与 id 二选一，不能配 save_to）：逐个处理，返回 items，每项带自己的下载地址或 error，某一个失败不影响其他。',
   group: 'media',
   where: 'server',
   effect: (a) => (a.save_to ? 'edit' : 'read'),
-  input: z.object({ id: id.describe('资产 id'), save_to: SAVE_TO }),
-  run: (ctx, a) => {
-    const asset = ctx.env.assets.get(ctx.env.ownerId, a.id)
-    if (!asset) throw new CapabilityError(`资产 ${a.id} 不存在`)
-    return deliverFile(
-      ctx,
-      { kind: 'asset', assetId: asset.id },
-      { name: asset.name, mime: asset.mime, size: asset.size, extra: { asset_id: asset.id } },
-      a.save_to,
-    )
+  input: z.object({
+    id: id.optional().describe('资产 id'),
+    ids: z.array(id).min(1).max(50).optional().describe('多个资产 id，与 id 二选一'),
+    save_to: SAVE_TO,
+  }),
+  run: async (ctx, a) => {
+    if ((a.id === undefined) === (a.ids === undefined))
+      throw new CapabilityError('id 与 ids 二选一')
+    const one = (assetId: string, saveTo?: string) => {
+      const asset = ctx.env.assets.get(ctx.env.ownerId, assetId)
+      if (!asset) throw new CapabilityError(`资产 ${assetId} 不存在`)
+      return deliverFile(
+        ctx,
+        { kind: 'asset', assetId: asset.id },
+        { name: asset.name, mime: asset.mime, size: asset.size, extra: { asset_id: asset.id } },
+        saveTo,
+      )
+    }
+    if (a.id !== undefined) return one(a.id, a.save_to)
+    if (a.save_to) throw new CapabilityError('ids 不能和 save_to 一起用；批量请逐个取下载地址')
+    const items: unknown[] = []
+    const links: ContentBlock[] = []
+    for (const assetId of [...new Set(a.ids)]) {
+      try {
+        const [text, link] = (await one(assetId)).content
+        items.push(JSON.parse((text as { text: string }).text))
+        if (link) links.push(link)
+      } catch (err) {
+        if (!(err instanceof CapabilityError)) throw err
+        items.push({ asset_id: assetId, error: err.message })
+      }
+    }
+    return content([{ type: 'text', text: JSON.stringify({ items }, null, 1) }, ...links])
   },
 })
 
