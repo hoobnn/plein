@@ -341,13 +341,14 @@ function AgentPanel({
       className="plein-agent-panel ui-motion ui-float pointer-events-auto fixed top-(--chrome-top) right-(--chrome-inset) z-40 flex w-panel-lg flex-col overflow-hidden rounded-xl max-compact:inset-x-(--chrome-inset) max-compact:w-auto max-compact:max-w-none"
     >
       <header className="flex h-12 flex-none items-center gap-1 border-b border-line pr-2 pl-4">
-        <h2 className="mr-1 text-sm font-semibold">小满</h2>
+        <h2 className="mr-1 shrink-0 text-sm font-semibold whitespace-nowrap">小满</h2>
+        {/* 只选智能体；模型在输入框上方单独选，这里再带模型名会和那边不一致 */}
         {available.length > 1 ? (
           <Select
             aria-label="使用的智能体"
             value={current}
             disabled={loadingHistory || !!selecting}
-            options={available.map((a) => ({ value: a.id, label: label(a) }))}
+            options={available.map((a) => ({ value: a.id, label: a.name }))}
             onChange={(v) => {
               setAgent(v as typeof agent)
               // 当前对话用的是另一个智能体：切换后从新对话开始
@@ -356,7 +357,11 @@ function AgentPanel({
             className="h-7 text-xs"
           />
         ) : (
-          available.length === 1 && <span className="text-xs text-ink-subtle">{cliName}</span>
+          available.length === 1 && (
+            <span className="truncate text-xs text-ink-subtle">
+              {currentAgent?.name ?? cliName}
+            </span>
+          )
         )}
         <div className="ml-auto flex items-center">
           {canvasId && <SessionMenu />}
@@ -1176,7 +1181,7 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
         </div>
       )}
       {selected > 0 && withSelection && selectedIds.length > 0 && (
-        <div className="mb-2 flex flex-col items-start gap-1.5">
+        <div className="mb-2 flex flex-wrap items-center gap-1">
           <span className="ui-chip pr-0.5">
             <Icon name="cursor" size={12} />
             带上选中的 {selectedIds.length} 个元素
@@ -1286,7 +1291,7 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
           value={approval}
           options={APPROVAL_OPTIONS}
           onChange={(v) => useAgent.getState().setApproval(v as AgentApprovalMode)}
-          className="h-6 text-2xs text-ink-subtle"
+          className="h-6 border-transparent pl-1.5 text-2xs text-ink-subtle hover:bg-hover"
         />
         {local && (
           <Select
@@ -1294,7 +1299,7 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
             value={access}
             options={ACCESS_OPTIONS}
             onChange={(v) => useAgent.getState().setAccess(v as AgentAccess)}
-            className={`h-6 text-2xs ${access === 'full' ? 'text-warning' : 'text-ink-subtle'}`}
+            className={`h-6 border-transparent pl-1.5 text-2xs hover:bg-hover ${access === 'full' ? 'text-warning' : 'text-ink-subtle'}`}
           />
         )}
       </div>
