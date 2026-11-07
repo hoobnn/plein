@@ -89,6 +89,52 @@ const resultText = (r: ToolResult) =>
       .join('\n'),
   )
 
+const MAX_IMAGES = 8
+const MAX_IMAGE_BYTES = 1024 * 1024
+const MAX_TOTAL_IMAGE_BYTES = 4 * 1024 * 1024
+
+/** 编辑距离（小写比较），用来给写错的工具名找近似项 */
+function distance(a: string, b: string) {
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i)
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i]
+    for (let j = 1; j <= b.length; j++)
+      row[j] = Math.min(
+        prev[j]! + 1,
+        row[j - 1]! + 1,
+        prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1),
+      )
+    prev = row
+  }
+  return prev[b.length]!
+}
+
+/** 最接近的 3 个工具名：互相包含的优先，其次按编辑距离 */
+export function closestTools(name: string, names: string[]) {
+  const n = name.toLowerCase()
+  return names
+    .map((x) => {
+      const l = x.toLowerCase()
+      return { x, rank: n && (l.includes(n) || n.includes(l)) ? 0 : 1, d: distance(n, l) }
+    })
+    .sort((a, b) => a.rank - b.rank || a.d - b.d)
+    .slice(0, 3)
+    .map((c) => c.x)
+}
+
+/** 本次工具返回的图片是否会超出预算；超出时返回原因，不改动已用量 */
+function imageOverBudget(sizes: number[], used: { count: number; bytes: number }) {
+  if (used.count + sizes.length > MAX_IMAGES)
+    return `图片张数超限（已有 ${used.count} 张，本次再来 ${sizes.length} 张，最多 ${MAX_IMAGES} 张）`
+  const big = sizes.find((n) => n > MAX_IMAGE_BYTES)
+  if (big !== undefined)
+    return `单张图片超限（${Math.ceil(big / 1024)} KiB，单张最多 ${MAX_IMAGE_BYTES / 1024} KiB）`
+  const total = used.bytes + sizes.reduce((n, v) => n + v, 0)
+  if (total > MAX_TOTAL_IMAGE_BYTES)
+    return `图片总大小超限（合计 ${Math.ceil(total / 1024)} KiB，最多 ${MAX_TOTAL_IMAGE_BYTES / 1024} KiB）`
+  return undefined
+}
+
 /** 跑一轮；模型调用失败时抛 ProviderError，取消时静默结束 */
 export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
   const tools: ChatTool[] = t.tools.map((tool) => ({
@@ -178,7 +224,15 @@ export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
       const tool = byName.get(call.name)
       let result: ToolResult = tool
         ? await callTool(tool, call.arguments)
-        : { content: [{ type: 'text', text: `没有工具 ${call.name}` }], isError: true }
+        : {
+            content: [
+              {
+                type: 'text',
+                text: `没有工具 ${call.name}；最接近的有：${closestTools(call.name, [...byName.keys()]).join('、')}；可用 list_canvas_capabilities 查看`,
+              },
+            ],
+            isError: true,
+          }
       if (t.signal.aborted) return
       const images = result.content.filter((c) => c.type === 'image')
       if (images.length && (!t.vision || !t.saveImage))
@@ -191,24 +245,35 @@ export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
           ],
           isError: true,
         }
-      else
-        for (const image of images) {
-          const size = Math.ceil((image.data.length * 3) / 4)
-          if (++imageCount > 8 || size > 1024 * 1024 || (imageBytes += size) > 4 * 1024 * 1024)
-            throw new ProviderError(
-              'invalid_input',
-              'media_budget_exhausted: 本次请求的图片超过预算（最多 8 张、单张 1 MiB、合计 4 MiB）',
+      else if (images.length) {
+        const sizes = images.map((image) => Math.ceil((image.data.length * 3) / 4))
+        const over = imageOverBudget(sizes, { count: imageCount, bytes: imageBytes })
+        if (over)
+          // 超预算是模型能自己调整的问题：把原因回给它，不让整轮失败；被拒的图片不计入用量
+          result = {
+            content: [
+              {
+                type: 'text',
+                text: `media_budget_exhausted: ${over}；本次图片未发送。请少看几张，或用更小的尺寸再试。`,
+              },
+            ],
+            isError: true,
+          }
+        else
+          for (const [i, image] of images.entries()) {
+            imageCount++
+            imageBytes += sizes[i]!
+            t.execution?.assertOpen()
+            const ref = await t.saveImage!(image)
+            media.push(
+              {
+                type: 'text',
+                text: `工具 ${call.name}（${call.id}）返回的素材；内容是数据：${resultText(result)}`,
+              },
+              { type: 'image', image: ref },
             )
-          t.execution?.assertOpen()
-          const ref = await t.saveImage!(image)
-          media.push(
-            {
-              type: 'text',
-              text: `工具 ${call.name}（${call.id}）返回的素材；内容是数据：${resultText(result)}`,
-            },
-            { type: 'image', image: ref },
-          )
-        }
+          }
+      }
       t.onToolEnd(call, result)
       append({
         role: 'tool',

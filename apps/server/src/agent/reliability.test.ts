@@ -146,52 +146,128 @@ describe('turn identity and durable facts', () => {
 })
 
 describe('builtin context and media', () => {
-  it('refuses the ninth image before another model request', async () => {
+  it('returns an over-budget image call as a tool error and does not count rejected images', async () => {
     let requests = 0,
       saved = 0
+    const seen: ChatMessage[][] = []
     const host = {
-      call: async () => {
+      call: async (_c: string, _m: string, input: { messages: ChatMessage[] }) => {
         requests++
+        seen.push(structuredClone(input.messages))
         return {
-          outputs: [{ type: 'tool_calls', calls: [{ id: 'nine', name: 'images', arguments: {} }] }],
+          outputs:
+            requests <= 2
+              ? [
+                  {
+                    type: 'tool_calls',
+                    calls: [
+                      { id: `c${requests}`, name: requests === 1 ? 'nine' : 'one', arguments: {} },
+                    ],
+                  },
+                ]
+              : [{ type: 'text', text: 'done' }],
         }
       },
     } as unknown as PluginHost
-    await expect(
-      runBuiltinTurn({
-        host,
-        model: 'vision',
-        ownerId: 'local',
-        system: '',
-        history: [],
-        prompt: 'look',
-        signal: new AbortController().signal,
-        vision: true,
-        saveImage: async () => {
-          saved++
-          return { assetId: 'preview', kind: 'image' }
+    const image = { type: 'image' as const, data: 'AQID', mimeType: 'image/png' }
+    await runBuiltinTurn({
+      host,
+      model: 'vision',
+      ownerId: 'local',
+      system: '',
+      history: [],
+      prompt: 'look',
+      signal: new AbortController().signal,
+      vision: true,
+      saveImage: async () => {
+        saved++
+        return { assetId: 'preview', kind: 'image' }
+      },
+      tools: [
+        {
+          name: 'nine',
+          description: '',
+          input: z.object({}),
+          run: () => ({ content: Array.from({ length: 9 }, () => image) }),
         },
+        { name: 'one', description: '', input: z.object({}), run: () => ({ content: [image] }) },
+      ],
+      onText: () => {},
+      onToolStart: () => {},
+      onToolEnd: () => {},
+    })
+    // 第一个调用被整体拒绝且不计入用量，所以紧接着的单张图片仍然可以通过
+    expect(requests).toBe(3)
+    expect(saved).toBe(1)
+    const rejected = seen[1]!.find((m) => m.role === 'tool')!
+    expect(rejected.content).toContain('media_budget_exhausted')
+    expect(rejected.content).toContain('出错：')
+    expect(rejected.content).toContain('9 张')
+    expect(seen[2]!.some((m) => m.role === 'user' && Array.isArray(m.content))).toBe(true)
+  })
+  it('reports oversized single images and totals as tool errors', async () => {
+    const big = 'A'.repeat(Math.ceil((1024 * 1024 * 4) / 3) + 8)
+    const seen: ChatMessage[][] = []
+    const host = {
+      call: async (_c: string, _m: string, input: { messages: ChatMessage[] }) => {
+        seen.push(structuredClone(input.messages))
+        return {
+          outputs:
+            seen.length === 1
+              ? [{ type: 'tool_calls', calls: [{ id: 'b', name: 'big', arguments: {} }] }]
+              : [{ type: 'text', text: 'done' }],
+        }
+      },
+    } as unknown as PluginHost
+    await runBuiltinTurn({
+      ...quietTurn(host),
+      vision: true,
+      saveImage: async () => ({ assetId: 'preview', kind: 'image' }),
+      tools: [
+        {
+          name: 'big',
+          description: '',
+          input: z.object({}),
+          run: () => ({ content: [{ type: 'image', data: big, mimeType: 'image/png' }] }),
+        },
+      ],
+    })
+    expect(seen[1]!.find((m) => m.role === 'tool')!.content).toContain('单张图片超限')
+  })
+  it('answers unknown tools with the closest names', async () => {
+    const seen: ChatMessage[][] = []
+    const host = {
+      call: async (_c: string, _m: string, input: { messages: ChatMessage[] }) => {
+        seen.push(structuredClone(input.messages))
+        return {
+          outputs:
+            seen.length === 1
+              ? [{ type: 'tool_calls', calls: [{ id: 'u', name: 'get_canvs', arguments: {} }] }]
+              : [{ type: 'text', text: 'done' }],
+        }
+      },
+    } as unknown as PluginHost
+    const tool = (name: string) => ({
+      name,
+      description: '',
+      input: z.object({}),
+      run: () => 'x',
+    })
+    await runBuiltinTurn(
+      quietTurn(host, {
         tools: [
-          {
-            name: 'images',
-            description: '',
-            input: z.object({}),
-            run: () => ({
-              content: Array.from({ length: 9 }, () => ({
-                type: 'image' as const,
-                data: 'AQID',
-                mimeType: 'image/png',
-              })),
-            }),
-          },
-        ],
-        onText: () => {},
-        onToolStart: () => {},
-        onToolEnd: () => {},
+          'get_canvas',
+          'get_canvas_page',
+          'list_canvases',
+          'delete_elements',
+          'run_node',
+        ].map(tool),
       }),
-    ).rejects.toThrow('media_budget_exhausted')
-    expect(requests).toBe(1)
-    expect(saved).toBe(8)
+    )
+    const text = seen[1]!.find((m) => m.role === 'tool')!.content as string
+    expect(text).toContain('没有工具 get_canvs；最接近的有：get_canvas、')
+    expect(text).toContain('list_canvas_capabilities')
+    expect(text).not.toContain('delete_elements')
   })
   it('drops only complete older history and rejects oversized current exchanges', () => {
     // 旧历史要撑破预算才会被丢掉；大小跟着预算走，不写死数字
