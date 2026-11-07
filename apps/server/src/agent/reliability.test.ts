@@ -6,7 +6,7 @@ import { wrapDb } from '../storage/db'
 import { agentSessions, agentTurns, canvases } from '../storage/schema'
 import { TurnExecution } from './execution'
 import { TurnStore } from './turn-store'
-import { runBuiltinTurn } from './builtin'
+import { MAX_STEPS, runBuiltinTurn } from './builtin'
 import { budgetMessages, RESULT_BYTES, TEXT_TOKENS, truncateResultText } from './context-budget'
 import { toToolResult } from './mcp'
 import { content } from '@plein/capabilities'
@@ -503,5 +503,76 @@ describe('tool result truncation', () => {
     expect(r.content[0]!.text).toContain('结果已截断')
     expect(r.content[1]!.type).toBe('image')
     expect(toToolResult(big, Infinity)).toBe(big)
+  })
+})
+
+describe('builtin empty replies and wrap-up', () => {
+  const textOut = (text: string): ProviderOutput[] => [{ type: 'text', text }]
+  const scripted = (...replies: ProviderOutput[][]) => {
+    let i = 0
+    return {
+      requests: () => i,
+      host: {
+        call: async () => ({ outputs: replies[Math.min(i++, replies.length - 1)] }),
+      } as unknown as PluginHost,
+    }
+  }
+  it('retries an empty first reply once, then fails with a readable error', async () => {
+    const ok = scripted([], textOut('好'))
+    await runBuiltinTurn(quietTurn(ok.host))
+    expect(ok.requests()).toBe(2)
+    const bad = scripted([], [])
+    await expect(runBuiltinTurn(quietTurn(bad.host))).rejects.toMatchObject({
+      code: 'unknown',
+      message: '模型没有返回内容，请重试或换一个模型',
+    })
+    expect(bad.requests()).toBe(2)
+  })
+  it('treats an empty reply after tool calls as a normal finish', async () => {
+    const s = scripted(
+      [{ type: 'tool_calls', calls: [{ id: 'a', name: 'read', arguments: {} }] }],
+      [],
+    )
+    await runBuiltinTurn(
+      quietTurn(s.host, {
+        tools: [{ name: 'read', description: '', input: z.object({}), run: () => 'x' }],
+      }),
+    )
+    expect(s.requests()).toBe(2)
+  })
+  it('warns with three steps left, only in that request, and keeps the step limit error', async () => {
+    const sent: ChatMessage[][] = []
+    let n = 0
+    const host = {
+      call: async (_c: string, _m: string, input: { messages: ChatMessage[] }) => {
+        sent.push(structuredClone(input.messages))
+        return {
+          outputs: [
+            { type: 'tool_calls', calls: [{ id: `c${n++}`, name: 'read', arguments: {} }] },
+          ] as ProviderOutput[],
+        }
+      },
+    } as unknown as PluginHost
+    const t = new TurnExecution(
+      'steps',
+      () => true,
+      () => {},
+    )
+    t.append({ role: 'user', content: 'go' })
+    await expect(
+      runBuiltinTurn(
+        quietTurn(host, {
+          execution: t,
+          signal: t.abort.signal,
+          tools: [{ name: 'read', description: '', input: z.object({}), run: () => 'x' }],
+        }),
+      ),
+    ).rejects.toThrow('接着做')
+    expect(sent).toHaveLength(MAX_STEPS)
+    const warned = sent.flatMap((m, i) =>
+      m.at(-1)?.content?.toString().startsWith('系统提示：') ? [i] : [],
+    )
+    expect(warned).toEqual([MAX_STEPS - 3])
+    expect(JSON.stringify(t.transcript)).not.toContain('系统提示：')
   })
 })

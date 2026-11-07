@@ -23,6 +23,10 @@ export const RETRYABLE_CODES: ReadonlySet<string> = new Set([
 /** 重试前的等待（毫秒），长度即最多重试次数 */
 export const RETRY_DELAYS_MS: readonly number[] = [1000, 2000, 4000]
 
+/** 剩余步数等于它时提醒模型收尾 */
+const WRAP_UP_STEPS = 3
+const WRAP_UP_NOTICE = `系统提示：本轮只剩 ${WRAP_UP_STEPS} 步，请停止开启新操作，汇报已完成和未完成的部分，并给出下一步建议。`
+
 const retryable = (err: unknown) =>
   err instanceof ProviderError && (err.retryable || RETRYABLE_CODES.has(err.code))
 
@@ -149,12 +153,13 @@ export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
     else current.push(message)
   }
   let imageCount = 0,
-    imageBytes = 0
+    imageBytes = 0,
+    emptyRetried = false
 
   for (let step = 0; step < MAX_STEPS; step++) {
     if (t.signal.aborted) return
     t.execution?.assertOpen()
-    const messages = budgetMessages(t.system, t.history, current, tools, (context) =>
+    const budgeted = budgetMessages(t.system, t.history, current, tools, (context) =>
       t.onContext?.({
         ...context,
         source: 'estimate',
@@ -163,6 +168,11 @@ export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
         updatedAt: Date.now(),
       }),
     )
+    // 只剩最后几步时提醒模型收尾；这条消息只进本步请求，不写入转录
+    const messages: ChatMessage[] =
+      MAX_STEPS - step === WRAP_UP_STEPS
+        ? [...budgeted, { role: 'user', content: WRAP_UP_NOTICE }]
+        : budgeted
     if (t.execution) {
       t.execution.facts.requests++
       t.execution.persist()
@@ -204,6 +214,17 @@ export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
     }
     const text = res.outputs.flatMap((o) => (o.type === 'text' ? [o.text] : [])).join('\n')
     const calls = res.outputs.flatMap((o) => (o.type === 'tool_calls' ? o.calls : []))
+    if (!text.trim() && !calls.length && step === 0) {
+      // 本轮第一步就空回复：重试一次，仍空则报错；有过工具调用后的空回复视为正常结束
+      if (emptyRetried) throw new ProviderError('unknown', '模型没有返回内容，请重试或换一个模型')
+      emptyRetried = true
+      if (t.execution) {
+        t.execution.facts.retries++
+        t.execution.persist()
+      }
+      step--
+      continue
+    }
     if (text.trim()) t.onText(key, text, true)
     const continuation = res.outputs.find((o) => o.type === 'tool_calls')
     append({
