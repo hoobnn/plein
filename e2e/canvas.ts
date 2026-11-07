@@ -242,7 +242,8 @@ export async function deselect(page: Page) {
     .toBe(0)
 }
 
-/** 单击选中元素：取消选中、镜头对准并停稳，确认落点在画布上没被浮层挡住再点 */
+/** 单击选中元素：取消选中、镜头对准并停稳，确认落点在画布上没被浮层挡住再点；
+ * 选中后生成面板放不下时相机会延迟平移，等它停稳再返回，调用方随后取的坐标才不会过期 */
 export async function clickElement(page: Page, id: string) {
   await deselect(page)
   await zoomTo(page, [id])
@@ -256,6 +257,7 @@ export async function clickElement(page: Page, id: string) {
   await expect
     .poll(() => page.evaluate(() => window.__plein.engine.selection.values()))
     .toEqual([id])
+  await settleCamera(page)
 }
 
 /**
