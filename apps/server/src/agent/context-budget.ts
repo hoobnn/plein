@@ -75,13 +75,17 @@ export function budgetMessages(
     .slice(0, -KEEP_RECENT_TOOLS)
   let compressed = 0
   for (;;) {
+    // 省略说明紧挨在保留下来的第一条历史之前：没有丢弃时它不存在，system 之后的前缀也就不变
     const messages: ChatMessage[] = [
       { role: 'system', content: system },
       ...(omitted
         ? [
             {
               role: 'system' as const,
-              content: `较早的 ${omitted} 组完整历史未发送，记录仍保留。不要假装记得省略的信息；必要时读取画布和任务。`,
+              // 文案固定、不含丢弃组数：丢弃组数不变时，system 之后的请求前缀逐字节稳定（利于提示缓存）；
+              // 组数仍通过 report 的 omittedRounds 给界面
+              content:
+                '较早的若干组完整历史未发送，记录仍保留。不要假装记得省略的信息；必要时读取画布和任务。',
             },
           ]
         : []),

@@ -285,6 +285,42 @@ describe('builtin context and media', () => {
       budgetMessages('', [], [{ role: 'user', content: '中'.repeat(TEXT_TOKENS) }], []),
     ).toThrow('context_budget_exhausted')
   })
+  it('keeps the request prefix byte-stable while the number of omitted groups is unchanged', () => {
+    const group = (n: number): ChatMessage[] => [
+      { role: 'user', content: `问题${n}${'a'.repeat(100_000)}` },
+      { role: 'assistant', content: `回答${n}` },
+    ]
+    const history = [1, 2, 3, 4, 5].flatMap(group)
+    const reports: number[] = []
+    const report = (c: { omittedRounds: number }) => reports.push(c.omittedRounds)
+    const step1 = budgetMessages('system', history, [{ role: 'user', content: '开始' }], [], report)
+    const grown: ChatMessage[] = [
+      { role: 'user', content: '开始' },
+      { role: 'assistant', content: '', toolCalls: [{ id: 'c', name: 'x', arguments: {} }] },
+      { role: 'tool', toolCallId: 'c', toolName: 'x', content: '结果'.repeat(500) },
+    ]
+    const step2 = budgetMessages('system', history, grown, [], report)
+    expect(reports[0]).toBeGreaterThan(0)
+    expect(reports[1]).toBe(reports[0])
+    const prefixLength = 2 + (5 - reports[0]!) * 2
+    expect(JSON.stringify(step2.slice(0, prefixLength))).toBe(
+      JSON.stringify(step1.slice(0, prefixLength)),
+    )
+    // 说明紧挨保留下来的第一条历史之前，且不含会变的数字
+    expect(step1[1]).toMatchObject({ role: 'system' })
+    expect(step1[1]!.content).not.toMatch(/\d/)
+    expect(step1[2]!.content).toContain(`问题${reports[0]! + 1}`)
+    // 丢弃组数增加时说明文案本身不变，只有后面的历史起点移动
+    const more = budgetMessages(
+      'system',
+      history,
+      [{ role: 'user', content: 'b'.repeat(130_000) }],
+      [],
+      report,
+    )
+    expect(reports[2]).toBeGreaterThan(reports[0]!)
+    expect(more[1]).toEqual(step1[1])
+  })
   it('sends vision images after the entire tool group and persists refs rather than base64', async () => {
     const sent: ChatMessage[][] = []
     const host = {
