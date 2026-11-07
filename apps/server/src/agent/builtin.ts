@@ -62,6 +62,8 @@ export interface BuiltinTurn {
   system: string
   /** 之前几轮的对话（只留文字） */
   history: ChatMessage[]
+  /** 更早对话压缩成的摘要（已带抬头），紧跟系统指令发送，不参与省略 */
+  summary?: string
   /** 这一轮用户说的话（含选区说明） */
   prompt: string
   tools: McpTool[]
@@ -151,13 +153,17 @@ function imageOverBudget(sizes: number[], used: { count: number; bytes: number }
   return undefined
 }
 
-/** 跑一轮；模型调用失败时抛 ProviderError，取消时静默结束 */
-export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
-  const tools: ChatTool[] = t.tools.map((tool) => ({
+/** 画布能力转成对话模型的工具定义 */
+export const chatTools = (tools: McpTool[]): ChatTool[] =>
+  tools.map((tool) => ({
     name: tool.name,
     description: tool.description,
     parameters: inputSchema(tool.input),
   }))
+
+/** 跑一轮；模型调用失败时抛 ProviderError，取消时静默结束 */
+export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
+  const tools = chatTools(t.tools)
   const byName = new Map(t.tools.map((tool) => [tool.name, tool]))
   const current = t.execution?.transcript ?? [{ role: 'user' as const, content: t.prompt }]
   const append = (message: ChatMessage) => {
@@ -187,16 +193,22 @@ export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
     if (t.signal.aborted) return
     t.execution?.assertOpen()
     for (const queued of t.takeQueued?.() ?? []) append({ role: 'user', content: queued })
-    const budgeted = budgetMessages(t.system, t.history, current, tools, (context) => {
-      estimate = context
-      t.onContext?.({
-        ...context,
-        source: 'estimate',
-        limit: TEXT_TOKENS,
-        model: t.model,
-        updatedAt: Date.now(),
-      })
-    })
+    const budgeted = budgetMessages(
+      t.summary ? [t.system, t.summary] : t.system,
+      t.history,
+      current,
+      tools,
+      (context) => {
+        estimate = context
+        t.onContext?.({
+          ...context,
+          source: 'estimate',
+          limit: TEXT_TOKENS,
+          model: t.model,
+          updatedAt: Date.now(),
+        })
+      },
+    )
     // 只剩最后几步时提醒模型收尾；这条消息只进本步请求，不写入转录
     const messages: ChatMessage[] =
       MAX_STEPS - step === WRAP_UP_STEPS

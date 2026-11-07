@@ -41,11 +41,12 @@ const contentLength = (m: ChatMessage) =>
 
 /**
  * Complete user-led rounds only; history is never cut apart.
+ * system 可传多段（系统指令、较早对话的摘要），依次作为开头的 system 消息，始终发送、不参与省略。
  * 历史丢完仍超预算时，从本轮最早的 tool 消息起把内容换成一行占位（消息本身保留，tool_call 与结果仍成对），
  * 最近 2 条 tool 消息与 assistant / user 消息不动。返回新数组，不改传入的消息。
  */
 export function budgetMessages(
-  system: string,
+  system: string | readonly string[],
   history: ChatMessage[],
   current: ChatMessage[],
   tools: ChatTool[],
@@ -68,6 +69,10 @@ export function budgetMessages(
       groups.push([])
     groups.at(-1)!.push(message)
   }
+  const preamble = (typeof system === 'string' ? [system] : system).map((content): ChatMessage => ({
+    role: 'system',
+    content,
+  }))
   let omitted = 0
   let cur = current
   const compressible = current
@@ -77,7 +82,7 @@ export function budgetMessages(
   for (;;) {
     // 省略说明紧挨在保留下来的第一条历史之前：没有丢弃时它不存在，system 之后的前缀也就不变
     const messages: ChatMessage[] = [
-      { role: 'system', content: system },
+      ...preamble,
       ...(omitted
         ? [
             {

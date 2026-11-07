@@ -81,6 +81,9 @@ export interface AgentContext {
   resetAt?: number
   updatedAt?: number
   omittedRounds?: number
+  /** 内置助手最近一次自动压缩较早对话的时间，以及累计并入摘要的轮数；重置上下文后清空 */
+  compactedAt?: number
+  compactedTurns?: number
   model?: string
 }
 

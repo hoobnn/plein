@@ -42,6 +42,7 @@ export class SessionStore {
       context,
       context_cutoff,
       context_reset_at,
+      context_summary,
     } = row
     this.db
       .update(agentSessions)
@@ -54,6 +55,7 @@ export class SessionStore {
         context,
         context_cutoff,
         context_reset_at,
+        context_summary,
       })
       .where(eq(agentSessions.id, row.id))
       .run()

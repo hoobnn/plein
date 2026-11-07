@@ -3,7 +3,11 @@ import { referenceAssets } from '@plein/capabilities'
 import { createElement, type PleinDoc, updateElement } from '@plein/doc'
 import sharp from 'sharp'
 import type { AgentEvent, Canvas } from '@plein/protocol'
+import { ProviderError, type ChatMessage } from '@plein/plugin-sdk'
+import { eq } from 'drizzle-orm'
 import { beforeAll, describe, expect, it } from 'vite-plus/test'
+import { agentSessions, agentTurns } from '../storage/schema'
+import { emptyFacts } from './execution'
 import { hasFfmpeg } from '../assets/media'
 import { startTestServer } from '../testing'
 import { Approvals } from './approvals'
@@ -734,6 +738,110 @@ describe('内置智能体', () => {
       'update_plan',
     ])
     expect(tools).toContain('create_node')
+  })
+})
+
+describe('内置智能体自动压缩上下文', () => {
+  async function seeded(sizes: number[]) {
+    const res = await fetch(`${running.url}/api/canvases`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    })
+    const id = ((await res.json()) as Canvas).id
+    const { agents, db } = running.server
+    const session = agents.create(id, 'local', 'builtin')
+    for (const [i, size] of sizes.entries())
+      db.insert(agentTurns)
+        .values({
+          id: `turn_${session.id}_${i}`,
+          session_id: session.id,
+          state: 'completed',
+          model_ref: null,
+          transcript: JSON.stringify([
+            { role: 'user', content: `第 ${i} 轮：画第 ${i} 张图` },
+            { role: 'assistant', content: `第 ${i} 轮回复${'画'.repeat(size)}` },
+          ]),
+          execution: JSON.stringify(emptyFacts()),
+          reason: null,
+          created_at: 1000 + i,
+          closed_at: 1000 + i,
+        })
+        .run()
+    return session
+  }
+  async function send(sessionId: string, text: string) {
+    const { agents } = running.server
+    const idle = new Promise<void>((resolve) => {
+      agents.subscribe(sessionId, (e) => {
+        if (e.type === 'status' && e.status === 'idle') resolve()
+      })
+    })
+    await agents.send(sessionId, 'local', text)
+    await idle
+  }
+  const row = (id: string) =>
+    running.server.db.select().from(agentSessions).where(eq(agentSessions.id, id)).get()!
+
+  it('历史过长时把较早轮次压成摘要、边界前移，最近两轮原样发送；重置上下文清空摘要', async () => {
+    const { agents, plugins } = running.server
+    const session = await seeded([20000, 20000, 10, 10])
+    const requests: Array<{ tools: boolean; messages: ChatMessage[] }> = []
+    const original = plugins.call.bind(plugins)
+    plugins.call = ((cap, model, input, opts) => {
+      const chat = input as { tools?: unknown[]; messages: ChatMessage[] }
+      requests.push({ tools: !!chat.tools?.length, messages: chat.messages })
+      return original(cap, model, input, opts)
+    }) as typeof plugins.call
+    try {
+      await send(session.id, '现在有哪些元素')
+    } finally {
+      plugins.call = original
+    }
+    const summaryRequest = requests.find((r) => !r.tools)!
+    expect(JSON.stringify(summaryRequest.messages)).toContain('第 0 轮：画第 0 张图')
+    expect(JSON.stringify(summaryRequest.messages)).not.toContain('第 2 轮：画第 2 张图')
+    const stored = JSON.parse(row(session.id).context_summary!)
+    expect(stored).toMatchObject({ turns: 2, text: expect.stringContaining('【mock】') })
+    expect(row(session.id).context_cutoff).toBe(1001)
+
+    const turnRequest = requests.find((r) => r.tools)!
+    expect(turnRequest.messages[1]).toMatchObject({
+      role: 'system',
+      content: expect.stringContaining('较早对话的系统摘要'),
+    })
+    // mock 模型把摘要输入原样回显，所以只看摘要之后的历史
+    const sent = JSON.stringify(turnRequest.messages.slice(2))
+    expect(sent).toContain('第 2 轮：画第 2 张图')
+    expect(sent).not.toContain('第 0 轮：画第 0 张图')
+
+    const view = agents.get(session.id, 'local')!
+    expect(view.items.some((i) => i.type === 'notice' && i.text.includes('压缩为摘要'))).toBe(true)
+    expect(view.context).toMatchObject({ compactedTurns: 2, compactedAt: expect.any(Number) })
+
+    agents.resetContext(session.id, 'local')
+    expect(row(session.id).context_summary).toBeNull()
+    expect(agents.get(session.id, 'local')!.context?.compactedAt).toBeUndefined()
+  })
+
+  it('摘要失败时本轮照常完成，按预算省略历史兜底', async () => {
+    const { agents, plugins } = running.server
+    const session = await seeded([20000, 20000, 10, 10])
+    const original = plugins.call.bind(plugins)
+    plugins.call = ((cap, model, input, opts) => {
+      if (!(input as { tools?: unknown[] }).tools?.length)
+        return Promise.reject(new ProviderError('auth', '摘要服务不可用'))
+      return original(cap, model, input, opts)
+    }) as typeof plugins.call
+    try {
+      await send(session.id, '现在有哪些元素')
+    } finally {
+      plugins.call = original
+    }
+    expect(row(session.id).context_summary).toBeNull()
+    const items = agents.get(session.id, 'local')!.items
+    expect(items.some((i) => i.type === 'notice' && i.text.includes('没能压缩'))).toBe(true)
+    expect(items.at(-1)?.type === 'text' && items.at(-1)).toBeTruthy()
   })
 })
 

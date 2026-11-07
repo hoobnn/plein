@@ -1,0 +1,1 @@
+ALTER TABLE `agent_sessions` ADD `context_summary` text;

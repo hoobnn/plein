@@ -250,7 +250,7 @@ function ContextDetails({
             )}
             {context?.bytes !== undefined && (
               <p className="mt-2 text-ink-subtle">
-                请求文本 {number(context.bytes)} bytes / 128 KiB
+                请求文本 {number(context.bytes)} bytes / 256 KiB
               </p>
             )}
             {context?.source === 'estimate' && (
@@ -280,6 +280,16 @@ function ContextDetails({
         <dt>{builtin ? '请求消息' : '历史对话'}</dt>
         <dd>{builtin ? (context ? `${context.messages} 条` : '发送后统计') : '由本机 CLI 维护'}</dd>
       </dl>
+      {builtin && !!context?.compactedAt && (
+        <p className="leading-relaxed text-ink-subtle">
+          较早的 {context.compactedTurns ?? 0} 轮对话已在{' '}
+          {new Date(context.compactedAt).toLocaleTimeString('zh-CN', {
+            hour: '2-digit',
+            minute: '2-digit',
+          })}{' '}
+          自动压缩为摘要，随每次请求发送；完整记录仍保留。
+        </p>
+      )}
       {!!context?.omittedRounds && (
         <p className="leading-relaxed text-ink-subtle">
           为满足请求预算，较早的 {context.omittedRounds} 组历史未发送，完整记录仍保留。
@@ -297,7 +307,7 @@ function ContextDetails({
       )}
       <div className="border-t border-line pt-3">
         <p className="mb-2 leading-relaxed text-ink-subtle">
-          重置后，从下一条消息重新开始。历史记录、画布和已提交任务保留，旧对话不再发送给模型。
+          重置后，从下一条消息重新开始。历史记录、画布和已提交任务保留，旧对话和摘要不再发送给模型。
         </p>
         <button
           type="button"

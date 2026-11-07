@@ -105,4 +105,10 @@ export const MIGRATIONS: Migration[] = [
       'CREATE UNIQUE INDEX `voices_owner_voice` ON `voices` (`owner_id`,`provider`,`voice_id`);',
     ],
   },
+  {
+    tag: '0008_aspiring_vance_astro',
+    when: 1794055567060,
+    hash: '91efcc1befb929e5aa0c92a20221673200cbf9ed0aca40b0aded6c14444fcf45',
+    statements: ['ALTER TABLE `agent_sessions` ADD `context_summary` text;'],
+  },
 ]

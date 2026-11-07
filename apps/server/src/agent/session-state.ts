@@ -159,6 +159,7 @@ export class AgentSessions {
       context: JSON.stringify({ source: 'unavailable', messages: 0, model: settings.model }),
       context_cutoff: null,
       context_reset_at: null,
+      context_summary: null,
       title: '新对话',
       items: '[]',
       created_at: now,
@@ -197,6 +198,7 @@ export class AgentSessions {
       s.row.cli_session = null
       s.row.context_cutoff = this.turns.cutoff(id)
       s.row.context_reset_at = Date.now()
+      s.row.context_summary = null
     }
     configuration(this.env, s, {
       source: 'unavailable',
@@ -219,6 +221,7 @@ export class AgentSessions {
     s.row.cli_session = null
     s.row.context_cutoff = this.turns.cutoff(id)
     s.row.context_reset_at = Date.now()
+    s.row.context_summary = null
     configuration(this.env, s, {
       source: 'unavailable',
       messages: 0,

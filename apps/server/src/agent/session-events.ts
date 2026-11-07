@@ -1,5 +1,6 @@
 import type { AgentContext, AgentEvent, AgentItem, ApplyEditPlan, EditPlan } from '@plein/protocol'
 import { newId } from '../ids'
+import { parseSummary } from './compaction'
 import type { Approval } from './approvals'
 import {
   RELEASE_AFTER_MS,
@@ -149,9 +150,12 @@ export function scheduleRelease(env: SessionEnv, s: Live): void {
 
 /** 更新会话的上下文统计并推给界面 */
 export function configuration(env: SessionEnv, s: Live, context: AgentContext): void {
+  const summary = parseSummary(s.row.context_summary)
+  const { compactedAt: _at, compactedTurns: _turns, ...rest } = context
   s.row.context = JSON.stringify({
-    ...context,
+    ...rest,
     ...(s.row.context_reset_at == null ? {} : { resetAt: s.row.context_reset_at }),
+    ...(summary ? { compactedAt: summary.at, compactedTurns: summary.turns } : {}),
   })
   s.row.updated_at = Date.now()
   save(env, s)

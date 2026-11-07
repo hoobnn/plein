@@ -243,6 +243,8 @@ export const agentSessions = sqliteTable(
     /** 重置只改变后续模型历史，展示记录与执行事实保留。 */
     context_cutoff: integer(),
     context_reset_at: integer(),
+    /** 自动压缩得到的较早对话摘要，JSON（{ text, at, turns }）；重置上下文时清空。 */
+    context_summary: text(),
     title: text().notNull(),
     items: text().notNull(),
     created_at: integer().notNull(),
