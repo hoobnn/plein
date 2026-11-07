@@ -59,6 +59,17 @@ const PANEL_INSET = 12
 const PANEL_TOP = 64
 /** 需要平移相机时的等待时间：略长于双击间隔，让双击先完成 */
 const PAN_DELAY_MS = 320
+
+// 面板在选中节点的那次按下之后才挂载：按住未选中的节点直接拖时，挂载那一刻指针已经按着，
+// 面板自己的 pointerdown 监听收不到这次按下，所以在模块里记下当前按着的指针。
+const heldPointers = new Set<number>()
+if (typeof window !== 'undefined') {
+  window.addEventListener('pointerdown', (e) => heldPointers.add(e.pointerId), true)
+  for (const type of ['pointerup', 'pointercancel'] as const)
+    window.addEventListener(type, (e) => heldPointers.delete(e.pointerId), true)
+  // 松开发生在窗口外又没送达时，不能让面板一直停在等待平移的透明状态
+  window.addEventListener('blur', () => heldPointers.clear())
+}
 /** 默认面板高度随窗口增长的上限：再大的窗口也留出上半屏看画布。 */
 const EDITOR_MAX_H = 720
 /** 默认面板高度随窗口增长的比例：小窗口也至少留出 1/4 给画布。 */
@@ -208,7 +219,8 @@ function NodeBelow({
       window.removeEventListener('pointerup', start, true)
       window.removeEventListener('pointercancel', start, true)
     }
-    start()
+    // 指针还按着（正在拖刚选中的节点）就等松开再计时，否则平移会在拖动途中推走相机、打断拖动
+    if (heldPointers.size === 0) start()
     // 面板关闭（取消选中、换节点）后不再继续推相机，避免点空白处时画布还在漂
     return () => {
       pause()
