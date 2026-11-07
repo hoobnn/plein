@@ -2,7 +2,7 @@ import { Readable } from 'node:stream'
 import { referenceAssets } from '@plein/capabilities'
 import { createElement, type PleinDoc, updateElement } from '@plein/doc'
 import sharp from 'sharp'
-import type { AgentEvent, Canvas } from '@plein/protocol'
+import type { AgentEvent, AgentSettings, Canvas } from '@plein/protocol'
 import { ProviderError, type ChatMessage } from '@plein/plugin-sdk'
 import { eq } from 'drizzle-orm'
 import { beforeAll, describe, expect, it } from 'vite-plus/test'
@@ -742,7 +742,7 @@ describe('内置智能体', () => {
 })
 
 describe('内置智能体自动压缩上下文', () => {
-  async function seeded(sizes: number[]) {
+  async function seeded(sizes: number[], settings: AgentSettings = {}) {
     const res = await fetch(`${running.url}/api/canvases`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -750,7 +750,7 @@ describe('内置智能体自动压缩上下文', () => {
     })
     const id = ((await res.json()) as Canvas).id
     const { agents, db } = running.server
-    const session = agents.create(id, 'local', 'builtin')
+    const session = agents.create(id, 'local', 'builtin', settings)
     for (const [i, size] of sizes.entries())
       db.insert(agentTurns)
         .values({
@@ -822,6 +822,40 @@ describe('内置智能体自动压缩上下文', () => {
     agents.resetContext(session.id, 'local')
     expect(row(session.id).context_summary).toBeNull()
     expect(agents.get(session.id, 'local')!.context?.compactedAt).toBeUndefined()
+  })
+
+  it("compactAt 为 'off' 时不压缩，只按预算省略历史；调高比例推迟压缩", async () => {
+    const { agents, plugins } = running.server
+    const original = plugins.call.bind(plugins)
+    const summaryCalls = () => {
+      const seen: boolean[] = []
+      plugins.call = ((cap, model, input, opts) => {
+        seen.push(!(input as { tools?: unknown[] }).tools?.length)
+        return original(cap, model, input, opts)
+      }) as typeof plugins.call
+      return seen
+    }
+    try {
+      const off = await seeded([20000, 20000, 10, 10], { compactAt: 'off' })
+      const offCalls = summaryCalls()
+      await send(off.id, '现在有哪些元素')
+      expect(offCalls.some(Boolean)).toBe(false)
+      expect(row(off.id).context_summary).toBeNull()
+      expect(agents.get(off.id, 'local')!.context).toMatchObject({ compactAt: 'off' })
+
+      // 估算约 6.7 万 token：默认 60% 的阈值会压缩，80% 不会
+      const mid = await seeded([8000, 8000, 10, 10])
+      const midCalls = summaryCalls()
+      await send(mid.id, '现在有哪些元素')
+      expect(midCalls.some(Boolean)).toBe(true)
+      const high = await seeded([8000, 8000, 10, 10], { compactAt: 0.8 })
+      const highCalls = summaryCalls()
+      await send(high.id, '现在有哪些元素')
+      expect(highCalls.some(Boolean)).toBe(false)
+      expect(agents.get(high.id, 'local')!.context).toMatchObject({ compactAt: 0.8 })
+    } finally {
+      plugins.call = original
+    }
   })
 
   it('摘要失败时本轮照常完成，按预算省略历史兜底', async () => {

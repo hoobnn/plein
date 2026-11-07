@@ -3,6 +3,7 @@ import type {
   AgentContext,
   AgentEvent,
   AgentItem,
+  AgentKind,
   AgentSettings,
   AgentSkill,
   AgentSkillDetail,
@@ -137,6 +138,13 @@ export function settingsOf(row: SessionRow): AgentSettings {
   } catch {
     return {}
   }
+}
+
+/** 存进会话的配置：自动压缩阈值只对内置智能体有意义，CLI 智能体丢弃它 */
+export function storableSettings(agent: AgentKind, settings: AgentSettings): AgentSettings {
+  if (agent === 'builtin') return settings
+  const { compactAt: _, ...rest } = settings
+  return rest
 }
 
 /** 会话的上下文统计 */

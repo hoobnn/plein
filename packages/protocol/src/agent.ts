@@ -15,6 +15,11 @@ export type AgentKind = z.infer<typeof AgentKind>
 export const AgentSettings = z.object({
   model: z.string().trim().min(1).max(200).optional(),
   reasoningEffort: z.string().trim().min(1).max(32).optional(),
+  /**
+   * 内置智能体的自动压缩阈值：历史请求估算达到模型上下文预算的这个比例时压缩较早的对话。
+   * 缺省 0.6；'off' 不自动压缩，只剩按预算省略历史的兜底。CLI 智能体忽略它。
+   */
+  compactAt: z.union([z.number().min(0.3).max(0.95), z.literal('off')]).optional(),
 })
 export type AgentSettings = z.infer<typeof AgentSettings>
 
@@ -75,8 +80,17 @@ export type ToggleAgentSkill = z.infer<typeof ToggleAgentSkill>
 export interface AgentContext {
   source: 'provider' | 'estimate' | 'unavailable'
   tokens?: number
+  /** 内置助手为该模型推出的请求预算（token）；CLI 为其报告的窗口上限 */
   limit?: number
   bytes?: number
+  /** 内置助手的请求文本字节上限，只做健全性检查 */
+  bytesLimit?: number
+  /** 内置助手：模型是否声明了上下文窗口；false 表示按默认预算 */
+  limitDeclared?: boolean
+  /** 内置助手当前生效的自动压缩阈值（占预算的比例或 'off'） */
+  compactAt?: number | 'off'
+  /** 内置助手的估算校准系数（平台真实用量 / 本地估算），尚无样本时缺省 */
+  calibration?: number
   messages: number
   resetAt?: number
   updatedAt?: number

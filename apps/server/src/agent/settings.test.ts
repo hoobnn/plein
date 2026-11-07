@@ -106,6 +106,51 @@ describe('agent model and context management', () => {
     expect(cleared.context?.tokens).toBeUndefined()
   })
 
+  it('compactAt is validated, saved per builtin session, keeps the usage stats and is ignored by CLI agents', async () => {
+    const f = await setup()
+    const route = `/api/agent/sessions/${f.session.id}`
+    const patch = (body: unknown) => request(f.server, route, { method: 'PATCH', ...json(body) })
+    const fresh = await f.turn('只看现在有哪些元素')
+    expect(fresh.context).toMatchObject({ source: 'estimate', limit: 96000, limitDeclared: false })
+
+    for (const bad of [0.2, 0.96, 'on', '0.6', null])
+      expect((await patch({ compactAt: bad })).status).toBe(400)
+
+    const saved = (await (await patch({ compactAt: 0.8 })).json()) as AgentSession
+    expect(saved.settings).toEqual({ compactAt: 0.8 })
+    // 只改阈值不重建上下文：已有的用量统计保留，生效值同步
+    expect(saved.context).toMatchObject({
+      source: 'estimate',
+      tokens: fresh.context!.tokens,
+      compactAt: 0.8,
+    })
+    const off = (await (await patch({ compactAt: 'off' })).json()) as AgentSession
+    expect(off.settings).toEqual({ compactAt: 'off' })
+    expect(off.context?.compactAt).toBe('off')
+    // 与模型一起保存；换模型会清空用量统计，但阈值仍带上
+    const both = (await (
+      await patch({ model: 'plein/mock:agent-vision', compactAt: 0.5 })
+    ).json()) as AgentSession
+    expect(both.settings).toEqual({ model: 'plein/mock:agent-vision', compactAt: 0.5 })
+    expect(both.context).toMatchObject({ source: 'unavailable', compactAt: 0.5 })
+    // 清空设置回到默认
+    const cleared = (await (await patch({})).json()) as AgentSession
+    expect(cleared.settings).toEqual({})
+    expect(cleared.context?.compactAt).toBeUndefined()
+    await f.close()
+
+    const cli = await setup('claude')
+    const res = await request(cli.server, `/api/agent/sessions/${cli.session.id}`, {
+      method: 'PATCH',
+      ...json({ compactAt: 0.5 }),
+    })
+    expect(((await res.json()) as AgentSession).settings).toEqual({})
+    expect(
+      cli.server.agents.create('canvas', 'local', 'codex', { compactAt: 0.5 }).settings,
+    ).toEqual({})
+    await cli.close()
+  })
+
   it('reset retains records and execution facts but never reintroduces legacy history, including after restart', async () => {
     const f = await setup()
     await f.turn('画一张 unique-old-context')

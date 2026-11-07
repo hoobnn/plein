@@ -38,6 +38,7 @@ import {
   MAX_QUEUED,
   contextOf,
   settingsOf,
+  storableSettings,
 } from './session-types'
 import {
   closeRunningTools,
@@ -155,7 +156,7 @@ export class AgentSessions {
       canvas_id: canvasId,
       agent,
       cli_session: null,
-      settings: JSON.stringify(settings),
+      settings: JSON.stringify(storableSettings(agent, settings)),
       context: JSON.stringify({ source: 'unavailable', messages: 0, model: settings.model }),
       context_cutoff: null,
       context_reset_at: null,
@@ -185,7 +186,11 @@ export class AgentSessions {
     if (this.live.get(id) !== s) throw new AgentError('not_found', '会话不存在')
     if (s.busy || revision !== s.revision) throw new AgentError('busy', '会话配置已变化，请重试')
     s.revision++
+    settings = storableSettings(s.row.agent, settings)
     s.row.settings = JSON.stringify(settings)
+    // 只改了自动压缩阈值：不影响模型上下文，保留已有的用量统计，只更新阈值
+    const modelUnchanged =
+      previous.model === settings.model && previous.reasoningEffort === settings.reasoningEffort
     const rebuild =
       s.row.cli_session != null &&
       s.row.agent !== 'builtin' &&
@@ -200,12 +205,22 @@ export class AgentSessions {
       s.row.context_reset_at = Date.now()
       s.row.context_summary = null
     }
-    configuration(this.env, s, {
-      source: 'unavailable',
-      messages: rebuild ? 0 : contextOf(s.row).messages,
-      model: settings.model,
-      updatedAt: Date.now(),
-    })
+    if (s.row.agent === 'builtin' && modelUnchanged) {
+      const { compactAt: _, ...kept } = contextOf(s.row)
+      configuration(this.env, s, {
+        ...kept,
+        ...(settings.compactAt === undefined ? {} : { compactAt: settings.compactAt }),
+      })
+    } else
+      configuration(this.env, s, {
+        source: 'unavailable',
+        messages: rebuild ? 0 : contextOf(s.row).messages,
+        model: settings.model,
+        ...(s.row.agent === 'builtin' && settings.compactAt !== undefined
+          ? { compactAt: settings.compactAt }
+          : {}),
+        updatedAt: Date.now(),
+      })
     if (rebuild)
       notice(this.env, s, '已应用模型配置并重新开始 CLI 上下文；对话记录、画布与已有任务仍保留。')
     return this.view(s)

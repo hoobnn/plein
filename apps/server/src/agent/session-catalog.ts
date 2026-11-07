@@ -71,8 +71,11 @@ export class SessionCatalog {
     return this.modelCache.get(cli.path, cwd, { ...process.env, PATH: env.path }, refresh)
   }
 
-  async validateSettings(agent: AgentKind, settings: AgentSettings): Promise<AgentSettings> {
-    if (!settings.model && !settings.reasoningEffort) return {}
+  async validateSettings(agent: AgentKind, input: AgentSettings): Promise<AgentSettings> {
+    // 自动压缩阈值只属于内置智能体，不依赖模型目录；CLI 智能体忽略它
+    const { compactAt, ...settings } = input
+    const compact = agent === 'builtin' && compactAt !== undefined ? { compactAt } : {}
+    if (!settings.model && !settings.reasoningEffort) return compact
     if (settings.reasoningEffort && !settings.model)
       throw new AgentError('invalid_input', '请先选择具体模型再设置推理强度')
     const catalog = await this.models(agent)
@@ -85,6 +88,7 @@ export class SessionCatalog {
     // declared default effort rather than inheriting another model's previous effort.
     return {
       ...settings,
+      ...compact,
       ...(agent === 'codex'
         ? {
             model: model.id,

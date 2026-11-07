@@ -4,7 +4,15 @@ import type { PluginHost } from '../plugins/host'
 import { callTool, inputSchema, type McpTool, type ToolResult } from './mcp'
 import type { TurnExecution, TurnStep } from './execution'
 import type { AgentContext } from '@plein/protocol'
-import { budgetMessages, TEXT_TOKENS, truncateResultText } from './context-budget'
+import { calibrated, calibrationOf, recordUsage } from './calibration'
+import {
+  budgetMessages,
+  type ContextBudget,
+  contextWindowOf,
+  DEFAULT_BUDGET,
+  OUTPUT_TOKENS,
+  truncateResultText,
+} from './context-budget'
 
 /**
  * 内置智能体：不装 Claude Code / Codex，直接用已启用平台的对话模型（声明了 tools 特性的）驱动同一套画布能力。
@@ -41,6 +49,10 @@ export interface BuiltinModel {
   ref: string
   title: string
   vision: boolean
+  /** 模型声明的上下文窗口（输入加输出的 token）；未声明为 undefined */
+  contextWindow?: number
+  /** 模型声明的单次最大输出 token */
+  maxOutputTokens?: number
 }
 
 /** 驱动内置智能体的模型：默认对话模型，且声明了 tools 特性；不满足时没有 */
@@ -51,7 +63,12 @@ export function builtinModel(host: PluginHost, selected?: string): BuiltinModel 
   const ref = selected ?? host.defaultModel('text.chat')
   const m = models.find((x) => x.ref === ref) ?? (selected ? undefined : models[0])
   return m?.features?.includes('tools')
-    ? { ref: m.ref, title: m.title, vision: m.features.includes('vision') }
+    ? {
+        ref: m.ref,
+        title: m.title,
+        vision: m.features.includes('vision'),
+        ...contextWindowOf(m),
+      }
     : undefined
 }
 
@@ -72,6 +89,12 @@ export interface BuiltinTurn {
   /** 覆盖重试等待时间（测试用） */
   retryDelaysMs?: readonly number[]
   vision?: boolean
+  /** 模型的请求预算；缺省按默认预算（模型未声明上下文窗口） */
+  budget?: ContextBudget
+  /** 每步发给模型的输出上限（token），缺省 8192 */
+  maxTokens?: number
+  /** 自动压缩阈值，只用于在上下文统计里显示；缺省 0.6 */
+  compactAt?: number | 'off'
   saveImage?(image: { data: string; mimeType: string }): Promise<AssetRef>
   /** 模型输出的文字：step 内流式累积，同一步同一个 key */
   onText(key: string, text: string, done: boolean): void
@@ -187,12 +210,26 @@ export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
   let imageCount = 0,
     imageBytes = 0,
     emptyRetried = false
-  let estimate: { bytes: number; messages: number; omittedRounds: number } | undefined
+  let estimate:
+    | { tokens: number; bytes: number; messages: number; omittedRounds: number }
+    | undefined
+  const budget = t.budget ?? DEFAULT_BUDGET
+  const maxTokens = t.maxTokens ?? OUTPUT_TOKENS
+  /** 预算相关的上下文字段：窗口推出的预算、字节上限、生效的压缩阈值和校准系数 */
+  const limits = () => ({
+    limit: budget.tokens,
+    bytesLimit: budget.bytes,
+    limitDeclared: budget.declared,
+    compactAt: t.compactAt ?? 0.6,
+    ...(calibrated(t.model) ? { calibration: calibrationOf(t.model) } : {}),
+  })
 
   for (let step = 0; step < MAX_STEPS; step++) {
     if (t.signal.aborted) return
     t.execution?.assertOpen()
     for (const queued of t.takeQueued?.() ?? []) append({ role: 'user', content: queued })
+    // 每步取一次校准系数：同一步内预算判断与显示口径一致
+    const scale = calibrationOf(t.model)
     const budgeted = budgetMessages(
       t.summary ? [t.system, t.summary] : t.system,
       t.history,
@@ -202,12 +239,15 @@ export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
         estimate = context
         t.onContext?.({
           ...context,
+          // 显示按校准系数折算后的估算；原始估算留在 estimate 里，用来和平台用量配对
+          tokens: Math.ceil(context.tokens * scale),
           source: 'estimate',
-          limit: TEXT_TOKENS,
+          ...limits(),
           model: t.model,
           updatedAt: Date.now(),
         })
       },
+      { budget, scale },
     )
     // 只剩最后几步时提醒模型收尾；这条消息只进本步请求，不写入转录
     const messages: ChatMessage[] =
@@ -229,7 +269,7 @@ export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
         res = await t.host.call(
           'text.chat',
           t.model,
-          { messages, tools, toolChoice: 'auto', temperature: 0.3, maxTokens: 8192 },
+          { messages, tools, toolChoice: 'auto', temperature: 0.3, maxTokens },
           {
             ownerId: t.ownerId,
             usage: 'agent',
@@ -279,15 +319,18 @@ export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
         ...(usage.outputTokens !== undefined ? { outputTokens: usage.outputTokens } : {}),
       }
     // 平台报告了真实输入 token 时，用它替换本步的估算（输入 token 即这次请求占用的上下文）
-    if (usage?.inputTokens !== undefined && estimate)
+    if (usage?.inputTokens !== undefined && estimate) {
+      // 真实输入与同一请求的原始估算配对，校准之后几步的预算判断
+      recordUsage(t.model, estimate.tokens, usage.inputTokens)
       t.onContext?.({
         ...estimate,
         source: 'provider',
         tokens: usage.inputTokens,
-        limit: TEXT_TOKENS,
+        ...limits(),
         model: t.model,
         updatedAt: Date.now(),
       })
+    }
     const text = res.outputs.flatMap((o) => (o.type === 'text' ? [o.text] : [])).join('\n')
     const calls = res.outputs.flatMap((o) => (o.type === 'tool_calls' ? o.calls : []))
     if (!text.trim() && !calls.length && step === 0) {

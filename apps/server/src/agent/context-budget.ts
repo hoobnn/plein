@@ -2,11 +2,64 @@ import type { ChatMessage, ChatTool } from '@plein/plugin-sdk'
 import { CapabilityError } from '@plein/capabilities'
 
 const encoder = new TextEncoder()
+/** 未声明上下文窗口的模型使用的请求文本字节上限 */
 export const TEXT_BYTES = 256 * 1024
 export const RESULT_BYTES = 32 * 1024
 // 内置智能体带上全部画布能力，工具清单本身就占三万多 token；
 // 预算要留得下这份清单，再给对话留出余量。
+/** 未声明上下文窗口的模型使用的请求 token 预算（长期兜底） */
 export const TEXT_TOKENS = 96000
+/** runBuiltinTurn 发给模型的输出上限，也是为输出预留的上限 */
+export const OUTPUT_TOKENS = 8192
+
+/** 一次请求的预算：tokens 为输入可用的 token，bytes 只是请求文本的健全性上限 */
+export interface ContextBudget {
+  tokens: number
+  bytes: number
+  /** 模型是否声明了上下文窗口；false 时按默认预算 */
+  declared: boolean
+}
+export const DEFAULT_BUDGET: ContextBudget = {
+  tokens: TEXT_TOKENS,
+  bytes: TEXT_BYTES,
+  declared: false,
+}
+
+const positive = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n > 0
+
+/**
+ * 读模型声明的上下文窗口（一次请求能接受的输入加输出 token）和最大输出 token。
+ * modelbay 升级前 ModelSpec 的类型里还没有这两个字段，所以按结构读取；
+ * 升级后改为直接读 `spec.contextWindow` / `spec.maxOutputTokens`。
+ */
+export function contextWindowOf(spec: object | undefined): {
+  contextWindow?: number
+  maxOutputTokens?: number
+} {
+  const { contextWindow, maxOutputTokens } = (spec ?? {}) as Record<string, unknown>
+  return {
+    ...(positive(contextWindow) ? { contextWindow: Math.floor(contextWindow) } : {}),
+    ...(positive(maxOutputTokens) ? { maxOutputTokens: Math.floor(maxOutputTokens) } : {}),
+  }
+}
+
+/** 为输出预留的 token：模型最大输出与 8192 取小；窗口很小时最多占一半，免得输入预算为零 */
+export function outputReserve(window: { contextWindow?: number; maxOutputTokens?: number }) {
+  const reserve = Math.min(window.maxOutputTokens ?? OUTPUT_TOKENS, OUTPUT_TOKENS)
+  return window.contextWindow ? Math.min(reserve, Math.floor(window.contextWindow / 2)) : reserve
+}
+
+/**
+ * 按模型声明推出请求预算：tokens = 窗口 − 输出预留。
+ * 字节上限只做健全性检查（没有平台侧的请求体限制），取 256 KiB 与 tokens × 4 的较大者，
+ * 不让大窗口模型被它卡住。未声明窗口的模型沿用默认预算。
+ */
+export function budgetOf(spec: object | undefined): ContextBudget {
+  const window = contextWindowOf(spec)
+  if (!window.contextWindow) return DEFAULT_BUDGET
+  const tokens = window.contextWindow - outputReserve(window)
+  return { tokens, bytes: Math.max(TEXT_BYTES, tokens * 4), declared: true }
+}
 export function textCost(value: unknown) {
   const text = JSON.stringify(value)
   let ascii = 0
@@ -29,9 +82,17 @@ export function truncateResultText(text: string, limit = RESULT_BYTES): string {
   while (end > 0 && (buf[end]! & 0xc0) === 0x80) end--
   return buf.subarray(0, end).toString('utf8') + note
 }
-export function requestWithinBudget(messages: ChatMessage[], tools: ChatTool[]) {
+/**
+ * 请求是否在预算内。scale 是估算校准系数（平台真实用量 / 本地估算），只改变估算，不改变预算上限。
+ */
+export function requestWithinBudget(
+  messages: ChatMessage[],
+  tools: ChatTool[],
+  budget: ContextBudget = DEFAULT_BUDGET,
+  scale = 1,
+) {
   const cost = textCost({ messages, tools })
-  return cost.bytes <= TEXT_BYTES && cost.tokens + messages.length * 16 <= TEXT_TOKENS
+  return cost.bytes <= budget.bytes && (cost.tokens + messages.length * 16) * scale <= budget.tokens
 }
 /** 压缩本轮内容时保留原样的最近 tool 消息条数 */
 const KEEP_RECENT_TOOLS = 2
@@ -56,7 +117,9 @@ export function budgetMessages(
     messages: number
     omittedRounds: number
   }) => void,
+  limits: { budget?: ContextBudget; scale?: number } = {},
 ) {
+  const { budget = DEFAULT_BUDGET, scale = 1 } = limits
   const groups: ChatMessage[][] = []
   for (const message of history) {
     // Execution facts and images are supplementary user messages, not separate rounds.
@@ -97,7 +160,7 @@ export function budgetMessages(
       ...groups.slice(omitted).flat(),
       ...cur,
     ]
-    if (requestWithinBudget(messages, tools)) {
+    if (requestWithinBudget(messages, tools, budget, scale)) {
       const cost = textCost({ messages, tools })
       report?.({
         ...cost,

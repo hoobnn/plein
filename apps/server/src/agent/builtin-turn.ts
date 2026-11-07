@@ -4,7 +4,10 @@ import { CapabilityError } from '@plein/capabilities'
 import { ProviderError, type ChatMessage } from '@plein/plugin-sdk'
 import { brief, toolText } from './drivers/util'
 import { builtinModel, chatTools, runBuiltinTurn } from './builtin'
+import { calibrationOf } from './calibration'
+import { budgetOf, type ContextBudget, outputReserve } from './context-budget'
 import {
+  type CompactAt,
   type ContextSummary,
   parseSummary,
   planCompaction,
@@ -61,8 +64,10 @@ export function startBuiltin(
     if (s.active === execution) host.stop(s.row.id, 'turn_timeout')
   }, TURN_TIMEOUT_MS)
   const live = () => s.active === execution && execution.state === 'running'
+  const budget = budgetOf(model)
+  const compactAt = settingsOf(s.row).compactAt
   const run = async () => {
-    const prepared = await prepareHistory(host, s, model.ref, abort.signal, live)
+    const prepared = await prepareHistory(host, s, model.ref, abort.signal, live, budget, compactAt)
     if (!prepared || abort.signal.aborted) return
     const { history, summary } = prepared
     await runBuiltinTurn({
@@ -77,6 +82,9 @@ export function startBuiltin(
       signal: abort.signal,
       execution,
       vision: model.vision,
+      budget,
+      maxTokens: outputReserve(model),
+      ...(compactAt === undefined ? {} : { compactAt }),
       takeQueued: () =>
         s.active === execution && execution.state === 'running' ? takeQueued(env, s) : [],
       onContext: (context) => {
@@ -152,11 +160,18 @@ async function prepareHistory(
   model: string,
   signal: AbortSignal,
   live: () => boolean,
+  budget: ContextBudget,
+  compactAt: CompactAt | undefined,
 ): Promise<{ history: ChatMessage[]; summary?: ContextSummary } | undefined> {
   const env = host.env
   let summary = parseSummary(s.row.context_summary)
   let turns = env.turns.turns(s.row.id, s.row.context_cutoff)
-  const plan = planCompaction(INSTRUCTIONS, summary, turns, chatTools(s.tools))
+  const scale = calibrationOf(model)
+  const plan = planCompaction(INSTRUCTIONS, summary, turns, chatTools(s.tools), {
+    budget,
+    scale,
+    ...(compactAt === undefined ? {} : { compactAt }),
+  })
   if (plan) {
     const { older, recent } = plan
     const noticeId = newId('notice')
@@ -171,6 +186,8 @@ async function prepareHistory(
         signal,
         ...(summary ? { previous: summary } : {}),
         turns: older,
+        budget,
+        scale,
       })
       if (!live()) {
         say('已中止压缩较早的对话。')
