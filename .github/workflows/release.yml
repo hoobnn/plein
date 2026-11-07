@@ -77,9 +77,13 @@ jobs:
           if-no-files-found: error
 
   # 发版说明按 x / x.y 两级目录存放：v0.9.4 → docs/releases/v0/v0.9/v0.9.4.md
+  # 打标签时先建草稿 Release：复用工作流见到已有 Release 只上传文件，update-feed 传完
+  # latest-mac.yml 再转正。否则 Release 公开到索引上传之间，客户端检查更新会拿到 404。
   release-notes:
     name: Resolve release notes path
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       path: ${{ steps.path.outputs.path }}
     steps:
@@ -89,6 +93,22 @@ jobs:
         run: |
           IFS=. read -r major minor _ <<< "$TAG"
           echo "path=docs/releases/$major/$major.$minor/$TAG.md" >> "$GITHUB_OUTPUT"
+      - if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/checkout@v7
+      - name: Create draft release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES_FILE: ${{ steps.path.outputs.path }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            exit 0
+          fi
+          NOTES_ARGS=(--generate-notes)
+          if [ -f "$NOTES_FILE" ]; then NOTES_ARGS=(--notes-file "$NOTES_FILE"); fi
+          gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --draft --verify-tag \
+            --title "$GITHUB_REF_NAME" "${NOTES_ARGS[@]}"
 
   release:
     name: Sign, notarize and release
@@ -112,7 +132,7 @@ jobs:
     secrets: inherit
 
   # 对复用工作流签名、公证后的最终 ZIP 生成 blockmap 和索引，不再重打 ZIP。
-  # 先上传 blockmap，最后发布索引；历史 ZIP / blockmap 保留供跨版本差分更新使用。
+  # 先上传 blockmap，再发布索引，最后把草稿 Release 转正；历史 ZIP / blockmap 保留供跨版本差分更新使用。
   update-feed:
     name: Publish update feed
     needs: release
@@ -143,3 +163,5 @@ jobs:
           gh release upload "$GITHUB_REF_NAME" "$ZIP.blockmap" -R "$GITHUB_REPOSITORY" --clobber
           cat latest-mac.yml
           gh release upload "$GITHUB_REF_NAME" latest-mac.yml -R "$GITHUB_REPOSITORY" --clobber
+          # 索引就位后才公开 Release，客户端看到新版本时 latest-mac.yml 一定已经在
+          gh release edit "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --draft=false --latest
