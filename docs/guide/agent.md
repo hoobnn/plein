@@ -161,7 +161,7 @@ Agent 按语义调用画布功能。文档编辑复用 `packages/capabilities` �
 - `search_media` / `get_media_sources`：检索跨画布已有文件并读取来源，得到的资产 id 可用 `create_element` 放入画布。
 - `list_jobs` / `recover_job` / `cancel_group`：读取任务、按原回执恢复，以及取消整组运行。指定节点查询最新任务不受最近任务窗口限制。未知提交重新提交前须核实平台未受理。
 - `create_checkpoint` / `list_checkpoints` / `restore_checkpoint` / `delete_checkpoint`：保存已同步到服务端的画布、查看项目检查点、恢复为新画布或删除检查点。恢复不会自动改变本轮工具的目标画布。
-- `list_projects` / `create_project` / `rename_project` / `delete_project` / `list_canvases` / `create_canvas` / `rename_canvas` / `delete_canvas`：项目与画布管理，复用项目与画布路由及所有权校验，三种驱动共用。不依赖当前画布，外部 MCP 在空工作区也能调用。`list_canvases` 带所属项目，可按 `project_id` 过滤并用 `offset` / `limit` 翻页；两个删除工具是破坏性操作，走确认，且不能删除本会话正在操作的画布。
+- `list_projects` / `create_project` / `rename_project` / `delete_project` / `list_canvases` / `create_canvas` / `rename_canvas` / `duplicate_canvas` / `move_canvas` / `delete_canvas`：项目与画布管理，复用项目与画布路由及所有权校验，三种驱动共用。不依赖当前画布，外部 MCP 在空工作区也能调用。`list_canvases` 带所属项目，可按 `project_id` 过滤并用 `offset` / `limit` 翻页；`duplicate_canvas` 复制画布（可指定标题和目标 `project_id`，不复制检查点与会话），`move_canvas` 把画布移到另一个项目且不改内容；两个删除工具是破坏性操作，走确认，且不能删除本会话正在操作的画布。
 - `delete_results`：删除节点生成历史里的候选记录，语义与历史面板一致（只删记录不删素材，删到当前采用项时回到「尚未采用」，不自动换候选），返回 `current_changed` 说明是否改变了当前输出。破坏性操作，走确认。
 - `get_impact` / `keep_stale` / `revoke_keep` / `run_impact`：影响面板。`get_impact` 只读，返回过期节点及原因、建议、可沿用的候选、费用汇总（缺价格的计入 `cost.unknown`）和每个节点的 `input_hash`；`keep_stale` 带这个哈希确认保留现有结果，输入在那之后又变了会拒绝；`run_impact` 只运行指定节点（默认优先沿用已有候选），需要确认，返回 `group_id` 后用 `wait_for_group` 等结果。
 - `run_nodes`：一次运行多个指定节点（1 到 50 个），与界面多选运行共用 `runs.runBatch`：这些节点总是重新运行，它们 @ 引用的卡片的上游先跑；需要确认，返回 `group_id` 后用 `wait_for_group` 等结果。
