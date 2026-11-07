@@ -40,8 +40,6 @@ export class TurnExecution {
   reason: string | null = null
   private queue: Promise<unknown> = Promise.resolve()
   private detached = false
-  /** Set by the builtin adapter immediately before entering a tool, consumed once. */
-  modelCallId: string | undefined
   constructor(
     readonly id: string,
     private current: () => boolean,
@@ -107,7 +105,13 @@ export class TurnExecution {
     this.queue = next
     return next
   }
-  async invoke(name: string, args: unknown, fn: () => Promise<ToolResult | string>) {
+  /** callId 是模型给这次调用的 id；省略时按序号生成（CLI 驱动没有） */
+  async invoke(
+    name: string,
+    args: unknown,
+    fn: () => Promise<ToolResult | string>,
+    callId?: string,
+  ) {
     this.assertOpen()
     if (this.facts.toolCalls >= 100)
       throw new CapabilityError(
@@ -115,12 +119,11 @@ export class TurnExecution {
       )
     this.facts.toolCalls++
     const call: TurnFacts['calls'][number] = {
-      id: this.modelCallId ?? `${this.id}:${this.facts.toolCalls}`,
+      id: callId ?? `${this.id}:${this.facts.toolCalls}`,
       name,
       args,
       status: 'started',
     }
-    this.modelCallId = undefined
     this.facts.calls.push(call)
     this.persist()
     try {

@@ -525,8 +525,9 @@ export function agentTools(
   const execution = env.execution
   return tools.map((tool) => ({
     ...tool,
-    run: async (args) => {
-      const invoke = () => execution.invoke(tool.name, args, async () => tool.run(args))
+    run: async (args, call) => {
+      const invoke = () =>
+        execution.invoke(tool.name, args, async () => tool.run(args, call), call?.callId)
       const cap = registry.get(tool.name)
       return cap && registry.effectOf(cap, args, ctx) !== 'read'
         ? execution.serialize(invoke)

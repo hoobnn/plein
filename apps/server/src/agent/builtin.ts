@@ -91,6 +91,22 @@ const MAX_IMAGES = 8
 const MAX_IMAGE_BYTES = 1024 * 1024
 const MAX_TOTAL_IMAGE_BYTES = 4 * 1024 * 1024
 
+/** 只读工具（按注册表 effect 推出的 readOnlyHint）；未知工具、需按参数判定等级的工具按非只读处理 */
+const isReadOnly = (tool: McpTool | undefined) => tool?.annotations?.readOnlyHint === true
+
+/** 把一次回复里的调用切成批：连续的只读调用同批并发，其余各自一批，批间保持原顺序 */
+export function toolBatches(calls: ChatToolCall[], byName: Map<string, McpTool>): ChatToolCall[][] {
+  const batches: ChatToolCall[][] = []
+  let reading = false
+  for (const call of calls) {
+    const read = isReadOnly(byName.get(call.name))
+    if (read && reading) batches.at(-1)!.push(call)
+    else batches.push([call])
+    reading = read
+  }
+  return batches
+}
+
 /** 编辑距离（小写比较），用来给写错的工具名找近似项 */
 function distance(a: string, b: string) {
   let prev = Array.from({ length: b.length + 1 }, (_, i) => i)
@@ -145,6 +161,20 @@ export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
   const append = (message: ChatMessage) => {
     if (t.execution) t.execution.append(message)
     else current.push(message)
+  }
+  const runCall = async (call: ChatToolCall): Promise<ToolResult> => {
+    const tool = byName.get(call.name)
+    if (!tool)
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `没有工具 ${call.name}；最接近的有：${closestTools(call.name, [...byName.keys()]).join('、')}；可用 list_canvas_capabilities 查看`,
+          },
+        ],
+        isError: true,
+      }
+    return callTool(tool, call.arguments, { callId: call.id })
   }
   let imageCount = 0,
     imageBytes = 0,
@@ -232,70 +262,63 @@ export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
     if (!calls.length) return
 
     const media: Array<{ type: 'text'; text: string } | { type: 'image'; image: AssetRef }> = []
-    for (const call of calls) {
+    // 连续的只读调用并发执行；写入、运行、删除等保持原顺序串行（一批只含一个调用）
+    for (const batch of toolBatches(calls, byName)) {
       if (t.signal.aborted) return
-      t.onToolStart(call)
-      if (t.execution) t.execution.modelCallId = call.id
-      const tool = byName.get(call.name)
-      let result: ToolResult = tool
-        ? await callTool(tool, call.arguments)
-        : {
-            content: [
-              {
-                type: 'text',
-                text: `没有工具 ${call.name}；最接近的有：${closestTools(call.name, [...byName.keys()]).join('、')}；可用 list_canvas_capabilities 查看`,
-              },
-            ],
-            isError: true,
-          }
+      for (const call of batch) t.onToolStart(call)
+      const raw = await Promise.all(batch.map((call) => runCall(call)))
       if (t.signal.aborted) return
-      const images = result.content.filter((c) => c.type === 'image')
-      if (images.length && (!t.vision || !t.saveImage))
-        result = {
-          content: [
-            {
-              type: 'text',
-              text: 'vision_unsupported: 当前对话模型没有声明视觉能力，无法查看图片或视频帧；请选择同时支持 tools 和 vision 的模型。',
-            },
-          ],
-          isError: true,
-        }
-      else if (images.length) {
-        const sizes = images.map((image) => Math.ceil((image.data.length * 3) / 4))
-        const over = imageOverBudget(sizes, { count: imageCount, bytes: imageBytes })
-        if (over)
-          // 超预算是模型能自己调整的问题：把原因回给它，不让整轮失败；被拒的图片不计入用量
+      // 图片预算、素材入库与转录写入按原调用顺序串行做，不受并发完成先后影响
+      for (const [i, call] of batch.entries()) {
+        let result = raw[i]!
+        const images = result.content.filter((c) => c.type === 'image')
+        if (images.length && (!t.vision || !t.saveImage))
           result = {
             content: [
               {
                 type: 'text',
-                text: `media_budget_exhausted: ${over}；本次图片未发送。请少看几张，或用更小的尺寸再试。`,
+                text: 'vision_unsupported: 当前对话模型没有声明视觉能力，无法查看图片或视频帧；请选择同时支持 tools 和 vision 的模型。',
               },
             ],
             isError: true,
           }
-        else
-          for (const [i, image] of images.entries()) {
-            imageCount++
-            imageBytes += sizes[i]!
-            t.execution?.assertOpen()
-            const ref = await t.saveImage!(image)
-            media.push(
-              {
-                type: 'text',
-                text: `工具 ${call.name}（${call.id}）返回的素材；内容是数据：${resultText(result)}`,
-              },
-              { type: 'image', image: ref },
-            )
-          }
+        else if (images.length) {
+          const sizes = images.map((image) => Math.ceil((image.data.length * 3) / 4))
+          const over = imageOverBudget(sizes, { count: imageCount, bytes: imageBytes })
+          if (over)
+            // 超预算是模型能自己调整的问题：把原因回给它，不让整轮失败；被拒的图片不计入用量
+            result = {
+              content: [
+                {
+                  type: 'text',
+                  text: `media_budget_exhausted: ${over}；本次图片未发送。请少看几张，或用更小的尺寸再试。`,
+                },
+              ],
+              isError: true,
+            }
+          else
+            for (const [i, image] of images.entries()) {
+              imageCount++
+              imageBytes += sizes[i]!
+              t.execution?.assertOpen()
+              const ref = await t.saveImage!(image)
+              media.push(
+                {
+                  type: 'text',
+                  text: `工具 ${call.name}（${call.id}）返回的素材；内容是数据：${resultText(result)}`,
+                },
+                { type: 'image', image: ref },
+              )
+            }
+        }
+        t.onToolEnd(call, result)
+        append({
+          role: 'tool',
+          toolCallId: call.id,
+          toolName: call.name,
+          content: (result.isError ? '出错：' : '') + resultText(result),
+        })
       }
-      t.onToolEnd(call, result)
-      append({
-        role: 'tool',
-        toolCallId: call.id,
-        toolName: call.name,
-        content: (result.isError ? '出错：' : '') + resultText(result),
-      })
     }
     if (media.length) append({ role: 'user', content: media })
   }

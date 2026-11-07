@@ -51,6 +51,8 @@ export interface CallContext {
   progress?(progress: number, total?: number, message?: string): void
   /** 本次请求的授权对象（由路由层认证后传入，McpServer 不解释它） */
   auth?: unknown
+  /** 模型给这次调用的 id（内置智能体）；并发执行时按它把事实记录对应到正确的调用 */
+  callId?: string
 }
 
 export interface McpTool<S extends z.ZodObject = z.ZodObject> {
