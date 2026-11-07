@@ -1,4 +1,4 @@
-import type { ChatMessage, ChatTool } from '@plein/plugin-sdk'
+import type { ChatMessage, ChatTool, ModelSpec } from '@plein/plugin-sdk'
 import { CapabilityError } from '@plein/capabilities'
 
 const encoder = new TextEncoder()
@@ -27,16 +27,15 @@ export const DEFAULT_BUDGET: ContextBudget = {
 
 const positive = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n > 0
 
+/** 模型声明里与上下文预算有关的两项（来自 modelbay 的模型声明） */
+export type ModelWindow = Pick<ModelSpec, 'contextWindow' | 'maxOutputTokens'>
+
 /**
  * 读模型声明的上下文窗口（一次请求能接受的输入加输出 token）和最大输出 token。
- * modelbay 升级前 ModelSpec 的类型里还没有这两个字段，所以按结构读取；
- * 升级后改为直接读 `spec.contextWindow` / `spec.maxOutputTokens`。
+ * 只认正数；自动发现、自定义的模型没有声明，返回空。
  */
-export function contextWindowOf(spec: object | undefined): {
-  contextWindow?: number
-  maxOutputTokens?: number
-} {
-  const { contextWindow, maxOutputTokens } = (spec ?? {}) as Record<string, unknown>
+export function contextWindowOf(spec: ModelWindow | undefined): ModelWindow {
+  const { contextWindow, maxOutputTokens } = spec ?? {}
   return {
     ...(positive(contextWindow) ? { contextWindow: Math.floor(contextWindow) } : {}),
     ...(positive(maxOutputTokens) ? { maxOutputTokens: Math.floor(maxOutputTokens) } : {}),
@@ -44,7 +43,7 @@ export function contextWindowOf(spec: object | undefined): {
 }
 
 /** 为输出预留的 token：模型最大输出与 8192 取小；窗口很小时最多占一半，免得输入预算为零 */
-export function outputReserve(window: { contextWindow?: number; maxOutputTokens?: number }) {
+export function outputReserve(window: ModelWindow) {
   const reserve = Math.min(window.maxOutputTokens ?? OUTPUT_TOKENS, OUTPUT_TOKENS)
   return window.contextWindow ? Math.min(reserve, Math.floor(window.contextWindow / 2)) : reserve
 }
@@ -54,7 +53,7 @@ export function outputReserve(window: { contextWindow?: number; maxOutputTokens?
  * 字节上限只做健全性检查（没有平台侧的请求体限制），取 256 KiB 与 tokens × 4 的较大者，
  * 不让大窗口模型被它卡住。未声明窗口的模型沿用默认预算。
  */
-export function budgetOf(spec: object | undefined): ContextBudget {
+export function budgetOf(spec: ModelWindow | undefined): ContextBudget {
   const window = contextWindowOf(spec)
   if (!window.contextWindow) return DEFAULT_BUDGET
   const tokens = window.contextWindow - outputReserve(window)
