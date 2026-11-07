@@ -14,12 +14,6 @@ import { budgetMessages, TEXT_TOKENS, truncateResultText } from './context-budge
 
 /** 一轮最多几步（一步 = 一次模型调用） */
 export const MAX_STEPS = 30
-/** 模型调用失败后值得重试的错误类别：限流、超时、服务端暂不可用 */
-export const RETRYABLE_CODES: ReadonlySet<string> = new Set([
-  'rate_limit',
-  'timeout',
-  'unavailable',
-])
 /** 重试前的等待（毫秒），长度即最多重试次数 */
 export const RETRY_DELAYS_MS: readonly number[] = [1000, 2000, 4000]
 
@@ -27,8 +21,8 @@ export const RETRY_DELAYS_MS: readonly number[] = [1000, 2000, 4000]
 const WRAP_UP_STEPS = 3
 const WRAP_UP_NOTICE = `系统提示：本轮只剩 ${WRAP_UP_STEPS} 步，请停止开启新操作，汇报已完成和未完成的部分，并给出下一步建议。`
 
-const retryable = (err: unknown) =>
-  err instanceof ProviderError && (err.retryable || RETRYABLE_CODES.has(err.code))
+// ProviderError 按 code 给出默认值（限流、超时、暂不可用为真），平台显式标了不可重试时尊重它
+const retryable = (err: unknown) => err instanceof ProviderError && err.retryable
 
 /** 等待 ms 毫秒；signal 取消时提前结束 */
 const sleep = (ms: number, signal: AbortSignal) =>
