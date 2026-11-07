@@ -116,7 +116,8 @@ export function placeGeneratorPanel(input: {
     } else {
       const need = bounds.bottom - minHeight - PANEL_PORT_CLEARANCE - mid
       const wanted = bounds.bottom - height - PANEL_PORT_CLEARANCE - mid
-      dy = Math.min(need, Math.max(wanted, topLimit - node.top))
+      // 窗口矮到连最小高度都放不下时，need 会把节点整个推出顶边；中线（端口）至少留在标签位置
+      dy = Math.max(topLimit - mid, Math.min(need, Math.max(wanted, topLimit - node.top)))
     }
   }
   const pan = { x: dx, y: dy }

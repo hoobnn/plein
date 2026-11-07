@@ -134,6 +134,19 @@ describe('节点生成面板的放置', () => {
     expect(after.top + after.height).toBe(656)
     expect(after.height).toBeGreaterThanOrEqual(400)
   })
+  it('窗口矮到放不下最小高度时，平移不把节点推出可见区域', () => {
+    const short = { ...bounds, bottom: 256 }
+    const node = rect(500, 120, 300, 100)
+    const p = placeGeneratorPanel({ node, bounds: short, width: 960, height: 600 })
+    expect((node.top + node.bottom) / 2 + p.pan.y).toBeGreaterThanOrEqual(64 + 32)
+    const after = placeGeneratorPanel({
+      node: shift(node, p.pan),
+      bounds: short,
+      width: 960,
+      height: 600,
+    })
+    expect(after.top + after.height).toBeLessThanOrEqual(256)
+  })
   it('节点落在右侧边缘时平移进可见宽度，面板宽度按可用宽度收', () => {
     const p = placeGeneratorPanel({
       node: rect(1200, 200, 300, 200),
