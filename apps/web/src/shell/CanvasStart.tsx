@@ -40,7 +40,13 @@ export function CanvasStart({ engine }: { engine: Engine }) {
           type="button"
           className="plein-canvas-start-card"
           key={item.type}
-          aria-label={`新建${item.title}节点`}
+          aria-label={
+            item.type === AGENT_START
+              ? item.title
+              : item.type === DRAMA_START
+                ? `插入${item.title}`
+                : `新建${item.title}节点`
+          }
           onClick={() => {
             const state = useCanvas.getState()
             const actor = useSession.getState().info?.principal
