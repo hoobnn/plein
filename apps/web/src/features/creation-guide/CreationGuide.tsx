@@ -3,7 +3,7 @@ import type { Engine } from '@plein/canvas-core'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useDocVersion } from '../../canvas/hooks'
-import { OPEN_CREATION_GUIDE } from '../../canvas/drama'
+import { consumeCreationGuideRequest, OPEN_CREATION_GUIDE } from '../../canvas/drama'
 import { openProviderSettings } from '../../canvas/runStatus'
 import { useCatalog } from '../../stores/catalog'
 import { useCanvas } from '../../stores/canvas'
@@ -124,8 +124,13 @@ function Guide({
     setError('')
   }
   useEffect(() => {
-    const open = () =>
-      presentation === 'modal' ? setModalOpen(true) : update({ collapsed: false })
+    const open = () => {
+      if (!consumeCreationGuideRequest()) return
+      if (presentation === 'modal') setModalOpen(true)
+      else update({ collapsed: false })
+    }
+    // 挂载前就发出的请求（首页意图路径）在这里补领
+    open()
     window.addEventListener(OPEN_CREATION_GUIDE, open)
     return () => window.removeEventListener(OPEN_CREATION_GUIDE, open)
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- update 只读 ref 与 canvasId

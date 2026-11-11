@@ -3,8 +3,13 @@ import { createDoc } from '@plein/doc'
 import { corePlugin } from '@plein/nodes'
 import { describeNode } from '@plein/plugin-sdk'
 import type { Catalog } from '@plein/protocol'
-import { describe, expect, it } from 'vite-plus/test'
-import { dramaNotice, placeDramaTemplate } from './drama'
+import { describe, expect, it, vi } from 'vite-plus/test'
+import {
+  consumeCreationGuideRequest,
+  dramaNotice,
+  placeDramaTemplate,
+  requestCreationGuide,
+} from './drama'
 
 /** 用真实的内置节点声明拼一个最小 catalog：端口和默认参数与线上一样 */
 const nodes = corePlugin.nodes.map((n) => ({ ...describeNode(n, 'plein/core'), executable: true }))
@@ -142,5 +147,24 @@ describe('短剧模板落到画布', () => {
     const board = kind(doc, 'plein/storyboard')[0]!
     expect(board.params?.shotCount).toBe(8)
     expect(board.params?.shots).toEqual([])
+  })
+})
+
+describe('创作下一步的打开请求', () => {
+  it('引导未挂载时也会留下标记，领取后清除', () => {
+    consumeCreationGuideRequest()
+    const { engine } = setup()
+    placeDramaTemplate(engine, catalog, { x: 0, y: 0 })
+    expect(consumeCreationGuideRequest()).toBe(true)
+    expect(consumeCreationGuideRequest()).toBe(false)
+  })
+
+  it('超时的请求作废', () => {
+    const now = vi.spyOn(Date, 'now')
+    now.mockReturnValue(1000)
+    requestCreationGuide()
+    now.mockReturnValue(1000 + 60_000)
+    expect(consumeCreationGuideRequest()).toBe(false)
+    now.mockRestore()
   })
 })
