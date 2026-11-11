@@ -48,11 +48,11 @@ Plein is an open-source (AGPL-3.0) AI short-drama creation tool built around an 
 
 ### Generation nodes
 
-- Text, chat (LLM), image, video, voiceover and music nodes; forms are generated from the selected model, 9 aspect ratios
+- Text generation, image, video, voiceover and music nodes; forms are generated from the selected model, 9 aspect ratios
 - You choose the video mode: text-to-video, first frame, first + last frame or multimodal reference, with candidate count and synced audio
 - Region edit: box-select or paint the area to change and only that area is repainted, the rest stays as is (Bailian Wanx image edit with a native mask)
 - Continue a shot: take the last frame (or any second) of a video and branch the next shot from it, keeping model and aspect ratio and remembering the parent video; if the parent is regenerated you get a one-click refresh
-- Storyboard groups: number the images in a frame in order, reorder them, lay them out in one click and stitch them into one collage labelled with its real pixel size; grid splits become a group automatically and can jump back to the source (local stitching, no model call)
+- Storyboard groups: number the images in a group frame in order, reorder them, lay them out in one click and stitch them into one collage labelled with its real pixel size; grid splits become a group automatically and can jump back to the source (local stitching, no model call)
 - Shot and style bar: pick a camera move (with speed), shot size, angle, lighting and style; they become one or two visible, editable lines at the end of the prompt, obvious conflicts are flagged, and a style can be saved as a style card. These are prompt presets only, results vary by model
 - `@` references character / scene / prop / style cards in prompts, with disambiguation for duplicate names; `/` at line start applies presets such as three-view turnaround, expression grid, multi-angle and four-panel story
 - You choose the model: Settings sets a default model per capability, new nodes start with it and each node can pick another; enabling a new platform never switches models behind your back
@@ -61,18 +61,18 @@ Plein is an open-source (AGPL-3.0) AI short-drama creation tool built around an 
 
 ### Short drama pipeline
 
-| Storyboard                                                                          | Sequence editor                                                                                        |
-| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| ![Storyboard: shot size, visuals, dialogue and prompts](docs/images/storyboard.png) | ![Sequence editor: ordering, in / out points, dialogue and subtitle preview](docs/images/sequence.png) |
+| Storyboard                                                                          | Sequence editor                                                                                                           |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| ![Storyboard: shot size, visuals, dialogue and prompts](docs/images/storyboard.png) | ![Sequence (editing timeline) editor: ordering, in / out points, dialogue and subtitle preview](docs/images/sequence.png) |
 
-- One-click short drama template: idea → script → character and scene extraction → setting cards → storyboard → shots → sequence
-- Edit the storyboard as a table; after it is expanded into shot nodes, further table edits show up as a diff, and you can sync only the fields you have not changed by hand
+- One-click "Short drama template" on an empty canvas: idea → script → character and scene extraction → setting cards → storyboard → shots → sequence. Inserting it opens "Next steps" and jumps to the first node to run
+- Edit the storyboard as a table; after "Expand to shots", further table edits show up as a diff under "Sync to shots", and you can sync only the fields you have not changed by hand
 - Shot images, videos and voiceover generate in stages and in batches; retry just the ones that failed
-- Sequence editor: ordering, in / out points, a five-track timeline (picture, dialogue, SFX, music, subtitles), per-clip transitions and speed, music ducking, loudness normalization, subtitle styles, in-browser preview on the export timeline
+- Sequence (editing timeline) editor: ordering, in / out points, a five-track timeline (picture, dialogue, SFX, music, subtitles), per-clip transitions and speed, music ducking, loudness normalization, subtitle styles, in-browser preview on the export timeline
 - Server-side ffmpeg export to MP4 (9:16 / 16:9, 1080p / 720p) with burned-in Chinese subtitles, optionally aligned by speech recognition
 - Export editing projects (OTIO / FCPXML / SRT) together with their assets
 - Edit subtitle text, timing and visibility sentence by sentence; recognition covers all dialogue, and preview and exports share the saved track. Stable dialogue IDs, speaker bindings and SFX nodes carry through storyboard edits
-- Build a separate animatic from storyboard images and existing dialogue, then export a local draft. Guided next steps, candidate-specific creative reviews, batch checklists, adjacent-shot continuity and rendered-file delivery records are covered in [From animatic to delivery](docs/guide/creation-workflow.md) (Chinese)
+- Build a separate animatic from storyboard images and existing dialogue, then export a local draft. Guided next steps, candidate-specific creative reviews, batch checklists, adjacent-shot continuity and rendered-file delivery records are covered in [Advanced reference: from animatic to delivery](docs/guide/creation-workflow.md) (Chinese)
 
 ### Media processing
 
@@ -85,7 +85,7 @@ Every result is a new asset with its source recorded; originals are never touche
 ### Projects and asset library
 
 - One project is one film, and it can hold several canvases
-- Review asset updates by canvas and field, or pin a card to its current version; local automatic backups, storage usage, restore copies and unused-asset recycling are described in [Local data maintenance](docs/guide/data-maintenance.md) (Chinese)
+- Review asset updates by canvas and field, or pin a card to its current version; Settings → Data and backups can back up on demand and restore from a backup, plus automatic backups, storage usage and unused-asset recycling are described in [Local data maintenance](docs/guide/data-maintenance.md) (Chinese)
 - The asset library holds characters, scenes, props, styles and effects, reusable across canvases and projects. Characters have full-body / half-body / turnaround / emotion-grid slots, tags and a voice; canvas cards and the library sync both ways
 - The Voices tab in the asset library manages your own voices: upload a voice sample to clone it on MiniMax or Doubao, or register a voice that already exists on the platform; cloned voices can be picked directly on character cards and voiceover nodes
 - Project packages (.plein): export a whole project from the home page (canvases, the assets they use, library items, adopted results and run history, optionally all past candidates) and import it on another machine or data directory; imports check the format version and file hashes first and list missing models, voices and plugins. Platform keys and sign-in data are never included
@@ -97,7 +97,7 @@ Every result is a new asset with its source recorded; originals are never touche
 - The job panel shows progress, automatic retries and failure reasons; nodes whose parameters or upstream changed are marked "needs re-run"
 - Actual-input preview: before generating, see the model, the prompt with `@` expanded, and which reference images are sent or dropped by the model's limit
 - View impact: after a change, list the affected nodes with causes and suggestions (redo / review / keep), redo only the ticked ones in dependency order, and reuse matching candidates
-- Failure recovery: when a submission's outcome is unknown or polling / download fails, Plein never resubmits on its own (to avoid double billing); the job panel offers re-fetch, attaching a platform task ID, or resubmitting after you confirm it was not accepted
+- Failure recovery: when a submission's outcome is unknown or polling / download fails, Plein never resubmits on its own (to avoid double billing); the job panel offers "Check again" by default, with attaching a platform task ID or resubmitting after you confirm it was not accepted under "Advanced options"
 
 ### Agent "Xiaoman"
 
@@ -147,8 +147,8 @@ pnpm install && pnpm build && pnpm start   # http://localhost:8787
 
 ### Connect models
 
-1. Open Settings → "Model platforms", enter your keys, save and enable. All four real platforms are off by default, and keys do not need environment variables.
-2. Create a project and double-click empty space to insert the "short drama template", or start from a blank canvas.
+1. Open Settings → "Model platforms", enter your keys, save and enable. All four real platforms are off by default, and keys do not need environment variables. For Bailian and Doubao Speech the connection test only checks that a key is filled in (shown as "Filled in, not verified"); the key is truly verified on the first generation.
+2. Create a project, then on the empty canvas click the first starter card, "Short drama template" (or "Let Xiaoman build it for me"), or start from a blank canvas. For a first drama, follow [Make your first short drama](docs/guide/first-drama.md) (Chinese).
 3. Check "Default models" at the top of "Model platforms" (enabling a platform fills in its first model). New nodes start with the default model; you can pick another in a node's generator, then run it.
 
 <details>
@@ -201,6 +201,7 @@ The layout is identical across all three and can be copied between them: `plein.
 
 The full index is in [docs/](docs/README.md) (Chinese). Most used:
 
+- [Make your first short drama](docs/guide/first-drama.md): a ten-step tutorial from install to MP4 export (Chinese)
 - [Model platforms](docs/guide/providers.md): capabilities, configuration and limits per platform
 - [Agent and MCP](docs/guide/agent.md): Xiaoman, local CLI, MCP server
 - [Architecture](docs/dev/architecture.md): document model, rendering, workflows, backend
