@@ -232,7 +232,7 @@ export function StoryboardReview({
                       })}
                     </div>
                     {!nodes.length && (
-                      <p className="mt-2 text-xs text-ink-subtle">尚未展开为节点</p>
+                      <p className="mt-2 text-xs text-ink-subtle">尚未展开为镜头</p>
                     )}
                   </td>
                   {roles.map(({ role }) => (

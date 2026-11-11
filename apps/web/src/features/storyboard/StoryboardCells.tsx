@@ -64,6 +64,8 @@ export function TextCell({
   const input = useRef<HTMLTextAreaElement>(null)
   const [locateBlocked, setLocateBlocked] = useState(false)
   const [unfolded, setUnfolded] = useState(false)
+  /** 用户点过「展开全文」：失焦后保持展开；只是聚焦带来的展开会在失焦时回折 */
+  const pinned = useRef(false)
   useEffect(() => {
     setEdit((prev) =>
       prev.draft === prev.base || prev.draft === value ? { base: value, draft: value } : prev,
@@ -110,7 +112,10 @@ export function TextCell({
             type="button"
             className="ui-btn ui-btn-quiet ui-btn-xs"
             aria-expanded={unfolded || conflict}
-            onClick={() => setUnfolded((v) => !v)}
+            onClick={() => {
+              pinned.current = !unfolded
+              setUnfolded(!unfolded)
+            }}
           >
             {unfolded ? '收起' : '展开全文'}
           </button>
@@ -143,6 +148,7 @@ export function TextCell({
         onBlur={() => {
           // 文档按帧通知；失焦时读最新值，不能只依赖尚未刷新的 props。
           saveIfSafe()
+          if (foldable && !pinned.current) setUnfolded(false)
         }}
       />
       {conflict && (
