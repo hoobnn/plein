@@ -3,7 +3,7 @@ import { ProviderSettings } from './ProviderSettings'
 import { Group } from './SettingsGroup'
 import { useQuery } from '@tanstack/react-query'
 import { useShallow } from 'zustand/react/shallow'
-import { useEffect, useState } from 'react'
+import { Fragment, lazy, Suspense, useEffect, useState } from 'react'
 import { api } from '../../api/client'
 import { queryKeys } from '../../api/query'
 import { desktop } from '../../desktop'
@@ -19,6 +19,10 @@ import { useAgent } from '../agent/store'
 import { SkillBrowser } from '../agent/AgentSkills'
 import { SlidePill, SlideSwap } from '../../ui/Slide'
 import { UpdateContent } from '../../shell/DesktopUpdates'
+
+const WelcomeDialog = lazy(() =>
+  import('../onboarding/WelcomeDialog').then((m) => ({ default: m.WelcomeDialog })),
+)
 
 export { ProviderRow } from './ProviderSettings'
 
@@ -56,7 +60,15 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
   const localCli = !!agentStatus?.agents.some((a) => a.id !== 'builtin')
   const providers = catalog?.providers ?? []
   const plugins = catalog?.plugins ?? []
-  const sections: Array<{ id: Section; label: string; icon: IconName; badge?: number }> = [
+  const [guideOpen, setGuideOpen] = useState(false)
+  const sections: Array<{
+    id: Section
+    label: string
+    icon: IconName
+    badge?: number
+    /** 技术向分区收进「高级」，排在常用分区之后 */
+    advanced?: boolean
+  }> = [
     { id: 'appearance', label: '外观', icon: 'palette' },
     {
       id: 'providers',
@@ -64,13 +76,17 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
       icon: 'sparkle',
       badge: providers.filter((p) => p.enabled && p.configured).length,
     },
-    ...(localCli ? [{ id: 'local' as const, label: '本机 AI', icon: 'terminal' as const }] : []),
-    { id: 'skills', label: '技能与画布能力', icon: 'wand' },
-    // 对外开放 MCP 只在本机模式可用：其他模式下接口返回 403，不显示这一栏
-    ...(externalMcp ? [{ id: 'mcp' as const, label: 'MCP', icon: 'plug' as const }] : []),
-    { id: 'plugins', label: '插件', icon: 'puzzle', badge: plugins.length },
-    { id: 'data' as const, label: '数据', icon: 'folder' as const },
+    { id: 'data' as const, label: '数据与备份', icon: 'folder' as const },
     ...(desktop ? [{ id: 'updates' as const, label: '应用更新', icon: 'download' as const }] : []),
+    ...(localCli
+      ? [{ id: 'local' as const, label: '本机 AI', icon: 'terminal' as const, advanced: true }]
+      : []),
+    { id: 'skills', label: '技能与画布能力', icon: 'wand', advanced: true },
+    // 对外开放 MCP 只在本机模式可用：其他模式下接口返回 403，不显示这一栏
+    ...(externalMcp
+      ? [{ id: 'mcp' as const, label: 'MCP', icon: 'plug' as const, advanced: true }]
+      : []),
+    { id: 'plugins', label: '插件', icon: 'puzzle', badge: plugins.length, advanced: true },
   ]
   const current = sections.find((s) => s.id === section) ?? sections[0]!
 
@@ -89,24 +105,30 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
       >
         <h2 className="hidden px-2.5 pt-1.5 pb-3 text-lg font-semibold sm:block">设置</h2>
         <SlidePill variant="seg" />
-        {sections.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            aria-current={s.id === current.id ? 'page' : undefined}
-            onClick={() => setSection(s.id)}
-            className={`settings-nav-item flex h-8 flex-none items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors ${
-              s.id === current.id ? 'text-ink' : 'text-ink-muted hover:bg-hover hover:text-ink'
-            }`}
-          >
-            <Icon name={s.icon} />
-            <span className="flex-1 text-left">{s.label}</span>
-            {!!s.badge && (
-              <span className="hidden text-2xs text-ink-subtle tabular-nums sm:inline">
-                {s.badge}
+        {sections.map((s, i) => (
+          <Fragment key={s.id}>
+            {s.advanced && !sections[i - 1]?.advanced && (
+              <span className="hidden px-2.5 pt-3 pb-1 text-2xs text-ink-subtle sm:block">
+                高级
               </span>
             )}
-          </button>
+            <button
+              type="button"
+              aria-current={s.id === current.id ? 'page' : undefined}
+              onClick={() => setSection(s.id)}
+              className={`settings-nav-item flex h-8 flex-none items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors ${
+                s.id === current.id ? 'text-ink' : 'text-ink-muted hover:bg-hover hover:text-ink'
+              }`}
+            >
+              <Icon name={s.icon} />
+              <span className="flex-1 text-left">{s.label}</span>
+              {!!s.badge && (
+                <span className="hidden text-2xs text-ink-subtle tabular-nums sm:inline">
+                  {s.badge}
+                </span>
+              )}
+            </button>
+          </Fragment>
         ))}
       </nav>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -122,6 +144,19 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
             {current.id === 'appearance' && (
               <Group title="主题" hint="跟随系统时，会随系统的浅色 / 深色自动切换">
                 <Appearance />
+              </Group>
+            )}
+            {current.id === 'appearance' && (
+              <Group title="新手引导" hint="再看一遍首次使用引导：接入模型平台、开始第一个项目">
+                <div>
+                  <button
+                    type="button"
+                    className="ui-btn ui-btn-secondary"
+                    onClick={() => setGuideOpen(true)}
+                  >
+                    重新打开新手引导
+                  </button>
+                </div>
               </Group>
             )}
             <div hidden={current.id !== 'providers'}>
@@ -208,6 +243,11 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
           </SlideSwap>
         </div>
       </div>
+      {guideOpen && (
+        <Suspense fallback={null}>
+          <WelcomeDialog onClose={() => setGuideOpen(false)} />
+        </Suspense>
+      )}
     </Modal>
   )
 }

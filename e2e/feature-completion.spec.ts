@@ -5,7 +5,7 @@ test.describe('本机数据安全', { tag: '@core' }, () => {
     await page.goto('/')
     await page.getByRole('button', { name: '设置', exact: true }).click()
     const settings = page.getByRole('dialog', { name: '设置', exact: true })
-    await settings.getByRole('button', { name: '数据', exact: true }).click()
+    await settings.getByRole('button', { name: '数据与备份', exact: true }).click()
     await expect(settings.getByText(/自动备份/).first()).toBeVisible()
     await settings.getByRole('button', { name: '立即备份', exact: true }).click()
     await expect(
