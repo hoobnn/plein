@@ -19,6 +19,8 @@ import { useAgent } from './store'
 import { AgentControls } from './AgentControls'
 import { AgentSkillsButton } from './AgentSkills'
 import { AgentSelection } from './AgentSelection'
+import { agentSuggestions } from './suggestions'
+import { useDocVersion, useSelectionVersion } from '../../canvas/hooks'
 import { existingTargets, useAgentTargets } from './targets'
 import { useCanvas } from '../../stores/canvas'
 import { useSession } from '../../stores/session'
@@ -151,11 +153,48 @@ const ACCESS_OPTIONS: Array<{ value: AgentAccess; label: string }> = [
   { value: 'full', label: '本机操作不用问' },
 ]
 
-const SUGGESTIONS = [
-  '用选中的角色参考图和配音，做一段 5 秒的视频',
-  '看看这块画布，还缺哪些环节',
-  '选中的视频节奏太慢，帮我调整一下',
-]
+function SuggestionList() {
+  const engine = useCanvas((s) => s.engine)
+  if (!engine)
+    return <SuggestionButtons list={agentSuggestions({ elementCount: 0, selectedCount: 0 })} />
+  return <EngineSuggestions engine={engine} />
+}
+
+function EngineSuggestions({
+  engine,
+}: {
+  engine: NonNullable<ReturnType<typeof useCanvas.getState>['engine']>
+}) {
+  useDocVersion(engine.doc)
+  useSelectionVersion(engine)
+  return (
+    <SuggestionButtons
+      list={agentSuggestions({
+        elementCount: engine.doc.size,
+        selectedCount: engine.selection.values().length,
+      })}
+    />
+  )
+}
+
+function SuggestionButtons({ list }: { list: string[] }) {
+  return (
+    <>
+      {list.map((s) => (
+        <button
+          key={s}
+          type="button"
+          className="rounded-md px-3 py-2 text-left text-sm text-ink-muted ring-1 ring-line transition-colors ring-inset hover:bg-hover hover:text-ink"
+          onClick={() =>
+            useAgent.getState().send(s, useCanvas.getState().engine?.selection.values())
+          }
+        >
+          {s}
+        </button>
+      ))}
+    </>
+  )
+}
 
 /** 全局悬浮的吉祥物 + 助手面板：右下角，所有页面都在 */
 export function AgentDock() {
@@ -257,7 +296,7 @@ export function AgentDock() {
           onClick={() => toggle()}
           aria-label={open ? '收起助手' : '打开助手'}
           aria-expanded={open}
-          title={open ? undefined : '小满：让本机的 Claude Code / Codex 帮你操作画布'}
+          title={open ? undefined : '小满：帮你搭画布、批量出分镜'}
           style={{ bottom: mascotBottom }}
           className="plein-mascot-btn pointer-events-auto fixed right-3 z-30 rounded-full"
         >
@@ -645,18 +684,7 @@ export function Transcript({
       <div className="flex flex-1 flex-col justify-end gap-3 p-4">
         <p className="px-1 text-sm text-ink-muted">{intro}</p>
         <div className="flex w-full flex-col gap-1.5">
-          {SUGGESTIONS.map((s) => (
-            <button
-              key={s}
-              type="button"
-              className="rounded-md px-3 py-2 text-left text-sm text-ink-muted ring-1 ring-line transition-colors ring-inset hover:bg-hover hover:text-ink"
-              onClick={() =>
-                useAgent.getState().send(s, useCanvas.getState().engine?.selection.values())
-              }
-            >
-              {s}
-            </button>
-          ))}
+          <SuggestionList />
         </div>
       </div>
     )
