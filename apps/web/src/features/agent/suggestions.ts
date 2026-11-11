@@ -18,3 +18,6 @@ export function agentSuggestions(state: { elementCount: number; selectedCount: n
     '搭一套角色、场景和分镜的画布，我再来调整',
   ]
 }
+
+/** 以冒号结尾的示例要用户补内容，点击只填入输入框，不直接发送 */
+export const suggestionNeedsInput = (text: string) => /[:：]\s*$/.test(text)

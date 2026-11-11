@@ -19,7 +19,7 @@ import { useAgent } from './store'
 import { AgentControls } from './AgentControls'
 import { AgentSkillsButton } from './AgentSkills'
 import { AgentSelection } from './AgentSelection'
-import { agentSuggestions } from './suggestions'
+import { agentSuggestions, suggestionNeedsInput } from './suggestions'
 import { useDocVersion, useSelectionVersion } from '../../canvas/hooks'
 import { existingTargets, useAgentTargets } from './targets'
 import { useCanvas } from '../../stores/canvas'
@@ -185,9 +185,15 @@ function SuggestionButtons({ list }: { list: string[] }) {
           key={s}
           type="button"
           className="rounded-md px-3 py-2 text-left text-sm text-ink-muted ring-1 ring-line transition-colors ring-inset hover:bg-hover hover:text-ink"
-          onClick={() =>
-            useAgent.getState().send(s, useCanvas.getState().engine?.selection.values())
-          }
+          onClick={() => {
+            const agent = useAgent.getState()
+            if (suggestionNeedsInput(s) && agent.canvasId) {
+              agent.setDraft(agent.canvasId, s)
+              useAgent.setState({ focusSeq: agent.focusSeq + 1 })
+              return
+            }
+            void agent.send(s, useCanvas.getState().engine?.selection.values())
+          }}
         >
           {s}
         </button>
