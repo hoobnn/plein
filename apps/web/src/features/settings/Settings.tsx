@@ -3,7 +3,7 @@ import { ProviderSettings } from './ProviderSettings'
 import { Group } from './SettingsGroup'
 import { useQuery } from '@tanstack/react-query'
 import { useShallow } from 'zustand/react/shallow'
-import { Fragment, lazy, Suspense, useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { api } from '../../api/client'
 import { queryKeys } from '../../api/query'
 import { desktop } from '../../desktop'
@@ -19,10 +19,7 @@ import { useAgent } from '../agent/store'
 import { SkillBrowser } from '../agent/AgentSkills'
 import { SlidePill, SlideSwap } from '../../ui/Slide'
 import { UpdateContent } from '../../shell/DesktopUpdates'
-
-const WelcomeDialog = lazy(() =>
-  import('../onboarding/WelcomeDialog').then((m) => ({ default: m.WelcomeDialog })),
-)
+import { reopenWelcome } from '../onboarding/reopen'
 
 export { ProviderRow } from './ProviderSettings'
 
@@ -60,7 +57,6 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
   const localCli = !!agentStatus?.agents.some((a) => a.id !== 'builtin')
   const providers = catalog?.providers ?? []
   const plugins = catalog?.plugins ?? []
-  const [guideOpen, setGuideOpen] = useState(false)
   const sections: Array<{
     id: Section
     label: string
@@ -152,7 +148,11 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
                   <button
                     type="button"
                     className="ui-btn ui-btn-secondary"
-                    onClick={() => setGuideOpen(true)}
+                    onClick={() => {
+                      // 先关设置再开引导，避免两层弹窗叠在一起
+                      onClose()
+                      reopenWelcome()
+                    }}
                   >
                     重新打开新手引导
                   </button>
@@ -243,11 +243,6 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
           </SlideSwap>
         </div>
       </div>
-      {guideOpen && (
-        <Suspense fallback={null}>
-          <WelcomeDialog onClose={() => setGuideOpen(false)} />
-        </Suspense>
-      )}
     </Modal>
   )
 }
