@@ -30,6 +30,9 @@ function providerState(
   if (!p.configured) return { label: '未配置', tone: 'ui-tag-warning' }
   if (check.failed) return { label: '校验失败', tone: 'ui-tag-danger' }
   if (check.testing) return { label: '校验中', tone: '' }
+  // 连接测试只做本地检查的平台（testScope 为 configuration）没验证过密钥，不能标成已连接
+  const suffix = p.activeCredentialLabel ? ` · ${p.activeCredentialLabel}` : ''
+  if (p.testScope === 'configuration') return { label: `已填写，未验证${suffix}`, tone: '' }
   // 目录在多组时带当前组标签；保存、删除、设为使用后 onSaved 会刷新目录
   return p.activeCredentialLabel
     ? { label: `已连接 · ${p.activeCredentialLabel}`, tone: 'ui-tag-success' }
@@ -714,7 +717,14 @@ export function ProviderRow({
         <span className="min-w-0 flex-1">
           <span className="flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1">
             <span className="text-sm font-medium break-words">{provider.title}</span>
-            <span className={`ui-tag ${state.tone}`} title="本地配置状态不代表具体模型权限或余额">
+            <span
+              className={`ui-tag ${state.tone}`}
+              title={
+                provider.testScope === 'configuration'
+                  ? '第一次生成时才会验证密钥'
+                  : '本地配置状态不代表具体模型权限或余额'
+              }
+            >
               {state.label}
             </span>
           </span>

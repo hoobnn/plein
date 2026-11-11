@@ -110,3 +110,12 @@ it('顶部显示已连接平台数，已配置的平台排在前面', () => {
   expect(html).toContain('已连接 1 / 共 2 个平台')
   expect(html.indexOf('已配置平台')).toBeLessThan(html.indexOf('待配置平台'))
 })
+
+it('连接测试只检查本地配置的平台显示「已填写，未验证」，不显示已连接', () => {
+  const data = catalog()
+  data.providers[0]!.testScope = 'configuration'
+  const html = render(data)
+  expect(html).toContain('已填写，未验证')
+  expect(html).toContain('第一次生成时才会验证密钥')
+  expect(html).not.toContain('>已连接<')
+})
