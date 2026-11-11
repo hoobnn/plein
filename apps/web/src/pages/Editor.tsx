@@ -15,6 +15,7 @@ import { placeStartNode } from '../canvas/start'
 import { watchStartNode } from '../canvas/startQueue'
 import { CanvasMenus } from '../shell/CanvasMenus'
 import { CanvasStart } from '../shell/CanvasStart'
+import { ShortcutHint } from '../shell/ShortcutHint'
 import { AgentCursor } from '../features/agent/AgentCursor'
 import { useAgent } from '../features/agent/store'
 import { CommandPalette } from '../shell/CommandPalette'
@@ -284,6 +285,7 @@ export function Editor({
       <AiAnalysisEditor />
       <MotionEditor />
       <Shortcuts />
+      {mode === 'flow' && source.kind === 'remote' && <ShortcutHint />}
       <CommandPalette canvasId={canvasId} />
       <AgentCursor />
       <History />

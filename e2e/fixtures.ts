@@ -234,6 +234,15 @@ export const test = base.extend<E2EFixtures, E2EWorkerFixtures>({
     },
     { scope: 'worker' },
   ],
+  // 首次进画布的快捷键提示会浮在画布上方，用例默认视为已看过
+  context: async ({ context }, use) => {
+    await context.addInitScript(() => {
+      try {
+        localStorage.setItem('plein.shortcut-hint', '1')
+      } catch {}
+    })
+    await use(context)
+  },
   // baseURL 跟着 worker 走：页面导航和 request fixture 都用它
   baseURL: async ({ workerServer }, use) => {
     await use(workerServer.baseURL)
