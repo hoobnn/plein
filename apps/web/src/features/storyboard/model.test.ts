@@ -7,6 +7,7 @@ import {
   detachShot,
   expandShots,
   expandedNodes,
+  nextBatchRole,
   planDiffs,
   runExpanded,
   shotsOf,
@@ -605,5 +606,25 @@ describe('展开的镜头接入序列', () => {
     expect(expandShots(engine, board, [s.id], catalog).sequence).toBe('ambiguous')
     expect(intoSeq(doc, a)).toEqual([])
     expect(intoSeq(doc, b)).toEqual([])
+  })
+})
+
+describe('主按钮下一步', () => {
+  const el = (nodeType: string, done: boolean) =>
+    ({
+      nodeType,
+      results: done ? [{ id: 'r' }] : [],
+    }) as never
+  it('作用范围内有未展开的镜头时先展开，即使别处已展开', () => {
+    const expanded = new Map([['a', [el('plein/image', true)]]])
+    expect(nextBatchRole(expanded, ['a', 'b'])).toBe('expand')
+    expect(nextBatchRole(expanded, ['a'])).toBeNull()
+  })
+  it('全部展开后才轮到批量动作', () => {
+    const expanded = new Map([
+      ['a', [el('plein/image', false)]],
+      ['b', [el('plein/image', false)]],
+    ])
+    expect(nextBatchRole(expanded, ['a', 'b'])).toBe('image')
   })
 })

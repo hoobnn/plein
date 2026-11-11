@@ -31,8 +31,8 @@ export function StoryboardToolbar({
   hasShots: boolean
   hasExpanded: boolean
   scopeDiffs: number
-  /** 目标镜头里下一类还没出结果的批量动作；都出齐了是 null */
-  nextRole: 'image' | 'video' | 'speech' | null
+  /** 目标镜头的下一步：有未展开的是 'expand'，其次是下一类还没出结果的批量动作；都展开且出齐了是 null */
+  nextRole: 'expand' | 'image' | 'video' | 'speech' | null
   hasCanvas: boolean
   onExpand(mode: 'new' | 'update'): void
   onLink(): void
@@ -203,14 +203,14 @@ function PrimaryAction({
   hasShots: boolean
   hasExpanded: boolean
   scopeDiffs: number
-  nextRole: 'image' | 'video' | 'speech' | null
+  nextRole: 'expand' | 'image' | 'video' | 'speech' | null
   onExpand(mode: 'new' | 'update'): void
   onBatch(role: ShotRole): void
   onSync(): void
   onReview(): void
 }) {
   const cls = 'ui-btn ui-btn-primary'
-  if (!hasExpanded)
+  if (!hasExpanded || nextRole === 'expand')
     return (
       <button type="button" className={cls} disabled={!hasShots} onClick={() => onExpand('new')}>
         <Icon name="workflow" />
@@ -224,7 +224,7 @@ function PrimaryAction({
         同步改动
       </button>
     )
-  if (nextRole) {
+  if (nextRole && nextRole !== 'expand') {
     const { label, icon } = primaryBatch[nextRole]
     return (
       <button type="button" className={cls} onClick={() => onBatch(nextRole)}>

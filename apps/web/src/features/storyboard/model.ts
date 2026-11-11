@@ -32,11 +32,12 @@ const BATCH_ORDER = [
   ['speech', 'plein/speech'],
 ] as const
 
-/** 目标镜头里下一类还没出结果的批量动作（按出图、视频、配音的顺序）；都出齐返回 null */
+/** 目标镜头里下一步：有未展开的先 'expand'，再是下一类还没出结果的批量动作（按出图、视频、配音的顺序）；都展开且出齐返回 null */
 export function nextBatchRole(
   expanded: ReadonlyMap<string, CanvasElement[]>,
   shotIds: readonly string[],
-): 'image' | 'video' | 'speech' | null {
+): 'expand' | 'image' | 'video' | 'speech' | null {
+  if (shotIds.some((id) => !expanded.has(id))) return 'expand'
   for (const [role, type] of BATCH_ORDER)
     for (const id of shotIds)
       for (const el of expanded.get(id) ?? [])
