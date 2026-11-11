@@ -16,6 +16,8 @@ import type { NodeFactory } from './nodes'
 export interface DramaPlaceResult {
   /** 新建的顶层 Frame，用来选中和缩放到 */
   frames: string[]
+  /** 模板元素 key → 新建元素 id，用来定位「第一个该运行的节点」 */
+  ids: Record<string, string>
   created: number
   /** catalog 里没有的节点类型：骨架没铺全 */
   missing: string[]
@@ -29,6 +31,7 @@ export interface DramaPlaceResult {
 
 const empty = (noModel: string[]): DramaPlaceResult => ({
   frames: [],
+  ids: {},
   created: 0,
   missing: [],
   optionalMissing: [],
@@ -140,6 +143,7 @@ export function placeDramaTemplate(
     }
   }, doc.origin)
 
+  result.ids = Object.fromEntries(ids)
   doc.flush()
   return result
 }
@@ -152,6 +156,8 @@ export function dramaNotice(r: DramaPlaceResult): string {
   if (r.optionalMissing.length) notes.push(`没有 ${r.optionalMissing.join('、')} 卡，先跳过`)
   if (r.noModel.length)
     notes.push(`没有启用支持「${r.noModel.join('、')}」的模型，请到设置里启用后再运行`)
-  const tail = notes.length ? `。${notes.join('；')}` : '：先跑剧本和分镜，双击分镜节点展开镜头'
+  const tail = notes.length
+    ? `。${notes.join('；')}`
+    : '：已选中剧本节点，可按「创作下一步」继续；分镜跑完后双击分镜节点展开镜头'
   return `短剧模板已铺出 ${r.frames.length} 个分组、${r.created} 个元素${tail}`
 }

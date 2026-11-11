@@ -82,8 +82,11 @@ it('短剧意图铺设真实模板与连线并提示，布局稳定后才进行�
   queueStartNode('start-canvas', DRAMA_START)
   placeStartNode(f.engine, catalog, 'start-canvas')
   const selected = f.engine.selection.values()
-  expect(selected).toHaveLength(2)
-  expect(f.doc.worldRect(selected[0]!)).toMatchObject({ x: view.x + 80, y: view.y + 80 })
+  // 选中第一个该运行的节点（剧本），而不是整个分组
+  expect(selected).toHaveLength(1)
+  expect(f.doc.get(selected[0]!)?.name).toBe('剧本')
+  const frame = [...f.doc.elements()].find((el) => el.kind === 'frame' && !el.parentId)!
+  expect(f.doc.worldRect(frame.id)).toMatchObject({ x: view.x + 80, y: view.y + 80 })
   for (const type of ['plein/storyboard', 'plein/sequence', 'plein/image', 'plein/video'])
     expect(
       [...f.doc.elements()].some((el) => el.nodeType === type),
@@ -110,7 +113,13 @@ it.each(['canvas', 'x', 'y', 'zoom', 'deleted'] as const)(
     if (change === 'x') f.engine.camera.panBy(20, 0)
     if (change === 'y') f.engine.camera.panBy(0, 20)
     if (change === 'zoom') f.engine.camera.zoomAt(600, 400, 1.2)
-    if (change === 'deleted') deleteElements(f.doc, f.engine.selection.values())
+    if (change === 'deleted')
+      deleteElements(
+        f.doc,
+        [...f.doc.elements()]
+          .filter((el) => el.kind === 'frame' && !el.parentId)
+          .map((el) => el.id),
+      )
     f.frame()
     expect(f.engine.zoomToFit).toHaveBeenCalledOnce()
   },

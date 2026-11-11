@@ -228,12 +228,12 @@
   border-radius: var(--radius-lg);
   background: var(--surface-2);
 }
-@media (max-height: 520px), (max-width: 639px) {
+@media (max-height: 620px), (max-width: 639px) {
   .plein-canvas-start {
     display: none;
   }
 }
-@container canvas-empty (max-width: 480px) or (max-height: 340px) {
+@container canvas-empty (max-width: 480px) or (max-height: 440px) {
   .plein-canvas-start {
     display: none;
   }

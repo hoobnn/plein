@@ -3,6 +3,9 @@ import type { Engine } from '@plein/canvas-core'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useDocVersion } from '../../canvas/hooks'
+import { OPEN_CREATION_GUIDE } from '../../canvas/drama'
+import { openProviderSettings } from '../../canvas/runStatus'
+import { useCatalog } from '../../stores/catalog'
 import { useCanvas } from '../../stores/canvas'
 import { Icon } from '../../ui/icons'
 import { Select } from '../../ui/Select'
@@ -120,6 +123,14 @@ function Guide({
     setPreferences(next)
     setError('')
   }
+  useEffect(() => {
+    const open = () =>
+      presentation === 'modal' ? setModalOpen(true) : update({ collapsed: false })
+    window.addEventListener(OPEN_CREATION_GUIDE, open)
+    return () => window.removeEventListener(OPEN_CREATION_GUIDE, open)
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- update 只读 ref 与 canvasId
+  }, [presentation, canvasId])
+  const noTextModel = useCatalog((s) => !!s.catalog && !s.catalog.defaultModels['text.chat'])
   const staleIds = new Set([...stale].filter(([, kind]) => kind !== 'kept').map(([id]) => id))
   const keptIds = new Set([...stale].filter(([, kind]) => kind === 'kept').map(([id]) => id))
   const facts = creationGuideFacts(engine.doc, {
@@ -262,6 +273,17 @@ function Guide({
           <Icon name={presentation === 'modal' ? 'x' : 'arrowUp'} size={14} />
         </button>
       </div>
+      {noTextModel && (
+        <div
+          role="status"
+          className="mx-3 mb-2 flex items-center gap-2 rounded-md bg-surface-2 px-2 py-1.5 text-xs text-ink-muted"
+        >
+          <span className="min-w-0 flex-1">还没有启用文本模型，剧本和分镜暂时跑不了</span>
+          <button type="button" className="ui-btn ui-btn-sm" onClick={openProviderSettings}>
+            去设置启用
+          </button>
+        </div>
+      )}
       {error && (
         <p role="alert" className="px-3 pb-2 text-xs text-danger">
           {error}

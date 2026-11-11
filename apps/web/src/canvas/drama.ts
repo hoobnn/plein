@@ -6,6 +6,9 @@ import { nodeFactory } from './nodes'
 
 export { dramaNotice } from '@plein/capabilities'
 
+/** 请求展开「创作下一步」引导（浮动面板展开，窄屏弹窗打开） */
+export const OPEN_CREATION_GUIDE = 'plein:open-creation-guide'
+
 /** 把短剧模板铺到画布上（只建不跑，逻辑见 @plein/capabilities），铺完选中新分组 */
 export function placeDramaTemplate(
   engine: Engine,
@@ -21,8 +24,11 @@ export function placeDramaTemplate(
     template,
   )
   if (result.frames.length) {
-    engine.selection.set(result.frames)
+    // 选中第一个该运行的节点（剧本，缺失时退到创意），并打开「创作下一步」
+    const first = [result.ids.script, result.ids.idea].find((id) => id && engine.doc.get(id))
+    engine.selection.set(first ? [first] : result.frames)
     engine.setTool('select')
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(OPEN_CREATION_GUIDE))
   }
   return result
 }
