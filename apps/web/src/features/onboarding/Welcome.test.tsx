@@ -14,6 +14,7 @@ import {
   waitFor,
 } from '../../testing/render'
 import { Welcome } from './Welcome'
+import { reopenWelcome, useWelcomeReopen } from './reopen'
 resetStoreAfterEach(useCatalog)
 const catalog = { providers: [], nodes: [], plugins: [], prompts: [] } as unknown as Catalog
 const project: Project = {
@@ -114,4 +115,15 @@ it('旧引导卸载重开后迟到失败不关闭新引导，保留可操作的�
   expect(screen.getByRole('dialog', { name: '欢迎使用 Plein' })).toBeTruthy()
   expect(screen.getByRole('button', { name: '跳过' })).toBeTruthy()
   expect(location.hash).toBe('#/')
+})
+
+it('首页自动弹出的引导已打开时，reopenWelcome 不再叠加第二份', async () => {
+  const f = await setup()
+  reopenWelcome()
+  expect(useWelcomeReopen.getState().open).toBe(false)
+  f.unmount()
+  expect(useWelcomeReopen.getState().autoOpen).toBe(false)
+  reopenWelcome()
+  expect(useWelcomeReopen.getState().open).toBe(true)
+  useWelcomeReopen.setState({ open: false, used: false })
 })

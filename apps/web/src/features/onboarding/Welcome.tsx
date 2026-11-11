@@ -2,6 +2,7 @@ import type { ProviderInfo } from '@plein/protocol'
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useCatalog } from '../../stores/catalog'
+import { useWelcomeReopen } from './reopen'
 import { LoadingPanel } from '../../ui/LoadingPanel'
 import { AnimatePresence } from '../../ui/motion'
 
@@ -46,6 +47,10 @@ export function Welcome() {
     // 只在打开首页时判断：引导里填好密钥后不会突然消失。
     if (eligible && catalog && !catalog.providers.some(usable)) setOpen(true)
   }, [eligible, catalog])
+  useEffect(() => {
+    useWelcomeReopen.setState({ autoOpen: open })
+    return () => useWelcomeReopen.setState({ autoOpen: false })
+  }, [open])
   const close = () => {
     markWelcomed()
     setEligible(false)
