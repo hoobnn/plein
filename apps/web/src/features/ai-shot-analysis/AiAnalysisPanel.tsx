@@ -227,7 +227,7 @@ export function AiAnalysisPanel({
             const submitted =
               job.submissionHistory?.filter((item) => item.kind === 'submit_started').length ?? 0
             setMessage(
-              `当前作业 ${job.status}；journal 记录 ${submitted} 次提交尝试、运行尝试 ${job.attempts} 次。恢复提交另计，结果不代表声音或完整运动已核实。`,
+              `当前作业 ${job.status}；已提交 ${submitted} 次、运行 ${job.attempts} 次，恢复时的重新提交另算，结果不代表声音或完整运动已核实。`,
             )
             const unsettled =
               ['submit_unknown', 'remote_pending', 'fetch_failed'].includes(
@@ -406,7 +406,7 @@ export function AiAnalysisPanel({
                     {price ? `配置估算 ${price.amount} ${price.currency}` : '价格未知'} ·{' '}
                     {row.input.status}
                   </p>
-                  <p>输入/输出 token、图片费用与恢复提交费用未知。</p>
+                  <p>输入输出用量、图片费用与恢复时重新提交的费用未知。</p>
                   <details>
                     <summary>完整固定请求、具体采样与重点</summary>
                     <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-all text-xs">

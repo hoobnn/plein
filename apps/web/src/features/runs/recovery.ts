@@ -72,11 +72,11 @@ export function describeRecovery(job: JobInfo): RecoveryView | null {
   switch (r.state) {
     case 'submit_unknown':
       return {
-        title: '提交结果未知',
+        title: '平台暂时没回结果',
         detail: [
-          r.verifiable
-            ? `没收到${platform}的确认，可以让系统按平台的查询接口再核查一次`
-            : `没收到${platform}的确认，无法判断是否已受理。请先到${platform}控制台核对；重新提交可能重复计费`,
+          r.verifiable || r.refetchable
+            ? '可能已经在生成。先再查一次，避免重复扣费'
+            : `没法自动确认${platform}是否已经受理。重新提交可能重复扣费，请在「高级选项」里处理`,
           credentialDetail,
         ]
           .filter(Boolean)

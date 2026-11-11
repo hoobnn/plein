@@ -211,7 +211,7 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
             ...fields,
             voiceId,
             status: 'training',
-            message: `提交结果未知，请先在平台核查音色 ID ${voiceId}，不要重复创建：${e.message}`,
+            message: `平台暂时没回结果，音色可能已经创建。请先到平台确认音色 ${voiceId}，不要重复创建：${e.message}`,
             credentialId,
             credentialFingerprint,
             credentialLabel,

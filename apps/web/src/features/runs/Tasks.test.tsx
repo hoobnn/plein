@@ -351,7 +351,8 @@ it('填平台任务 ID 续查：失败保留输入，成功清理表单', async 
     },
   )
   await within(panel()).findByTestId('job-recovery')
-  within(panel()).getByRole('button', { name: '填写平台任务 ID' }).click()
+  await f.user.click(within(panel()).getByRole('button', { name: '高级选项' }))
+  within(panel()).getByRole('button', { name: '手动填任务 ID' }).click()
   const input = await within(panel()).findByRole<HTMLInputElement>('textbox', {
     name: '平台任务 ID',
   })
@@ -407,7 +408,8 @@ it('重新提交确认：取消只退回入口，确认失败可重试', async (
     },
   )
   await within(panel()).findByTestId('job-recovery')
-  const trigger = within(panel()).getByRole('button', { name: '确认未受理，重新提交' })
+  await f.user.click(within(panel()).getByRole('button', { name: '高级选项' }))
+  const trigger = within(panel()).getByRole('button', { name: '平台上没有这次任务，重新提交' })
   trigger.click()
   const confirm = await within(panel()).findByRole('group', { name: '重新提交确认' })
   expect(within(confirm).getByRole('button', { name: '取消' })).toBeTruthy()
@@ -415,9 +417,11 @@ it('重新提交确认：取消只退回入口，确认失败可重试', async (
   await waitFor(() =>
     expect(within(panel()).queryByRole('group', { name: '重新提交确认' })).toBeNull(),
   )
-  expect((document.activeElement as HTMLElement)?.textContent).toContain('确认未受理，重新提交')
+  expect((document.activeElement as HTMLElement)?.textContent).toContain(
+    '平台上没有这次任务，重新提交',
+  )
   // 入口在确认框收起后重新挂载，重新查询
-  within(panel()).getByRole('button', { name: '确认未受理，重新提交' }).click()
+  within(panel()).getByRole('button', { name: '平台上没有这次任务，重新提交' }).click()
   await within(panel()).findByRole('group', { name: '重新提交确认' })
   within(panel()).getByRole('button', { name: '重新提交' }).click()
   expect(await within(panel()).findByRole('alert')).toBeTruthy()
@@ -458,6 +462,7 @@ it('原 Key 失效：保留重新获取和标记已处理，当前组重提必�
     },
   )
   await within(panel()).findByTestId('job-recovery')
+  await f.user.click(within(panel()).getByRole('button', { name: '高级选项' }))
   expect(within(panel()).getByRole('button', { name: '重新获取' })).toBeTruthy()
   expect(within(panel()).getByRole('button', { name: '标记已处理' })).toBeTruthy()
   await f.user.click(within(panel()).getByRole('button', { name: '用当前 Key 重新提交' }))
@@ -489,7 +494,9 @@ it('配音音色所属 Key 失效时不提供重提，只提示换音色并允�
     '音色「旁白」所属的 Key「默认」已删除，请在节点上改用其他音色，或重新复刻后再运行。',
   )
   expect(within(recovery).queryByRole('button', { name: '用当前 Key 重新提交' })).toBeNull()
-  expect(within(recovery).queryByRole('button', { name: '确认未受理，重新提交' })).toBeNull()
+  expect(
+    within(recovery).queryByRole('button', { name: '平台上没有这次任务，重新提交' }),
+  ).toBeNull()
   expect(within(recovery).getByRole('button', { name: '标记已处理' })).toBeTruthy()
 })
 
@@ -797,7 +804,7 @@ it('复制核查信息失败可重试，成功后给出确认', async () => {
     groups: [],
   })
   await within(panel()).findByRole('button', { name: '复制核查信息' })
-  expect(within(panel()).queryByRole('button', { name: '填写平台任务 ID' })).toBeNull()
+  expect(within(panel()).queryByRole('button', { name: '手动填任务 ID' })).toBeNull()
   // 渲染会重装 clipboard 属性：渲染后再替换对象上的方法
   const original = navigator.clipboard.writeText.bind(navigator.clipboard)
   navigator.clipboard.writeText = writeText
@@ -825,7 +832,8 @@ it('平台任务 ID 的组字 Enter 不提交，Escape 分层退出', async () =
     },
   )
   await within(panel()).findByTestId('job-recovery')
-  const attach = within(panel()).getByRole('button', { name: '填写平台任务 ID' })
+  await f.user.click(within(panel()).getByRole('button', { name: '高级选项' }))
+  const attach = within(panel()).getByRole('button', { name: '手动填任务 ID' })
   attach.click()
   const input = await within(panel()).findByRole<HTMLInputElement>('textbox', {
     name: '平台任务 ID',
@@ -841,7 +849,7 @@ it('平台任务 ID 的组字 Enter 不提交，Escape 分层退出', async () =
   await waitFor(() =>
     expect(within(panel()).queryByRole('textbox', { name: '平台任务 ID' })).toBeNull(),
   )
-  const reopened = within(panel()).getByRole('button', { name: '填写平台任务 ID' })
+  const reopened = within(panel()).getByRole('button', { name: '手动填任务 ID' })
   expect(document.activeElement).toBe(reopened)
   // 第二层 Escape 收起面板，焦点回到工具条
   fireEvent.keyDown(document, { key: 'Escape' })

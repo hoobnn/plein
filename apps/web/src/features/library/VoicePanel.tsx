@@ -166,11 +166,12 @@ function VoiceRow({ voice }: { voice: Voice }) {
   const credentialTag = voiceCredentialTag(voice, provider)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const status = voice.message?.startsWith('提交结果未知')
-    ? { label: '待核查', tone: 'ui-tag-warning' }
-    : voice.source === 'register' && voice.status === 'ready'
-      ? { label: '已登记 · 未验证', tone: 'ui-tag-warning' }
-      : STATUS[voice.status]
+  const status =
+    voice.message?.startsWith('平台暂时没回结果') || voice.message?.startsWith('提交结果未知')
+      ? { label: '待核查', tone: 'ui-tag-warning' }
+      : voice.source === 'register' && voice.status === 'ready'
+        ? { label: '已登记 · 未验证', tone: 'ui-tag-warning' }
+        : STATUS[voice.status]
   const traits = voiceTraits(voice)
   const run = async (fn: () => Promise<void>) => {
     setPending(true)

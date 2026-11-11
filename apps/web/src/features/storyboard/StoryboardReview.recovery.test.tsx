@@ -105,10 +105,11 @@ it.each(['attach', 'confirm', 'error'] as const)(
   '最新原任务变化清除旧 %s 草稿，只向新任务恢复',
   async (draft) => {
     const f = await setup()
+    await f.user.click(screen.getByRole('button', { name: '高级选项' }))
     if (draft === 'confirm')
-      await f.user.click(screen.getByRole('button', { name: '确认未受理，重新提交' }))
+      await f.user.click(screen.getByRole('button', { name: '平台上没有这次任务，重新提交' }))
     else {
-      await f.user.click(screen.getByRole('button', { name: '填写平台任务 ID' }))
+      await f.user.click(screen.getByRole('button', { name: '手动填任务 ID' }))
       await f.user.type(screen.getByRole('textbox', { name: '平台任务 ID' }), 'old-id')
       if (draft === 'error') {
         f.fail()
@@ -120,7 +121,8 @@ it.each(['attach', 'confirm', 'error'] as const)(
     expect(screen.queryByRole('textbox', { name: '平台任务 ID' })).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.queryByRole('button', { name: '重新提交' })).toBeNull()
-    await f.user.click(screen.getByRole('button', { name: '填写平台任务 ID' }))
+    await f.user.click(screen.getByRole('button', { name: '高级选项' }))
+    await f.user.click(screen.getByRole('button', { name: '手动填任务 ID' }))
     await f.user.type(screen.getByRole('textbox', { name: '平台任务 ID' }), 'new-id')
     await f.user.click(screen.getByRole('button', { name: '接着取结果' }))
     await waitFor(() =>
@@ -133,12 +135,14 @@ it.each(['attach', 'confirm', 'error'] as const)(
 it('旧恢复应答迟到不清空新任务未提交的 ID', async () => {
   const f = await setup()
   f.hold()
-  await f.user.click(screen.getByRole('button', { name: '填写平台任务 ID' }))
+  await f.user.click(screen.getByRole('button', { name: '高级选项' }))
+  await f.user.click(screen.getByRole('button', { name: '手动填任务 ID' }))
   await f.user.type(screen.getByRole('textbox', { name: '平台任务 ID' }), 'old-id')
   await f.user.click(screen.getByRole('button', { name: '接着取结果' }))
   await waitFor(() => expect(f.calls).toHaveLength(1))
   await f.next()
-  await f.user.click(screen.getByRole('button', { name: '填写平台任务 ID' }))
+  await f.user.click(screen.getByRole('button', { name: '高级选项' }))
+  await f.user.click(screen.getByRole('button', { name: '手动填任务 ID' }))
   await f.user.type(screen.getByRole('textbox', { name: '平台任务 ID' }), 'new-unsent')
   await act(async () => {
     f.release()

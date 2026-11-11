@@ -799,6 +799,9 @@ export function RecoveryBlock(props: {
     restoreAttachFocus.current = true
     setAttach(null)
   }
+  const hasAdvanced = actions.attach || actions.resubmit
+  const [advanced, setAdvanced] = useState(false)
+  const advancedOpen = hasAdvanced && advanced
   const [confirm, setConfirm] = useState(false)
   const confirmTrigger = useRef<HTMLButtonElement>(null)
   const confirmCancel = useRef<HTMLButtonElement>(null)
@@ -894,29 +897,7 @@ export function RecoveryBlock(props: {
             disabled={busy}
             onClick={() => void act({ action: 'refetch' })}
           >
-            {r.state === 'submit_unknown' ? '重新核查' : '重新获取'}
-          </button>
-        )}
-        {actions.attach && attach === null && (
-          <button
-            ref={attachTrigger}
-            type="button"
-            className={btn}
-            disabled={busy}
-            onClick={() => setAttach('')}
-          >
-            填写平台任务 ID
-          </button>
-        )}
-        {actions.resubmit && !confirm && (
-          <button
-            ref={confirmTrigger}
-            type="button"
-            className={btn}
-            disabled={busy}
-            onClick={() => setConfirm(true)}
-          >
-            {r.credentialLost ? '用当前 Key 重新提交' : '确认未受理，重新提交'}
+            {r.state === 'submit_unknown' ? '再查一次' : '重新获取'}
           </button>
         )}
         {actions.dismiss && (
@@ -948,6 +929,43 @@ export function RecoveryBlock(props: {
           </button>
         )}
       </div>
+      {hasAdvanced && (
+        <button
+          type="button"
+          className="ui-btn ui-btn-quiet ui-btn-xs self-start"
+          aria-expanded={advancedOpen}
+          onClick={() => setAdvanced((v) => !v)}
+        >
+          高级选项
+          <Icon name={advancedOpen ? 'chevronUp' : 'chevronDown'} size={12} />
+        </button>
+      )}
+      {advancedOpen && (
+        <div className="flex flex-wrap gap-1" role="group" aria-label="高级选项">
+          {actions.attach && attach === null && (
+            <button
+              ref={attachTrigger}
+              type="button"
+              className={btn}
+              disabled={busy}
+              onClick={() => setAttach('')}
+            >
+              手动填任务 ID
+            </button>
+          )}
+          {actions.resubmit && !confirm && (
+            <button
+              ref={confirmTrigger}
+              type="button"
+              className={btn}
+              disabled={busy}
+              onClick={() => setConfirm(true)}
+            >
+              {r.credentialLost ? '用当前 Key 重新提交' : '平台上没有这次任务，重新提交'}
+            </button>
+          )}
+        </div>
+      )}
       {attach !== null && (
         <form
           className="flex gap-1"
@@ -974,7 +992,7 @@ export function RecoveryBlock(props: {
           <input
             ref={attachInput}
             className="ui-input h-7 min-w-0 flex-1 text-xs"
-            placeholder={`${r.provider ?? '平台'}控制台里的任务 ID`}
+            placeholder={`在${r.provider ?? '平台'}后台看到的任务 ID`}
             aria-label="平台任务 ID"
             disabled={busy}
             value={attach}
@@ -1023,7 +1041,7 @@ export function RecoveryBlock(props: {
         >
           <p className="text-2xs text-ink-muted">
             {credentialConfirmation(r) ??
-              `只在确认${r.provider ?? '平台'}上没有这次任务时重新提交；平台若其实已受理，会再生成一次、可能重复计费。`}
+              `只在确认${r.provider ?? '平台'}上没有这次任务时才重新提交；若平台其实已经在生成，会再生成一次，可能重复扣费。`}
           </p>
           <div className="flex gap-1">
             <button

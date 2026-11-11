@@ -163,7 +163,7 @@ describe('制作总览事实', () => {
       .filter((i) => i.task)
       .map((i) => i.message)
       .join('\n')
-    expect(messages).toContain('提交结果未知')
+    expect(messages).toContain('平台暂时没回结果')
     expect(messages).toContain('结果没存到本地')
     expect(messages).toContain('待采用')
     expect(messages).toContain('失败')

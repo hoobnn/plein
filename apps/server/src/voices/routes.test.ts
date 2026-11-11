@@ -263,7 +263,7 @@ it('远端提交结果未知保留音色 ID，不自动重试；试听落库失�
   expect(pending).toMatchObject({
     status: 'training',
     voiceId: expect.stringMatching(/^plein/),
-    message: expect.stringContaining('提交结果未知'),
+    message: expect.stringContaining('平台暂时没回结果'),
   })
   expect(pending.message).toContain(pending.voiceId)
   expect(call).toHaveBeenCalledTimes(1)

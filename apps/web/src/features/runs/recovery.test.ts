@@ -48,9 +48,9 @@ it.each([
     { ...none, refetch: true, dismiss: true },
   ],
   ['输入已变', { state: 'review' }, { ...none, review: true }],
-  ['提交结果未知', { state: 'submit_unknown' }, { ...none, resubmit: true, dismiss: true }],
+  ['平台暂时没回结果', { state: 'submit_unknown' }, { ...none, resubmit: true, dismiss: true }],
   [
-    '提交结果未知且可填平台任务 ID',
+    '平台暂时没回结果且可填平台任务 ID',
     { state: 'submit_unknown', attachable: true },
     { ...none, attach: true, resubmit: true, dismiss: true },
   ],
@@ -119,11 +119,11 @@ it.each([
     { title: '输入已变，需要重新审查', detail: '没有提交，不会产生费用', tone: 'warning' },
   ],
   [
-    '提交结果未知时提醒先核对',
+    '平台暂时没回结果时提醒先核对',
     job('failed', { state: 'submit_unknown' }),
     {
-      title: '提交结果未知',
-      detail: '没收到平台的确认，无法判断是否已受理。请先到平台控制台核对；重新提交可能重复计费',
+      title: '平台暂时没回结果',
+      detail: '没法自动确认平台是否已经受理。重新提交可能重复扣费，请在「高级选项」里处理',
       tone: 'warning',
     },
   ],
