@@ -6,6 +6,7 @@ import { ApiError, api } from '../api/client'
 import { queryKeys } from '../api/query'
 import { type LocalCapability, localCapabilities, localContext } from '../canvas/capabilities'
 import { useAgent } from '../features/agent/store'
+import { reopenWelcome } from '../features/onboarding/reopen'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { Icon, type IconName } from '../ui/icons'
@@ -30,7 +31,13 @@ type Command =
   | { kind: 'local'; cap: LocalCapability; input: Record<string, unknown> }
   | { kind: 'plugin'; cap: PluginCapabilityInfo }
 
-type Item = { kind: 'cap'; command: Command } | { kind: 'agent'; text: string }
+type Item =
+  | { kind: 'cap'; command: Command }
+  | { kind: 'agent'; text: string }
+  | { kind: 'welcome' }
+
+const WELCOME_TITLE = '打开新手引导'
+const WELCOME_WORDS = ['新手引导', '引导', '欢迎', '入门', '教程']
 
 /** 命令说明的第一句：列表里只放得下一行 */
 const brief = (text: string) => text.split(/[。：]/)[0] ?? text
@@ -95,6 +102,8 @@ function Palette({ canvasId, onClose }: { canvasId: string | null; onClose(): vo
       ({ cap }) => !q || cap.title.includes(q) || cap.name.includes(q.toLowerCase()),
     )
     const out: Item[] = hits.map((command) => ({ kind: 'cap', command }))
+    if (!q || WELCOME_WORDS.some((w) => w.includes(q) || q.includes(w)))
+      out.push({ kind: 'welcome' })
     if (q && canvasId) out.push({ kind: 'agent', text: q })
     return out
   }, [commands, q, canvasId])
@@ -107,6 +116,10 @@ function Palette({ canvasId, onClose }: { canvasId: string | null; onClose(): vo
 
   const run = async (item: Item) => {
     onClose()
+    if (item.kind === 'welcome') {
+      reopenWelcome()
+      return
+    }
     if (!engine) return
     const { notify } = useCanvas.getState()
     if (item.kind === 'agent') {
@@ -245,7 +258,7 @@ function Palette({ canvasId, onClose }: { canvasId: string | null; onClose(): vo
         )}
         {items.map((item, i) => (
           <div
-            key={item.kind === 'cap' ? `${item.command.kind}:${item.command.cap.name}` : 'agent'}
+            key={item.kind === 'cap' ? `${item.command.kind}:${item.command.cap.name}` : item.kind}
             id={`plein-palette-${i}`}
             data-index={i}
             role="option"
@@ -283,6 +296,18 @@ function Palette({ canvasId, onClose }: { canvasId: string | null; onClose(): vo
                     {item.command.cap.plugin}
                   </span>
                 )}
+              </>
+            ) : item.kind === 'welcome' ? (
+              <>
+                <span className="flex size-7 flex-none items-center justify-center plein-palette-icon rounded-md bg-hover text-ink-muted">
+                  <Icon name="info" />
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate">{WELCOME_TITLE}</span>
+                  <span className="truncate text-2xs text-ink-subtle">
+                    重新查看模型平台设置和开始方式
+                  </span>
+                </span>
               </>
             ) : (
               <>

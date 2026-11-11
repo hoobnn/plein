@@ -11,6 +11,7 @@ import { prefetchIdle } from './ui/idle'
 import { TooltipHost } from './ui/Tooltip'
 import { useCanvas } from './stores/canvas'
 import { useLibrary } from './features/library/store'
+import { useWelcomeReopen } from './features/onboarding/reopen'
 import { useRoute } from './router'
 import { useSession } from './stores/session'
 import { Mascot } from './ui/Mascot'
@@ -22,6 +23,9 @@ const Home = lazy(() => import('./pages/Home').then((m) => ({ default: m.Home })
 const Login = lazy(() => import('./pages/Login').then((m) => ({ default: m.Login })))
 const ProjectOpen = lazy(() =>
   import('./pages/ProjectOpen').then((m) => ({ default: m.ProjectOpen })),
+)
+const WelcomeReopenHost = lazy(() =>
+  import('./features/onboarding/WelcomeReopenHost').then((m) => ({ default: m.WelcomeReopenHost })),
 )
 const AgentDock = lazy(() =>
   import('./features/agent/Agent').then((m) => ({ default: m.AgentDock })),
@@ -54,6 +58,7 @@ export function App() {
   const mediaOpen = useMediaLibrary((s) => !!s.open || !!s.target)
   const checkpointsOpen = useCheckpoints((s) => !!s.open)
   const ready = useSession((s) => s.status === 'ready' && !!s.info?.principal)
+  const welcomeOpen = useWelcomeReopen((s) => s.used)
   const unauthenticated = useSession(
     (s) => s.status === 'ready' && !!s.info?.authRequired && !s.info.principal,
   )
@@ -144,6 +149,7 @@ export function App() {
           </button>
         ) : null}
       </Suspense>
+      <Suspense fallback={null}>{ready && welcomeOpen && <WelcomeReopenHost />}</Suspense>
       <Suspense fallback={null}>{ready && libraryOpen && <LibraryPanel />}</Suspense>
       <Suspense fallback={null}>{ready && mediaOpen && <MediaLibraryPanel />}</Suspense>
       <Suspense fallback={null}>{ready && checkpointsOpen && <CheckpointsPanel />}</Suspense>
