@@ -97,7 +97,7 @@ Every result is a new asset with its source recorded; originals are never touche
 - The job panel shows progress, automatic retries and failure reasons; nodes whose parameters or upstream changed are marked "needs re-run"
 - Actual-input preview: before generating, see the model, the prompt with `@` expanded, and which reference images are sent or dropped by the model's limit
 - View impact: after a change, list the affected nodes with causes and suggestions (redo / review / keep), redo only the ticked ones in dependency order, and reuse matching candidates
-- Failure recovery: when a submission's outcome is unknown or polling / download fails, Plein never resubmits on its own (to avoid double billing); the job panel offers "Check again" by default, with attaching a platform task ID or resubmitting after you confirm it was not accepted under "Advanced options"
+- Failure recovery: when a submission's outcome is unknown or polling / download fails, Plein never resubmits on its own (to avoid double billing); the job panel offers "Check again" (platform did not respond) or "Refetch" (download / save failed) as applicable, with attaching a platform task ID or resubmitting after you confirm it was not accepted under "Advanced options"
 
 ### Agent "Xiaoman"
 

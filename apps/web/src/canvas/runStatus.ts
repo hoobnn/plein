@@ -123,7 +123,7 @@ const FAILURE: Record<string, { title: string; settings?: boolean }> = {
   unavailable: { title: '平台暂时不可用' },
   missing_input: { title: '缺少输入' },
   not_installed: { title: '节点没有安装' },
-  submit_unknown: { title: '平台暂时没回结果，请到任务面板再查一次' },
+  submit_unknown: { title: '平台暂时没回结果，请到任务面板处理' },
   fetch_failed: { title: '平台已生成，结果没存到本地' },
   input_changed: { title: '输入已变，需要重新审查' },
 }
