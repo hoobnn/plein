@@ -224,7 +224,7 @@ function PrimaryAction({
         同步改动
       </button>
     )
-  if (nextRole && nextRole !== 'expand') {
+  if (nextRole) {
     const { label, icon } = primaryBatch[nextRole]
     return (
       <button type="button" className={cls} onClick={() => onBatch(nextRole)}>
