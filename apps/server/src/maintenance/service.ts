@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, lstatSync, renameSync } from 'node:fs'
 import { chmod, lstat, mkdir, readdir, rename, rm } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname, join, posix } from 'node:path'
 import { setImmediate } from 'node:timers/promises'
 import {
   MaintenanceSettings,
@@ -352,7 +352,8 @@ export class MaintenanceService {
       const backup = (await this.backupList()).find((b) => b.id === id)
       if (!backup) throw new MaintenanceError('not_found', '备份不存在')
       // 先校验所选备份，坏备份不该耗掉一次当前数据的备份
-      const stage = join('restored', randomUUID())
+      // 登记里的相对路径固定用 /，与校验正则一致，Windows 下也不变
+      const stage = posix.join('restored', randomUUID())
       const missingAssets = await restoreBackup(backup.path, join(this.root, stage))
       try {
         // 不走 backup()：它会按保留份数轮换，可能挤掉正要恢复的这份
@@ -361,7 +362,7 @@ export class MaintenanceService {
           root: join(this.root, 'backups'),
           now: this.now(),
         })
-        await clearPendingRestore(this.deps.dataDir)
+        await clearPendingRestore(this.deps.dataDir, stage)
         const requestedAt = this.now()
         await writePendingRestore(this.deps.dataDir, {
           stage,

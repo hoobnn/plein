@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, posix } from 'node:path'
 import { z } from 'zod'
 import { CONFIGS } from './backup'
 
@@ -59,12 +59,34 @@ export async function writePendingRestore(
   await rename(tmp, file)
 }
 
-/** 取消待恢复：删掉登记和暂存副本；没有登记时什么也不做 */
-export async function clearPendingRestore(dataDir: string) {
+/**
+ * 取消待恢复：删掉登记和暂存副本；没有登记时什么也不做。
+ * 登记读不出（缺失或损坏）时，restored 下没有任何登记指向的暂存副本都是孤儿，一并清掉。
+ * keepStage 是调用方刚建好、尚未登记的暂存副本（相对 maintenance），不能删。
+ */
+export async function clearPendingRestore(dataDir: string, keepStage?: string) {
   const pending = await readPendingRestore(dataDir)
   await rm(pendingFile(dataDir), { force: true })
-  if (pending)
+  if (pending) {
     await rm(join(dataDir, 'maintenance', pending.stage), { recursive: true, force: true })
+    return
+  }
+  const restored = join(dataDir, 'maintenance', 'restored')
+  const keep = keepStage ? posix.basename(keepStage) : null
+  const entries = await readdir(restored, { withFileTypes: true }).catch(() => [])
+  for (const entry of entries)
+    if (entry.isDirectory() && entry.name !== keep)
+      await rm(join(restored, entry.name), { recursive: true, force: true })
+}
+
+/** replaced 下只留最近几份（目录名是登记时间戳），更旧的删除 */
+const KEEP_REPLACED = 2
+async function pruneReplaced(dataDir: string, keep = KEEP_REPLACED) {
+  const root = join(dataDir, 'maintenance', 'replaced')
+  const names = (await readdir(root).catch(() => [] as string[]))
+    .filter((name) => /^\d+$/.test(name))
+    .sort((a, b) => Number(b) - Number(a))
+  for (const name of names.slice(keep)) await rm(join(root, name), { recursive: true, force: true })
 }
 
 /**
@@ -103,5 +125,7 @@ export async function applyPendingRestore(
   await rm(stage, { recursive: true, force: true })
   await rm(file, { force: true })
   log(`已从备份 ${pending.backupId} 恢复数据，原数据保留在 ${replaced}`)
+  // 保留策略失败不该挡住已完成的恢复
+  await pruneReplaced(dataDir).catch(() => {})
   return true
 }

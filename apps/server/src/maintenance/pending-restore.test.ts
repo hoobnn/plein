@@ -1,10 +1,10 @@
 import { existsSync } from 'node:fs'
-import { readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
 import { describe, expect, it } from 'vite-plus/test'
 import { bootServer, request } from '../testing'
-import { applyPendingRestore, readPendingRestore } from './pending-restore'
+import { applyPendingRestore, clearPendingRestore, readPendingRestore } from './pending-restore'
 
 describe('应用内恢复', () => {
   it('登记恢复时先备份当前数据，运行中的数据不动，启动前换入并保留旧数据', async () => {
@@ -97,5 +97,47 @@ describe('应用内恢复', () => {
     expect((await request(f.server, '/api/maintenance/restore', { method: 'DELETE' })).status).toBe(
       204,
     )
+  })
+
+  it('登记文件损坏时，取消会清掉 restored 下的孤儿暂存目录，其他目录不动', async () => {
+    const f = await bootServer()
+    const maintenance = join(f.dataDir, 'maintenance')
+    const orphan = join(maintenance, 'restored', '11111111-1111-4111-8111-111111111111')
+    await mkdir(orphan, { recursive: true })
+    await writeFile(join(orphan, 'plein.db'), 'x')
+    await writeFile(join(maintenance, 'pending-restore.json'), '{坏掉')
+    await mkdir(join(maintenance, 'backups', 'keep'), { recursive: true })
+    await f.server.maintenance!.cancelRestore()
+    expect(existsSync(orphan)).toBe(false)
+    expect(existsSync(join(maintenance, 'pending-restore.json'))).toBe(false)
+    expect(existsSync(join(maintenance, 'backups', 'keep'))).toBe(true)
+  })
+
+  it('清理孤儿时保留调用方刚建好的暂存副本，登记里的暂存路径用 / 拼接', async () => {
+    const f = await bootServer()
+    const maintenance = join(f.dataDir, 'maintenance')
+    const fresh = '22222222-2222-4222-8222-222222222222'
+    await mkdir(join(maintenance, 'restored', fresh), { recursive: true })
+    await writeFile(join(maintenance, 'pending-restore.json'), 'oops')
+    await clearPendingRestore(f.dataDir, `restored/${fresh}`)
+    expect(existsSync(join(maintenance, 'restored', fresh))).toBe(true)
+
+    const backup = await f.server.maintenance!.backup()
+    await f.server.maintenance!.scheduleRestore(backup.id)
+    expect((await readPendingRestore(f.dataDir))!.stage).toMatch(/^restored\/[0-9a-f-]{36}$/)
+  })
+
+  it('恢复成功后 replaced 只保留最近 2 份', async () => {
+    const f = await bootServer()
+    const service = f.server.maintenance!
+    const backup = await service.backup()
+    const replacedRoot = join(f.dataDir, 'maintenance', 'replaced')
+    for (const stamp of ['100', '200', '300'])
+      await mkdir(join(replacedRoot, stamp), { recursive: true })
+    const scheduled = await service.scheduleRestore(backup.id)
+    await f.close()
+    expect(await applyPendingRestore(f.dataDir, () => {})).toBe(true)
+    const left = (await readdir(replacedRoot)).sort()
+    expect(left).toEqual(['300', String(scheduled.requestedAt)].sort())
   })
 })
