@@ -17,6 +17,13 @@ describe('方舟套餐目录', () => {
       'doubao-seed-2-1-lite-260915',
       'doubao-seed-2-1-turbo-260628',
       'doubao-seed-evolving',
+      // modelbay 0.5.0 起第三方文本模型开放按量渠道，按量 ID 带日期后缀
+      'deepseek-v4-flash-ga-260731',
+      'deepseek-v4-pro-ga-260813',
+      'deepseek-v4-1-flash-261017',
+      'deepseek-v4-1-flash-economy-261017',
+      'glm-5-3-flash-260828',
+      'kimi-k3-1-pro-261024',
       'custom-chat',
     ])
   })
