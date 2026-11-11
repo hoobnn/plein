@@ -112,6 +112,8 @@ const PLAN_DIRECTORY_SECRETS = [
 export const arkProvider = adapterToProvider(apiAdapter, {
   id: 'volc/ark',
   channel: 'ark',
+  // 「获取密钥」直达创建 API Key 的控制台页
+  docsUrl: 'https://ark.volcengine.com/region:cn-beijing/apiKey',
   description: 'Doubao Seed 对话、Seedream 图片及 Seedance 视频；支持自定义模型 / Endpoint ID',
   settings,
   secrets: [{ name: 'ARK_API_KEY', title: '火山方舟 API Key', required: true }, ...TOS_SECRETS],

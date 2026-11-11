@@ -56,6 +56,7 @@ export const bailianProvider = adapterToProvider(adapter, {
   title: '阿里云百炼',
   description: '千问对话、图像、万相视频和语音合成；连接测试仅检查本地配置，不调用计费模型',
   testScope: 'configuration',
+  docsUrl: 'https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key',
   channel: 'bailian',
   models: adapterModels(adapter, 'bailian').filter((spec) => !unsupportedInPlein(spec.id)),
   // 适配器会探测 BAILIAN_API_KEY、域名与轮询覆盖等 MCP / CLI 用的密钥名，宿主沙箱只认清单声明的

@@ -18,6 +18,7 @@ const settings = z.object({
 export const minimaxProvider = adapterToProvider(adapter, {
   id: 'minimax/api',
   title: 'MiniMax',
+  docsUrl: 'https://platform.minimax.cn/console/keys?tab=api-keys',
   description: '对话、图片、H3 音画视频、语音和音乐；生成使用按量 API Key',
   settings,
   secrets: [

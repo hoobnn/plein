@@ -29,8 +29,7 @@ export const doubaoProvider = adapterToProvider(adapter, {
   id: 'doubao/speech',
   title: '豆包语音',
   description: '语音合成、Seed Audio 音乐与音效、录音文件极速识别；测试仅检查本地配置',
-  docsUrl:
-    'https://docs.volcengine.com/docs/DoubaoVoice/unidirectional-streaming-text-to-speech-http?lang=zh',
+  docsUrl: 'https://console.volcengine.com/speech/new/setting/apikeys?projectName=default',
   settings: speechSettings,
   secrets: secrets.map((name) => ({
     name,

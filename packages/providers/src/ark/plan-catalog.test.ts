@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vite-plus/test'
 import { arkPlanProvider, arkProvider } from './index'
 
 describe('方舟套餐目录', () => {
-  it('文档入口是套餐概览页，按量渠道仍是模型列表页', () => {
+  it('文档入口是套餐概览页，按量渠道直达创建 API Key 的页面', () => {
     expect(arkPlanProvider.docsUrl).toBe(
       'https://docs.volcengine.com/docs/ark/agent-plan-personal-plan-overview?lang=zh',
     )
-    expect(arkProvider.docsUrl).toBe('https://docs.volcengine.com/docs/ark/model-list?lang=zh')
+    expect(arkProvider.docsUrl).toBe('https://ark.volcengine.com/region:cn-beijing/apiKey')
   })
 
   it('按量对话模型的顺序与原目录一致，第一个是 doubao-seed-2-1-pro-260628', () => {
