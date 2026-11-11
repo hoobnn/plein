@@ -55,6 +55,6 @@ describe('estimate_cost', () => {
     expect(down.nodes.find((n) => n.id === a)!.will_run).toBe('run')
 
     await expect(invoke('estimate_cost', { id: 'nope', scope: 'node' })).rejects.toThrow('不存在')
-    await expect(invoke('estimate_cost', { id: a, scope: 'frame' })).rejects.toThrow('Frame')
+    await expect(invoke('estimate_cost', { id: a, scope: 'frame' })).rejects.toThrow('分组框')
   })
 })

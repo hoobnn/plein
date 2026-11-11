@@ -1141,7 +1141,7 @@ export class NodeRuns implements BatchHost {
     options: GroupRunOptions,
   ): GroupRunStarted {
     const targets = this.rooms.withDoc(canvasId, (doc) => {
-      if (doc.get(frameId)?.kind !== 'frame') throw new NodeRunError('not_found', 'Frame 不存在')
+      if (doc.get(frameId)?.kind !== 'frame') throw new NodeRunError('not_found', '分组框不存在')
       return this.groupTargets(doc, frameId, options.video)
     })
     const id = newId('grp')

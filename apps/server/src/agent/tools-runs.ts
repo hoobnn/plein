@@ -194,7 +194,7 @@ export const runFrame = serverCapability({
   name: 'run_frame',
   title: '整组运行',
   description:
-    '整组运行一个 Frame 里的节点（按连线顺序，没改动的沿用旧结果）。默认不含视频节点，video=true 才包括。会产生费用，需要用户确认。立即返回 group_id，用 wait_for_group 等结果。',
+    '整组运行一个分组框里的节点（按连线顺序，没改动的沿用旧结果）。默认不含视频节点，video=true 才包括。会产生费用，需要用户确认。立即返回 group_id，用 wait_for_group 等结果。',
   group: 'run',
   where: 'server',
   effect: 'run',

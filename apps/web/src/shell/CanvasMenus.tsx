@@ -356,12 +356,12 @@ function ContextMenu({
   }
   const notify = useCanvas((s) => s.notify)
   const runGroup = (id: string, video: boolean) =>
-    runFrame(id, engine.doc.get(id)?.name ?? 'Frame', { video })
+    runFrame(id, engine.doc.get(id)?.name ?? '分组框', { video })
   const flow = (id: string, scope: 'upstream' | 'downstream') => {
     const el = engine.doc.get(id)
     return runFlowFrom(id, scope, el?.name ?? findNode(catalog, el?.nodeType)?.title ?? '节点')
   }
-  const saveFrame = (id: string) => saveAsTemplate(engine, id, engine.doc.get(id)?.name ?? 'Frame')
+  const saveFrame = (id: string) => saveAsTemplate(engine, id, engine.doc.get(id)?.name ?? '分组框')
   const ids = engine.selection.values()
   const single = ids.length === 1 ? engine.scene.get(ids[0]!) : undefined
   const node: NodeInfo | undefined =

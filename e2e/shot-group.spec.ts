@@ -56,7 +56,7 @@ test.describe('镜头素材浏览器冒烟', { tag: '@core' }, () => {
     await zoomTo(page, [frame.id])
     await expect(page.locator('.plein-shot-badge')).toHaveCount(4)
     await page.evaluate((id) => window.__plein.engine.selection.set([id]), frame.id)
-    const bar = page.getByRole('toolbar', { name: 'Frame 操作', exact: true })
+    const bar = page.getByRole('toolbar', { name: '分组框操作', exact: true })
     await bar.getByRole('button', { name: '分镜组', exact: true }).click()
     const panel = page.getByRole('dialog', { name: '分镜组', exact: true })
     await panel.getByRole('button', { name: '宫格 4上移', exact: true }).click()

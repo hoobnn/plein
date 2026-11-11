@@ -91,7 +91,7 @@ export const textNode = defineNode({
 export const llmNode = defineNode({
   type: 'plein/llm',
   version: 1,
-  title: 'LLM',
+  title: '文本生成',
   description: '用对话模型生成或改写文本',
   category: 'text',
   capability: 'text.chat',
@@ -383,7 +383,7 @@ export const corePlugin = definePlugin({
     id: 'plein/core',
     version: '0.1.0',
     name: '基础节点',
-    description: '文本、LLM、图片、视频、配音、配乐等与平台无关的基础节点',
+    description: '文本、文本生成、图片、视频、配音、配乐等与平台无关的基础节点',
     engines: { plein: `^${PLUGIN_API_VERSION}` },
     contributes: {
       nodes: [

@@ -52,7 +52,7 @@ export const duplicate = defineCapability({
 export const group = defineCapability({
   name: 'group_elements',
   title: '打组',
-  description: '用一个 Frame 包住这些元素（可命名，如“第一场”）。返回 Frame id。',
+  description: '用一个分组框包住这些元素（可命名，如“第一场”）。返回分组框 id。',
   group: 'edit',
   where: 'doc',
   effect: 'edit',
@@ -70,7 +70,7 @@ export const group = defineCapability({
 export const ungroup = defineCapability({
   name: 'ungroup',
   title: '解组',
-  description: '去掉 Frame、保留里面的元素（位置不变）。返回原来里面的元素 id。',
+  description: '去掉分组框、保留里面的元素（位置不变）。返回原来里面的元素 id。',
   group: 'edit',
   where: 'doc',
   effect: 'edit',
@@ -83,7 +83,7 @@ export const ungroup = defineCapability({
   run: (ctx, a) =>
     ctx.withDoc((doc) => {
       if (need(doc, a.frame_id).kind !== 'frame')
-        throw new CapabilityError(`${a.frame_id} 不是 Frame`)
+        throw new CapabilityError(`${a.frame_id} 不是分组框`)
       return { ids: ungroupElements(doc, a.frame_id) }
     }),
 })
@@ -92,7 +92,7 @@ export const arrange = defineCapability({
   name: 'arrange_elements',
   title: '整理布局',
   description:
-    '按连线自动排版：上游在左、下游在右，同层纵向排开，Frame 内的元素在 Frame 内整理。不给 ids 时整理整个画布。',
+    '按连线自动排版：上游在左、下游在右，同层纵向排开，分组框内的元素在分组框内整理。不给 ids 时整理整个画布。',
   group: 'edit',
   where: 'doc',
   effect: 'edit',

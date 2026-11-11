@@ -55,9 +55,9 @@ const nodeIcon = (n: NodeInfo): IconName =>
 
 /** 按创作用途组织，不把插件的技术分类直接暴露给用户。 */
 const SECTIONS = ['文本', '图片', '视频', '音频', '主体设定', '分镜与剪辑', '画布工具']
-const NODE_TITLES: Record<string, string> = {
-  'plein/llm': '文本生成',
-  'plein/sequence': '剪辑时间线',
+/** 个别节点的列表说明比注册描述更贴近创作者的说法 */
+const NODE_HINTS: Record<string, string> = {
+  'plein/sequence': '剪辑时间线：排序、配音、字幕、导出成片',
 }
 const SUBJECT_TYPES = new Set([
   'plein/character',
@@ -100,7 +100,7 @@ const BASIC: Array<{
   {
     id: 'frame',
     title: '分组框',
-    hint: 'Frame 分组容器，可整组运行、存为模板',
+    hint: '分组框：把一批节点装进一组，可整组运行、存为模板',
     icon: 'frame',
     input: { kind: 'frame', w: 640, h: 400, name: '新场景' },
   },
@@ -109,7 +109,6 @@ const BASIC: Array<{
 interface Item {
   id: string
   title: string
-  originalTitle?: string
   hint?: string
   icon: IconName
   section: string
@@ -214,9 +213,8 @@ export function AddMenu({
     for (const n of pool)
       list.push({
         id: `${n.type}@${n.version}`,
-        title: NODE_TITLES[n.type] ?? n.title,
-        originalTitle: n.title,
-        hint: `${n.title} · ${n.description ?? ''}`,
+        title: n.title,
+        hint: NODE_HINTS[n.type] ?? `${n.title} · ${n.description ?? ''}`,
         icon: nodeIcon(n),
         section: nodeSection(n),
         run: (p) => placeElement(engine, nodeElement(n), p, from),
@@ -307,9 +305,7 @@ export function AddMenu({
                   : title.toLowerCase().includes(q)
                     ? 2
                     : 3
-            const rank = (item: Item) =>
-              Math.min(score(item.title), score(item.originalTitle ?? item.title))
-            return rank(a) - rank(b)
+            return score(a.title) - score(b.title)
           })
       : list
   }, [nodes, catalog, templates, engine, from, query, canImport, insertPluginTemplate])

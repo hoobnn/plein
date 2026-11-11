@@ -97,7 +97,7 @@ function targetSignature(doc: PleinDoc) {
 /** 整组运行显示 Frame 名；运行到此处 / 运行下游显示出发的节点 */
 function groupName(g: GroupInfo, doc: PleinDoc, catalog: Catalog | null) {
   const el = doc.get(g.frameId)
-  if (g.scope === 'frame') return el?.name ?? 'Frame'
+  if (g.scope === 'frame') return el?.name ?? '分组框'
   if (g.scope === 'impact')
     return el?.nodeType === STORYBOARD_TYPE
       ? `「${el.name ?? '分镜'}」批量生成`
@@ -283,7 +283,7 @@ export function Tasks() {
                 compact
                 icon="tasks"
                 title="还没有运行过节点"
-                hint="点节点上的「生成」或 Frame 的「整组运行」后，任务会出现在这里。"
+                hint="点节点上的「生成」或分组框的「整组运行」后，任务会出现在这里。"
               />
             ) : (
               <>

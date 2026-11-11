@@ -331,12 +331,12 @@ export const shotGroup = serverCapability({
   name: 'shot_group',
   title: '分镜组',
   description:
-    '把一个 Frame 设成分镜组：组里的图片按顺序编号（画布上显示角标），能排版、拼成大图。order 给出的元素按给定顺序排在最前；arrange 为 true 时按顺序排成 cols 列网格（只挪位置不改大小，Frame 收到刚好包住）；clear 为 true 时取消分镜组，图片都留着。返回组里镜头的顺序。和 Frame 工具条上的「分镜组」是同一套规则。',
+    '把一个分组框设成分镜组：组里的图片按顺序编号（画布上显示角标），能排版、拼成大图。order 给出的元素按给定顺序排在最前；arrange 为 true 时按顺序排成 cols 列网格（只挪位置不改大小，分组框收到刚好包住）；clear 为 true 时取消分镜组，图片都留着。返回组里镜头的顺序。和分组框工具条上的「分镜组」是同一套规则。',
   group: 'edit',
   where: 'server',
   effect: 'edit',
   input: z.object({
-    frame_id: id.describe('Frame 元素'),
+    frame_id: id.describe('分组框元素'),
     order: z.array(id).max(64).optional().describe('想要的镜头顺序（元素 id），没列的接在后面'),
     arrange: z.boolean().default(false),
     cols: z.number().int().min(1).max(16).optional(),
@@ -345,7 +345,7 @@ export const shotGroup = serverCapability({
   run: (ctx, a) =>
     ctx.withDoc((doc) => {
       const frame = need(doc, a.frame_id)
-      if (frame.kind !== 'frame') throw new CapabilityError(`${a.frame_id} 不是 Frame`)
+      if (frame.kind !== 'frame') throw new CapabilityError(`${a.frame_id} 不是分组框`)
       if (a.clear) {
         clearShotGroup(doc, a.frame_id)
         return { frame_id: a.frame_id, shot_group: false }
@@ -366,12 +366,12 @@ export const makeCollage = serverCapability({
   name: 'make_collage',
   title: '拼成大图',
   description:
-    '把分镜组（不是分镜组的 Frame 先按阅读顺序编号）里的图片按顺序拼成一张大图，放在 Frame 右边；每格大小一致（取第一张的比例），等比放进格子，numbers 为 true 时在左上角印序号。返回新图片元素和实际像素。本地加工，不调模型。',
+    '把分镜组（不是分镜组的分组框先按阅读顺序编号）里的图片按顺序拼成一张大图，放在分组框右边；每格大小一致（取第一张的比例），等比放进格子，numbers 为 true 时在左上角印序号。返回新图片元素和实际像素。本地加工，不调模型。',
   group: 'media',
   where: 'server',
   effect: 'edit',
   input: z.object({
-    frame_id: id.describe('Frame 元素'),
+    frame_id: id.describe('分组框元素'),
     cols: z.number().int().min(1).max(16).optional().describe('列数，不填按分镜组记的列数'),
     numbers: z.boolean().default(true),
     name: z.string().max(100).optional(),
@@ -379,7 +379,7 @@ export const makeCollage = serverCapability({
   run: async (ctx, a) => {
     const src = ctx.withDoc((doc) => {
       const frame = need(doc, a.frame_id)
-      if (frame.kind !== 'frame') throw new CapabilityError(`${a.frame_id} 不是 Frame`)
+      if (frame.kind !== 'frame') throw new CapabilityError(`${a.frame_id} 不是分组框`)
       const assetIds = groupShots(doc, a.frame_id).flatMap((el) => {
         const m = elementMedia(el)
         return m?.kind === 'image' ? [m.assetId] : []

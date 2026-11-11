@@ -50,7 +50,7 @@ const QUICK_START: Array<{
     detail: '文生视频、图生视频、首尾帧、图片参考',
     icon: 'video',
   },
-  { type: 'plein/llm', title: '剧本创作', hint: '写剧本、改文案', icon: 'sparkle' },
+  { type: 'plein/llm', title: '文本生成', hint: '写剧本、改文案', icon: 'sparkle' },
   { type: 'plein/speech', title: '配音', hint: '台词转语音', icon: 'mic' },
   { type: 'plein/music', title: '配乐', hint: '按描述生成音乐', icon: 'music' },
 ]

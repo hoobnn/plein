@@ -43,7 +43,7 @@ export function placeNew(
           : spotAfterContent(doc, input.w, input.h)
   const parentId = a.parent_id ?? (a.near ? (doc.get(a.near)?.parentId ?? null) : null)
   if (parentId && doc.get(parentId)?.kind !== 'frame')
-    throw new CapabilityError(`${parentId} 不是 Frame`)
+    throw new CapabilityError(`${parentId} 不是分组框`)
   const origin = parentId ? (doc.worldRect(parentId) ?? { x: 0, y: 0 }) : { x: 0, y: 0 }
   return createElement(doc, {
     ...input,

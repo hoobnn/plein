@@ -69,7 +69,7 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
   if (!el || !style || engine.doc.readOnly) return null
 
   const count = groupNodes(engine, el.id, catalog, video).length
-  const name = el.name ?? 'Frame'
+  const name = el.name ?? '分组框'
   const busy = el.id in runs
   const group = runs[el.id] ?? null
   const canceling = !!group && pending.has(groupCancelRequestKey(canvasId, group))
@@ -82,7 +82,7 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
     <div
       role="toolbar"
       ref={ref}
-      aria-label="Frame 操作"
+      aria-label="分组框操作"
       style={style}
       className="ui-bar ui-bar-sm pointer-events-auto fixed z-20 w-max"
     >
@@ -111,7 +111,7 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
       <button
         type="button"
         className={btn}
-        title={`${withShortcut('解组', 'mod+shift+g')}：保留里面的元素，去掉 Frame`}
+        title={`${withShortcut('解组', 'mod+shift+g')}：保留里面的元素，去掉分组框`}
         onClick={() => engine.ungroupSelection()}
       >
         <Icon name="ungroup" size={14} />
@@ -193,7 +193,7 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
       </AnimatePresence>
       <AnimatePresence>
         {palette && (
-          <Popover anchor={palette} onClose={() => setPalette(null)} label="Frame 颜色" width={196}>
+          <Popover anchor={palette} onClose={() => setPalette(null)} label="分组框颜色" width={196}>
             <div className="grid grid-cols-5 gap-1.5 p-2">
               {COLORS.map((c) => (
                 <button

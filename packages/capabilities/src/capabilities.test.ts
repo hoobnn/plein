@@ -179,7 +179,7 @@ describe('能力注册表', () => {
     })
     const out = (await registry.invoke('ungroup', ctx, { frame_id })) as { ids: string[] }
     expect(out.ids.sort()).toEqual([a, b].sort())
-    await expect(registry.invoke('ungroup', ctx, { frame_id: a })).rejects.toThrow('不是 Frame')
+    await expect(registry.invoke('ungroup', ctx, { frame_id: a })).rejects.toThrow('不是分组框')
   })
 
   it('复制能力和画布快捷键一样重映射内部引用，保留原节点指向', async () => {

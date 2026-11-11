@@ -60,7 +60,7 @@ export async function estimateRun(
     const signal = new AbortController().signal
     const root = doc.get(req.id)
     if (req.scope === 'frame') {
-      if (root?.kind !== 'frame') throw new NodeRunError('not_found', 'Frame 不存在')
+      if (root?.kind !== 'frame') throw new NodeRunError('not_found', '分组框不存在')
     } else if (root?.kind !== 'node') throw new NodeRunError('not_found', '节点不存在')
     const graph = runGraph(doc)
     let targets: string[]

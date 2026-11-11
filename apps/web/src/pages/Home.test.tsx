@@ -147,7 +147,7 @@ it('离开首页后迟到的创建成功只提示，不接管导航', async () =
     release = resolve
   })
   const f = await setup([project()], () => ({ 'POST /api/projects': () => held }))
-  await f.user.click(screen.getByRole('button', { name: /剧本创作/ }))
+  await f.user.click(screen.getByRole('button', { name: /文本生成/ }))
   await waitFor(() => expect(callsOf(f.fetch, 'POST', '/api/projects')).toBe(1))
   f.unmountHome()
   await act(async () =>

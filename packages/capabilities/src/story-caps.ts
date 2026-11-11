@@ -101,7 +101,7 @@ export const expandStoryboard = defineCapability({
   name: 'expand_storyboard',
   title: '展开分镜',
   description:
-    '把分镜节点里的镜头展开成节点：每个镜头一个 Frame（分镜图 → 视频，每句台词一个配音），并接到序列。只建不跑。mode=update 时只给已展开的镜头补缺的节点，不改已有参数。',
+    '把分镜节点里的镜头展开成节点：每个镜头一个分组框（分镜图 → 视频，每句台词一个配音），并接到序列。只建不跑。mode=update 时只给已展开的镜头补缺的节点，不改已有参数。',
   group: 'story',
   where: 'doc',
   effect: 'edit',

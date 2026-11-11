@@ -27,7 +27,7 @@ const position = {
   near: id.optional().describe('放在这个元素右侧的空位；不填且没给 x/y 时放在画布内容右侧'),
   x: z.number().optional().describe('世界坐标 x（左上角），与 near 二选一'),
   y: z.number().optional(),
-  parent_id: id.optional().describe('放进这个 Frame（分组）里'),
+  parent_id: id.optional().describe('放进这个分组框里'),
 }
 
 export const getCanvas = defineCapability({
@@ -38,7 +38,7 @@ export const getCanvas = defineCapability({
   group: 'read',
   where: 'doc',
   effect: 'read',
-  input: z.object({ frame_id: id.optional().describe('只看这个 Frame 里的内容') }),
+  input: z.object({ frame_id: id.optional().describe('只看这个分组框里的内容') }),
   run: (ctx, { frame_id }) =>
     ctx.withDoc((doc) => {
       const els = frame_id
@@ -219,7 +219,7 @@ export const updateElementCap = defineCapability({
   name: 'update_element',
   title: '修改元素',
   description:
-    '修改元素：节点参数（按键合并，只改给出的键）、名称、Markdown 正文、位置尺寸、所属 Frame。改提示词后需要 run_node 才会出新结果。分镜表的镜头逐镜修改请用 edit_shots，不要在这里整表替换 shots。' +
+    '修改元素：节点参数（按键合并，只改给出的键）、名称、Markdown 正文、位置尺寸、所属分组框。改提示词后需要 run_node 才会出新结果。分镜表的镜头逐镜修改请用 edit_shots，不要在这里整表替换 shots。' +
     '换模型不要在 params 里直接写 model：用 set_node_model，它会像界面一样同步校正画幅、分辨率、时长、种子等参数。' +
     '改名会同步所有 @ 引用（与 rename_element 相同），返回里的 renamed 列出被改写的引用数和受影响元素；清空名称（传空字符串）不做同步。',
   group: 'edit',
@@ -234,7 +234,7 @@ export const updateElementCap = defineCapability({
     y: z.number().optional(),
     w: z.number().positive().optional(),
     h: z.number().positive().optional(),
-    parent_id: id.nullable().optional().describe('移入 Frame；null 移出到画布根'),
+    parent_id: id.nullable().optional().describe('移入分组框；null 移出到画布根'),
     rotation: z.number().finite().optional(),
     locked: z.boolean().optional(),
     color: z
@@ -260,7 +260,7 @@ export const updateElementCap = defineCapability({
       if (a.text !== undefined && el.kind !== 'markdown')
         throw new CapabilityError('只有 markdown 元素有正文')
       if (a.parent_id && need(doc, a.parent_id).kind !== 'frame')
-        throw new CapabilityError('parent_id 必须是 Frame')
+        throw new CapabilityError('parent_id 必须是分组框')
       if (a.params) {
         if (el.kind !== 'node') throw new CapabilityError('只有节点有参数')
         const def = el.nodeType ? ctx.nodes.latest(el.nodeType)?.def : undefined
@@ -378,7 +378,7 @@ export const disconnect = defineCapability({
 export const deleteElementsCap = defineCapability({
   name: 'delete_elements',
   title: '删除',
-  description: '删除元素（连同相关连线；删除 Frame 会删掉里面的内容）。只删用户要求删的东西。',
+  description: '删除元素（连同相关连线；删除分组框会删掉里面的内容）。只删用户要求删的东西。',
   group: 'edit',
   where: 'doc',
   effect: 'destructive',

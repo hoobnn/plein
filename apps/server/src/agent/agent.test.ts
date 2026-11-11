@@ -259,7 +259,7 @@ describe('智能体 MCP', () => {
     expect(el.name).toContain(`${out.width}×${out.height}`)
 
     expect((await call('shot_group', { frame_id, clear: true })).json().shot_group).toBe(false)
-    expect((await call('make_collage', { frame_id: ids[0] })).text).toContain('不是 Frame')
+    expect((await call('make_collage', { frame_id: ids[0] })).text).toContain('不是分组框')
   })
 
   it('剧情与提示词能力：铺短剧模板、套预设、改写提示词', async () => {

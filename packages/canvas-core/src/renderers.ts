@@ -47,7 +47,7 @@ const KIND_LABELS: Record<ElementKind, string> = {
   audio: '音频',
   markdown: 'Markdown',
   node: '节点',
-  frame: 'Frame',
+  frame: '分组框',
 }
 
 const labelStyle = {

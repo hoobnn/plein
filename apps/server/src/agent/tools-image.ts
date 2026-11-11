@@ -23,7 +23,7 @@ export const splitGrid = serverCapability({
   name: 'split_grid',
   title: '宫格切分',
   description:
-    '把一张九宫格 / 四宫格等宫格图按 rows 行 cols 列切成单张图片，排在原图右侧并打成一个分镜组（Frame，按行优先编号，记下原图）。返回 frame_id、每格的 element_ids 和 asset_ids。element_id 是图片元素，或当前结果是图片的节点。每条分界线均分原图，余数归入后续格子，不丢像素；与界面「宫格切分」同一规则。本地加工，不调模型；每格都是新的资产。',
+    '把一张九宫格 / 四宫格等宫格图按 rows 行 cols 列切成单张图片，排在原图右侧并打成一个分镜组（分组框，按行优先编号，记下原图）。返回 frame_id、每格的 element_ids 和 asset_ids。element_id 是图片元素，或当前结果是图片的节点。每条分界线均分原图，余数归入后续格子，不丢像素；与界面「宫格切分」同一规则。本地加工，不调模型；每格都是新的资产。',
   group: 'media',
   where: 'server',
   effect: 'edit',

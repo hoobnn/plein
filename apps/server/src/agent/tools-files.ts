@@ -28,7 +28,7 @@ const placeShape = z.object({
   near: id.optional().describe('放在这个元素右侧的空位；不填且没给 x/y 时放在画布内容右侧'),
   x: z.number().optional().describe('世界坐标 x（左上角）'),
   y: z.number().optional(),
-  parent_id: id.optional().describe('放进这个 Frame（分组）里'),
+  parent_id: id.optional().describe('放进这个分组框里'),
   name: z.string().max(100).optional().describe('元素名称，默认用文件名'),
 })
 

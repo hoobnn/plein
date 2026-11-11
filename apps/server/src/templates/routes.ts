@@ -27,7 +27,7 @@ export function templateRoutes(db: DB) {
       if (c.var.principal.role === 'viewer') return c.json(forbidden, 403)
       const raw = await c.req.text()
       if (raw.length > MAX_BYTES)
-        return c.json({ error: 'too_large', message: '模板太大，请减少 Frame 里的元素' }, 413)
+        return c.json({ error: 'too_large', message: '模板太大，请减少分组框里的元素' }, 413)
       let input: unknown
       try {
         input = JSON.parse(raw)
