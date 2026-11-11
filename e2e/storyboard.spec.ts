@@ -54,7 +54,7 @@ test(
       return dialog
     }
     let dialog = await openBoard()
-    await clickStoryboardAction(dialog, '展开为节点')
+    await clickStoryboardAction(dialog, '展开为镜头')
     await expect(page.locator('.ui-toast')).toContainText('已展开')
 
     // 用户在第二个镜头的分镜图节点上自己改了提示词

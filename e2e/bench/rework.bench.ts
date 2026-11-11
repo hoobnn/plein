@@ -109,7 +109,7 @@ async function sixShots(page: Page) {
   await dialog.getByLabel('台词').nth(0).fill('林晚：雨这么大，谁会来天台？')
   await dialog.getByLabel('台词').nth(2).fill('林晚：铁盒是谁放在这儿的？')
   await dialog.getByLabel('时长').first().click()
-  await clickStoryboardAction(dialog, '展开为节点')
+  await clickStoryboardAction(dialog, '展开为镜头')
   await expect(page.locator('.ui-toast')).toContainText('已展开 6 个镜头')
   dialog = await openBoard()
   for (const role of ['批量出分镜图', '批量生成视频', '批量配音'])

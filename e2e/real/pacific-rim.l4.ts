@@ -391,7 +391,7 @@ test('真实平台：《环太平洋：彼岸》6 镜头短剧从模板到字幕
   let dialog: Awaited<ReturnType<typeof openBoard>>
   if (!RESUME) {
     dialog = await openBoard(page, board.id)
-    await clickStoryboardAction(dialog, '展开为节点')
+    await clickStoryboardAction(dialog, '展开为镜头')
     await expect(page.locator('.ui-toast')).toContainText('已展开')
     note('展开', (await page.locator('.ui-toast').textContent()) ?? '')
   }

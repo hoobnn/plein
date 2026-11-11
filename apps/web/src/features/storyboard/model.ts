@@ -9,6 +9,7 @@ import {
   syncExpanded as syncExpandedIn,
 } from '@plein/capabilities'
 import type { Engine } from '@plein/canvas-core'
+import { currentResult, type CanvasElement } from '@plein/doc'
 import type { ShotRole, SyncMode } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { nodeFactory } from '../../canvas/nodes'
@@ -24,6 +25,24 @@ export {
 
 export const expandedNodes = (engine: Engine, boardId: string) =>
   expandedNodesIn(engine.doc, boardId)
+
+const BATCH_ORDER = [
+  ['image', 'plein/image'],
+  ['video', 'plein/video'],
+  ['speech', 'plein/speech'],
+] as const
+
+/** 目标镜头里下一类还没出结果的批量动作（按出图、视频、配音的顺序）；都出齐返回 null */
+export function nextBatchRole(
+  expanded: ReadonlyMap<string, CanvasElement[]>,
+  shotIds: readonly string[],
+): 'image' | 'video' | 'speech' | null {
+  for (const [role, type] of BATCH_ORDER)
+    for (const id of shotIds)
+      for (const el of expanded.get(id) ?? [])
+        if (el.nodeType === type && !currentResult(el)) return role
+  return null
+}
 
 export const planDiffs = (engine: Engine, boardId: string) => planDiffsIn(engine.doc, boardId)
 

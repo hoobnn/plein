@@ -47,6 +47,7 @@ export function TextCell({
   onChange,
   children,
   compact = false,
+  foldable = false,
 }: {
   value: string
   readValue(): string
@@ -54,12 +55,15 @@ export function TextCell({
   onChange(v: string): void
   children?: React.ReactNode
   compact?: boolean
+  /** 长文本默认折成单行省略，点开关或聚焦输入时展开全文 */
+  foldable?: boolean
 }) {
   const engine = useCanvas((s) => s.engine)
   const [edit, setEdit] = useState({ base: value, draft: value })
   const conflictId = useId()
   const input = useRef<HTMLTextAreaElement>(null)
   const [locateBlocked, setLocateBlocked] = useState(false)
+  const [unfolded, setUnfolded] = useState(false)
   useEffect(() => {
     setEdit((prev) =>
       prev.draft === prev.base || prev.draft === value ? { base: value, draft: value } : prev,
@@ -90,9 +94,29 @@ export function TextCell({
     else return false
     return true
   }
+  const folded = foldable && !unfolded && !conflict
   return (
     <div className="min-w-0" data-storyboard-field={label}>
-      <div className={compact ? 'sr-only' : 'mb-1 text-xs font-medium text-ink-muted'}>{label}</div>
+      <div
+        className={
+          compact
+            ? 'sr-only'
+            : 'mb-1 flex items-center justify-between gap-2 text-xs font-medium text-ink-muted'
+        }
+      >
+        {label}
+        {foldable && (
+          <button
+            type="button"
+            className="ui-btn ui-btn-quiet ui-btn-xs"
+            aria-expanded={unfolded || conflict}
+            aria-label={`${unfolded ? '收起' : '展开'}${label}`}
+            onClick={() => setUnfolded((v) => !v)}
+          >
+            {unfolded ? '收起' : '展开全文'}
+          </button>
+        )}
+      </div>
       <MentionTextarea
         ref={input}
         targets={engine ? mentionTargets(engine) : []}
@@ -110,9 +134,10 @@ export function TextCell({
         aria-label={label}
         aria-describedby={conflict ? conflictId : undefined}
         rows={1}
-        className={`${cell} block w-full field-sizing-content min-h-8 ${compact ? 'max-h-28 bg-transparent' : 'max-h-80 bg-surface-2'} overflow-y-auto text-base`}
+        className={`${cell} block w-full field-sizing-content min-h-8 ${folded ? 'max-h-8 overflow-hidden whitespace-nowrap text-ellipsis' : `${compact ? 'max-h-28' : 'max-h-80'} overflow-y-auto`} ${compact ? 'bg-transparent' : 'bg-surface-2'} text-base`}
         value={draft}
         onFocus={() => {
+          if (foldable) setUnfolded(true)
           if (!dirty) reset()
         }}
         onChange={(e) => setEdit({ base: dirty ? base : readValue(), draft: e.target.value })}

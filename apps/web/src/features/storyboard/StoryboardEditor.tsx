@@ -10,7 +10,7 @@ import {
 } from '@plein/nodes'
 import { useEffect, useRef, useState } from 'react'
 import { useDocVersion } from '../../canvas/hooks'
-import { detachShot, expandedNodes, expandShots, planDiffs, shotsOf } from './model'
+import { detachShot, expandedNodes, expandShots, nextBatchRole, planDiffs, shotsOf } from './model'
 import type { StoryboardBatchRequest } from '@plein/protocol'
 import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
@@ -455,7 +455,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       notify(
         frames.length
           ? `已展开 ${frames.length} 个镜头（${created} 个节点）${already ? `，${already} 个之前展开过，已跳过` : ''}`
-          : '这些镜头都已展开过，要补齐用「更新展开」',
+          : '这些镜头都已展开过，要补齐用「同步到镜头」',
       )
     }
     if (sequence === 'ambiguous')
@@ -623,6 +623,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         hasShots={!!shots.length}
         hasExpanded={!!expanded.size}
         scopeDiffs={scopeDiffs}
+        nextRole={nextBatchRole(expanded, targetIds)}
         hasCanvas={!!canvasId}
         onExpand={expand}
         onLink={() => {
@@ -952,12 +953,14 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                       value={s.imagePrompt}
                       readValue={() => textValue(s.id, 'imagePrompt')}
                       label="分镜图提示词"
+                      foldable
                       onChange={(v) => patch(s.id, { imagePrompt: v })}
                     />
                     <TextCell
                       value={s.motionPrompt}
                       readValue={() => textValue(s.id, 'motionPrompt')}
                       label="运动提示词"
+                      foldable
                       onChange={(v) => patch(s.id, { motionPrompt: v })}
                     />
                     <div className="min-w-0">

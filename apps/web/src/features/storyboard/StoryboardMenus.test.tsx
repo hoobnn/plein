@@ -164,10 +164,10 @@ it.each(['sync', 'batch'])('%s 子窗口叠加上层窗口，Esc 逐层关闭并
   fireEvent.change(input, { target: { value: '计划修改' } })
   fireEvent.blur(input)
   act(f.flush)
-  if (kind === 'sync') {
-    const more = await f.openMore()
-    await f.user.click(more.getByRole('menuitem', { name: /^查看差异/ }))
-  } else await f.user.click(screen.getByRole('button', { name: '批量出分镜图' }))
+  // 表格有改动时主按钮是「同步改动」，批量出图收在「更多」里
+  const more = await f.openMore()
+  if (kind === 'sync') await f.user.click(more.getByRole('menuitem', { name: /^查看差异/ }))
+  else await f.user.click(more.getByRole('menuitem', { name: '批量出分镜图' }))
   const child = await screen.findByRole('dialog', {
     name: kind === 'sync' ? '计划差异' : '批量生成清单',
   })

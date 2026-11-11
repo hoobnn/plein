@@ -99,7 +99,7 @@ test(
     await dialog.getByLabel('台词').nth(2).fill('林晚：铁盒是谁放在这儿的？')
     await dialog.getByLabel('台词').nth(2).blur()
     expect(await durations()).toEqual(originalDurations)
-    await clickStoryboardAction(dialog, '展开为节点')
+    await clickStoryboardAction(dialog, '展开为镜头')
     await expect(page.locator('.ui-toast')).toContainText('已展开 3 个镜头')
 
     dialog = await openBoard()

@@ -5,12 +5,18 @@ import { useDialogMenu } from '../../ui/useDialogMenu'
 
 const item = 'ui-menu-item'
 const roles = { image: '分镜图', video: '视频', speech: '配音', sfx: '音效' } as const
+const primaryBatch = {
+  image: { label: '批量出分镜图', icon: 'image' },
+  video: { label: '批量生成视频', icon: 'video' },
+  speech: { label: '批量配音', icon: 'mic' },
+} as const
 
 export function StoryboardToolbar({
   scope,
   hasShots,
   hasExpanded,
   scopeDiffs,
+  nextRole,
   hasCanvas,
   onExpand,
   onLink,
@@ -25,6 +31,8 @@ export function StoryboardToolbar({
   hasShots: boolean
   hasExpanded: boolean
   scopeDiffs: number
+  /** 目标镜头里下一类还没出结果的批量动作；都出齐了是 null */
+  nextRole: 'image' | 'video' | 'speech' | null
   hasCanvas: boolean
   onExpand(mode: 'new' | 'update'): void
   onLink(): void
@@ -43,15 +51,16 @@ export function StoryboardToolbar({
       className="flex flex-none flex-wrap items-center gap-2 border-b border-line px-5 py-2"
     >
       <span className="mr-auto text-xs text-ink-subtle">作用于{scope}</span>
-      <button
-        type="button"
-        className="ui-btn ui-btn-primary"
-        disabled={!hasExpanded && !hasShots}
-        onClick={() => (hasExpanded ? onBatch('image') : onExpand('new'))}
-      >
-        <Icon name={hasExpanded ? 'image' : 'workflow'} />
-        {hasExpanded ? '批量出分镜图' : '展开镜头'}
-      </button>
+      <PrimaryAction
+        hasShots={hasShots}
+        hasExpanded={hasExpanded}
+        scopeDiffs={scopeDiffs}
+        nextRole={nextRole}
+        onExpand={onExpand}
+        onBatch={onBatch}
+        onSync={onSync}
+        onReview={onReview}
+      />
       <Menu.Root modal={false} open={menu.open} onOpenChange={menu.onOpenChange}>
         <Menu.Trigger
           {...menu.triggerProps}
@@ -76,16 +85,16 @@ export function StoryboardToolbar({
               <div className="ui-menu-label">节点与生成</div>
               <Menu.Item className={item} disabled={!hasShots} onClick={() => onExpand('new')}>
                 <Icon name="workflow" />
-                展开为节点
+                展开为镜头
               </Menu.Item>
               <Menu.Item
                 className={item}
                 disabled={!hasExpanded}
-                title="给已展开的镜头补齐缺的角色和新增的台词，已有节点不动"
+                title="给已展开的镜头补齐缺的角色和新增的台词，已有内容不动"
                 onClick={() => onExpand('update')}
               >
                 <Icon name="retry" />
-                更新展开
+                同步到镜头
               </Menu.Item>
               <Menu.Item
                 className={item}
@@ -146,7 +155,7 @@ export function StoryboardToolbar({
               <Menu.Item
                 className={item}
                 disabled={!scopeDiffs}
-                title="看分镜表改动和已展开节点的出入，确认后才同步"
+                title="看分镜表改动和已展开镜头的出入，确认后才同步"
                 onClick={onSync}
               >
                 <Icon name="layers" />
@@ -177,5 +186,56 @@ export function StoryboardToolbar({
         </Menu.Portal>
       </Menu.Root>
     </div>
+  )
+}
+
+/** 随阶段变化的主按钮：没展开先展开；表格改过先同步；之后依次出图、视频、配音；都齐了去审核 */
+function PrimaryAction({
+  hasShots,
+  hasExpanded,
+  scopeDiffs,
+  nextRole,
+  onExpand,
+  onBatch,
+  onSync,
+  onReview,
+}: {
+  hasShots: boolean
+  hasExpanded: boolean
+  scopeDiffs: number
+  nextRole: 'image' | 'video' | 'speech' | null
+  onExpand(mode: 'new' | 'update'): void
+  onBatch(role: ShotRole): void
+  onSync(): void
+  onReview(): void
+}) {
+  const cls = 'ui-btn ui-btn-primary'
+  if (!hasExpanded)
+    return (
+      <button type="button" className={cls} disabled={!hasShots} onClick={() => onExpand('new')}>
+        <Icon name="workflow" />
+        展开为镜头
+      </button>
+    )
+  if (scopeDiffs)
+    return (
+      <button type="button" className={cls} onClick={onSync}>
+        <Icon name="layers" />
+        同步改动
+      </button>
+    )
+  if (nextRole) {
+    const { label, icon } = primaryBatch[nextRole]
+    return (
+      <button type="button" className={cls} onClick={() => onBatch(nextRole)}>
+        <Icon name={icon} />
+        {label}
+      </button>
+    )
+  }
+  return (
+    <button type="button" className={cls} onClick={onReview}>
+      审核镜头
+    </button>
   )
 }

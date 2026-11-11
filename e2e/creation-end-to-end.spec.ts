@@ -165,7 +165,7 @@ test(
       await row.getByLabel('台词', { exact: true }).fill(lines[i]!)
       await row.getByLabel('台词', { exact: true }).blur()
     }
-    await clickStoryboardAction(dialog, '展开为节点')
+    await clickStoryboardAction(dialog, '展开为镜头')
     await expect(dialog).toHaveCount(0)
     const nodes = await page.evaluate(
       (id) =>

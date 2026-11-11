@@ -38,7 +38,7 @@ async function fixture(page: Page) {
     return dialog
   }
   const initial = await open()
-  await clickStoryboardAction(initial, '展开为节点')
+  await clickStoryboardAction(initial, '展开为镜头')
   await expect(initial).toBeHidden()
   return { board, open }
 }
