@@ -110,7 +110,6 @@ export function TextCell({
             type="button"
             className="ui-btn ui-btn-quiet ui-btn-xs"
             aria-expanded={unfolded || conflict}
-            aria-label={`${unfolded ? '收起' : '展开'}${label}`}
             onClick={() => setUnfolded((v) => !v)}
           >
             {unfolded ? '收起' : '展开全文'}
