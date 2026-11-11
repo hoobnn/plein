@@ -16,7 +16,7 @@ allowBuilds:
 # Vite+：vite 由 vite-plus-core 提供，插件和 vitest 依赖的 vite 都指向这一份
 catalog:
   vite: npm:@voidzero-dev/vite-plus-core@1.4.0
-  vite-plus: 1.4.0
+  vite-plus: 1.5.0
   # 跨包共用的依赖固定单版本：yjs 多实例会破坏 instanceof 判断，zod 供协议与能力层共用
   yjs: ^13.6.33
   zod: 4.6.7
