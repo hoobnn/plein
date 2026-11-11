@@ -36,7 +36,7 @@ const Manifest = z.object({
   missingAssets: z.array(z.string().regex(/^[0-9a-f]{64}$/)).default([]),
 })
 export type BackupManifest = z.infer<typeof Manifest>
-const CONFIGS = new Set([
+export const CONFIGS = new Set([
   'secret.json',
   'providers.json',
   'models.json',

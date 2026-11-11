@@ -11,6 +11,7 @@ import {
   type DataSpace,
   type LocalBackup,
   type MaintenanceStatus,
+  type RestoreScheduled,
 } from '@plein/protocol'
 import * as Y from 'yjs'
 import { z } from 'zod'
@@ -19,6 +20,7 @@ import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
 import { canvasState, documentReferences, readDocument } from '../media-index/references'
 import { backupInfo, backupManifest, restoreBackup, writeBackup } from './backup'
+import { clearPendingRestore, readPendingRestore, writePendingRestore } from './pending-restore'
 import { atomicJson, assertInsideDataDir, filesIn, jsonFile, scanTree } from './files'
 
 const DAY = 86_400_000
@@ -225,6 +227,7 @@ export class MaintenanceService {
       skippedSymlinks: report.symlinks,
       unreadableDirs: report.unreadableDirs,
       backups: await this.backupList(),
+      pendingRestore: await this.pendingInfo(),
       trash: (await this.trashManifests()).map((t) => ({
         id: t.id,
         createdAt: t.createdAt,
@@ -325,6 +328,65 @@ export class MaintenanceService {
       const missingAssets = await restoreBackup(backup.path, path)
       return { path, restartRequired: true, missingAssets }
     })
+  }
+
+  private async pendingInfo(): Promise<MaintenanceStatus['pendingRestore']> {
+    const p = await readPendingRestore(this.deps.dataDir)
+    return p
+      ? {
+          backupId: p.backupId,
+          backupCreatedAt: p.backupCreatedAt,
+          requestedAt: p.requestedAt,
+          preRestoreBackupId: p.preRestoreBackupId,
+        }
+      : null
+  }
+
+  /**
+   * 应用内恢复：先备份当前数据，再把所选备份校验后生成完整副本并登记，下次启动时替换。
+   * 运行中的数据库不会被改动；取消用 cancelRestore。
+   */
+  async scheduleRestore(id: string): Promise<RestoreScheduled> {
+    if (!IDS.test(id)) throw new MaintenanceError('invalid', '备份编号不合法')
+    return this.perform('restore', async () => {
+      const backup = (await this.backupList()).find((b) => b.id === id)
+      if (!backup) throw new MaintenanceError('not_found', '备份不存在')
+      // 先校验所选备份，坏备份不该耗掉一次当前数据的备份
+      const stage = join('restored', randomUUID())
+      const missingAssets = await restoreBackup(backup.path, join(this.root, stage))
+      try {
+        // 不走 backup()：它会按保留份数轮换，可能挤掉正要恢复的这份
+        const pre = await writeBackup({
+          ...this.deps,
+          root: join(this.root, 'backups'),
+          now: this.now(),
+        })
+        await clearPendingRestore(this.deps.dataDir)
+        const requestedAt = this.now()
+        await writePendingRestore(this.deps.dataDir, {
+          stage,
+          backupId: backup.id,
+          backupCreatedAt: backup.createdAt,
+          preRestoreBackupId: pre.id,
+          requestedAt,
+        })
+        return {
+          restartRequired: true as const,
+          backupId: backup.id,
+          backupCreatedAt: backup.createdAt,
+          preRestoreBackupId: pre.id,
+          requestedAt,
+          missingAssets,
+        }
+      } catch (error) {
+        await rm(join(this.root, stage), { recursive: true, force: true })
+        throw error
+      }
+    })
+  }
+
+  async cancelRestore() {
+    await this.perform('restore', () => clearPendingRestore(this.deps.dataDir))
   }
 
   /** 既包含库内写入，也包含50ms缓冲中的Yjs编辑和删除集。 */

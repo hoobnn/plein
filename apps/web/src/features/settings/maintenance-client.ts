@@ -1,5 +1,6 @@
 import type {
   BackupRestored,
+  RestoreScheduled,
   CleanupPreview,
   CleanupResult,
   DataSpace,
@@ -22,6 +23,9 @@ export const maintenanceApi = {
   backup: () => maintenanceRequest<LocalBackup>('backups', 'POST'),
   restoreCopy: (id: string) =>
     maintenanceRequest<BackupRestored>(`backups/${encodeURIComponent(id)}/restore-copy`, 'POST'),
+  scheduleRestore: (id: string) =>
+    maintenanceRequest<RestoreScheduled>(`backups/${encodeURIComponent(id)}/restore`, 'POST'),
+  cancelRestore: () => maintenanceRequest<void>('restore', 'DELETE'),
   preview: () => maintenanceRequest<CleanupPreview>('cleanup/preview', 'POST'),
   cleanup: (token: string) => maintenanceRequest<CleanupResult>('cleanup', 'POST', { token }),
   restoreTrash: (id: string) =>

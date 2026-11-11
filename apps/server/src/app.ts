@@ -1,6 +1,7 @@
 import { MotionPreviews } from './motion/preview'
 import { motionRoutes } from './motion/routes'
 import { subtitleRoutes } from './subtitles/routes'
+import { applyPendingRestore } from './maintenance/pending-restore'
 import { createMaintenanceService, type MaintenanceService } from './maintenance/service'
 import { maintenanceRoutes } from './maintenance/routes'
 import { readFile } from 'node:fs/promises'
@@ -80,6 +81,8 @@ const IMMUTABLE = 'public, max-age=31536000, immutable'
 export async function createServer(config: Config): Promise<Server> {
   setMediaTools({ ffmpeg: config.ffmpegPath, ffprobe: config.ffprobePath })
   setSubtitleFont(config.subtitleFont)
+  // 上次登记的应用内恢复要在打开数据库之前完成替换
+  await applyPendingRestore(config.dataDir)
   const db = openDb(config.dataDir)
   const secrets = loadSecrets(config.dataDir)
   let mediaIndex: MediaIndex | undefined

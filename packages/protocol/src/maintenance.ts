@@ -35,6 +35,8 @@ export interface MaintenanceStatus {
   lastBackupAt: number | null
   lastError: string | null
   backups: LocalBackup[]
+  /** 已登记、下次启动时换进数据目录的恢复；没有则为 null */
+  pendingRestore: PendingRestoreInfo | null
   trash: Array<{ id: string; createdAt: number; assets: number; bytes: number; expiresAt: number }>
   /** 数据目录里被跳过的符号链接路径（相对数据目录）。 */
   skippedSymlinks: string[]
@@ -75,6 +77,21 @@ export interface CleanupResult {
   bytes: number
   expiresAt: number
 }
+export interface PendingRestoreInfo {
+  backupId: string
+  /** 被恢复的那份备份的生成时间 */
+  backupCreatedAt: number
+  requestedAt: number
+  /** 恢复前自动生成的当前数据备份 */
+  preRestoreBackupId: string
+}
+
+/** 应用内恢复的登记结果：数据下次启动时才会被替换 */
+export interface RestoreScheduled extends PendingRestoreInfo {
+  restartRequired: true
+  missingAssets: string[]
+}
+
 export interface BackupRestored {
   path: string
   /** 在一个新目录生成完整副本；切换前先关闭 Plein。 */

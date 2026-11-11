@@ -2,6 +2,7 @@ import type { BackupRestored, CleanupPreview } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useId, useRef, useState } from 'react'
 import { stampTime } from '../../ui/format'
+import { confirmDialog } from '../../ui/Dialog'
 import { Switch } from '../../ui/Switch'
 import { queryClient } from '../../api/query'
 import { maintenanceApi } from './maintenance-client'
@@ -414,6 +415,29 @@ export function DataMaintenance() {
         {status.data.backups.length === 0 && (
           <p className="text-xs text-ink-subtle">尚无备份，可以先点“立即备份”。</p>
         )}
+        {status.data.pendingRestore && (
+          <div role="status" className="ui-note flex flex-col gap-2 rounded-lg bg-surface-2 p-3">
+            <p>
+              已安排恢复到 {date(status.data.pendingRestore.backupCreatedAt)}{' '}
+              的备份。完全退出并重新打开 Plein
+              后生效；当前数据已在恢复前自动备份，替换下来的原数据也会保留在 maintenance/replaced
+              里。
+            </p>
+            <button
+              type="button"
+              className="ui-btn ui-btn-secondary self-start"
+              disabled={locked}
+              onClick={() =>
+                void perform(async () => {
+                  await maintenanceApi.cancelRestore()
+                  return '已取消恢复'
+                })
+              }
+            >
+              取消恢复
+            </button>
+          </div>
+        )}
         {status.data.backups.map((backup) => (
           <div
             key={backup.id}
@@ -425,20 +449,42 @@ export function DataMaintenance() {
               </span>
               <span className="mt-1 block break-all text-ink-subtle">{backup.path}</span>
             </span>
-            <button
-              type="button"
-              className="ui-btn ui-btn-secondary shrink-0"
-              disabled={locked}
-              onClick={() =>
-                void perform(async () => {
-                  const copy = await maintenanceApi.restoreCopy(backup.id)
-                  setRestored(copy)
-                  return '完整性校验通过，已恢复到新目录'
-                })
-              }
-            >
-              恢复副本
-            </button>
+            <span className="flex shrink-0 gap-2">
+              <button
+                type="button"
+                className="ui-btn ui-btn-secondary"
+                disabled={locked}
+                onClick={async () => {
+                  const ok = await confirmDialog({
+                    title: '从这份备份恢复？',
+                    message: `将用 ${date(backup.createdAt)} 的备份替换当前全部数据（项目、素材、平台密钥）。恢复前会先自动备份当前数据；需要完全退出并重新打开 Plein 后才会生效，生效前当前数据不受影响。`,
+                    confirmLabel: '安排恢复',
+                    danger: true,
+                  })
+                  if (!ok) return
+                  void perform(async () => {
+                    const result = await maintenanceApi.scheduleRestore(backup.id)
+                    return `已安排恢复${result.missingAssets.length ? `（有 ${result.missingAssets.length} 个素材因符号链接未纳入备份）` : ''}，请完全退出并重新打开 Plein`
+                  })
+                }}
+              >
+                从此备份恢复
+              </button>
+              <button
+                type="button"
+                className="ui-btn ui-btn-secondary"
+                disabled={locked}
+                onClick={() =>
+                  void perform(async () => {
+                    const copy = await maintenanceApi.restoreCopy(backup.id)
+                    setRestored(copy)
+                    return '完整性校验通过，已恢复到新目录'
+                  })
+                }
+              >
+                恢复副本
+              </button>
+            </span>
           </div>
         ))}
       </section>

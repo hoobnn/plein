@@ -35,6 +35,14 @@ export function maintenanceRoutes(service: MaintenanceService | null) {
   app.post('/api/maintenance/backups/:id/restore-copy', async (c) =>
     c.json(await service.restoreCopy(c.req.param('id')), 201),
   )
+  // 应用内恢复：先自动备份当前数据，下次启动时才替换；DELETE 取消
+  app.post('/api/maintenance/backups/:id/restore', async (c) =>
+    c.json(await service.scheduleRestore(c.req.param('id')), 201),
+  )
+  app.delete('/api/maintenance/restore', async (c) => {
+    await service.cancelRestore()
+    return c.body(null, 204)
+  })
   app.post('/api/maintenance/cleanup/preview', async (c) => c.json(await service.preview()))
   app.post('/api/maintenance/cleanup', async (c) => {
     const body = MaintenanceToken.safeParse(await c.req.json().catch(() => null))
