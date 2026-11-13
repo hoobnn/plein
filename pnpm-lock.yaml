@@ -288,7 +288,7 @@ importers:
         version: 5.3.1
       '@hono/node-server':
         specifier: ^2.1.5
-        version: 2.1.5(hono@4.13.14)
+        version: 2.1.5(hono@4.13.16)
       '@hyperframes/player':
         specifier: 0.8.218
         version: 0.8.218(@types/node@26.6.6)
@@ -338,8 +338,8 @@ importers:
         specifier: 3.15.0
         version: 3.15.0
       hono:
-        specifier: ^4.13.14
-        version: 4.13.14
+        specifier: ^4.13.16
+        version: 4.13.16
       lib0:
         specifier: ^0.2.119
         version: 0.2.119
@@ -3533,8 +3533,8 @@ packages:
     resolution: {integrity: sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A==}
     engines: {node: '>= 0.4'}
 
-  hono@4.13.14:
-    resolution: {integrity: sha512-yhRLQ21U6qa9Hsu2N7Qcbh8tE+WKEcoErjIo56LeSGiGXGp9sA7UpE86Ui9uexb61KakiGwuHMn2QdV7w6i6kQ==}
+  hono@4.13.16:
+    resolution: {integrity: sha512-AOLOEhvrV+iH92xXCnFr/5+3KjPKcI3xP63XJtX5spAnkznPdHijlIsUTpi7/9EhWqrTCekw5c5zh1K+YsVw7A==}
     engines: {node: '>=16.9.0'}
 
   hosted-git-info@4.1.0:
@@ -5677,9 +5677,9 @@ snapshots:
 
   '@fontsource/noto-sans-sc@5.3.1': {}
 
-  '@hono/node-server@2.1.5(hono@4.13.14)':
+  '@hono/node-server@2.1.5(hono@4.13.16)':
     dependencies:
-      hono: 4.13.14
+      hono: 4.13.16
 
   '@hyperframes/core@0.8.218(@types/node@26.6.6)':
     dependencies:
@@ -5699,10 +5699,10 @@ snapshots:
 
   '@hyperframes/engine@0.8.218(@types/node@26.6.6)':
     dependencies:
-      '@hono/node-server': 2.1.5(hono@4.13.14)
+      '@hono/node-server': 2.1.5(hono@4.13.16)
       '@hyperframes/core': 0.8.218(@types/node@26.6.6)
       '@hyperframes/parsers': 0.8.218
-      hono: 4.13.14
+      hono: 4.13.16
       linkedom: 0.18.14
       puppeteer: 25.16.0
       puppeteer-core: 25.16.0
@@ -5748,13 +5748,13 @@ snapshots:
 
   '@hyperframes/producer@0.8.218(@types/node@26.6.6)':
     dependencies:
-      '@hono/node-server': 2.1.5(hono@4.13.14)
+      '@hono/node-server': 2.1.5(hono@4.13.16)
       '@hyperframes/core': 0.8.218(@types/node@26.6.6)
       '@hyperframes/engine': 0.8.218(@types/node@26.6.6)
       '@hyperframes/lint': 0.8.218
       '@hyperframes/parsers': 0.8.218
       '@hyperframes/studio-server': 0.8.218(@types/node@26.6.6)
-      hono: 4.13.14
+      hono: 4.13.16
       linkedom: 0.18.14
       postcss: 8.5.31
       puppeteer: 25.16.0
@@ -5780,7 +5780,7 @@ snapshots:
     dependencies:
       '@hyperframes/core': 0.8.218(@types/node@26.6.6)
       '@hyperframes/parsers': 0.8.218
-      hono: 4.13.14
+      hono: 4.13.16
       linkedom: 0.18.14
       postcss: 8.5.31
       postcss-selector-parser: 7.1.7
@@ -7555,7 +7555,7 @@ snapshots:
     dependencies:
       function-bind: 1.1.2
 
-  hono@4.13.14: {}
+  hono@4.13.16: {}
 
   hosted-git-info@4.1.0:
     dependencies:
