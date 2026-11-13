@@ -287,8 +287,8 @@ importers:
         specifier: 5.3.1
         version: 5.3.1
       '@hono/node-server':
-        specifier: ^2.1.5
-        version: 2.1.5(hono@4.13.14)
+        specifier: ^2.1.6
+        version: 2.1.6(hono@4.13.14)
       '@hyperframes/player':
         specifier: 0.8.218
         version: 0.8.218(@types/node@26.6.6)
@@ -1389,8 +1389,8 @@ packages:
   '@fontsource/noto-sans-sc@5.3.1':
     resolution: {integrity: sha512-YxZ/VWAWo9FWzH08Q6fGTzIW6vYNP2TMhUFCnfhlimbhdXnWrxJLrzX3KWt2FKnV0s8XiM5vjpGHQiyFRlTj0w==}
 
-  '@hono/node-server@2.1.5':
-    resolution: {integrity: sha512-MgP/I06GdvsilDspMk/qmRzpk8LOUStP6jFAbSRi40W09DhoyUn+Mj7eyKICPqeYKybOjVFLVIAQzvu1bfIa7Q==}
+  '@hono/node-server@2.1.6':
+    resolution: {integrity: sha512-p/KH9MnfNcsm3sR6x4lNgm5j+QN4Et8srKredl9DZfXiyZ1UQ3aQ2YVpFLbqktYN5JI+DB+VZFKM2PqE5hLKjQ==}
     engines: {node: '>=20'}
     peerDependencies:
       hono: ^4 || ^5.0.0-0
@@ -5677,7 +5677,7 @@ snapshots:
 
   '@fontsource/noto-sans-sc@5.3.1': {}
 
-  '@hono/node-server@2.1.5(hono@4.13.14)':
+  '@hono/node-server@2.1.6(hono@4.13.14)':
     dependencies:
       hono: 4.13.14
 
@@ -5699,7 +5699,7 @@ snapshots:
 
   '@hyperframes/engine@0.8.218(@types/node@26.6.6)':
     dependencies:
-      '@hono/node-server': 2.1.5(hono@4.13.14)
+      '@hono/node-server': 2.1.6(hono@4.13.14)
       '@hyperframes/core': 0.8.218(@types/node@26.6.6)
       '@hyperframes/parsers': 0.8.218
       hono: 4.13.14
@@ -5748,7 +5748,7 @@ snapshots:
 
   '@hyperframes/producer@0.8.218(@types/node@26.6.6)':
     dependencies:
-      '@hono/node-server': 2.1.5(hono@4.13.14)
+      '@hono/node-server': 2.1.6(hono@4.13.14)
       '@hyperframes/core': 0.8.218(@types/node@26.6.6)
       '@hyperframes/engine': 0.8.218(@types/node@26.6.6)
       '@hyperframes/lint': 0.8.218
