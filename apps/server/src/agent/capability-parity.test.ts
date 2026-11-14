@@ -6,6 +6,7 @@ import {
   adoptResultManually,
   connect,
   createElement,
+  deleteElements,
   sequenceInstancesOf,
   updateElement,
 } from '@plein/doc'
@@ -279,6 +280,74 @@ describe('画布与 Agent 能力契约', () => {
     const node = addNode(f.doc, 'plein/image')
     await f.invoke('adopt_result', { id: node, result_id: null })
     expect(f.doc.get(node)!.adopted).toBeUndefined()
+  })
+
+  it('delete_results 的 current_changed 只按实际删除的候选计算', async () => {
+    const f = await fixture()
+    const node = addNode(f.doc, 'plein/video')
+    addResults(
+      f.doc,
+      node,
+      [
+        {
+          id: 'R',
+          port: 'video',
+          runId: 'run-r',
+          at: 2,
+          value: { type: 'video', assetId: 'a'.repeat(64), mime: 'video/webm' },
+        },
+        {
+          id: 'U',
+          port: 'video',
+          runId: 'run-u',
+          at: 1,
+          value: { type: 'video', assetId: 'b'.repeat(64), mime: 'video/webm' },
+        },
+      ],
+      { adopt: false },
+    )
+    adoptResultManually(f.doc, node, 'R')
+    const holder = createElement(f.doc, {
+      kind: 'video',
+      assetId: 'a'.repeat(64),
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 100,
+    })
+    f.doc.mutable(holder)!.set('videoSegment', {
+      version: 1,
+      segmentId: 'segment-current',
+      asset: { assetId: 'a'.repeat(64), kind: 'video' },
+      duration: 2,
+      selection: {
+        canvasId: f.id,
+        nodeId: node,
+        port: 'video',
+        resultId: 'R',
+        runId: 'run-r',
+      },
+    })
+
+    // 采用中的 R 被固定保护，实际只删 U：不能报告当前采用已改变
+    const mixed = (await f.invoke('delete_results', { id: node, result_ids: ['R', 'U'] })) as {
+      removed: number
+      current_changed: boolean
+      kept_fixed: Array<{ result_id: string }>
+    }
+    expect(mixed).toMatchObject({ removed: 1, current_changed: false })
+    expect(mixed.kept_fixed.map((k) => k.result_id)).toEqual(['R'])
+    expect(f.doc.get(node)!.adopted).toBe('R')
+
+    // 真正删掉采用中的 R 时仍是 true
+    deleteElements(f.doc, [holder])
+    f.doc.flush()
+    const actual = (await f.invoke('delete_results', { id: node, result_ids: ['R'] })) as {
+      removed: number
+      current_changed: boolean
+    }
+    expect(actual).toMatchObject({ removed: 1, current_changed: true })
+    expect(f.doc.get(node)!.adopted).toBeNull()
   })
 
   it('Agent 独立撤销栈把采用改回去时也推进版本记号', async () => {

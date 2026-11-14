@@ -440,12 +440,16 @@ export const deleteResults = defineCapability({
         throw new CapabilityError(
           `节点 ${id} 没有这些结果：${missing.join('、')}，先用 get_element 查看 results`,
         )
-      const currentChanged = removalChangesCurrent(el, present)
       const outcome = removeResultsWithReceipt(
         doc,
         [...present].map((resultId) => ({ elementId: id, resultId })),
         { canvasId: ctx.canvasId },
       )
+      // current_changed 要按实际会删掉的集合算：受固定保护而保留下来的采用项
+      // 前后都还在，不能让 Agent / MCP 告诉用户「当前采用已改变」。
+      const keptIds = new Set(outcome.kept.map((k) => k.resultId))
+      const removedIds = new Set([...present].filter((id) => !keptIds.has(id)))
+      const currentChanged = removalChangesCurrent(el, removedIds)
       if (!outcome.removed && outcome.kept.length)
         throw new CapabilityError(
           `这些结果仍被固定剪辑使用（${outcome.kept
