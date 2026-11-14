@@ -131,7 +131,7 @@ export class PleinDoc {
       () => this.edgeMap.unobserve(onEdges),
       () => this.adoptionRevisions.unobserve(onRevisions),
     )
-    this.trackAdoptionChangesOnUndo()
+    watchAdoptionRevisions(this.ydoc, this.elementMaps, this.adoptionRevisions, this.undo)
 
     this.migrate()
     // 协作升级可能只改元数据，不会重新触发 WebSocket 初次同步。
@@ -324,33 +324,46 @@ export class PleinDoc {
     this.pendingElements.add(id)
   }
 
-  /**
-   * 记下每个节点当前「显式采用」的值，用来判断一次撤销/重做是否真的改了采用。
-   * 只看显式值：缺省沿用最新与显式采用某一条，含义一样。
-   */
-  private adoptionSnapshot(): Map<string, string | null> {
-    const out = new Map<string, string | null>()
-    for (const [id, m] of this.elementMaps) {
-      if (!(m instanceof Y.Map)) continue
-      const adopted = m.get('adopted')
-      if (adopted === undefined) continue
-      out.set(id, adopted === null ? null : String(adopted))
-    }
-    return out
+  private requestFlush() {
+    if (this.scheduled) return
+    this.scheduled = true
+    this.schedule(() => this.flush())
   }
+}
 
-  /**
-   * 撤销/重做真的改了采用选择时，给这些节点发新的版本记号。
-   *
-   * 记号写在撤销范围之外，所以它自己不会被撤销掉；这里发新记号是为了让
-   * 「当前采用是用户当时确认的那一次」这句话在撤销之后依然成立 ——
-   * 受理时记下 rev2，之后用户撤销回 A，consumer 就不能再拿 rev2 放行。
-   *
-   * 只有本机撤销/重做会走到这里；远端同步来的变更不会重复发记号。
-   */
-  private advanceAdoptionRevisions(before: Map<string, string | null>) {
+type ElementMaps = Y.Map<Y.Map<unknown>>
+
+/** 记下每个节点当前「显式采用」的值，用来判断一次撤销/重做是否真的改了采用。 */
+function adoptionSnapshot(elements: ElementMaps): Map<string, string | null> {
+  const out = new Map<string, string | null>()
+  for (const [id, m] of elements) {
+    if (!(m instanceof Y.Map)) continue
+    const adopted = m.get('adopted')
+    if (adopted === undefined) continue
+    out.set(id, adopted === null ? null : String(adopted))
+  }
+  return out
+}
+
+/**
+ * 撤销/重做真的改了采用选择时，给这些节点发新的版本记号。
+ *
+ * 记号写在撤销范围之外，所以它自己不会被撤销掉；这里发新记号是为了让
+ * 「当前采用是用户当时确认的那一次」这句话在撤销之后依然成立 ——
+ * 受理时记下 rev2，之后用户撤销回 A，consumer 就不能再拿 rev2 放行。
+ *
+ * 所有会改文档的撤销管理器都要接上：画布自己的 ⌘Z，以及 Agent 一轮一轮的
+ * 独立撤销栈。远端同步来的变更不会重复发记号。
+ */
+export function watchAdoptionRevisions(
+  ydoc: Y.Doc,
+  elements: ElementMaps,
+  revisions: Y.Map<string>,
+  undo: Y.UndoManager,
+) {
+  const advance = (before: Map<string, string | null>) => {
     const changed: string[] = []
-    for (const [id, m] of this.elementMaps) {
+    for (const [id, m] of elements) {
       if (!(m instanceof Y.Map)) continue
       const adopted = m.get('adopted')
       const now = adopted === undefined ? undefined : adopted === null ? null : String(adopted)
@@ -360,34 +373,23 @@ export class PleinDoc {
       changed.push(id)
     }
     if (!changed.length) return
-    this.ydoc.transact(() => {
-      for (const id of changed) this.adoptionRevisions.set(id, newAdoptionRevision())
+    ydoc.transact(() => {
+      for (const id of changed) revisions.set(id, newAdoptionRevision())
     }, SYSTEM_ORIGIN)
   }
-
-  /** 把撤销/重做包一层：只有真的改了采用选择才发新的版本记号 */
-  private trackAdoptionChangesOnUndo() {
-    const undo = this.undo
-    const originalUndo = undo.undo.bind(undo)
-    const originalRedo = undo.redo.bind(undo)
-    undo.undo = () => {
-      const before = this.adoptionSnapshot()
-      const result = originalUndo()
-      this.advanceAdoptionRevisions(before)
-      return result
-    }
-    undo.redo = () => {
-      const before = this.adoptionSnapshot()
-      const result = originalRedo()
-      this.advanceAdoptionRevisions(before)
-      return result
-    }
+  const originalUndo = undo.undo.bind(undo)
+  const originalRedo = undo.redo.bind(undo)
+  undo.undo = () => {
+    const before = adoptionSnapshot(elements)
+    const result = originalUndo()
+    advance(before)
+    return result
   }
-
-  private requestFlush() {
-    if (this.scheduled) return
-    this.scheduled = true
-    this.schedule(() => this.flush())
+  undo.redo = () => {
+    const before = adoptionSnapshot(elements)
+    const result = originalRedo()
+    advance(before)
+    return result
   }
 }
 

@@ -8,7 +8,13 @@ import { sequenceSnapshot, snapshotTypedDeliveries } from './sequence-snapshot'
 import { materializeSequenceV1, sequenceInstancesOf } from './domain/sequence-instances'
 import { isVideoSegment } from './domain/video-segment'
 import { creativeReviewKey, isCreativeReview } from './domain/review-types'
-import { fixedReferencedResultIds, relatedOutputIds } from './domain/fixed-references'
+import {
+  fixedReferencedResultIds,
+  fixedResultHolders,
+  relatedOutputIds,
+} from './domain/fixed-references'
+import { relatedResult } from './domain/related-result'
+import type { FixedResultReference } from './domain/fixed-references'
 import {
   deleteResultItems,
   ensureResultsContainer,
@@ -24,6 +30,7 @@ import {
 import { write } from './commands/write'
 
 export { ReadOnlyDocError } from './commands/write'
+export { relatedResult } from './domain/related-result'
 import {
   type CanvasElement,
   CONTAINER_KINDS,
@@ -471,12 +478,24 @@ export const MAX_RESULTS = 48
  *
  * 逐条删除容器里的目标项，不整份重写数组：这样撤销只会还原被删的那几条，
  * 系统在这期间加入的候选与采用状态都留着。
+ *
+ * 传入 canvasId 时，正被固定剪辑精确引用的候选（及其关联输出）会被保留，
+ * 需要先解除固定再删 —— 删掉就断了片段返工和文件来源。
  */
 export function removeResults(
   doc: PleinDoc,
   items: ReadonlyArray<{ elementId: string; resultId: string }>,
+  opts: { canvasId?: string | null } = {},
 ): number {
-  return removeResultsWithReceipt(doc, items).removed
+  return removeResultsWithReceipt(doc, items, opts).removed
+}
+
+/** 这次删除被固定剪辑挡下的候选 */
+export interface KeptFixedResult {
+  elementId: string
+  resultId: string
+  /** 仍在引用它的固定片段；`resultId` 可能只是那条固定视频的关联输出 */
+  holders: FixedResultReference[]
 }
 
 /**
@@ -489,14 +508,50 @@ export function removeResults(
 export function removeResultsWithReceipt(
   doc: PleinDoc,
   items: ReadonlyArray<{ elementId: string; resultId: string }>,
-): { removed: number; receipt: ResultRemovalReceipt[] } {
-  if (doc.readOnly || items.length === 0) return { removed: 0, receipt: [] }
+  opts: { canvasId?: string | null } = {},
+): { removed: number; receipt: ResultRemovalReceipt[]; kept: KeptFixedResult[] } {
+  if (doc.readOnly || items.length === 0) return { removed: 0, receipt: [], kept: [] }
   const byElement = new Map<string, Set<string>>()
   for (const { elementId, resultId } of items) {
     const ids = byElement.get(elementId)
     if (ids) ids.add(resultId)
     else byElement.set(elementId, new Set([resultId]))
   }
+  // 正被固定剪辑用着的候选不能删：片段还要靠它返工，文件来源也要能核对。
+  // 关联输出（视频配对的尾帧等）一同保留，否则返工时配不上对。
+  // 每次删除都按当前文档重算，确认期间新固定进来的引用也会被挡下。
+  const kept: KeptFixedResult[] = []
+  if (opts.canvasId) {
+    const elements = [...doc.elements()]
+    for (const [elementId, ids] of byElement) {
+      const el = doc.get(elementId)
+      if (!el?.results?.length) continue
+      const holders = fixedResultHolders(elements, {
+        canvasId: opts.canvasId,
+        nodeId: elementId,
+        results: el.results,
+      })
+      if (!holders.size) continue
+      // 先从每个固定候选展开它的完整关联输出（视频 + 配对尾帧等），再和请求集合取交集。
+      // 只请求删尾帧、固定的是那条视频时也要挡下 —— 只按请求的 id 查引用会漏。
+      const guard = new Map<string, FixedResultReference[]>()
+      for (const [fixedId, refs] of holders) {
+        for (const related of relatedOutputIds(el.results, fixedId)) {
+          if (!guard.has(related)) guard.set(related, refs)
+        }
+      }
+      const blocked = new Set<string>()
+      for (const id of ids) {
+        const used = guard.get(id)
+        if (!used) continue
+        blocked.add(id)
+        kept.push({ elementId, resultId: id, holders: used })
+      }
+      for (const id of blocked) ids.delete(id)
+      if (!ids.size) byElement.delete(elementId)
+    }
+  }
+  if (!byElement.size) return { removed: 0, receipt: [], kept }
   // 单次调用独立成一步撤销，不与相邻的删除或编辑合并。
   doc.undo.stopCapturing()
   let outcome: { removed: number; receipt: ResultRemovalReceipt[] }
@@ -544,7 +599,7 @@ export function removeResultsWithReceipt(
   // 事务提交之后才拿得到栈项。
   const stackItem = doc.undo.undoStack.at(-1)
   for (const entry of outcome.receipt) entry.stackItem = stackItem
-  return outcome
+  return { ...outcome, kept }
 }
 
 /**
@@ -752,31 +807,6 @@ export function removalChangesCurrent(el: CanvasElement, resultIds: ReadonlySet<
     if (currentResult(el, port)?.id !== currentResult(after, port)?.id) return true
   }
   return false
-}
-
-/**
- * 同组关联：按候选关联键（outputGroup）取同次运行的指定端口结果；
- * 旧数据没有关联键时只有跨端口唯一配对才兼容，不猜第一条。
- */
-export function relatedResult(
-  all: readonly NodeResult[],
-  chosen: NodeResult,
-  port: string,
-): NodeResult | undefined {
-  const related = all.filter((r) => r.runId === chosen.runId)
-  const list = related.filter((r) => r.port === port)
-  if (chosen.outputGroup !== undefined) {
-    const group = related.filter((r) => r.outputGroup === chosen.outputGroup)
-    const outputs = group.filter((r) => r.port === port)
-    return group.filter((r) => r.port === chosen.port).length === 1 && outputs.length === 1
-      ? outputs[0]
-      : undefined
-  }
-  return related.filter((r) => r.port === chosen.port).length === 1 &&
-    list.length === 1 &&
-    list[0]!.outputGroup === undefined
-    ? list[0]
-    : undefined
 }
 
 /** 节点展示与播放入口使用主输出；采用副输出时仍取同一候选的主输出。无端口声明时兼容旧结果。 */

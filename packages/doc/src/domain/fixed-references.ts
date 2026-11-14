@@ -1,6 +1,7 @@
 import type { CanvasElement, NodeResult } from '../types'
-import { isGenerationOrigin, type GenerationOrigin } from './video-segment'
+import { isGenerationOrigin, type GenerationOrigin, type VideoSegment } from './video-segment'
 import { sequenceInstancesOf } from './sequence-instances'
+import { relatedResult } from './related-result'
 
 /**
  * 固定剪辑对某个节点的引用。
@@ -35,22 +36,41 @@ export interface FixedResultReference {
 
 function collect(element: CanvasElement, out: FixedResultReference[]) {
   const segment = element.videoSegment
-  if (segment?.selection && isGenerationOrigin(segment.selection))
-    out.push(reference(element.id, segment.segmentId, segment.selection, segment.asset.assetId))
+  if (segment) {
+    for (const selection of selectionsOf(segment)) {
+      if (isGenerationOrigin(selection))
+        out.push(reference(element.id, segment.segmentId, selection, segment.asset.assetId))
+    }
+  }
   if (element.nodeType !== 'plein/sequence') return
   for (const clip of sequenceInstancesOf(element)) {
-    const selection = clip.segment?.selection
-    if (selection && isGenerationOrigin(selection))
-      out.push(
-        reference(
-          element.id,
-          clip.segment!.segmentId,
-          selection,
-          clip.segment!.asset.assetId,
-          clip.clipInstanceId,
-        ),
-      )
+    const segment = clip.segment
+    if (!segment) continue
+    for (const selection of selectionsOf(segment)) {
+      if (isGenerationOrigin(selection))
+        out.push(
+          reference(
+            element.id,
+            segment.segmentId,
+            selection,
+            segment.asset.assetId,
+            clip.clipInstanceId,
+          ),
+        )
+    }
   }
+}
+
+/**
+ * 片段记着的历史位置与导入后核实过的本地位置都要算引用。
+ * 历史位置证明它来自哪次生成；本地位置是当前画布里该保护的候选。
+ */
+function selectionsOf(segment: VideoSegment): Array<GenerationOrigin | undefined> {
+  const out: Array<GenerationOrigin | undefined> = [segment.selection]
+  const local = segment.localSelection
+  if (local && (!segment.selection || JSON.stringify(local) !== JSON.stringify(segment.selection)))
+    out.push(local)
+  return out
 }
 
 function reference(
@@ -95,7 +115,19 @@ export function fixedReferencedResultIds(
   elements: Iterable<CanvasElement>,
   scope: { canvasId: string; nodeId: string; results: readonly NodeResult[] },
 ): Set<string> {
-  const ids = new Set<string>()
+  return new Set(fixedResultHolders(elements, scope).keys())
+}
+
+/**
+ * 某个节点的哪些候选正被本画布的固定剪辑使用，以及是谁在用。
+ *
+ * 手工删除、Agent / MCP 删除都要先说清楚哪些片段还靠着它，不能静默删掉。
+ */
+export function fixedResultHolders(
+  elements: Iterable<CanvasElement>,
+  scope: { canvasId: string; nodeId: string; results: readonly NodeResult[] },
+): Map<string, FixedResultReference[]> {
+  const out = new Map<string, FixedResultReference[]>()
   const byId = new Map(scope.results.map((r) => [r.id, r]))
   for (const reference of fixedResultReferences(elements)) {
     if (reference.canvasId !== scope.canvasId) continue
@@ -104,43 +136,34 @@ export function fixedReferencedResultIds(
     if (!result) continue
     if (result.port !== reference.port) continue
     if (result.runId !== reference.runId) continue
-    // 固定的是哪个文件，就必须是哪个文件
-    if ('assetId' in result.value && result.value.assetId !== reference.assetId) continue
-    ids.add(result.id)
+    // 必须是同一条视频候选、同一个文件；同样 id/运行/端口的文本记录不能算
+    if (result.value.type !== 'video' || result.value.assetId !== reference.assetId) continue
+    const list = out.get(reference.resultId) ?? []
+    if (!list.some((r) => r.holderId === reference.holderId && r.segmentId === reference.segmentId))
+      list.push(reference)
+    out.set(reference.resultId, list)
   }
-  return ids
+  return out
 }
 
 /**
- * 候选的关联输出：同一次运行里按已有规则配对的其它端口结果。
+ * 候选的关联输出：候选本身，加上每个其它端口按既有 `relatedResult` 规则
+ * 唯一配对到的那一条。
  *
- * 有 `outputGroup` 的按关联键取；旧记录没有关联键时，用 `relatedResult`
- * 的唯一跨端口配对规则（不猜第一条）。
+ * 不能按「同一次运行 + 同 outputGroup」把同端口的其它候选也算进来：
+ * 同一组里有两个视频候选时，尾帧根本配不上任何一条，真实返工也取不到它；
+ * 旧数据里同一运行既有不带关联键的旧视频、又有带组的视频时，跨端口也不是唯一配对。
+ * 删除保护、48 条裁剪与 current 项目包都用这一份规则，避免这边多保护、那边取不到。
  */
 export function relatedOutputIds(results: readonly NodeResult[], resultId: string): Set<string> {
   const ids = new Set<string>()
   const chosen = results.find((r) => r.id === resultId)
   if (!chosen) return ids
   ids.add(chosen.id)
-  if (chosen.outputGroup !== undefined) {
-    for (const r of results) {
-      if (r.runId !== chosen.runId) continue
-      if (r.outputGroup !== chosen.outputGroup) continue
-      ids.add(r.id)
-    }
-    return ids
-  }
-  // 旧记录没有关联键：同一次运行里，与所选端口唯一配对的那个就是关联输出。
-  const ports = new Set(results.filter((r) => r.runId === chosen.runId).map((r) => r.port))
-  for (const port of ports) {
+  for (const port of new Set(results.map((r) => r.port))) {
     if (port === chosen.port) continue
-    const candidates = results.filter(
-      (r) => r.runId === chosen.runId && r.port === port && r.outputGroup === undefined,
-    )
-    const atChosenPort = results.filter(
-      (r) => r.runId === chosen.runId && r.port === chosen.port && r.outputGroup === undefined,
-    )
-    if (candidates.length === 1 && atChosenPort.length === 1) ids.add(candidates[0]!.id)
+    const related = relatedResult(results, chosen, port)
+    if (related) ids.add(related.id)
   }
   return ids
 }

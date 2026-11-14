@@ -7,6 +7,7 @@ import {
   resultsContainer,
   undoResultRemoval,
   updateElement,
+  setResults,
 } from './index'
 
 /**
@@ -62,7 +63,7 @@ describe('删除的撤销凭据', () => {
     const source = createElement(doc, { kind: 'node', x: 0, y: 0, w: 200, h: 200 })
     const other = createElement(doc, { kind: 'node', x: 0, y: 0, w: 200, h: 200 })
     doc.mutable(other)!.set('name', 'old')
-    doc.mutable(source)!.set('results', [video('R')])
+    setResults(doc, source, [video('R')])
     doc.flush()
 
     // 另一个节点的改名（可撤销的本地命令）
@@ -95,8 +96,8 @@ describe('删除的撤销凭据', () => {
     const doc = createDoc(undefined, { schedule: () => {} })
     const alive = createElement(doc, { kind: 'node', x: 0, y: 0, w: 200, h: 200 })
     const gone = createElement(doc, { kind: 'node', x: 0, y: 0, w: 200, h: 200 })
-    doc.mutable(alive)!.set('results', [video('A')])
-    doc.mutable(gone)!.set('results', [video('B')])
+    setResults(doc, alive, [video('A')])
+    setResults(doc, gone, [video('B')])
     doc.flush()
 
     const { receipt } = removeResultsWithReceipt(doc, [
@@ -122,7 +123,7 @@ describe('删除的撤销凭据', () => {
     const doc = createDoc(undefined, { schedule: () => {} })
     const source = createElement(doc, { kind: 'node', x: 0, y: 0, w: 200, h: 200 })
     const other = createElement(doc, { kind: 'node', x: 0, y: 0, w: 200, h: 200 })
-    doc.mutable(source)!.set('results', [video('R')])
+    setResults(doc, source, [video('R')])
     doc.flush()
 
     const { receipt } = removeResultsWithReceipt(doc, [{ elementId: source, resultId: 'R' }])
@@ -143,7 +144,7 @@ describe('删除的撤销凭据', () => {
   it('删除后采用状态回到未采用，撤销后恢复', () => {
     const doc = createDoc(undefined, { schedule: () => {} })
     const source = createElement(doc, { kind: 'node', x: 0, y: 0, w: 200, h: 200 })
-    doc.mutable(source)!.set('results', [video('R')])
+    setResults(doc, source, [video('R')])
     doc.mutable(source)!.set('adopted', 'R')
     doc.flush()
 

@@ -114,6 +114,35 @@ export function hasStaleLegacyWrite(m: ElementMap): boolean {
   return !(!container.length && !resultsRecorded(m))
 }
 
+/** 旧客户端迟到写入留下的冲突证据：这个节点的当前结果与未被采纳的旧记录 */
+export interface StaleLegacyConflict {
+  elementId: string
+  /** 新端当前采用的结果 id，按新到旧 */
+  current: string[]
+  /** 旧端迟到写入、未被采纳的候选 id，按旧端顺序 */
+  stale: string[]
+}
+
+/**
+ * 找出所有「旧端迟到写入被挡下」的节点。
+ *
+ * 这些旧记录不参与读取（否则刚生成的候选或用户明确删空的结果会被旧端盖掉），
+ * 但仍原样留在文档里作可核对证据。界面要把它显式告诉用户，不能只藏一个内部标记。
+ */
+export function staleLegacyResults(
+  elements: Iterable<readonly [string, ElementMap]>,
+): StaleLegacyConflict[] {
+  const out: StaleLegacyConflict[] = []
+  for (const [elementId, m] of elements) {
+    if (!hasStaleLegacyWrite(m)) continue
+    const current = (resultsContainer(m)?.toArray() ?? []).filter(isResult).map((r) => r.id)
+    const stale = (legacyResults(m) ?? []).filter(isResult).map((r) => r.id)
+    if (!stale.length) continue
+    out.push({ elementId, current, stale })
+  }
+  return out
+}
+
 /**
  * 读出结果条目（新键优先，旧键兜底），并按来源深快照。
  *

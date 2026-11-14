@@ -10,6 +10,7 @@ export {
   PleinDoc,
   type Scheduler,
   SYSTEM_ORIGIN,
+  watchAdoptionRevisions,
 } from './doc'
 export * from './grid'
 export * from './layout'
@@ -27,6 +28,8 @@ export {
   resultsContainer,
   resultsRecorded,
   resultsSeen,
+  staleLegacyResults,
+  type StaleLegacyConflict,
   readResults,
   readResultsSnapshot,
   type ResultRemovalReceipt,
@@ -40,6 +43,7 @@ export * from './domain/production-goal'
 export * from './domain/source-map'
 export * from './domain/continuity'
 export * from './domain/video-segment'
+export * from './domain/segment-local'
 export * from './domain/sequence-instances'
 export { snapshotTypedDeliveries } from './sequence-snapshot'
 
