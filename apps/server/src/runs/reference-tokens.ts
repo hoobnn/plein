@@ -115,6 +115,9 @@ export function resolveBoundReference({
     }
   }
   if (isStale(binding)) return { text: `@${name}`, stale: true }
+  // 用户刚把引用换成还没生成的新来源：等它生成，不退回旧素材，也不用「已删除」吓人。
+  if (binding.assetId === '')
+    return { text: `@${name}`, error: `引用 @${name} 的素材还没生成，生成后再运行` }
   return { text: name, error: `引用 @${name} 的素材已删除、替换或未送入，请重新选择` }
 }
 

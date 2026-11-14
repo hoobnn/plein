@@ -583,7 +583,7 @@ describe('画布复制中的引用映射', () => {
     expect(params.prompt).toBe('@图 保持构图')
     const binding = referenceBindings(params)['图']!
     expect(binding.source).not.toBe(sameId)
-    expect(binding.source).toContain('plein/external:')
+    expect(binding.source).toContain('plein-external/')
     expect(binding.assetId).toBe('')
     // 正文仍被持久绑定认领，后续同名素材出现也不会按普通 @ 重绑。
     expect(boundReferenceTokens(String(params.prompt), params).map((token) => token.name)).toEqual([
@@ -592,6 +592,186 @@ describe('画布复制中的引用映射', () => {
     // 必需参考与选图里的外部 id 也换成不存在的地址，不挂到同 id 素材上。
     expect(params.requiredRefs).not.toContain(sameId)
     expect(Object.keys(params.referenceImagePicks ?? {})).not.toContain(sameId)
+    source.destroy()
+    destination.destroy()
+  })
+
+  it('跨画布复制 Markdown 正文与消费者时，正文外部 @ 仍保留可读并失效', () => {
+    const source = openDoc()
+    createElement(source, {
+      id: 'shared',
+      kind: 'image',
+      name: '图',
+      assetId: 'asset-a',
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 100,
+    })
+    const markdown = createElement(source, {
+      kind: 'markdown',
+      id: 'md',
+      text: '看见 @图 舞蹈',
+      x: 0,
+      y: 200,
+      w: 200,
+      h: 100,
+    })
+    const consumer = createElement(
+      source,
+      node({
+        id: 'consumer',
+        nodeType: 'plein/video',
+        ports: {
+          inputs: [{ id: 'prompt', label: '提示词', type: 'text', multiple: true }],
+          outputs: [],
+        },
+        params: { prompt: '' },
+      }),
+    )
+    connect(source, [markdown, 'text'], [consumer, 'prompt'])
+    const data = JSON.parse(
+      JSON.stringify(
+        referenceClipboard.copy(source, [markdown, consumer], { canvasId: 'canvas-a' }),
+      ),
+    )
+    const destination = openDoc()
+    createElement(destination, {
+      id: 'shared',
+      kind: 'image',
+      name: '图',
+      assetId: 'asset-b',
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 100,
+    })
+    const pasted = referenceClipboard.paste(destination, data, { canvasId: 'canvas-b' })
+    const imported = destination.get(pasted[0]!)!
+    expect(imported.text).toBe('看见 @图 舞蹈')
+    const binding = referenceBindings(imported.params)['图']!
+    expect(binding.source).toContain('plein-external/')
+    expect(binding.source).not.toBe('shared')
+    // 正文仍能识别出这处持久引用，运行时不会让目标画布的同名素材接管。
+    expect(
+      boundReferenceTokens('看见 @图 舞蹈', imported.params).map((token) => token.name),
+    ).toEqual(['图'])
+    source.destroy()
+    destination.destroy()
+  })
+
+  it('跨画布同时复制素材时，Markdown 正文里的引用仍正常映射到副本', () => {
+    const source = openDoc()
+    const image = createElement(source, {
+      id: 'shared',
+      kind: 'image',
+      name: '图',
+      assetId: 'asset-a',
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 100,
+    })
+    const markdown = createElement(source, {
+      kind: 'markdown',
+      id: 'md',
+      text: '看见 @图 舞蹈',
+      x: 0,
+      y: 200,
+      w: 200,
+      h: 100,
+    })
+    const consumer = createElement(
+      source,
+      node({
+        id: 'consumer',
+        nodeType: 'plein/video',
+        ports: {
+          inputs: [{ id: 'prompt', label: '提示词', type: 'text', multiple: true }],
+          outputs: [],
+        },
+        params: { prompt: '' },
+      }),
+    )
+    connect(source, [markdown, 'text'], [consumer, 'prompt'])
+    const data = JSON.parse(
+      JSON.stringify(
+        referenceClipboard.copy(source, [image, markdown, consumer], { canvasId: 'canvas-a' }),
+      ),
+    )
+    const destination = openDoc()
+    createElement(destination, {
+      id: 'shared',
+      kind: 'image',
+      name: '图',
+      assetId: 'asset-b',
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 100,
+    })
+    const pasted = referenceClipboard.paste(destination, data, { canvasId: 'canvas-b' })
+    const importedImage = pasted[0]!
+    const importedMarkdown = destination.get(pasted[1]!)!
+    // 素材本身复制进来时引用跟着副本；目标画布还有同名素材，所以补上消歧序号。
+    expect(importedMarkdown.text).toBe('看见 @图#1 舞蹈')
+    expect(resolved(destination, importedMarkdown.text!)).toBe(importedImage)
+    const binding = referenceBindings(importedMarkdown.params)['图']
+    expect(binding).toBeUndefined()
+    source.destroy()
+    destination.destroy()
+  })
+
+  it('跨画布外部持久绑定保留原名，不跟随目标画布同 id 元素的新名字', () => {
+    const source = openDoc()
+    createElement(source, {
+      id: 'shared',
+      kind: 'image',
+      name: '图',
+      assetId: 'asset-a',
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 100,
+    })
+    const target = createElement(
+      source,
+      node({
+        id: 'target',
+        params: {
+          prompt: '@图 舞蹈',
+          [`referenceNameBinding:${encodeURIComponent('图')}:shared`]: {
+            type: 'image',
+            assetId: 'asset-a',
+            source: 'shared',
+          },
+        },
+      }),
+    )
+    const data = JSON.parse(
+      JSON.stringify(referenceClipboard.copy(source, [target], { canvasId: 'canvas-a' })),
+    )
+    const destination = openDoc()
+    createElement(destination, {
+      id: 'shared',
+      kind: 'image',
+      name: '新图',
+      assetId: 'asset-b',
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 100,
+    })
+    const [imported] = referenceClipboard.paste(destination, data, { canvasId: 'canvas-b' })
+    const params = destination.get(imported!)!.params!
+    // 未复制的素材即使和目标画布元素同 id，也不能改叫目的端的名字。
+    expect(params.prompt).toBe('@图 舞蹈')
+    // 原来的资产证据保留，来源改成不可命中的地址。
+    expect(referenceBindings(params)['图']).toMatchObject({
+      assetId: 'asset-a',
+      source: expect.stringContaining('plein-external/'),
+    })
+    expect(referenceBindings(params)['新图']).toBeUndefined()
     source.destroy()
     destination.destroy()
   })

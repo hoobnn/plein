@@ -1,4 +1,4 @@
-import type { CanvasElement, PleinDoc } from '@plein/doc'
+import { currentResult, type CanvasElement, inputEdges, type PleinDoc } from '@plein/doc'
 import {
   findBrokenMentions,
   findMentions,
@@ -19,6 +19,7 @@ import {
   voiceOf,
 } from '@plein/nodes'
 import {
+  boundReferenceTokens,
   type NodeDefinition,
   parseModelRef,
   type PortValue,
@@ -92,12 +93,37 @@ export function mentionEdges(doc: PleinDoc) {
   const targets = mentionTargets(doc)
   const edges: Array<{ from: [string, string]; to: [string, string] }> = []
   if (targets.length === 0) return edges
+  const seen = new Set<string>()
+  const add = (value: unknown, consumerId: string, params: Record<string, unknown> = {}) => {
+    if (typeof value !== 'string' || !value.includes('@')) return
+    // 已持久绑定的 token 在 referenceMode 会被 runs.ts 用占位符遮蔽，实际准备不会按普通 @
+    // 消费同名卡；这里不能再加隐式依赖，否则批次会为不用到的卡片跑付费的上游作业。
+    const bound = boundReferenceTokens(value, params)
+    for (const m of findMentions(value, targets)) {
+      if (!m.id || m.id === consumerId) continue
+      if (bound.some((token) => token.start <= m.start && token.end > m.start)) continue
+      const key = `${m.id}>${consumerId}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      edges.push({ from: [m.id, '@'], to: [consumerId, '@'] })
+    }
+  }
   for (const el of doc.elements()) {
     if (el.kind !== 'node') continue
-    for (const value of Object.values(el.params ?? {})) {
-      if (typeof value !== 'string' || !value.includes('@')) continue
-      for (const m of findMentions(value, targets))
-        if (m.id && m.id !== el.id) edges.push({ from: [m.id, '@'], to: [el.id, '@'] })
+    for (const value of Object.values(el.params ?? {})) add(value, el.id, el.params)
+    // applyMentions 也会解析送进 prompt 端口的文本：Markdown 正文、上游节点当前采用的文本结果，
+    // 以及纯文本节点就地计算的内容。依赖边要和实际消费一致，否则卡片的上游不会先跑。
+    for (const edge of inputEdges(doc, el.id, 'prompt')) {
+      const src = doc.get(edge.from[0])
+      if (!src) continue
+      const params = src.params ? { ...src.params, ...el.params } : (el.params ?? {})
+      if (src.kind === 'markdown') add(src.text, el.id, params)
+      else if (src.kind === 'node') {
+        const result = currentResult(src, edge.from[1])
+        if (result?.value.type === 'text') add(result.value.text, el.id, params)
+        // 没有采用结果的纯文本节点：运行时由上游就地计算正文。
+        else if (!result && src.nodeType === 'plein/text') add(src.params?.text, el.id, params)
+      }
     }
   }
   return edges

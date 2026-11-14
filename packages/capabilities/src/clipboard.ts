@@ -31,9 +31,9 @@ const EXTERNAL_EDGES_KEY = 'plein/reference-external-edges'
 /** 复制来源的画布 id；旧剪贴板没有这一项，按同画布兼容处理。 */
 const SOURCE_CANVAS_KEY = 'plein/reference-source-canvas'
 /** 跨画布粘贴时，未随复制带入的来源改写成这个不存在的地址，避免挂到目标画布同 id 元素上。 */
-const EXTERNAL_ID = 'plein/external:'
+const EXTERNAL_ID = 'plein-external/'
 const externalId = (canvasId: string, id: string) =>
-  `${EXTERNAL_ID}${encodeURIComponent(canvasId)}:${id}`
+  `${EXTERNAL_ID}${encodeURIComponent(canvasId)}/${id}`
 const MEDIA_KINDS = new Set(['image', 'video', 'audio'])
 
 function externalReferenceEdges(doc: PleinDoc, data: ClipboardData): Edge[] {
@@ -162,6 +162,7 @@ function boundEdits(
   text: string,
   params: Record<string, unknown>,
   ids?: ReadonlyMap<string, string>,
+  crossCanvas = false,
 ): TextEdit[] {
   const bindings = referenceBindings(params)
   const edits: TextEdit[] = []
@@ -176,6 +177,8 @@ function boundEdits(
       continue
     const binding = bindings[token.name]
     if (!binding?.source) continue
+    // 跨画布外部绑定只保留原名：目标画布的同 id 元素不是它的来源。
+    if (crossCanvas && ids && !ids.has(binding.source)) continue
     const alias = referenceAlias(doc, {
       source: ids?.get(binding.source) ?? binding.source,
       sourcePort: binding.sourcePort,
@@ -213,7 +216,7 @@ function rewriteText(
   ids?: ReadonlyMap<string, string>,
   crossCanvas = false,
 ) {
-  const bound = params ? boundEdits(doc, text, params, ids) : []
+  const bound = params ? boundEdits(doc, text, params, ids, crossCanvas) : []
   const protectedRanges = params
     ? boundReferenceTokens(text, params).map((token) => ({ start: token.start, end: token.end }))
     : []
@@ -390,8 +393,7 @@ function neutralizeCrossCanvas(
   canvasId: string,
   copiedTargets: CopiedTarget[],
 ) {
-  const params = el.params
-  if (!params) return
+  const params = el.params ?? {}
   const internal = (id: string) => copied.has(id) || [...copied.values()].includes(id)
   const sentinel = (id: string) => externalId(canvasId, id)
   const remapValue = (value: unknown) => {
@@ -454,8 +456,17 @@ function neutralizeCrossCanvas(
       // 损坏的编码不影响其他绑定。
     }
   }
-  for (const value of Object.values(params)) {
-    if (typeof value !== 'string' || !value.includes('@')) continue
+  // 节点参数、Markdown 正文、当前文本结果都会成为下游实际消费的 prompt 源；
+  // 其中的外部 @ 都要落一条失效绑定，不能只保护节点自己的参数。
+  const texts = [
+    ...Object.values(params).filter((value): value is string => typeof value === 'string'),
+    ...(typeof el.text === 'string' ? [el.text] : []),
+    ...(el.results ?? []).flatMap((result) =>
+      result.value.type === 'text' ? [result.value.text] : [],
+    ),
+  ]
+  for (const value of texts) {
+    if (!value.includes('@')) continue
     for (const mention of findMentions(value, copiedTargets)) {
       if (!mention.id || internal(mention.id)) continue
       const suffix =

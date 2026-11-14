@@ -2189,6 +2189,8 @@ export class NodeRuns implements BatchHost {
     const upstreamReferences: Array<{
       item: Extract<PortValue, { type: 'text' }>
       tokens: ReturnType<typeof boundReferenceTokens>
+      /** 上游文本自己的持久绑定（如 Markdown 元素上的失效引用）与本节点绑定合并后的参数。 */
+      params: Record<string, unknown>
     }> = []
     if (referenceMode) {
       for (const [index, token] of [...referenceTokens.entries()].reverse())
@@ -2199,9 +2201,13 @@ export class NodeRuns implements BatchHost {
       // 上游也在展开 @ 之前标记原始绑定；后面只还原这些位置，不扫描新生成的编号。
       for (const item of continuation.inputs.prompt ?? []) {
         if (item.type !== 'text') continue
-        const tokens = boundReferenceTokens(item.text, el.params)
+        // 上游文本引用来自它自己的元素：失效/跨画布保护绑定也记在那里。
+        const source =
+          'source' in item && typeof item.source === 'string' ? doc.get(item.source) : undefined
+        const params = source?.params ? { ...source.params, ...el.params } : (el.params ?? {})
+        const tokens = boundReferenceTokens(item.text, params)
         if (!tokens.length) continue
-        upstreamReferences.push({ item, tokens })
+        upstreamReferences.push({ item, tokens, params })
         for (const [index, token] of [...tokens.entries()].reverse())
           item.text =
             item.text.slice(0, token.start) + `\uE000${index}\uE001` + item.text.slice(token.end)
@@ -2263,10 +2269,10 @@ export class NodeRuns implements BatchHost {
         if (!doc.has(source)) return true
         return !connected.has(source) && !mentioned.has(source)
       }
-      const resolveOne = (name: string) =>
+      const resolveOne = (name: string, params: Record<string, unknown> = el.params ?? {}) =>
         resolveBoundReference({
           name,
-          params: el.params ?? {},
+          params,
           media,
           imageLabel: numbering.label,
           isStale,
@@ -2289,10 +2295,10 @@ export class NodeRuns implements BatchHost {
           return result.text
         },
       )
-      for (const { item, tokens } of upstreamReferences)
+      for (const { item, tokens, params } of upstreamReferences)
         item.text = item.text.replace(/\uE000(\d+)\uE001/g, (_match, index: string) => {
           const alias = tokens[Number(index)]!.name
-          const result = resolveOne(alias)
+          const result = resolveOne(alias, params)
           report(result, alias)
           return result.text
         })

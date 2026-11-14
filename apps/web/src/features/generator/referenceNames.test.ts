@@ -221,3 +221,119 @@ it('同一视频节点的视频与尾帧使用不同别名绑定，替换一边�
     doc.destroy()
   }
 })
+
+it('替换成还没生成的新来源也同步正文与绑定，生成后只用新来源', () => {
+  const doc = openDoc()
+  try {
+    const old = createElement(doc, {
+      kind: 'image',
+      id: 'old',
+      name: '旧图',
+      assetId: 'old-asset',
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 100,
+    })
+    const next = createElement(doc, node({ id: 'next', name: '新图', nodeType: 'plein/image' }))
+    const target = createElement(
+      doc,
+      node({
+        params: {
+          prompt: '@旧图 保持构图',
+          [`referenceNameBinding:${encodeURIComponent('旧图')}:${old}`]: {
+            type: 'image',
+            assetId: 'old-asset',
+            source: old,
+            sourcePort: 'image',
+          },
+        },
+      }),
+    )
+    replaceReferenceName(doc, target, old, { type: 'image', assetId: '', source: next }, 'image')
+    const params = doc.get(target)!.params!
+    expect(params.prompt).toBe('@新图 保持构图')
+    expect(params).not.toHaveProperty(`referenceNameBinding:${encodeURIComponent('旧图')}:${old}`)
+    expect(referenceBindings(params)).toEqual({
+      新图: { type: 'image', assetId: '', source: next },
+    })
+    // 新来源生成后才按它的结果编号，不会退回旧图。
+    expect(
+      resolveReferenceBindings(
+        '@新图 保持构图',
+        [{ type: 'image', assetId: 'fresh', source: next }],
+        params,
+      ),
+    ).toEqual({ prompt: '@image1 保持构图' })
+  } finally {
+    doc.destroy()
+  }
+})
+
+it('端口别名和另一素材的真实名称撞车时仍可同时引用', () => {
+  const doc = openDoc()
+  try {
+    const clip = createElement(
+      doc,
+      node({
+        id: 'clip',
+        name: '镜头',
+        nodeType: 'plein/video',
+        ports: {
+          inputs: [],
+          outputs: [
+            { id: 'video', label: '视频', type: 'video' },
+            { id: 'lastFrame', label: '尾帧', type: 'image' },
+          ],
+        },
+      }),
+    )
+    const frameElement = createElement(doc, {
+      kind: 'image',
+      id: 'frame-el',
+      name: '镜头·尾帧',
+      assetId: 'frame-asset',
+      x: 200,
+      y: 0,
+      w: 100,
+      h: 100,
+    })
+    const tail = {
+      type: 'image' as const,
+      assetId: 'tail-asset',
+      source: clip,
+      sourcePort: 'lastFrame',
+    }
+    expect(
+      referenceName(doc, {
+        type: 'image',
+        assetId: 'frame-asset',
+        source: frameElement,
+        sourcePort: 'image',
+      }),
+    ).toBe('镜头·尾帧')
+    expect(referenceName(doc, tail)).toBe('镜头·尾帧#2')
+    expect(referenceName(doc, tail)).not.toBe(
+      referenceName(doc, {
+        type: 'image',
+        assetId: 'frame-asset',
+        source: frameElement,
+        sourcePort: 'image',
+      }),
+    )
+    const target = createElement(doc, node({ id: 'target', nodeType: 'plein/video' }))
+    bindReferenceName(doc, target, tail)
+    bindReferenceName(doc, target, {
+      type: 'image',
+      assetId: 'frame-asset',
+      source: frameElement,
+      sourcePort: 'image',
+    })
+    expect(referenceBindings(doc.get(target)!.params)).toMatchObject({
+      '镜头·尾帧#2': { source: clip, sourcePort: 'lastFrame' },
+      镜头·尾帧: { source: frameElement },
+    })
+  } finally {
+    doc.destroy()
+  }
+})

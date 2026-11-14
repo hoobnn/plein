@@ -274,11 +274,18 @@ export function PromptBox({
     for (const item of items) {
       if (item.source) connectedIds.add(item.source)
       const source = item.source ? engine.doc.get(item.source) : undefined
+      const identity: ReferenceIdentity = {
+        type: item.type,
+        assetId: item.assetId,
+        ...(item.source ? { source: item.source } : {}),
+        ...(item.sourcePort ? { sourcePort: item.sourcePort } : {}),
+      }
       choices.push({
         key: item.token,
         connected: true,
         name: source?.name ?? referenceName(engine.doc, item),
         insert: referenceName(engine.doc, item),
+        identity,
         category: item.type,
         description: `@${referenceName(engine.doc, item)}`,
         thumbnail: item.type === 'audio' ? undefined : item.assetId,
@@ -302,6 +309,16 @@ export function PromptBox({
       key: t.id,
       name: t.total > 1 ? `${t.name} #${t.nth}` : t.name,
       insert: t.insert,
+      ...(mediaKind && target.assetId
+        ? {
+            identity: {
+              type: mediaKind,
+              assetId: target.assetId,
+              source: target.id,
+              sourcePort: mediaKind,
+            },
+          }
+        : {}),
       category: mediaKind ?? 'asset',
       description: targetKind(target),
       thumbnail:
@@ -345,17 +362,13 @@ export function PromptBox({
       ref.current?.setSelectionRange(a!, b!)
     })
   }
-  const insert = (name: string) => {
-    const item =
-      prepared && !preparing
-        ? referenceMedia(
-            prepared,
-            engine.doc.get(selfId)?.params,
-            upstreams(engine, selfId, catalog),
-          ).find((entry) => referenceName(engine.doc, entry) === name)
-        : undefined
-    if (item) bindReferenceName(engine.doc, selfId, item)
+  const insertName = (name: string) => {
     replaceQuery(`@${name} `, (r) => [r.length, r.length])
+  }
+  /** 用选中的完整身份绑定：同名异来源、同源不同输出口都按它自己来。 */
+  const insertChoice = (choice: MentionChoice) => {
+    if (choice.identity) bindReferenceName(engine.doc, selfId, choice.identity)
+    insertName(choice.insert)
   }
   const applyPreset = (p: PromptPreset) => {
     onPreset(p)
@@ -367,8 +380,8 @@ export function PromptBox({
   }
   const pick = (i: number) => {
     if (query?.kind === '/') applyPreset(presetOptions[i]!)
-    else if (profileOpts.length) insert(profileOpts[i]!.insert)
-    else insert(mentionOptions[i]!.insert)
+    else if (profileOpts.length) insertName(profileOpts[i]!.insert)
+    else insertName(mentionOptions[i]!.insert)
   }
   /** 候选项：按下时不让文本框失焦 */
   const option = (key: string, i: number, onClick: () => void, body: React.ReactNode) => (
@@ -512,7 +525,7 @@ export function PromptBox({
               option(
                 o.key,
                 i,
-                () => insert(o.insert),
+                () => insertName(o.insert),
                 <>
                   {o.images[0] ? (
                     <img
@@ -543,7 +556,7 @@ export function PromptBox({
           anchor={ref.current}
           query={query.query}
           choices={choices}
-          onPick={insert}
+          onPick={insertChoice}
           onClose={() => setQuery(null)}
         />
       )}
