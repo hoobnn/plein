@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { adoptResult, currentResult, type NodeResult } from '@plein/doc'
+import { adoptResultManually, currentResult, type NodeResult } from '@plein/doc'
 import { switchMode, useCanvas } from '../stores/canvas'
 
 type View = NonNullable<ReturnType<typeof useCanvas.getState>['viewer']>
@@ -51,8 +51,7 @@ export function runReviewAction(
   if (!expected || !latest || identity(expected) !== identity(latest))
     return '候选已变化，本次采用未执行；请确认当前候选后重试'
   if (currentResult(node, latest.port)?.id === latest.id) return null
-  engine.doc.undo.stopCapturing()
-  adoptResult(engine.doc, node.id, latest.id)
-  engine.doc.undo.stopCapturing()
+  // 明确的人工采用：独立一步撤销，并写下版本记号。
+  adoptResultManually(engine.doc, node.id, latest.id)
   return null
 }

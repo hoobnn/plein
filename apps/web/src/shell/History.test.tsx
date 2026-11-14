@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { deleteElements, updateElement } from '@plein/doc'
+import { createElement, deleteElements, updateElement, setResults } from '@plein/doc'
 import type { ArrangedClip } from '@plein/nodes'
 import { expect, it, vi } from 'vite-plus/test'
 import { inspectReworkSource } from '../features/sequence/rework'
@@ -19,7 +19,7 @@ function setup({ readOnly = false } = {}) {
     f.add(i === 2 ? 'speech' : 'image', name, { x: i * 500 }),
   )
   const results = ids.map((id, i) => f.results(id, i === 2 ? 'audio' : 'image', 1)[0]!)
-  results.forEach((result, i) => f.doc.mutable(ids[i]!)!.set('results', [{ ...result, at: i + 1 }]))
+  results.forEach((result, i) => setResults(f.doc, ids[i]!, [{ ...result, at: i + 1 }]))
   f.doc.readOnly = readOnly
   useCanvas.setState({ history: true })
   mockFetch((request) => {
@@ -62,13 +62,13 @@ it.each(['filter', 'empty-filter', 'delete-undo', 'result', 'sort', 'rapid'] as 
       act(() => {
         f.doc.undo.stopCapturing()
         if (mode === 'delete-undo') deleteElements(f.doc, [f.ids[0]!])
-        else f.doc.mutable(f.ids[0]!)!.set('results', [])
+        else setResults(f.doc, f.ids[0]!, [])
         f.doc.flush()
       })
       expect(screen.queryByRole('checkbox', { name: '选择「甲」' })).toBeNull()
       act(() => {
         if (mode === 'delete-undo') f.doc.undo.undo()
-        else f.doc.mutable(f.ids[0]!)!.set('results', [f.results[0]])
+        else setResults(f.doc, f.ids[0]!, [f.results[0]!])
         f.doc.flush()
       })
       expect(f.check('甲').checked).toBe(false)
@@ -214,14 +214,14 @@ it('删除后又有新操作时，撤销按钮不误撤其他操作', async () =
   act(() => useCanvas.getState().noticeAction!.run())
   expect(f.doc.get(f.ids[1]!)!.name).toBe('后来改名')
   expect(f.doc.get(f.ids[0]!)!.results).toEqual([])
-  expect(useCanvas.getState().notice).toBe('删除之后已有其他操作，请用 ⌘Z 逐步撤销')
+  expect(useCanvas.getState().notice).toBe('删除之后已有其他操作，请用 ⌘Z 逐步撤销。')
 })
 
 it('删除未采用但会改变当前输出的候选也先确认', async () => {
   const f = setup()
   const id = f.ids[0]!
   act(() => {
-    f.doc.mutable(id)!.set('results', [
+    setResults(f.doc, id, [
       {
         id: 'v1',
         port: 'video',
@@ -385,7 +385,7 @@ it.each(['escape', 'locate'] as const)(
       value: { type: 'image' as const, assetId: 'extra-asset' },
     }
     act(() => {
-      f.doc.mutable(f.ids[0]!)!.set('results', [f.results[0], extra])
+      setResults(f.doc, f.ids[0]!, [f.results[0]!, extra])
       f.doc.flush()
     })
     const cards = screen.getAllByRole('button', { name: '预览「甲」' })
@@ -411,7 +411,7 @@ it.each(['escape', 'locate'] as const)(
 it('历史采用旧尾帧后主视频同步采用，验收备注按端口独立保存并可重开', async () => {
   const f = shellFixture()
   const id = f.add('video', '视频与尾帧')
-  f.doc.mutable(id)!.set('results', [
+  setResults(f.doc, id, [
     {
       id: 'video-new',
       runId: 'new',
@@ -508,7 +508,7 @@ function videoFixture(name: string, assetId: string) {
     value: { type: 'video' as const, assetId, mime: 'video/mp4' },
   }
   act(() => {
-    f.doc.mutable(id)!.set('results', [result])
+    setResults(f.doc, id, [result])
     f.doc.flush()
   })
   useCanvas.setState({ history: true })
@@ -573,7 +573,7 @@ it('历史视频放到画布保留精确候选来源，可直接核对返工', a
 })
 
 it.each([
-  ['候选被删除', (f: ReturnType<typeof videoFixture>) => f.doc.mutable(f.id)!.set('results', [])],
+  ['候选被删除', (f: ReturnType<typeof videoFixture>) => setResults(f.doc, f.id, [])],
   [
     '画布已切换',
     (f: ReturnType<typeof videoFixture>) => {
@@ -605,7 +605,7 @@ it.each([
   await user.click(screen.getByRole('button', { name: '放到画布上' }))
   await waitFor(() => expect(release).toBeTruthy())
   act(() => {
-    void change(f)
+    change(f)
   })
   await act(async () => release(Response.json({ ...mediaAsset(f.assetId, 'video'), duration: 3 })))
   await waitFor(() =>
@@ -619,7 +619,7 @@ it.each([
 it('旧视频候选没有 runId 时仍可作为普通素材放入，并说明返工来源缺失', async () => {
   const f = videoFixture('旧候选视频', 'd'.repeat(64))
   act(() => {
-    f.doc.mutable(f.id)!.set('results', [{ ...f.result, runId: '' }])
+    setResults(f.doc, f.id, [{ ...f.result, runId: '' }])
     f.doc.flush()
   })
   mockFetch((request) =>
@@ -648,4 +648,114 @@ it('旧视频候选没有 runId 时仍可作为普通素材放入，并说明返
   expect(placed.assetId).toBe(f.assetId)
   expect(placed.videoSegment).toBeUndefined()
   expect(useCanvas.getState().notice).toContain('只能作为普通视频素材使用')
+})
+
+/** 在画布上放一个精确引用该候选的固定片段 */
+function fixCandidate(
+  f: ReturnType<typeof setup>,
+  elementId: string,
+  result: { id: string; port: string; runId: string; value: { assetId: string } },
+) {
+  const holder = createElement(f.doc, { kind: 'video', x: 0, y: 0, w: 100, h: 60 })
+  act(() => {
+    f.doc.mutable(holder)!.set('videoSegment', {
+      version: 1,
+      segmentId: 'segment-1',
+      asset: { assetId: result.value.assetId, kind: 'video' },
+      duration: 3,
+      selection: {
+        canvasId: 'shell-test',
+        nodeId: elementId,
+        port: result.port,
+        resultId: result.id,
+        runId: result.runId,
+      },
+    })
+    f.doc.flush()
+  })
+  return holder
+}
+
+it('被固定剪辑引用的候选不能从历史里删掉，混合批次只删其余项', async () => {
+  const f = setup()
+  const pinned = {
+    id: 'pinned',
+    runId: 'run-pinned',
+    port: 'images',
+    at: 5,
+    value: { type: 'video' as const, assetId: 'a'.repeat(64) },
+  }
+  act(() => {
+    setResults(f.doc, f.ids[0]!, [pinned])
+    f.doc.flush()
+  })
+  fixCandidate(f, f.ids[0]!, pinned)
+  act(() => {
+    f.doc.mutable(f.ids[0]!)!.set('adopted', null)
+    f.doc.flush()
+  })
+  await f.user.click(screen.getByRole('button', { name: '删除「甲」' }))
+  expect(useCanvas.getState().notice).toBe(
+    '这些结果仍被固定剪辑使用（含关联输出），已保留；请先在固定片段里替换素材。',
+  )
+  expect(f.doc.get(f.ids[0]!)!.results).toHaveLength(1)
+
+  await f.selectAll()
+  await f.user.click(screen.getByRole('button', { name: '删除' }))
+  const dialog = within(await screen.findByRole('dialog', { name: '删除生成结果？' }))
+  expect(dialog.getByText(/1 项仍被固定剪辑使用/)).toBeTruthy()
+  await f.user.click(dialog.getByRole('button', { name: '删除' }))
+  act(() => f.doc.flush())
+  expect(f.doc.get(f.ids[0]!)!.results).toHaveLength(1)
+  expect(f.doc.get(f.ids[1]!)!.results).toEqual([])
+  expect(f.doc.get(f.ids[2]!)!.results).toEqual([])
+  expect(useCanvas.getState().notice).toBe('已删除 2 项，保留 1 项仍被固定剪辑使用，可撤销（⌘Z）')
+  act(() => useCanvas.getState().noticeAction!.run())
+  expect(f.doc.get(f.ids[1]!)!.results).toHaveLength(1)
+})
+
+it('旧版本客户端迟到的写入显示为冲突证据，当前结果不被覆盖', () => {
+  const f = setup()
+  act(() => {
+    f.doc
+      .mutable(f.ids[0]!)!
+      .set('results', [{ ...f.results[0]!, id: 'legacy', runId: 'legacy-run', at: 0 }])
+    f.doc.flush()
+  })
+  expect(screen.getByRole('status').textContent).toContain(
+    '1 个节点的候选被旧版本客户端改过，已保留较新的结果；旧记录只作核对。',
+  )
+  expect(screen.getByText(/查看涉及的节点/)).toBeTruthy()
+  expect(screen.getByText(/旧记录 1 项未被采纳/)).toBeTruthy()
+  expect(f.doc.get(f.ids[0]!)!.results!.map((r) => r.id)).toEqual([f.results[0]!.id])
+})
+
+it('确认期间新固定引用：全部被保护时说明留存原因，不给撤销按钮', async () => {
+  const f = setup()
+  const pinned = {
+    id: 'pinned-late',
+    runId: 'run-pinned-late',
+    port: 'video',
+    at: 5,
+    value: { type: 'video' as const, assetId: 'b'.repeat(64) },
+  }
+  act(() => {
+    setResults(f.doc, f.ids[0]!, [pinned])
+    f.doc.mutable(f.ids[0]!)!.set('adopted', pinned.id)
+    f.doc.flush()
+  })
+  // 删除采用中的结果会先确认
+  await f.user.click(screen.getByRole('button', { name: '删除「甲」' }))
+  const dialog = within(await screen.findByRole('dialog', { name: '删除生成结果？' }))
+  // 确认窗口打开之后，另一处刚把这个候选固定成片段
+  fixCandidate(f, f.ids[0]!, pinned)
+  await f.user.click(dialog.getByRole('button', { name: '删除' }))
+  act(() => f.doc.flush())
+
+  expect(f.doc.get(f.ids[0]!)!.results!.map((r) => r.id)).toEqual([pinned.id])
+  expect(useCanvas.getState().notice).toBe(
+    '1 项结果在确认期间被固定剪辑使用（含关联输出），已保留；请先在固定片段里替换素材。',
+  )
+  // 没有发生删除，因此没有可撤销动作（不能给会撤掉别的操作的按钮）
+  expect(useCanvas.getState().noticeAction).toBeNull()
 })

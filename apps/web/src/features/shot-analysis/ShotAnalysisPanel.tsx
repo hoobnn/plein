@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { adoptResult, setParams } from '@plein/doc'
+import { adoptResultManually, setParams } from '@plein/doc'
 import {
   SHOT_ANALYSIS_TYPE,
   ShotAnalysisManifest,
@@ -200,7 +200,7 @@ export function ShotAnalysisPanel({
                 type="button"
                 className="ui-btn ui-btn-secondary"
                 disabled={readOnly || busy}
-                onClick={() => adoptResult(engine.doc, id, report.result.id)}
+                onClick={() => adoptResultManually(engine.doc, id, report.result.id)}
               >
                 采用此清单
               </button>
