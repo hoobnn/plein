@@ -5,7 +5,12 @@ import { afterEach, expect, it, vi } from 'vite-plus/test'
 import type { Server } from '../app'
 import { addNode, bootServer, createCanvas, mockSettings } from '../testing'
 
-afterEach(() => vi.restoreAllMocks())
+const videoSpec = mockProvider.models.find((model) => model.id === 'video')!
+const videoLimits = videoSpec.limits
+afterEach(() => {
+  videoSpec.limits = videoLimits
+  vi.restoreAllMocks()
+})
 
 const asset = (c: string) => c.repeat(64)
 const boundary = (name: string, source: string) =>
@@ -380,4 +385,51 @@ it('正文与上游 Markdown 各带一个绑定时，两段标记互不串用身
   ).toEqual([asset('a'), asset('b')])
   expect(input.prompt).not.toContain('@甲')
   expect(input.prompt).not.toContain('@乙')
+})
+
+it('可选参考被模型上限正常舍弃时保留可读名，不误报失效、也不禁用生成', async () => {
+  videoSpec.limits = { ...videoLimits, references: { max: 1 } }
+  const { server, id, doc } = await boot()
+  const plain = createElement(doc, {
+    id: 'plain-limit',
+    kind: 'image',
+    name: '甲',
+    assetId: asset('a'),
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  const bound = createElement(doc, {
+    id: 'bound-limit',
+    kind: 'image',
+    name: '乙',
+    assetId: asset('b'),
+    x: 0,
+    y: 200,
+    w: 100,
+    h: 100,
+  })
+  const node = target(doc, '@甲 与 @乙', {
+    [boundary('乙', bound)]: {
+      type: 'image',
+      assetId: asset('b'),
+      source: bound,
+      sourcePort: 'image',
+    },
+  })
+  const submit = vi.spyOn(mockProvider, 'submit')
+  const input = await server.runs.preview(id, node, 'local')
+  expect(input.status).toBe('ready')
+  expect(input.inputs.images?.map((item) => item.assetId)).toEqual([asset('a')])
+  expect(
+    input.notices.some(
+      (notice) => notice.code === 'optional_dropped' && notice.message.includes('乙'),
+    ),
+  ).toBe(true)
+  expect(input.blocked.some((issue) => issue.message.includes('已删除、替换或未送入'))).toBe(false)
+  const posted = await submitted(server, id, node, submit)
+  expect(posted.references?.some((item) => item.assetId === asset('a'))).toBe(true)
+  expect(posted.references?.some((item) => item.assetId === asset('b'))).toBe(false)
+  void plain
 })

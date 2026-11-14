@@ -2438,6 +2438,11 @@ export class NodeRuns implements BatchHost {
         if (!doc.has(source)) return true
         return !connected.has(source) && !mentioned.has(source)
       }
+      const droppedByLimit = new Set(
+        details.flatMap((detail) =>
+          detail.reason === 'over_limit' && detail.elementId ? [detail.elementId] : [],
+        ),
+      )
       const resolveOne = (name: string, params: Record<string, unknown> = el.params ?? {}) =>
         resolveBoundReference({
           name,
@@ -2446,6 +2451,7 @@ export class NodeRuns implements BatchHost {
           imageLabel: numbering.label,
           isStale,
           mediaSupported: (kind) => kind === 'image' || (limits?.referenceMedia?.[kind] ?? 0) > 0,
+          dropped: (binding) => !!binding.source && droppedByLimit.has(binding.source),
         })
       const report = (result: BoundReference, name: string) => {
         if (result.error) blocked.push({ code: 'prepare_failed', message: result.error })

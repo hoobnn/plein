@@ -38,6 +38,7 @@ export function resolveBoundReference({
   imageLabel,
   isStale,
   mediaSupported,
+  dropped,
 }: {
   /** 提示词里写下的名字（不含 @） */
   name: string
@@ -51,6 +52,8 @@ export function resolveBoundReference({
   isStale(binding: ReferenceIdentity): boolean
   /** 当前模型是否接收这类媒体；缺省兼容既有调用。 */
   mediaSupported?(kind: ReferenceIdentity['type']): boolean
+  /** 可选参考因模型上限被正常舍弃：保留名字即可，不能再报成「已删除/未送入」。 */
+  dropped?(binding: ReferenceIdentity): boolean
 }): BoundReference {
   const bindings = referenceBindings(params)
   const binding = bindings[name]
@@ -103,6 +106,8 @@ export function resolveBoundReference({
     : candidates.length === 1
       ? candidates[0]
       : undefined
+  // 可选参考被模型上限正常舍弃：保留可读名称，已有的 optional_dropped 才是真实原因。
+  if (!current && dropped?.(binding)) return { text: name }
   // 旧绑定没写输出口、同源同类型又有多个候选时不能取第一个：宁可阻断让用户重选。
   if (!current && candidates.length > 1 && binding.source && !binding.sourcePort)
     return { text: name, error: `引用 @${name} 对应多个输出，请从参考素材重新选择` }
