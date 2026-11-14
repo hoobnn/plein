@@ -7,6 +7,8 @@ import {
   deleteElements,
   type NodeResult,
   type PleinDoc,
+  setParams,
+  writeRun,
 } from '@plein/doc'
 import { openDoc } from '@plein/doc/testing'
 import type { JobInfo, PreparedInput } from '@plein/protocol'
@@ -637,4 +639,111 @@ it('同画布复制节点后按原执行节点核对输入，不额外请求', a
   expect(historicalSection().textContent).not.toContain('没有与此候选匹配')
   expect(jobReads).toBe(1)
   await waitFor(() => expect(currentSection().textContent).toContain('当前提示词'))
+})
+
+it('关闭期间改动实际输入，重开后不沿用旧当前输入', async () => {
+  const f = setup('image', 1)
+  let reads = 0
+  mockFetch((request) => {
+    const path = new URL(request.url).pathname
+    if (path === '/api/canvases/shell-test/jobs/run-0') return new Response(null, { status: 404 })
+    if (path === `/api/canvases/shell-test/nodes/${f.id}/input`) {
+      reads++
+      return Response.json(prepared(f.id, `模型${reads}`, `当前输入${reads}`))
+    }
+    return undefined
+  })
+  await f.user.click(screen.getByText('此候选生成时输入与当前输入对照'))
+  await waitFor(() => expect(currentSection().textContent).toContain('当前输入1'))
+  await f.user.click(screen.getByRole('button', { name: '关闭' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  act(() => {
+    setParams(f.doc, f.id, { prompt: '关闭期间改成的 B' })
+    f.doc.flush()
+  })
+  act(() =>
+    useCanvas.setState({
+      viewer: { kind: 'result', nodeId: f.id, resultId: f.results[0]!.id, name: '审片素材' },
+    }),
+  )
+  await f.user.click(screen.getByText('此候选生成时输入与当前输入对照'))
+  await waitFor(() => expect(currentSection().textContent).toContain('当前输入2'))
+  expect(currentSection().textContent).not.toContain('当前输入1')
+  expect(reads).toBe(2)
+})
+
+it('移动节点或任务进度不重取当前输入', async () => {
+  const f = setup('image', 1)
+  let reads = 0
+  mockFetch((request) => {
+    const path = new URL(request.url).pathname
+    if (path === '/api/canvases/shell-test/jobs/run-0') return new Response(null, { status: 404 })
+    if (path === `/api/canvases/shell-test/nodes/${f.id}/input`) {
+      reads++
+      return Response.json(prepared(f.id, '模型', '当前输入'))
+    }
+    return undefined
+  })
+  await f.user.click(screen.getByText('此候选生成时输入与当前输入对照'))
+  await waitFor(() => expect(currentSection().textContent).toContain('当前输入'))
+  act(() => {
+    f.doc.mutable(f.id)!.set('x', 640)
+    writeRun(f.doc, f.id, { id: 'progress', status: 'running', at: 2 })
+    f.doc.flush()
+  })
+  await act(async () => {})
+  expect(reads).toBe(1)
+})
+
+it('输入变化后先说明正在重读，不把旧输入当成当前输入', async () => {
+  const f = setup('image', 1)
+  let reads = 0
+  mockFetch((request) => {
+    const path = new URL(request.url).pathname
+    if (path === '/api/canvases/shell-test/jobs/run-0') return new Response(null, { status: 404 })
+    if (path === `/api/canvases/shell-test/nodes/${f.id}/input`) {
+      reads++
+      return Response.json(prepared(f.id, '模型', `当前输入${reads}`))
+    }
+    return undefined
+  })
+  await f.user.click(screen.getByText('此候选生成时输入与当前输入对照'))
+  await waitFor(() => expect(currentSection().textContent).toContain('当前输入1'))
+  act(() => {
+    setParams(f.doc, f.id, { prompt: '改成 B' })
+    f.doc.flush()
+  })
+  await waitFor(() => expect(currentSection().textContent).toContain('输入刚有变化'))
+  expect(currentSection().textContent).not.toContain('当前输入1')
+  await waitFor(() => expect(currentSection().textContent).toContain('当前输入2'), {
+    timeout: 2000,
+  })
+  expect(reads).toBe(2)
+})
+
+it('同步未追平时不把旧输入当成当前输入，追平后自动重读', async () => {
+  const f = setup('image', 1)
+  let reads = 0
+  mockFetch((request) => {
+    const path = new URL(request.url).pathname
+    if (path === '/api/canvases/shell-test/jobs/run-0') return new Response(null, { status: 404 })
+    if (path === `/api/canvases/shell-test/nodes/${f.id}/input`) {
+      reads++
+      return reads === 1
+        ? Response.json(
+            { error: 'sync_pending', message: '服务端还没收到本机改动' },
+            { status: 409 },
+          )
+        : Response.json(prepared(f.id, '模型', '同步后的新输入'))
+    }
+    return undefined
+  })
+  useCanvas.setState({ sync: 'connected' })
+  await f.user.click(screen.getByText('此候选生成时输入与当前输入对照'))
+  await waitFor(() => expect(currentSection().textContent).toContain('本机改动还没同步到服务端'))
+  expect(currentSection().textContent).not.toContain('同步后的新输入')
+  await waitFor(() => expect(currentSection().textContent).toContain('同步后的新输入'), {
+    timeout: 2000,
+  })
+  expect(reads).toBe(2)
 })

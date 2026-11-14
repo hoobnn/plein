@@ -515,7 +515,7 @@ function videoFixture(name: string, assetId: string) {
   return { ...f, id, assetId, result, origin }
 }
 
-it('历史视频放到画布保留精确候选来源，重开后仍能核对返工', async () => {
+it('历史视频放到画布保留精确候选来源，可直接核对返工', async () => {
   const f = videoFixture('镜头视频', 'a'.repeat(64))
   mockFetch((request) =>
     request.url.endsWith('/meta')

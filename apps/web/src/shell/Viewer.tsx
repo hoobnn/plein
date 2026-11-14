@@ -290,10 +290,9 @@ function Review({ viewer }: { viewer: View }) {
             )}
           </div>
         )}
-        {element && result && (
+        {engine && element && result && (
           <CandidateInputEvidence
             engine={engine}
-            doc={doc}
             canvasId={canvasId}
             viewer={viewer}
             result={result}

@@ -1,30 +1,13 @@
 import type { Engine } from '@plein/canvas-core'
-import type { NodeResult, PleinDoc } from '@plein/doc'
-import type { PreparedInput } from '@plein/protocol'
+import type { NodeResult } from '@plein/doc'
 import { useQuery } from '@tanstack/react-query'
-import { useCallback, useRef, useState, useSyncExternalStore } from 'react'
+import { useState } from 'react'
+import { useInputPreview } from '../features/generator/InputPreview'
 import { InputDetails } from '../features/storyboard/InputDetails'
-import { api } from '../api/client'
 import { useCanvas } from '../stores/canvas'
 import { readCandidateJob } from './candidateInput'
 
 type View = NonNullable<ReturnType<typeof useCanvas.getState>['viewer']>
-
-/** 文档变化就换查询版本，当前输入不能停在旧快照。 */
-function useDocRevision(doc: PleinDoc | undefined) {
-  const ref = useRef(0)
-  const subscribe = useCallback(
-    (notify: () => void) =>
-      doc
-        ? doc.subscribe(() => {
-            ref.current++
-            notify()
-          })
-        : () => {},
-    [doc],
-  )
-  return useSyncExternalStore(subscribe, () => ref.current)
-}
 
 /**
  * 审片里的输入对照：按候选精确 runId 读当次冻结输入，再与当前节点输入并排显示。
@@ -32,21 +15,26 @@ function useDocRevision(doc: PleinDoc | undefined) {
  */
 export function CandidateInputEvidence({
   engine,
-  doc,
   canvasId,
   viewer,
   result,
 }: {
-  engine: Engine | null
-  doc: PleinDoc | undefined
+  engine: Engine
   canvasId: string | null
   viewer: View
   result: NodeResult
 }) {
   const [open, setOpen] = useState(false)
   const sync = useCanvas((s) => s.sync)
-  const version = useDocRevision(doc)
   const nodeId = viewer.nodeId
+  // 当前输入复用生成器的公共预览：内部按实际输入语义摘要换代，移动节点、无关节点和任务进度
+  // 不重取；关闭时停用，重开按当前文档重新读取，关闭期间改过的输入不会沿用旧缓存。
+  // 服务端还没收到本机改动时由它标记等同步并在追平后自动重读。
+  const preview = useInputPreview(
+    engine,
+    open && canvasId && nodeId ? canvasId : null,
+    nodeId ?? '',
+  )
 
   const stillViewing = () => {
     const state = useCanvas.getState()
@@ -83,25 +71,12 @@ export function CandidateInputEvidence({
       return evidence
     },
   })
-  const current = useQuery({
-    queryKey: ['viewer-current-input', canvasId, nodeId, version],
-    enabled: open && !!(engine && canvasId && nodeId),
-    retry: false,
-    queryFn: async (): Promise<PreparedInput> => {
-      if (!canvasId || !nodeId) throw new Error('没有可核对的节点')
-      const input = await api.nodeInput(canvasId, nodeId)
-      if (input.nodeId !== nodeId || !stillViewing() || !engine?.doc.has(nodeId))
-        throw new Error('节点身份已变化')
-      return input
-    },
-  })
-
-  const retry = (query: { isFetching: boolean; refetch(): unknown }) => (
+  const retryButton = (onClick: () => void, disabled = false) => (
     <button
       type="button"
       className="ui-btn ui-btn-secondary ui-btn-sm"
-      disabled={query.isFetching}
-      onClick={() => void query.refetch()}
+      disabled={disabled}
+      onClick={onClick}
     >
       重试读取
     </button>
@@ -129,7 +104,7 @@ export function CandidateInputEvidence({
           ) : old.isError || !old.data ? (
             <div className="space-y-1">
               <p className="text-xs">生成时的输入记录读不到；不以当前参数代替。</p>
-              {retry(old)}
+              {retryButton(() => void old.refetch(), old.isFetching)}
             </div>
           ) : !old.data.job.input ? (
             <p className="text-xs">这条生成记录没有冻结输入，不能用当前参数补填。</p>
@@ -146,15 +121,21 @@ export function CandidateInputEvidence({
         </section>
         <section className="max-h-48 min-w-0 space-y-1 overflow-auto">
           <h4 className="text-sm font-medium">当前节点实际输入</h4>
-          {!open ? null : current.isPending ? (
+          {!open ? null : preview.syncPending ? (
+            <p className="text-xs">本机改动还没同步到服务端，同步后会自动重读当前输入。</p>
+          ) : preview.loading && !preview.data ? (
             <p className="text-xs">读取当前输入…</p>
-          ) : current.isError ? (
+          ) : preview.error ? (
             <div className="space-y-1">
               <p className="text-xs">当前输入暂不可读取。</p>
-              {retry(current)}
+              {retryButton(preview.retry, preview.loading)}
             </div>
+          ) : preview.stale ? (
+            <p className="text-xs">输入刚有变化，正在按最新内容重新读取…</p>
+          ) : preview.data ? (
+            <InputDetails input={preview.data} />
           ) : (
-            current.data && <InputDetails input={current.data} />
+            <p className="text-xs">当前输入还不可读取。</p>
           )}
           {sync !== 'connected' && (
             <p className="text-xs text-ink-subtle">
