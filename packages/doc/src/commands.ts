@@ -2,16 +2,26 @@ import { generateNKeysBetween } from 'fractional-indexing'
 import * as Y from 'yjs'
 import { type ElementMap, type PleinDoc, SYSTEM_ORIGIN } from './doc'
 import { createProductionMap } from './domain/production'
-import { newId } from './ids'
+import { newAdoptionRevision, newId } from './ids'
 import { inputEdges } from './inputs'
-import {
-  sequenceSnapshot,
-  snapshotTypedDeliveries,
-  snapshotResultEvidence,
-} from './sequence-snapshot'
+import { sequenceSnapshot, snapshotTypedDeliveries } from './sequence-snapshot'
 import { materializeSequenceV1, sequenceInstancesOf } from './domain/sequence-instances'
 import { isVideoSegment } from './domain/video-segment'
 import { creativeReviewKey, isCreativeReview } from './domain/review-types'
+import { fixedReferencedResultIds, relatedOutputIds } from './domain/fixed-references'
+import {
+  deleteResultItems,
+  ensureResultsContainer,
+  insertResultsFront,
+  legacyResults,
+  readResults,
+  replaceResults,
+  resultIndexes,
+  resultsContainer,
+  snapshotResult,
+  RESULTS_RECORDED_KEY,
+  type ResultRemovalReceipt,
+} from './results'
 import { write } from './commands/write'
 
 export { ReadOnlyDocError } from './commands/write'
@@ -154,7 +164,19 @@ export function createElements(doc: PleinDoc, inputs: NewElement[]): string[] {
           ),
         )
       }
-      if (input.results?.length) m.set('results', snapshotResultEvidence(input.results))
+      // 结果容器随节点一起建：两个客户端各自给同一个节点加候选时，
+      // 容器已经存在，两边写进同一个 Y.Array，不会各造一份互相覆盖。
+      if (input.kind === 'node') {
+        const container = ensureResultsContainer(m)
+        if (input.results?.length) {
+          insertResultsFront(container, input.results)
+          m.set(RESULTS_RECORDED_KEY, true)
+        }
+      } else if (input.results?.length) {
+        const container = ensureResultsContainer(m)
+        insertResultsFront(container, input.results)
+        m.set(RESULTS_RECORDED_KEY, true)
+      }
       if (input.adopted !== undefined) m.set('adopted', input.adopted)
       if (input.reviews?.length)
         m.set(
@@ -442,12 +464,29 @@ export const MAX_RESULTS = 48
  * 删除生成历史里的结果记录（可撤销，一次调用一步）。
  * 只删文档里的记录，不删除资产文件；被删的是节点当前显式采用的结果时，
  * 节点回到「尚未采用」，不自动换成别的候选。节点或结果不存在时跳过。
+ *
+ * 逐条删除容器里的目标项，不整份重写数组：这样撤销只会还原被删的那几条，
+ * 系统在这期间加入的候选与采用状态都留着。
  */
 export function removeResults(
   doc: PleinDoc,
   items: ReadonlyArray<{ elementId: string; resultId: string }>,
 ): number {
-  if (doc.readOnly || items.length === 0) return 0
+  return removeResultsWithReceipt(doc, items).removed
+}
+
+/**
+ * 删除结果，并留下「只撤销这一次删除」的凭据。
+ *
+ * 凭据让撤销不必依赖全局撤销栈：远端把节点整个删掉之后，栈里那一步已经
+ * 失效，Yjs 会跳过它去撤更早的操作，把别的编辑撤掉。有了凭据就只动
+ * 这次删掉的那几条。
+ */
+export function removeResultsWithReceipt(
+  doc: PleinDoc,
+  items: ReadonlyArray<{ elementId: string; resultId: string }>,
+): { removed: number; receipt: ResultRemovalReceipt[] } {
+  if (doc.readOnly || items.length === 0) return { removed: 0, receipt: [] }
   const byElement = new Map<string, Set<string>>()
   for (const { elementId, resultId } of items) {
     const ids = byElement.get(elementId)
@@ -457,27 +496,125 @@ export function removeResults(
   // 单次调用独立成一步撤销，不与相邻的删除或编辑合并。
   doc.undo.stopCapturing()
   try {
+    // 旧格式节点还没有新容器时，先用系统写入把旧数据搬进新容器：
+    // 容器创建不进用户的撤销栈，用户那一步撤销只还原被删的候选。
+    // 根本没有这条记录的节点不建容器 —— 删不存在的东西不该留下痕迹。
+    doc.ydoc.transact(() => {
+      for (const [elementId, resultIds] of byElement) {
+        const m = doc.elementMaps.get(elementId)
+        if (!(m instanceof Y.Map)) continue
+        const container = resultsContainer(m)
+        const legacy = legacyResults(m)
+        // 容器里有内容就看容器；容器空着就看旧端留下的候选。
+        const source: NodeResult[] = container?.length
+          ? (container.toArray() as NodeResult[])
+          : (legacy ?? [])
+        if (!source.some((r) => r.id && resultIds.has(r.id))) continue
+        ensureResultsContainer(m)
+      }
+    }, SYSTEM_ORIGIN)
     return write(doc, () => {
       let removed = 0
+      const receipt: ResultRemovalReceipt[] = []
       for (const [elementId, resultIds] of byElement) {
         const m = doc.mutable(elementId)
         if (!m) continue
-        const old = Array.isArray(m.get('results')) ? (m.get('results') as NodeResult[]) : []
-        const list = old.filter((r) => !resultIds.has(r.id))
-        removed += old.length - list.length
-        if (list.length === old.length) continue
-        m.set('results', snapshotResultEvidence(list))
+        const container = resultsContainer(m)
+        if (!container) continue
+        const items = container.toArray()
+        const indexes = resultIndexes(container, resultIds)
+        if (!indexes.length) continue
+        const entries = indexes.map((index) => ({
+          result: items[index] as NodeResult,
+          index,
+        }))
+        removed += deleteResultItems(container, indexes)
+        // 用户明确删过：结果归新端接管，旧端迟到的候选不会再复活。
+        m.set(RESULTS_RECORDED_KEY, true)
         const adopted = m.get('adopted')
+        receipt.push({
+          elementId,
+          entries,
+          adoptedBefore:
+            typeof adopted === 'string' ? adopted : adopted === null ? null : undefined,
+        })
         if (typeof adopted === 'string' && resultIds.has(adopted)) m.set('adopted', null)
       }
-      return removed
+      return { removed, receipt }
     })
   } finally {
     doc.undo.stopCapturing()
   }
 }
 
-/** 采用某个结果（可撤销）；resultId=null 沿用旧约定，清除显式选择并回到最新结果。 */
+/**
+ * 只撤销一次删除：把凭据里的候选逐条插回原位。
+ *
+ * 不走全局撤销栈 —— 那一步可能已因远端删除而失效，Yjs 会跳过它去撤
+ * 更早的操作，把别的编辑撤掉。这里只动这次删掉的那几条。
+ *
+ * 来源节点已被远端删除时跳过那部分（节点没了，候选无处可放），
+ * 其余照常还原；全部失效时什么也不改，由调用方提示用户。
+ */
+export function restoreRemovedResults(
+  doc: PleinDoc,
+  receipt: readonly ResultRemovalReceipt[],
+): { restored: number; skipped: string[] } {
+  if (doc.readOnly || !receipt.length) return { restored: 0, skipped: [] }
+  let restored = 0
+  const skipped: string[] = []
+  doc.undo.stopCapturing()
+  try {
+    write(doc, () => {
+      for (const removal of receipt) {
+        const m = doc.mutable(removal.elementId)
+        const container = m ? resultsContainer(m) : undefined
+        if (!m || !container) {
+          skipped.push(removal.elementId)
+          continue
+        }
+        // 位置从后往前插，前面插一条不会挤掉后面待插的位置。
+        const ordered = [...removal.entries].sort((a, b) => b.index - a.index)
+        for (const entry of ordered) {
+          const at = Math.min(entry.index, container.length)
+          container.insert(at, [snapshotResult(entry.result)])
+          restored++
+        }
+        if (typeof removal.adoptedBefore === 'string' && m.get('adopted') === null)
+          m.set('adopted', removal.adoptedBefore)
+      }
+    })
+  } finally {
+    doc.undo.stopCapturing()
+  }
+  return { restored, skipped }
+}
+/**
+ * 整份替换节点的结果记录（系统写入，不进撤销栈）。
+ *
+ * 用于导入重映射、检查点恢复这类「整份内容换掉」的场景；
+ * 用户删除走 `removeResults`，逐条插删才留得住撤销引用。
+ */
+export function setResults(doc: PleinDoc, id: string, results: readonly NodeResult[]) {
+  if (doc.readOnly) return
+  doc.ydoc.transact(() => {
+    const m = doc.mutable(id)
+    if (!m) return
+    replaceResults(m, results)
+  }, SYSTEM_ORIGIN)
+}
+
+/**
+ * 采用某个结果（可撤销）。
+ *
+ * resultId=null 沿用旧约定，清除显式选择并回到最新结果。
+ *
+ * 显式人工采用会同时写一个版本记号（`adoptionRevision`），记号存在撤销范围之外：
+ * 撤销这次采用只还原采用项，记号仍留在文档里 —— 历史要能证明用户当时确实
+ * 动过手。A → B → A 的最终采用项与最初一样，记号却不同。
+ *
+ * 系统写入（addResults、缓存沿用）不写记号。
+ */
 export function adoptResult(doc: PleinDoc, id: string, resultId: string | null) {
   write(doc, () => {
     const m = doc.mutable(id)
@@ -485,6 +622,32 @@ export function adoptResult(doc: PleinDoc, id: string, resultId: string | null) 
     if (resultId === null) m.delete('adopted')
     else if (m.get('adopted') !== resultId) m.set('adopted', resultId)
   })
+}
+
+/**
+ * 显式人工采用：独立一步撤销，并写下版本记号。
+ *
+ * 所有人工采用入口（审片器、生成历史、任务面板、候选检视）都走这里：
+ * 相邻 300ms 内的改字或另一次采用各自独立撤销，不被合并成一步。
+ *
+ * 记号写在同一个事务里，但存放在撤销范围之外：
+ * - 撤销这次采用只还原采用项，记号留在文档里 —— 历史要能证明用户动过手；
+ * - A → B → A 最终采用项与最初一样，记号却不同。
+ */
+export function adoptResultManually(doc: PleinDoc, id: string, resultId: string | null) {
+  doc.undo.stopCapturing()
+  try {
+    write(doc, () => {
+      const m = doc.mutable(id)
+      if (!m) return
+      if (resultId === null) m.delete('adopted')
+      else if (m.get('adopted') !== resultId) m.set('adopted', resultId)
+      // 记号所在的映射在撤销范围之外，这个事务被撤销时它不会跟着回滚。
+      doc.adoptionRevisions.set(id, newAdoptionRevision())
+    })
+  } finally {
+    doc.undo.stopCapturing()
+  }
 }
 
 /**
@@ -503,18 +666,23 @@ export function writeRun(doc: PleinDoc, id: string, run: NodeRun | null) {
 /**
  * 追加一次运行的结果（插到最前），并采用其中第一个。系统写入，不进撤销栈。
  * adopt 为 false 时只进候选历史、当前结果不变（晚返回、输入已经改过的结果待用户采用）
+ *
+ * 候选限额不能挤掉正在使用的结果，也不能拆散其视频 / 尾帧等关联输出，
+ * 更不能挤掉固定剪辑正在引用的候选：那些片段还要靠它返工。
  */
 export function addResults(
   doc: PleinDoc,
   id: string,
   results: NodeResult[],
-  opts: { adopt?: boolean } = {},
+  opts: { adopt?: boolean; canvasId?: string | null } = {},
 ) {
   if (results.length === 0) return
   doc.ydoc.transact(() => {
     const m = doc.mutable(id)
     if (!m) return
-    const old = Array.isArray(m.get('results')) ? (m.get('results') as NodeResult[]) : []
+    // 先把旧格式的数据搬进新容器，再读旧候选：顺序反了旧候选会被新键遮掉。
+    const container = ensureResultsContainer(m)
+    const old = readResults(m)
     const list = [...results, ...old]
     const chosen =
       opts.adopt === false
@@ -531,9 +699,33 @@ export function addResults(
     }
     for (const r of list) priority.add(r.id)
     const keep = new Set([...priority].slice(0, MAX_RESULTS))
-    m.set('results', snapshotResultEvidence(list.filter((r) => keep.has(r.id))))
+    // 固定剪辑引用的候选连同其关联输出必须留下：裁掉就断了返工与可追溯。
+    if (opts.canvasId) {
+      const fixed = fixedReferencedResultIds(doc.elements(), {
+        canvasId: opts.canvasId,
+        nodeId: id,
+        results: list,
+      })
+      for (const resultId of fixed) {
+        keep.add(resultId)
+        for (const related of relatedOutputIds(list, resultId)) keep.add(related)
+      }
+    }
+    insertResultsFront(container, results)
+    m.set(RESULTS_RECORDED_KEY, true)
+    // 超出限额的部分逐条删除。新加的候选插在最前，索引要往后挪。
+    const keptIds = new Set(list.filter((r) => keep.has(r.id)).map((r) => r.id))
+    const drop = list
+      .map((r, index) => (keptIds.has(r.id) ? -1 : index))
+      .filter((index) => index >= 0)
+    deleteResultItems(container, drop)
     // 无显式采用或旧引用已无效时也钉住实际生效的结果，避免新候选抢占。
-    m.set('adopted', chosen?.id ?? null)
+    //
+    // 只有显式采用值真的变了才写：重复写同一个值会覆盖掉本地删除带来的
+    // 采用变更（删除已采用的候选后 adopted 变 null，系统再写一次 null
+    // 会把这次变更抹平，撤销也还原不回来）。
+    const adopted = chosen?.id ?? null
+    if (m.get('adopted') !== adopted) m.set('adopted', adopted)
   }, SYSTEM_ORIGIN)
 }
 

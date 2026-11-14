@@ -28,6 +28,7 @@ import {
   sendToBack,
   setParams,
   setParent,
+  setResults,
   setText,
   ungroupElements,
   updateElement,
@@ -697,8 +698,9 @@ describe('节点结果与端口', () => {
         hasTail ? 'tail-2' : undefined,
       )
       // 重复关联键同样不能成为“取第一条”的理由。
-      restored.mutable(copy!)!.set(
-        'results',
+      setResults(
+        restored,
+        copy!,
         restored.get(copy!)!.results!.map((r) => ({ ...r, outputGroup: 'duplicate' })),
       )
       expect(currentResult(restored.get(copy!)!, hasTail ? 'video' : 'lastFrame')).toBeUndefined()

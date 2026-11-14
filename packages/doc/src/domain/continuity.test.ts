@@ -1,6 +1,13 @@
 import * as Y from 'yjs'
 import { afterEach, describe, expect, it } from 'vite-plus/test'
-import { adoptResult, connect, createElement, ReadOnlyDocError, setParam } from '../commands'
+import {
+  adoptResult,
+  connect,
+  createElement,
+  ReadOnlyDocError,
+  setParam,
+  setResults,
+} from '../commands'
 import { openDoc, node } from '../testing'
 import { createDoc, type PleinDoc } from '../doc'
 import { exportElements, importElements } from '../clipboard'
@@ -413,9 +420,8 @@ describe('可选计划与独立候选观察', () => {
     expect(productionContentSnapshot(f.doc.get(f.boardId))).toBe(before)
     expect(f.doc.get(f.video)!.reviews).toBeUndefined()
     expect(currentContinuityObservations(f.doc, f.scope, f.shots[0]!.id)).toHaveLength(1)
-    const map = f.doc.mutable(f.video)!
     const prior = f.doc.get(f.video)!.results![0]!
-    map.set('results', [{ ...prior, id: 'new-result' }, prior])
+    setResults(f.doc, f.video, [{ ...prior, id: 'new-result' }, prior])
     adoptResult(f.doc, f.video, 'new-result')
     expect(currentContinuityObservations(f.doc, f.scope, f.shots[0]!.id)).toEqual([])
     expect(continuityOf(f.doc, f.boardId).observations[0]!.id).toBe(id)

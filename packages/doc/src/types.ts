@@ -83,6 +83,11 @@ export interface CanvasElement extends Rect {
   results?: NodeResult[]
   /** 当前采用的结果 id；null 表示候选均待采用，未设置时兼容使用最新结果 */
   adopted?: string | null
+  /**
+   * 人工采用的版本记号。每次显式人工采用都换一个新的值；
+   * 系统自动采用不写它。撤销采用只还原采用项，记号仍留在文档里。
+   */
+  adoptionRevision?: string
   /** 人工验收按具体候选保存，独立于生成参数与采用状态。 */
   reviews?: CreativeReview[]
   production?: ProductionRecord

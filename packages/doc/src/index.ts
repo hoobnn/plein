@@ -16,7 +16,15 @@ export * from './layout'
 export * from './inputs'
 export * from './sizes'
 export * from './domain/shotGroup'
+export * from './domain/fixed-references'
 export { SCHEMA_VERSION } from './migrate'
+export {
+  hasStaleLegacyWrite,
+  LEGACY_RESULTS_KEY,
+  RESULTS_KEY,
+  readResults,
+  readResultsSnapshot,
+} from './results'
 export * from './types'
 export * from './domain/delivery'
 export * from './domain/reviews'

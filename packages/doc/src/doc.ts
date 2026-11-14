@@ -1,14 +1,12 @@
 import * as Y from 'yjs'
 import { migrate, SCHEMA_VERSION } from './migrate'
+import { newAdoptionRevision } from './ids'
 import { readProduction } from './domain/production'
 import { isCreativeReview } from './domain/review-types'
 import { isDeliveryRecord } from './domain/delivery'
 import { isVideoSegment } from './domain/video-segment'
-import {
-  sequenceSnapshot,
-  snapshotTypedDeliveries,
-  snapshotResultEvidence,
-} from './sequence-snapshot'
+import { sequenceSnapshot, snapshotTypedDeliveries } from './sequence-snapshot'
+import { readResultsSnapshot } from './results'
 import {
   type CanvasElement,
   type DocChange,
@@ -16,7 +14,6 @@ import {
   ELEMENT_KINDS,
   type Edge,
   type ElementKind,
-  type NodeResult,
   type NodeRun,
   type Ports,
   type Rect,
@@ -69,6 +66,14 @@ export class PleinDoc {
   readonly meta: Y.Map<unknown>
   readonly elementMaps: Y.Map<ElementMap>
   readonly edgeMap: Y.Map<Edge>
+  /**
+   * 人工采用的版本记号，按节点 id 存。
+   *
+   * 刻意放在撤销范围之外：`adopted` 本身是可以撤销的，但撤销之后仍然要能
+   * 证明「用户当时确实操作过」。记号留在撤销范围外，撤销采用只还原采用项，
+   * 不还原记号。
+   */
+  readonly adoptionRevisions: Y.Map<string>
   readonly undo: Y.UndoManager
   /** 写命令的事务 origin（见 DocOptions.origin） */
   readonly origin: unknown
@@ -92,6 +97,7 @@ export class PleinDoc {
     this.meta = ydoc.getMap('meta')
     this.elementMaps = ydoc.getMap('elements')
     this.edgeMap = ydoc.getMap('edges')
+    this.adoptionRevisions = ydoc.getMap('adoptionRevisions')
     this.undo = new Y.UndoManager([this.elementMaps, this.edgeMap], {
       trackedOrigins: new Set([LOCAL_ORIGIN]),
       captureTimeout: opts.captureTimeout ?? 300,
@@ -112,12 +118,20 @@ export class PleinDoc {
       for (const key of ev.keysChanged) this.pendingEdges.add(key)
       this.requestFlush()
     }
+    // 采用记号变化也要让节点的缓存快照失效，否则读到的还是旧记号。
+    const onRevisions = (ev: Y.YMapEvent<string>) => {
+      for (const key of ev.keysChanged) this.touchElement(key)
+      this.requestFlush()
+    }
     this.elementMaps.observeDeep(onElements)
     this.edgeMap.observe(onEdges)
+    this.adoptionRevisions.observe(onRevisions)
     this.disposers.push(
       () => this.elementMaps.unobserveDeep(onElements),
       () => this.edgeMap.unobserve(onEdges),
+      () => this.adoptionRevisions.unobserve(onRevisions),
     )
+    this.trackAdoptionChangesOnUndo()
 
     this.migrate()
     // 协作升级可能只改元数据，不会重新触发 WebSocket 初次同步。
@@ -159,7 +173,7 @@ export class PleinDoc {
     if (cached && this.elementMaps.has(id)) return cached
     const m = this.elementMaps.get(id)
     if (!(m instanceof Y.Map)) return undefined
-    const el = readElement(id, m)
+    const el = readElement(id, m, this.adoptionRevisions)
     if (el) this.cache.set(id, el)
     return el
   }
@@ -310,6 +324,66 @@ export class PleinDoc {
     this.pendingElements.add(id)
   }
 
+  /**
+   * 记下每个节点当前「显式采用」的值，用来判断一次撤销/重做是否真的改了采用。
+   * 只看显式值：缺省沿用最新与显式采用某一条，含义一样。
+   */
+  private adoptionSnapshot(): Map<string, string | null> {
+    const out = new Map<string, string | null>()
+    for (const [id, m] of this.elementMaps) {
+      if (!(m instanceof Y.Map)) continue
+      const adopted = m.get('adopted')
+      if (adopted === undefined) continue
+      out.set(id, adopted === null ? null : String(adopted))
+    }
+    return out
+  }
+
+  /**
+   * 撤销/重做真的改了采用选择时，给这些节点发新的版本记号。
+   *
+   * 记号写在撤销范围之外，所以它自己不会被撤销掉；这里发新记号是为了让
+   * 「当前采用是用户当时确认的那一次」这句话在撤销之后依然成立 ——
+   * 受理时记下 rev2，之后用户撤销回 A，consumer 就不能再拿 rev2 放行。
+   *
+   * 只有本机撤销/重做会走到这里；远端同步来的变更不会重复发记号。
+   */
+  private advanceAdoptionRevisions(before: Map<string, string | null>) {
+    const changed: string[] = []
+    for (const [id, m] of this.elementMaps) {
+      if (!(m instanceof Y.Map)) continue
+      const adopted = m.get('adopted')
+      const now = adopted === undefined ? undefined : adopted === null ? null : String(adopted)
+      const was = before.get(id)
+      if (was === undefined && now === undefined) continue
+      if (was === now) continue
+      changed.push(id)
+    }
+    if (!changed.length) return
+    this.ydoc.transact(() => {
+      for (const id of changed) this.adoptionRevisions.set(id, newAdoptionRevision())
+    }, SYSTEM_ORIGIN)
+  }
+
+  /** 把撤销/重做包一层：只有真的改了采用选择才发新的版本记号 */
+  private trackAdoptionChangesOnUndo() {
+    const undo = this.undo
+    const originalUndo = undo.undo.bind(undo)
+    const originalRedo = undo.redo.bind(undo)
+    undo.undo = () => {
+      const before = this.adoptionSnapshot()
+      const result = originalUndo()
+      this.advanceAdoptionRevisions(before)
+      return result
+    }
+    undo.redo = () => {
+      const before = this.adoptionSnapshot()
+      const result = originalRedo()
+      this.advanceAdoptionRevisions(before)
+      return result
+    }
+  }
+
   private requestFlush() {
     if (this.scheduled) return
     this.scheduled = true
@@ -317,12 +391,11 @@ export class PleinDoc {
   }
 }
 
-function isResult(r: unknown): r is NodeResult {
-  const v = r as NodeResult | null
-  return !!v && typeof v.id === 'string' && typeof v.port === 'string' && !!v.value
-}
-
-function readElement(id: string, m: ElementMap): CanvasElement | undefined {
+function readElement(
+  id: string,
+  m: ElementMap,
+  adoptionRevisions?: Y.Map<string>,
+): CanvasElement | undefined {
   const kind = m.get('kind')
   if (!isKind(kind)) return undefined
   const el: CanvasElement = {
@@ -369,16 +442,17 @@ function readElement(id: string, m: ElementMap): CanvasElement | undefined {
   if (nodeType !== undefined) el.nodeType = nodeType
   const nodeVersion = m.get('nodeVersion')
   if (typeof nodeVersion === 'number') el.nodeVersion = nodeVersion
-  const results = m.get('results')
-  if (Array.isArray(results)) {
-    const filtered = results.filter(isResult)
-    const snapshot = snapshotResultEvidence(filtered)
+  const { present, filtered, snapshot } = readResultsSnapshot(m)
+  if (present) {
+    // 候选是来源证据：带出处的快照不可被调用方整份替换。
     if (snapshot !== filtered)
       Object.defineProperty(el, 'results', { value: snapshot, enumerable: true, writable: false })
     else el.results = filtered
   }
   const adopted = m.get('adopted') === null ? null : str(m.get('adopted'))
   if (adopted !== undefined) el.adopted = adopted
+  const revision = str(adoptionRevisions?.get(id))
+  if (revision !== undefined) el.adoptionRevision = revision
   const reviews = m.get('reviews')
   const reviewValues = reviews instanceof Y.Map ? [...reviews.values()] : reviews
   if (Array.isArray(reviewValues)) el.reviews = reviewValues.filter(isCreativeReview)
