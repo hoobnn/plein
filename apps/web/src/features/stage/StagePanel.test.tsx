@@ -1,6 +1,13 @@
 // @vitest-environment happy-dom
 import type { Engine } from '@plein/canvas-core'
-import { createDoc, createElement, currentResult, setParam, updateElement } from '@plein/doc'
+import {
+  createDoc,
+  createElement,
+  currentResult,
+  setParam,
+  setResults,
+  updateElement,
+} from '@plein/doc'
 import { defaultStageScene, recordStageKeyframe, stageSceneOf, STAGE_TYPE } from '@plein/nodes'
 import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
 import { useCanvas } from '../../stores/canvas'
@@ -461,8 +468,9 @@ it('候选采用不改变编辑场景，来源缺失只能采用，孤立来源�
   const old = (doc.get(id)!.params!.snapshots as { resultId: string }[]).at(-1)!
   change(() => {
     setParam(doc, id, 'snapshots', [old, { resultId: 'broken', scene: null }, old])
-    doc.mutable(id)!.set(
-      'results',
+    setResults(
+      doc,
+      id,
       doc.get(id)!.results!.filter((result) => result.id !== old.resultId),
     )
   })

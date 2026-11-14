@@ -1,4 +1,4 @@
-import { createElement } from '@plein/doc'
+import { createElement, setResults } from '@plein/doc'
 import { box, openDoc } from '@plein/doc/testing'
 import { Container, Graphics, type GraphicsContext, Texture, TextureSource } from 'pixi.js'
 import { describe, expect, it, vi } from 'vite-plus/test'
@@ -111,11 +111,9 @@ describe('preview renderer detail', () => {
       const doc = openDoc()
       const id = createElement(doc, box({ kind, assetId: kind === 'image' ? 'a' : undefined }))
       if (kind === 'node') {
-        doc
-          .mutable(id)!
-          .set('results', [
-            { id: 'r', port: 'out', runId: 'run', at: 1, value: { type: 'image', assetId: 'a' } },
-          ])
+        setResults(doc, id, [
+          { id: 'r', port: 'out', runId: 'run', at: 1, value: { type: 'image', assetId: 'a' } },
+        ])
       }
       const textures = new Map<string, Texture>()
       const load = vi.fn(async (url: string) => {

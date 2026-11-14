@@ -9,6 +9,7 @@ import {
   type PleinDoc,
   setParams,
   writeRun,
+  setResults,
 } from '@plein/doc'
 import { openDoc } from '@plein/doc/testing'
 import type { JobInfo, PreparedInput } from '@plein/protocol'
@@ -40,7 +41,7 @@ function setup(kind: 'image' | 'video' | 'audio' | 'text' = 'image', count = 4) 
   const image = () => screen.getByRole('img', { name: /审片素材|候选 A/ })
   const update = (rows: NodeResult[]) =>
     act(() => {
-      f.doc.mutable(id)!.set('results', rows)
+      setResults(f.doc, id, rows)
       f.doc.flush()
     })
   return { ...f, ...rendered, id, results, group, image, update }
@@ -52,17 +53,14 @@ it.each(['removed', 'inserted', 'rapid'] as const)(
     const f = setup()
     const next = screen.getByRole('button', { name: '预览下一个候选' })
     act(() => {
-      if (mode === 'removed')
-        f.doc.mutable(f.id)!.set('results', [f.results[0], ...f.results.slice(2)])
+      if (mode === 'removed') setResults(f.doc, f.id, [f.results[0]!, ...f.results.slice(2)])
       if (mode === 'inserted')
-        f.doc
-          .mutable(f.id)!
-          .set('results', [
-            f.results[0],
-            { ...f.results[0]!, id: 'metadata', port: 'metadata' },
-            { ...f.results[3]!, id: 'inserted' },
-            ...f.results.slice(1),
-          ])
+        setResults(f.doc, f.id, [
+          f.results[0]!,
+          { ...f.results[0]!, id: 'metadata', port: 'metadata' },
+          { ...f.results[3]!, id: 'inserted' },
+          ...f.results.slice(1),
+        ])
       next.click()
       if (mode === 'rapid') next.click()
       f.doc.flush()
@@ -120,14 +118,13 @@ it.each(['removed', 'replaced', 'deleted', 'readonly'] as const)(
         deleteElements(f.doc, [f.id])
       } else if (mode === 'readonly') f.doc.readOnly = true
       else
-        f.doc
-          .mutable(f.id)!
-          .set(
-            'results',
-            mode === 'removed'
-              ? [f.results[0]]
-              : [f.results[0], { ...f.results[1]!, value: f.results[0]!.value }],
-          )
+        setResults(
+          f.doc,
+          f.id,
+          mode === 'removed'
+            ? [f.results[0]!]
+            : [f.results[0]!, { ...f.results[1]!, value: f.results[0]!.value }],
+        )
       button.click()
       f.doc.flush()
     })
@@ -137,7 +134,7 @@ it.each(['removed', 'replaced', 'deleted', 'readonly'] as const)(
     act(() => {
       f.doc.readOnly = false
       if (mode === 'deleted') f.doc.undo.undo()
-      else f.doc.mutable(f.id)!.set('results', f.results)
+      else setResults(f.doc, f.id, f.results)
       f.doc.flush()
     })
     await f.user.click(
@@ -505,7 +502,7 @@ it('普通候选展示生成时输入与实际参考，切候选后迟到响应�
 it('没有历史生成记录时明确说明，不拿当前输入顶替', async () => {
   const f = setup('image', 1)
   act(() => {
-    f.doc.mutable(f.id)!.set('results', [{ ...f.results[0]!, runId: '' }])
+    setResults(f.doc, f.id, [{ ...f.results[0]!, runId: '' }])
     f.doc.flush()
   })
   mockFetch((request) =>
@@ -529,7 +526,7 @@ it('本地作业对不上时按候选原执行位置精确读取，读不到可�
     runId: 'origin-run',
   }
   act(() => {
-    f.doc.mutable(f.id)!.set('results', [{ ...f.results[0]!, generationOrigin: origin }])
+    setResults(f.doc, f.id, [{ ...f.results[0]!, generationOrigin: origin }])
     f.doc.flush()
   })
   useCanvas.setState({ sync: 'connected' })

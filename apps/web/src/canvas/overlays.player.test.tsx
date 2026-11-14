@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { createElement } from '@plein/doc'
+import { createElement, setResults } from '@plein/doc'
 import { openDoc } from '@plein/doc/testing'
 import { expect, it, vi } from 'vite-plus/test'
 import { renderApp } from '../testing/render'
@@ -44,25 +44,24 @@ it('采用或删除候选后切换播放器并释放旧媒体，进入序列时�
     expect(container.querySelector('video')!.getAttribute('src')).toBe('/api/assets/b')
     expect(pause).toHaveBeenCalled()
     doc.mutable(id)!.set('adopted', undefined)
-    doc.mutable(id)!.set(
-      'results',
+    setResults(
+      doc,
+      id,
       doc.get(id)!.results!.filter((result) => result.id !== 'b'),
     )
     doc.flush()
     overlays.sync()
     expect(container.querySelector('video')!.getAttribute('src')).toBe('/api/assets/a')
     const last = container.querySelector('video')!
-    doc.mutable(id)!.set('results', [])
+    setResults(doc, id, [])
     doc.flush()
     overlays.sync()
     expect(container.querySelector('video')).toBeNull()
     expect(last.getAttribute('src')).toBeNull()
     doc.mutable(id)!.set('adopted', 'c')
-    doc
-      .mutable(id)!
-      .set('results', [
-        { id: 'c', runId: 'run', at: 3, port: 'video', value: { type: 'video', assetId: 'c' } },
-      ])
+    setResults(doc, id, [
+      { id: 'c', runId: 'run', at: 3, port: 'video', value: { type: 'video', assetId: 'c' } },
+    ])
     doc.flush()
     overlays.activate(id)
     const playing = container.querySelector('video')!

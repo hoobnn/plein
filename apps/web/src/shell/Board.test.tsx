@@ -1,5 +1,12 @@
 // @vitest-environment happy-dom
-import { deleteElements, groupElements, setParams, moveElements, adoptResult } from '@plein/doc'
+import {
+  deleteElements,
+  groupElements,
+  setParams,
+  moveElements,
+  adoptResult,
+  setResults,
+} from '@plein/doc'
 import { expect, it } from 'vite-plus/test'
 import { useCanvas } from '../stores/canvas'
 import { useStale } from '../features/runs/stale'
@@ -170,12 +177,10 @@ it('待采用卡片只浏览主输出；明确采用才更新故事板和筛选'
   const f = shellFixture()
   const id = f.add('image', '候选')
   const results = f.results(id, 'image', 2)
-  f.doc
-    .mutable(id)!
-    .set('results', [
-      { ...results[0]!, id: 'metadata', port: 'metadata', value: { type: 'text', text: '说明' } },
-      ...results,
-    ])
+  setResults(f.doc, id, [
+    { ...results[0]!, id: 'metadata', port: 'metadata', value: { type: 'text', text: '说明' } },
+    ...results,
+  ])
   f.doc.mutable(id)!.set('adopted', null)
   mockFetch((request) =>
     request.url.endsWith('/meta')
