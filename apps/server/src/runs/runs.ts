@@ -2308,12 +2308,13 @@ export class NodeRuns implements BatchHost {
       // 不同来源、端口、类型或资产仍是独立引用，各自保留位置证据。
       const seen = new Set<string>()
       for (const ref of staleRefs) {
-        const key = [
+        // 身份字段可能含分隔符，用 JSON 序列化保证不碰撞。
+        const key = JSON.stringify([
           ref.source ?? '',
           ref.sourcePort ?? '',
           ref.type ?? '',
           ref.assetId ?? '',
-        ].join('|')
+        ])
         if (seen.has(key)) continue
         seen.add(key)
         notices.push({ code: 'stale_binding', message: message(ref.name) })
@@ -2324,7 +2325,7 @@ export class NodeRuns implements BatchHost {
           reason: 'stale_binding',
           message: message(ref.name),
           origins: ['binding'],
-          identity: `${ref.sourcePort ?? ''}|${ref.type ?? ''}`,
+          identity: JSON.stringify([ref.sourcePort ?? '', ref.type ?? '']),
         })
       }
     }

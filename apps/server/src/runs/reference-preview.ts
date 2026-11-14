@@ -177,12 +177,13 @@ export function referencePreview({
     // 档案项用视角 / 档案项身份区分，逐条列出。没有 elementId 的条目（断链 @、
     // 消歧失败、无来源的残留绑定）只剩显示名能标识引用：键里带上它，
     // 不同引用不合并，同一引用写多次仍只报一次。
-    const key = [
+    // 各字段可能含分隔符：用 JSON 序列化，避免不同来源拼出同一个键。
+    const key = JSON.stringify([
       item.reason,
       item.elementId ?? '',
       item.assetId ?? '',
       item.elementId ? identity : item.name,
-    ].join('|')
+    ])
     if (unsentKeys.has(key)) return
     unsentKeys.add(key)
     unsent.push(item)
@@ -444,7 +445,11 @@ export function referencePreview({
   }
 
   // 上游文本里的失效引用没有原文区间，也放进同一个「未送入」列表，方便重新绑定。
-  for (const item of staleUnsent ?? []) addUnsent(item, item.identity)
+  // identity 只是内部分组键，不能进入公开的 PreparedInput.unsent。
+  for (const item of staleUnsent ?? []) {
+    const { identity, ...rest } = item
+    addUnsent(rest, identity)
+  }
 
   // 不再被正文或连线使用的绑定是残留数据；只报告，不参与编号或阻断。
   const usedNames = new Set(bound.map((token) => token.name))
@@ -509,7 +514,7 @@ function rawBindingEntries(params: unknown) {
 
 /** 同一来源的同一输出口/媒体类型才算同一引用；不同口、不同类型要分开报告。 */
 const bindingIdentity = (binding?: ReferenceIdentity) =>
-  `${binding?.sourcePort ?? ''}|${binding?.type ?? ''}`
+  JSON.stringify([binding?.sourcePort ?? '', binding?.type ?? ''])
 
 function bindingMatches(
   binding: ReferenceIdentity,

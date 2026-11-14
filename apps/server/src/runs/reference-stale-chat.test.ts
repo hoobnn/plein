@@ -286,3 +286,57 @@ it.each([
   expect(input.prompt).toContain('@图 第二段')
   expect(input.inputs.images ?? []).toEqual([])
 })
+
+it('身份字段里含分隔符也不会碰撞成同一项，公开 unsent 不携带内部分组键', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const key = `referenceNameBinding:${encodeURIComponent('图')}`
+  const mdA = createElement(doc, {
+    kind: 'markdown',
+    id: 'md-a',
+    text: '@图 甲段',
+    params: {
+      [`${key}:a|b`]: {
+        type: 'image',
+        assetId: 'one',
+        source: 'a|b',
+        sourcePort: 'c',
+      },
+    },
+    x: 0,
+    y: 200,
+    w: 200,
+    h: 100,
+  })
+  const mdB = createElement(doc, {
+    kind: 'markdown',
+    id: 'md-b',
+    text: '@图 乙段',
+    params: {
+      [`${key}:a`]: {
+        type: 'image',
+        assetId: 'one',
+        source: 'a',
+        sourcePort: 'b|c',
+      },
+    },
+    x: 0,
+    y: 400,
+    w: 200,
+    h: 100,
+  })
+  const consumer = addNode(doc, 'plein/llm', {
+    params: { model: 'plein/mock:agent-vision', prompt: '' },
+    x: 600,
+  })
+  connect(doc, [mdA, 'text'], [consumer, 'prompt'])
+  connect(doc, [mdB, 'text'], [consumer, 'prompt'])
+  const input = await server.runs.preview(id, consumer, 'local')
+  const stale = (input.unsent ?? []).filter((item) => item.reason === 'stale_binding')
+  expect(stale).toHaveLength(2)
+  expect(stale.every((item) => !('identity' in item))).toBe(true)
+  expect(input.prompt).toContain('@图 甲段')
+  expect(input.prompt).toContain('@图 乙段')
+  expect(input.inputs.images ?? []).toEqual([])
+})
