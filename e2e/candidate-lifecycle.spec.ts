@@ -138,22 +138,24 @@ test(
           x: 400,
           y: 600,
         })
-        const doc = window.__plein.engine.doc
-        const element = doc.mutable(id)! as {
+        const element = window.__plein.engine.doc.mutable(id)! as {
           get(key: string): unknown
-          set(key: string, value: unknown): void
         }
         const ports = element.get('ports') as { outputs: { id: string }[] }
-        element.set('results', [
-          {
-            id: 'long-text-result',
-            runId: 'long-text-run',
-            port: ports.outputs[0]!.id,
-            at: Date.now(),
-            value: { type: 'text', text },
-          },
-        ])
-        element.set('adopted', null)
+        // 晚返回、输入已改过的运行结果：只进候选，不自动采用
+        window.__plein.doc.addResults(
+          id,
+          [
+            {
+              id: 'long-text-result',
+              runId: 'long-text-run',
+              port: ports.outputs[0]!.id,
+              at: Date.now(),
+              value: { type: 'text', text },
+            },
+          ],
+          { adopt: false },
+        )
         return id
       }, longText)
       await clickElement(page, textId)

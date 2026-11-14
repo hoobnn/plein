@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page } from '@playwright/test'
 import type { ProductionRecord } from '../packages/doc/src/domain/production'
 import type { DeliveryRecord } from '../packages/doc/src/domain/delivery'
+import type { NodeResult } from '../packages/doc/src/types'
 
 /** e2e 构建在 window 上暴露的只读入口（见 apps/web/src/canvas/CanvasView.tsx），这里只声明用到的部分 */
 interface RawElement {
@@ -76,6 +77,10 @@ declare global {
         y: number
       }): string
       connect(from: [string, string], to: [string, string]): boolean
+      /** 夹具造候选的公开命令入口：结果容器是文档内部实现，测试不直接写它 */
+      doc: {
+        addResults(id: string, results: NodeResult[], opts?: { adopt?: boolean }): void
+      }
     }
   }
 }
@@ -111,6 +116,23 @@ export async function byName(page: Page, name: string) {
   const list = (await elements(page)).filter((e) => e.name === name)
   expect(list, `画布上应有且只有一个「${name}」`).toHaveLength(1)
   return list[0]!
+}
+
+/**
+ * 夹具造候选：走公开的文档命令，测试不重写结果容器的存储协议。
+ * 默认采用第一条（与真实生成写完结果的行为一致）；`adopt: false` 造「待采用」候选。
+ */
+export async function addResults(
+  page: Page,
+  id: string,
+  results: NodeResult[],
+  opts: { adopt?: boolean } = {},
+) {
+  await page.evaluate(({ id, results, opts }) => window.__plein.doc.addResults(id, results, opts), {
+    id,
+    results,
+    opts,
+  })
 }
 
 /** 元素中心在屏幕上的位置（真实鼠标点在这里，由画布自己做命中） */

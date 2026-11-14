@@ -152,7 +152,7 @@ test(
         const m = engine.doc.mutable(id)!
         m.set('w', 160)
         m.set('h', 160)
-        m.set('results', [
+        window.__plein.doc.addResults(id, [
           {
             id: 'pixel-result-' + i,
             port: 'images',
@@ -161,7 +161,6 @@ test(
             value: { type: 'image', assetId: asset.id },
           },
         ])
-        m.set('adopted', 'pixel-result-' + i)
       }
       engine.doc.flush()
       engine.selection.clear()

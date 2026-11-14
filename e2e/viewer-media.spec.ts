@@ -205,11 +205,8 @@ test.describe('媒体浏览器冒烟', { tag: '@core' }, () => {
         x: 400,
         y: 300,
       })
-      const mutable = window.__plein.engine.doc.mutable(id) as unknown as {
-        set(key: string, value: unknown): void
-      }
-      mutable.set(
-        'results',
+      window.__plein.doc.addResults(
+        id,
         [...assets, assets[1]!].map((assetId, index) => ({
           id: `image-${index}`,
           runId: 'fixture-run',
@@ -218,7 +215,6 @@ test.describe('媒体浏览器冒烟', { tag: '@core' }, () => {
           at: index + 1,
         })),
       )
-      mutable.set('adopted', 'image-0')
       return id
     }, assets)
     const failed = new Set(assets)
@@ -362,11 +358,8 @@ test.describe('媒体浏览器冒烟', { tag: '@core' }, () => {
             x: 400,
             y: 300,
           })
-          const mutable = window.__plein.engine.doc.mutable(id) as unknown as {
-            set(key: string, value: unknown): void
-          }
-          mutable.set(
-            'results',
+          window.__plein.doc.addResults(
+            id,
             assets.map((assetId, index) => ({
               id: `candidate-${index}`,
               runId: 'fixture-run',
@@ -375,7 +368,6 @@ test.describe('媒体浏览器冒烟', { tag: '@core' }, () => {
               at: index + 1,
             })),
           )
-          mutable.set('adopted', 'candidate-0')
           return id
         },
         { kind, assets },
@@ -575,11 +567,8 @@ test.describe('媒体浏览器冒烟', { tag: '@core' }, () => {
     const source = await byName(page, '生成图片')
     await page.keyboard.press('Escape')
     await page.evaluate(
-      ({ id, assetId }) => {
-        const row = window.__plein.engine.doc.mutable(id) as unknown as {
-          set(key: string, value: unknown): void
-        }
-        row.set('results', [
+      ({ id, assetId }) =>
+        window.__plein.doc.addResults(id, [
           {
             id: 'fixture-1',
             runId: 'fixture',
@@ -587,9 +576,7 @@ test.describe('媒体浏览器冒烟', { tag: '@core' }, () => {
             at: 1,
             value: { type: 'image', assetId },
           },
-        ])
-        row.set('adopted', 'fixture-1')
-      },
+        ]),
       { id: source.id, assetId: linked },
     )
     await addNode(page, '局部重绘', { x: 1000, y: 300 })

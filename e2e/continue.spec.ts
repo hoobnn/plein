@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, type Page, test } from './fixtures'
 import {
+  addResults,
   addNode,
   centerOf,
   clickRun,
@@ -124,28 +125,16 @@ test(
       data: readFileSync(clip),
     })
     const retake = ((await uploaded.json()) as { id: string }).id
-    await page.evaluate(
-      ({ id, assetId }) => {
-        const m = window.__plein.engine.doc.mutable(id) as unknown as {
-          get(k: string): unknown
-          set(k: string, v: unknown): void
-          doc: { transact(fn: () => void): void }
-        }
-        const old = (m.get('results') as unknown[]) ?? []
-        const r = {
-          id: 'retake',
-          port: 'video',
-          runId: 'retake',
-          at: Date.now(),
-          value: { type: 'video', assetId, mime: 'video/webm' },
-        }
-        m.doc.transact(() => {
-          m.set('results', [r, ...old])
-          m.set('adopted', 'retake')
-        })
+    // 上一个镜头重拍出另一段画面并采用它（与真实运行写完候选、采用新结果一致）
+    await addResults(page, parent!.id, [
+      {
+        id: 'retake',
+        port: 'video',
+        runId: 'retake',
+        at: Date.now(),
+        value: { type: 'video', assetId: retake, mime: 'video/webm' },
       },
-      { id: parent!.id, assetId: retake },
-    )
+    ])
     const oldFrame = await page.evaluate(
       (id) => window.__plein.engine.doc.get(id)?.assetId,
       frame.id,
@@ -215,19 +204,15 @@ test('连续性使用真实首末帧、实际视频切点和固定角色参考 @
           x: 1000 + shot * 400,
           y: role === 'image' ? 200 : 600,
         })
-        const m = window.__plein.engine.doc.mutable(id) as unknown as {
-          set(key: string, value: unknown): void
-        }
-        m.set('results', [
+        window.__plein.doc.addResults(id, [
           {
             id: `candidate-${id}`,
             runId: 'fixture-run',
             port: role === 'image' ? 'images' : 'video',
-            value: { type: role, assetId: role === 'image' ? assets[2] : assets[shot] },
+            value: { type: role, assetId: role === 'image' ? assets[2]! : assets[shot]! },
             at: 1,
           },
         ])
-        m.set('adopted', `candidate-${id}`)
         return id
       }),
     )

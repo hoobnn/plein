@@ -261,14 +261,13 @@ test('序列时间线：排序、修剪、播放', { tag: '@core' }, async ({ pa
   await page.evaluate(
     ({ id, source }) => {
       const doc = window.__plein.engine.doc
-      const mutable = doc.mutable(id)! as unknown as { set(key: string, value: unknown): void }
-      mutable.set('results', [
+      window.__plein.doc.addResults(id, [
         {
           id: 'existing-film',
           runId: 'fixture',
           port: 'video',
           at: 1,
-          value: { type: 'video', assetId: doc.get(source)!.assetId },
+          value: { type: 'video', assetId: doc.get(source)!.assetId! },
         },
       ])
     },

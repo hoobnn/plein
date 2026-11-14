@@ -1,10 +1,12 @@
 import { referenceClipboard } from '@plein/capabilities'
 import { Engine, isEditableTarget, type PreviewSize } from '@plein/canvas-core'
 import {
+  addResults,
   connect,
   createDoc,
   createElement,
   type ElementKind,
+  type NodeResult,
   type PleinDoc,
   SCHEMA_VERSION,
 } from '@plein/doc'
@@ -173,6 +175,11 @@ export function CanvasView({
               },
               connect: (from: [string, string], to: [string, string]) =>
                 !!connect(engine.doc, from, to),
+              // 夹具造候选：走公开的文档命令，测试不重写结果容器的存储协议
+              doc: {
+                addResults: (id: string, results: NodeResult[], opts?: { adopt?: boolean }) =>
+                  addResults(engine.doc, id, results, { ...opts, canvasId: canvasId || null }),
+              },
             }
           // 开发时方便在控制台调试
           if (import.meta.env.DEV) (window as { plein?: unknown }).plein = engine

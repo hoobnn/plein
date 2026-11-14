@@ -204,10 +204,7 @@ test(
             duration: 2,
           },
         })
-        const node = window.__plein.engine.doc.mutable(id)! as unknown as {
-          set(key: string, value: unknown): void
-        }
-        node.set('results', [
+        window.__plein.doc.addResults(id, [
           {
             id: `${name}-ready`,
             runId: 'source-fixture',

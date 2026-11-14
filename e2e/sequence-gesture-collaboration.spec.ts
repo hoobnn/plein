@@ -53,10 +53,7 @@ async function videoFixture(page: Page) {
       y: 200,
       params: {},
     })
-    const node = window.__plein.engine.doc.mutable(source)! as unknown as {
-      set(k: string, v: unknown): void
-    }
-    node.set('results', [
+    window.__plein.doc.addResults(source, [
       { id: 'ready', runId: 'fixture', port: 'video', at: 1, value: { type: 'video', assetId } },
     ])
     const id = window.__plein.addNode({
