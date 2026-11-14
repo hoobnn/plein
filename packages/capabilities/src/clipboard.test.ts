@@ -16,7 +16,11 @@ import {
   createSubtitleTrack,
   subtitleTrackStale,
 } from '@plein/nodes'
-import { referenceBindings, resolveReferenceBindings } from '@plein/plugin-sdk'
+import {
+  boundReferenceTokens,
+  referenceBindings,
+  resolveReferenceBindings,
+} from '@plein/plugin-sdk'
 import { describe, expect, it } from 'vite-plus/test'
 import { referenceClipboard } from './clipboard'
 import { aiFixture } from '../../nodes/src/aiShotAnalysis.fixture'
@@ -499,6 +503,161 @@ describe('画布复制中的引用映射', () => {
       source: 'conflict',
     })
     expect(params.prompt).toBe('@蓝')
+    doc.destroy()
+  })
+
+  it('复制同名来源本身也不会让冲突绑定被普通 @ 重写解成单一来源', () => {
+    const doc = openDoc()
+    createElement(doc, node({ id: 'x', name: '蓝', nodeType: 'plein/character' }))
+    createElement(doc, node({ id: 'y', name: '红', nodeType: 'plein/character' }))
+    const key = (source: string) => `referenceNameBinding:${encodeURIComponent('蓝')}:${source}`
+    const target = createElement(
+      doc,
+      node({
+        id: 'target',
+        params: {
+          prompt: '@蓝 走近',
+          [key('x')]: { type: 'image', assetId: 'asset-x', source: 'x' },
+          [key('y')]: { type: 'image', assetId: 'asset-y', source: 'y' },
+        },
+      }),
+    )
+    // 复制「蓝」这张卡本身：画布上变成两个同名来源，正文行号会变，但绑定仍是冲突。
+    referenceClipboard.paste(doc, referenceClipboard.copy(doc, ['x']))
+    const params = doc.get(target)!.params!
+    expect(params.prompt).toBe('@蓝 走近')
+    expect(params).toHaveProperty(key('x'))
+    expect(params).toHaveProperty(key('y'))
+    expect(referenceBindings(params)['蓝']).toEqual({
+      type: 'image',
+      assetId: '',
+      source: 'conflict',
+    })
+    // 持久绑定仍然认领这处正文，不退回普通 @ 候选。
+    expect(boundReferenceTokens(String(params.prompt), params).map((token) => token.name)).toEqual([
+      '蓝',
+    ])
+    doc.destroy()
+  })
+
+  it('跨画布粘贴只复制下游时，不凭同 id 认领目标画布的另一份素材', () => {
+    const source = openDoc()
+    createElement(source, {
+      id: 'shared',
+      kind: 'image',
+      name: '图',
+      assetId: 'asset-a',
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 100,
+    })
+    const target = createElement(
+      source,
+      node({
+        id: 'target',
+        params: {
+          prompt: '@图 保持构图',
+          requiredRefs: ['shared'],
+          referenceImagePicks: { shared: ['asset-a'] },
+        },
+      }),
+    )
+    const data = JSON.parse(
+      JSON.stringify(referenceClipboard.copy(source, [target], { canvasId: 'canvas-a' })),
+    )
+    const destination = openDoc()
+    const sameId = createElement(destination, {
+      id: 'shared',
+      kind: 'image',
+      name: '图',
+      assetId: 'asset-b',
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 100,
+    })
+    const [imported] = referenceClipboard.paste(destination, data, { canvasId: 'canvas-b' })
+    const params = destination.get(imported!)!.params!
+    // 保留可读原名，不生成不存在的 #0，也不改指目标画布的素材。
+    expect(params.prompt).toBe('@图 保持构图')
+    const binding = referenceBindings(params)['图']!
+    expect(binding.source).not.toBe(sameId)
+    expect(binding.source).toContain('plein/external:')
+    expect(binding.assetId).toBe('')
+    // 正文仍被持久绑定认领，后续同名素材出现也不会按普通 @ 重绑。
+    expect(boundReferenceTokens(String(params.prompt), params).map((token) => token.name)).toEqual([
+      '图',
+    ])
+    // 必需参考与选图里的外部 id 也换成不存在的地址，不挂到同 id 素材上。
+    expect(params.requiredRefs).not.toContain(sameId)
+    expect(Object.keys(params.referenceImagePicks ?? {})).not.toContain(sameId)
+    source.destroy()
+    destination.destroy()
+  })
+
+  it('跨画布粘贴不按同 id 恢复未复制的素材参考边', () => {
+    const source = openDoc()
+    const image = createElement(source, {
+      id: 'shared',
+      kind: 'image',
+      assetId: 'asset-a',
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 100,
+    })
+    const card = createElement(
+      source,
+      node({
+        id: 'card',
+        name: '角色卡',
+        nodeType: 'plein/character',
+        ports: {
+          inputs: [{ id: 'references', label: '参考素材', type: 'any', multiple: true }],
+          outputs: [],
+        },
+      }),
+    )
+    connect(source, [image, 'image'], [card, 'references'])
+    const data = JSON.parse(
+      JSON.stringify(referenceClipboard.copy(source, [card], { canvasId: 'canvas-a' })),
+    )
+    const destination = openDoc()
+    createElement(destination, {
+      id: 'shared',
+      kind: 'image',
+      assetId: 'asset-b',
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 100,
+    })
+    const [pasted] = referenceClipboard.paste(destination, data, { canvasId: 'canvas-b' })
+    expect(inputEdges(destination, pasted!, 'references')).toHaveLength(0)
+    source.destroy()
+    destination.destroy()
+  })
+
+  it('同画布粘贴仍保留未复制元素的活动引用', () => {
+    const doc = openDoc()
+    const shared = createElement(doc, {
+      id: 'shared',
+      kind: 'image',
+      name: '图',
+      assetId: 'asset-a',
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 100,
+    })
+    const target = createElement(doc, node({ id: 'target', params: { prompt: '@图 保持构图' } }))
+    const data = referenceClipboard.copy(doc, [target], { canvasId: 'canvas-a' })
+    const [imported] = referenceClipboard.paste(doc, data, { canvasId: 'canvas-a' })
+    const params = doc.get(imported!)!.params!
+    expect(params.prompt).toBe('@图 保持构图')
+    expect(referenceBindings(params)).toEqual({})
+    expect(resolved(doc, String(params.prompt))).toBe(shared)
     doc.destroy()
   })
 

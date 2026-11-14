@@ -143,7 +143,11 @@ export function referencePreview({
         origins.add('continuation')
       for (const token of bound) {
         const binding = bindings[token.name]
-        if (binding && bindingMatches(binding, value, token.name, el.params)) origins.add('binding')
+        if (
+          binding &&
+          bindingMatches(binding, value, token.name, el.params, finalMedia[binding.type])
+        )
+          origins.add('binding')
       }
       const primary = !origins.has('edge') && refs.length ? refs[0] : undefined
       const elementId = primary?.elementId ?? source
@@ -216,7 +220,7 @@ export function referencePreview({
       !binding && !cleared ? /^(?:image|video|audio)([1-9]\d*)$/.exec(token.name)?.[1] : undefined
     const match = binding
       ? finalMedia[binding.type].find((value) =>
-          bindingMatches(binding, value, token.name, el.params),
+          bindingMatches(binding, value, token.name, el.params, finalMedia[binding.type]),
         )
       : legacyIndex
         ? finalMedia[kind][Number(legacyIndex) - 1]
@@ -496,6 +500,7 @@ function bindingMatches(
   value: PortValue,
   name: string,
   params: unknown,
+  candidates?: PortValue[],
 ) {
   if (value.type !== binding.type || !('assetId' in value)) return false
   const named =
@@ -505,13 +510,22 @@ function bindingMatches(
       key.startsWith(`referenceNameBinding:${encodeURIComponent(name)}:`),
     )
   const legacy = !named && /^(image|video|audio)[1-9]\d*$/.test(name)
-  return legacy || !binding.source
-    ? sameReference(binding, {
-        type: value.type,
-        assetId: value.assetId,
-        ...('source' in value ? { source: value.source } : {}),
-      })
-    : binding.source === ('source' in value ? value.source : undefined)
+  if (legacy || !binding.source)
+    return sameReference(binding, {
+      type: value.type,
+      assetId: value.assetId,
+      ...('source' in value ? { source: value.source } : {}),
+    })
+  if (binding.source !== ('source' in value ? value.source : undefined)) return false
+  if (binding.sourcePort)
+    return binding.sourcePort === ('sourcePort' in value ? value.sourcePort : undefined)
+  // 旧绑定没写输出口：同源同类型只有一个候选时才认，不能取第一个。
+  return (
+    !candidates ||
+    candidates.filter(
+      (item) => item.type === binding.type && 'source' in item && item.source === binding.source,
+    ).length <= 1
+  )
 }
 
 /** 档案项 / 视角的稳定身份（不含显示名）：同一张卡的不同视角或档案项是不同引用，去重时不能合并。 */

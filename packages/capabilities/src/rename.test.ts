@@ -296,3 +296,49 @@ it('文本、生成节点、分组均可改名；固定字幕、来源记录和�
     expect(doc.get(id)?.name).toBe(`新${id}`)
   }
 })
+
+it('视频与尾帧的名称绑定改名后保留端口后缀，互不覆盖', () => {
+  const doc = fixture()
+  const source = createElement(
+    doc,
+    node({
+      id: 'g',
+      name: '片段',
+      nodeType: 'plein/video',
+      ports: {
+        inputs: [],
+        outputs: [
+          { id: 'video', label: '视频', type: 'video' },
+          { id: 'lastFrame', label: '尾帧', type: 'image' },
+        ],
+      },
+    }),
+  )
+  const target = createElement(
+    doc,
+    node({
+      params: {
+        prompt: '@片段 与 @片段·尾帧',
+        [`referenceNameBinding:${encodeURIComponent('片段')}:${source}`]: {
+          type: 'video',
+          assetId: 'vid',
+          source,
+          sourcePort: 'video',
+        },
+        [`referenceNameBinding:${encodeURIComponent('片段·尾帧')}:${source}`]: {
+          type: 'image',
+          assetId: 'frame',
+          source,
+          sourcePort: 'lastFrame',
+        },
+      },
+    }),
+  )
+  renameElement(doc, source, '新片段')
+  const params = doc.get(target)!.params!
+  expect(params.prompt).toBe('@新片段 与 @新片段·尾帧')
+  expect(referenceBindings(params)).toMatchObject({
+    新片段: { type: 'video', sourcePort: 'video', source },
+    新片段·尾帧: { type: 'image', sourcePort: 'lastFrame', source },
+  })
+})

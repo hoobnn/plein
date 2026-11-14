@@ -96,7 +96,9 @@ export function CanvasView({
         doc,
         overlay: overlayRoot,
         clipboard: {
-          copy: referenceClipboard.copy,
+          // 记下来源画布：复制到另一张画布时不能凭同 id / 同名认领目标画布的素材。
+          copy: (doc, ids) =>
+            referenceClipboard.copy(doc, ids, { canvasId: canvasId || undefined }),
           paste: (target, data, opts) =>
             referenceClipboard.paste(target, data, { ...opts, canvasId: canvasId || undefined }),
         },

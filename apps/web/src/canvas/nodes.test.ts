@@ -76,6 +76,7 @@ const el = (params: Record<string, unknown>) =>
 const up = (name: string, value?: Upstream['value']): Upstream => ({
   edgeId: `e-${name}`,
   source: { id: name, kind: 'node', name } as unknown as CanvasElement,
+  sourcePort: 'text',
   value,
 })
 const ups = (entries: Record<string, Upstream[]> = {}) => new Map(Object.entries(entries))

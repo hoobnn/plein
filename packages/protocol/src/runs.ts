@@ -90,6 +90,8 @@ export interface InputValue {
   text?: string
   /** 来源元素：连线的上游或 @ 引用的卡片 */
   source?: string
+  /** 来源元素上实际取的输出口（如视频节点的 video / lastFrame）；旧记录没有 */
+  sourcePort?: string
   /** 来源是节点时，取的是它哪一个结果、哪一次运行产生的 */
   resultId?: string
   runId?: string

@@ -70,3 +70,40 @@ it('复制映射只改声明为引用绑定的参数，插件自定义字段里�
     referenceBindings: { image1: { type: 'image', assetId: 'assetA', source: 'x-copy' } },
   })
 })
+
+it('同一来源的视频与尾帧按输出口区分，旧绑定歧义阻断、唯一候选兼容', () => {
+  const bindings = {
+    'referenceNameBinding:片段:g': {
+      type: 'video',
+      assetId: 'vid',
+      source: 'g',
+      sourcePort: 'video',
+    },
+    'referenceNameBinding:片段·尾帧:g': {
+      type: 'image',
+      assetId: 'frame',
+      source: 'g',
+      sourcePort: 'lastFrame',
+    },
+  }
+  const items = [
+    { type: 'video' as const, assetId: 'vid', source: 'g', sourcePort: 'video' },
+    { type: 'image' as const, assetId: 'frame', source: 'g', sourcePort: 'lastFrame' },
+  ]
+  const prompt = '@片段 推近，结尾停在 @片段·尾帧'
+  expect(resolveReferenceBindings(prompt, items, bindings)).toEqual({
+    prompt: '@video1 推近，结尾停在 @image1',
+  })
+  // 送入顺序反过来，各自的绑定仍指向自己的输出口。
+  expect(resolveReferenceBindings(prompt, [...items].reverse(), bindings)).toEqual({
+    prompt: '@video1 推近，结尾停在 @image1',
+  })
+
+  const frames = [
+    { type: 'image' as const, assetId: 'a', source: 'g', sourcePort: 'firstFrame' },
+    { type: 'image' as const, assetId: 'b', source: 'g', sourcePort: 'lastFrame' },
+  ]
+  const legacy = { 'referenceNameBinding:帧:g': { type: 'image', assetId: 'a', source: 'g' } }
+  expect(resolveReferenceBindings('@帧', frames, legacy).error).toContain('多个输出')
+  expect(resolveReferenceBindings('@帧', [frames[0]!], legacy)).toEqual({ prompt: '@image1' })
+})

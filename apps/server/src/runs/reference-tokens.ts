@@ -1,5 +1,6 @@
 import {
   referenceBindings,
+  sameOutput,
   sameReference,
   type PortValue,
   type ReferenceIdentity,
@@ -87,12 +88,24 @@ export function resolveBoundReference({
     key.startsWith(`referenceNameBinding:${encodeURIComponent(name)}:`),
   )
   const legacy = !named && /^(image|video|audio)[1-9]\d*$/.test(name)
-  const current = media.find((item) =>
+  const candidates = media.filter((item) =>
     legacy || !binding.source
       ? sameReference(binding, item)
-      : binding.source === ('source' in item ? item.source : undefined) &&
-        binding.type === item.type,
+      : sameOutput(binding, {
+          type: item.type,
+          assetId: item.assetId,
+          source: item.source,
+          ...('sourcePort' in item ? { sourcePort: item.sourcePort } : {}),
+        }),
   )
+  const current = binding.sourcePort
+    ? candidates.find((item) => item.sourcePort === binding.sourcePort)
+    : candidates.length === 1
+      ? candidates[0]
+      : undefined
+  // 旧绑定没写输出口、同源同类型又有多个候选时不能取第一个：宁可阻断让用户重选。
+  if (!current && candidates.length > 1 && binding.source && !binding.sourcePort)
+    return { text: name, error: `引用 @${name} 对应多个输出，请从参考素材重新选择` }
   if (current) {
     if (current.type === 'image') {
       const label = imageLabel(current.assetId)

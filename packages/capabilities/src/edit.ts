@@ -40,11 +40,15 @@ export const duplicate = defineCapability({
     ctx.withDoc((doc) => {
       for (const i of a.ids) need(doc, i)
       return {
-        ids: referenceClipboard.paste(doc, referenceClipboard.copy(doc, a.ids), {
-          canvasId: ctx.canvasId,
-          dx: a.dx,
-          dy: a.dy,
-        }),
+        ids: referenceClipboard.paste(
+          doc,
+          referenceClipboard.copy(doc, a.ids, { canvasId: ctx.canvasId }),
+          {
+            canvasId: ctx.canvasId,
+            dx: a.dx,
+            dy: a.dy,
+          },
+        ),
       }
     }),
 })

@@ -1,8 +1,13 @@
 import { connect, createElement, inputEdges, replaceInput, setParam } from '@plein/doc'
-import { openDoc } from '@plein/doc/testing'
+import { node, openDoc } from '@plein/doc/testing'
 import { referenceBindings, resolveReferenceBindings } from '@plein/plugin-sdk'
 import { expect, it } from 'vite-plus/test'
-import { bindReferenceName, migrateReferenceNames, replaceReferenceName } from './referenceNames'
+import {
+  bindReferenceName,
+  migrateReferenceNames,
+  referenceName,
+  replaceReferenceName,
+} from './referenceNames'
 
 it('旧编号转换为当前图片名，移除已替换素材的重复旧引用，转换后仍可解析', () => {
   const doc = openDoc()
@@ -137,6 +142,81 @@ it('名称重复时消歧，未知旧编号和协作冲突不擅自改写', () =
     })
     migrateReferenceNames(doc, id, [])
     expect(doc.get(id)!.params?.prompt).toBe('@image1')
+  } finally {
+    doc.destroy()
+  }
+})
+
+it('同一视频节点的视频与尾帧使用不同别名绑定，替换一边不影响另一边', () => {
+  const doc = openDoc()
+  try {
+    const source = createElement(
+      doc,
+      node({
+        id: 'g',
+        name: '片段',
+        nodeType: 'plein/video',
+        ports: {
+          inputs: [],
+          outputs: [
+            { id: 'video', label: '视频', type: 'video' },
+            { id: 'lastFrame', label: '尾帧', type: 'image' },
+          ],
+        },
+      }),
+    )
+    const video = { type: 'video' as const, assetId: 'vid', source, sourcePort: 'video' }
+    const frame = { type: 'image' as const, assetId: 'frame', source, sourcePort: 'lastFrame' }
+    expect(referenceName(doc, video)).toBe('片段')
+    expect(referenceName(doc, frame)).toBe('片段·尾帧')
+
+    const target = createElement(
+      doc,
+      node({
+        id: 't',
+        nodeType: 'plein/video',
+        params: { prompt: '@片段 推近，停在 @片段·尾帧' },
+      }),
+    )
+    bindReferenceName(doc, target, video)
+    bindReferenceName(doc, target, frame)
+    expect(referenceBindings(doc.get(target)!.params)).toMatchObject({
+      片段: { type: 'video', sourcePort: 'video', source },
+      片段·尾帧: { type: 'image', sourcePort: 'lastFrame', source },
+    })
+
+    // 反向插入顺序不改别名，两个输出口不会互相覆盖绑定。
+    const reverse = createElement(doc, node({ id: 'r', nodeType: 'plein/video' }))
+    bindReferenceName(doc, reverse, frame)
+    bindReferenceName(doc, reverse, video)
+    expect(Object.keys(referenceBindings(doc.get(reverse)!.params)).sort()).toEqual(
+      ['片段', '片段·尾帧'].sort(),
+    )
+
+    const next = createElement(doc, {
+      kind: 'image',
+      id: 'new',
+      name: '新图',
+      assetId: 'new-asset',
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 100,
+    })
+    replaceReferenceName(
+      doc,
+      target,
+      source,
+      { type: 'image', assetId: 'new-asset', source: next },
+      'lastFrame',
+    )
+    const params = doc.get(target)!.params!
+    expect(params.prompt).toBe('@片段 推近，停在 @新图')
+    expect(params).toHaveProperty(`referenceNameBinding:${encodeURIComponent('片段')}:${source}`)
+    expect(params).not.toHaveProperty(
+      `referenceNameBinding:${encodeURIComponent('片段·尾帧')}:${source}`,
+    )
+    expect(params).toHaveProperty(`referenceNameBinding:${encodeURIComponent('新图')}:${next}`)
   } finally {
     doc.destroy()
   }

@@ -11,6 +11,7 @@ export * from './prompt-caps'
 export * from './read-view'
 
 export * from './clipboard'
+export * from './reference-alias'
 export * from './rename'
 
 export * from './sequence'

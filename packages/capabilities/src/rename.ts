@@ -10,6 +10,7 @@ import {
 } from '@plein/nodes'
 import { boundReferenceTokens, referenceBindings } from '@plein/plugin-sdk'
 import { mentionTargetsIn } from './story/nodes'
+import { referencePortLabel } from './reference-alias'
 import { resolveShotAsset } from './story/bindings'
 
 /** 名称与当前可编辑引用作为一次操作写入；历史结果与文件本体不参与改名。 */
@@ -51,7 +52,10 @@ export function renameElement(doc: PleinDoc, id: string, value: string) {
     const aliases = new Map<string, string>()
     for (const [alias, binding] of Object.entries(bindings)) {
       if (!binding.source || !binding.assetId) continue
-      const next = referenceName(binding.source)
+      const base = referenceName(binding.source)
+      // 非默认输出口（如视频的尾帧）别名带端口后缀，改名后仍要和视频本体区分开。
+      const port = base ? referencePortLabel(doc, binding.source, binding.sourcePort) : undefined
+      const next = base && (port ? `${base}·${port}` : base)
       const source = all.find((item) => item.id === binding.source)
       const peersChanged =
         source &&

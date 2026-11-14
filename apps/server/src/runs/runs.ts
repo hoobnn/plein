@@ -2733,9 +2733,10 @@ export class NodeRuns implements BatchHost {
       const tagged = values.map((v) => ({
         ...v,
         source: src.id,
+        // 普通输入也带上实际输出口：同一节点的视频与尾帧是不同引用身份。
+        sourcePort: edge.from[1],
         ...(exactSequence
           ? {
-              sourcePort: edge.from[1],
               edgeId: edge.id,
               ...(r ? { resultId: r.id, runId: r.runId } : {}),
               ...(canvasId ? { sourceCanvasId: canvasId } : {}),
@@ -2867,7 +2868,11 @@ function dedupeIssues(issues: InputIssue[]): InputIssue[] {
 }
 
 function inputValue(v: PortValue, origin?: Origin): InputValue {
-  const meta = { ...(v.source ? { source: v.source } : {}), ...origin }
+  const meta = {
+    ...(v.source ? { source: v.source } : {}),
+    ...(v.sourcePort ? { sourcePort: v.sourcePort } : {}),
+    ...origin,
+  }
   const text = (t: string) =>
     t.length > TEXT_PREVIEW
       ? { text: t.slice(0, TEXT_PREVIEW), truncated: true as const }

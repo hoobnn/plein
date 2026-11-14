@@ -172,12 +172,19 @@ export function Inputs({
         if (out) {
           engine.doc.undo.stopCapturing()
           if (target?.edgeId) {
-            if (replaceInput(engine.doc, target.edgeId, [id, src.kind]) && expected && src.assetId)
-              replaceReferenceName(engine.doc, el.id, expected.from[0], {
-                type: src.kind as 'image' | 'video' | 'audio',
-                source: id,
-                assetId: src.assetId,
-              })
+            if (replaceInput(engine.doc, target.edgeId, [id, src.kind]) && expected)
+              replaceReferenceName(
+                engine.doc,
+                el.id,
+                expected.from[0],
+                {
+                  type: src.kind as 'image' | 'video' | 'audio',
+                  source: id,
+                  sourcePort: src.kind,
+                  assetId: src.assetId ?? '',
+                },
+                expected.from[1],
+              )
           } else connect(engine.doc, [id, src.kind], [el.id, port.id])
           engine.doc.undo.stopCapturing()
         }
@@ -840,11 +847,18 @@ export function Inputs({
                   value &&
                   (value.type === 'image' || value.type === 'video' || value.type === 'audio')
                 )
-                  replaceReferenceName(engine.doc, el.id, previous.from[0], {
-                    type: value.type,
-                    source: id,
-                    assetId: value.assetId,
-                  })
+                  replaceReferenceName(
+                    engine.doc,
+                    el.id,
+                    previous.from[0],
+                    {
+                      type: value.type,
+                      source: id,
+                      sourcePort: portId,
+                      assetId: value.assetId,
+                    },
+                    previous.from[1],
+                  )
                 engine.doc.undo.stopCapturing()
                 if (!ok) useCanvas.getState().notify('无法替换：素材重复或类型不匹配')
                 setReplacing(null)
@@ -893,7 +907,12 @@ export function Inputs({
 function identityOf(up: Upstream): ReferenceIdentity | undefined {
   const value = up.value
   if (!value || value.type === 'text' || value.type === 'json') return undefined
-  return { type: value.type, assetId: value.assetId, source: up.source.id }
+  return {
+    type: value.type,
+    assetId: value.assetId,
+    source: up.source.id,
+    sourcePort: up.sourcePort,
+  }
 }
 
 function preview(v: ResultValue | undefined) {
