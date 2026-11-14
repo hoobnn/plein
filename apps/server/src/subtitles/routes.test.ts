@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { connect, createElement, type PleinDoc } from '@plein/doc'
 import { stableStringify } from '@plein/canonical'
-import { parseModelRef, ProviderError } from '@plein/plugin-sdk'
+import { parseModelRef, ProviderError, type PortValue } from '@plein/plugin-sdk'
 import { API, type SubtitleRecognitionInfo } from '@plein/protocol'
 import { Hono } from 'hono'
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
@@ -15,6 +15,29 @@ import { cacheParams } from '../runs/runs'
 import { sequenceNode } from '@plein/nodes'
 
 afterEach(() => vi.restoreAllMocks())
+
+/** 序列锚定前冻结的实际输入：只剩送入模型的内容，不含来源/输出口/候选等溯源字段 */
+function legacyContentInputs(inputs: Record<string, PortValue[]>): Record<string, PortValue[]> {
+  return Object.fromEntries(
+    Object.entries(inputs).map(([port, values]) => [
+      port,
+      values.map(
+        ({
+          source: _source,
+          sourcePort: _sourcePort,
+          edgeId: _edgeId,
+          resultId: _resultId,
+          runId: _runId,
+          originCanvasId: _originCanvasId,
+          originNodeId: _originNodeId,
+          sourceCanvasId: _sourceCanvasId,
+          generationOrigin: _generationOrigin,
+          ...value
+        }: PortValue & { originCanvasId?: string; originNodeId?: string }) => value,
+      ),
+    ]),
+  )
+}
 
 async function setup() {
   const { server, dataDir } = await bootServer()
@@ -312,7 +335,7 @@ describe('字幕显式识别与持久恢复', () => {
   })
 
   it.each(
-    (['current-source', 'legacy-no-source'] as const).flatMap((encoding) =>
+    (['current-source', 'legacy-no-source', 'legacy-no-metadata'] as const).flatMap((encoding) =>
       (['matching', 'owner', 'asset', 'model', 'adapter', 'unknown', 'checksum'] as const).map(
         (variant) => [encoding, variant] as const,
       ),
@@ -379,8 +402,8 @@ describe('字幕显式识别与持久恢复', () => {
       inputs: inspection.inputs,
       inputHash: inspection.input.inputHash,
     }
-    if (encoding === 'legacy-no-source') {
-      // 真实旧快照既不保存新增图层/渲染默认值，也不把来源元素身份计入 v2 hash。
+    if (encoding !== 'current-source') {
+      // 真实旧快照不保存新增图层/渲染默认值。
       const {
         overlays: _overlays,
         subtitleRender: _render,
@@ -389,6 +412,14 @@ describe('字幕显式识别与持久恢复', () => {
       } = frozen.params
       frozen.params = oldParams
       const modelSpec = s.entry.def.models.find((spec) => spec.id === parseModelRef(model)!.model)!
+      // 序列锚定前的旧快照不保存溯源字段；只剥 source 的旧迁移读法也要认。
+      if (encoding === 'legacy-no-metadata') frozen.inputs = legacyContentInputs(frozen.inputs)
+      const oldInputs = Object.fromEntries(
+        Object.entries(frozen.inputs).map(([port, values]) => [
+          port,
+          values.map(({ source: _source, ...value }) => value),
+        ]),
+      )
       frozen.inputHash = `v2:${createHash('sha256')
         .update(
           stableStringify({
@@ -396,12 +427,7 @@ describe('字幕显式识别与持久恢复', () => {
             // 旧任务按当前节点版本重算，版本变了就不再复用旧结果
             version: sequenceNode.version,
             params: cacheParams(oldParams),
-            inputs: Object.fromEntries(
-              Object.entries(frozen.inputs).map(([port, values]) => [
-                port,
-                values.map(({ source: _source, ...value }) => value),
-              ]),
-            ),
+            inputs: oldInputs,
             model: {
               ref: model,
               version: modelSpec.version,
@@ -412,7 +438,15 @@ describe('字幕显式识别与持久恢复', () => {
         .digest('hex')}`
     }
     if (variant === 'checksum') frozen.inputHash = `v2:${'f'.repeat(64)}`
-    if (variant === 'asset') input.assetId = 'e'.repeat(64)
+    // 负例要改真正写进 DB 的那份冻结输入：旧快照可能已经换成了新对象
+    const storedAudio = (frozen.inputs.dialogue ?? []).find(
+      (value): value is PortValue & { assetId: string } =>
+        value.type === 'audio' && 'assetId' in value && value.assetId === input.assetId,
+    )
+    if (variant === 'asset') {
+      if (!storedAudio) throw new Error('fixture needs audio')
+      storedAudio.assetId = 'e'.repeat(64)
+    }
     if (variant === 'model') frozen.params.model = 'other/model:asr'
     s.server.runs.store.update(jobId, { status: 'succeeded', frozen: JSON.stringify(frozen) })
     s.server.runs.store.journal(jobId).set(

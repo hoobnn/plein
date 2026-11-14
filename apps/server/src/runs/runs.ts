@@ -2804,28 +2804,7 @@ export class NodeRuns implements BatchHost {
           type: el.nodeType,
           version: p.def?.version ?? el.nodeVersion,
           params: kept,
-          // 来源元素 id 只用来对应设置，不算内容；序列按来源元素对应镜头和叠加设置，
-          // 换同资产副本也要重新验证绑定，所以序列保留来源信息。候选出处等元数据一律不算内容。
-          inputs: Object.fromEntries(
-            Object.entries(p.inputs).map(([k, vs]) => [
-              k,
-              vs.map(
-                ({
-                  source,
-                  sourcePort: _p,
-                  edgeId: _e,
-                  resultId: _r,
-                  runId: _run,
-                  originCanvasId: _canvas,
-                  originNodeId: _node,
-                  sourceCanvasId: _selection,
-                  generationOrigin: _generation,
-                  ...v
-                }: PortValue & { originCanvasId?: string; originNodeId?: string }) =>
-                  el.nodeType === 'plein/sequence' ? { source, ...v } : v,
-              ),
-            ]),
-          ),
+          inputs: contentInputs(p.inputs, el.nodeType === SEQUENCE_TYPE),
           ...extra,
         }),
       )
@@ -3103,6 +3082,40 @@ const LEGACY_NOT_CONTENT: ReadonlySet<string> = new Set([
   'continuesFrom',
   'shotPresets',
 ])
+
+/**
+ * 缓存键里的实际输入内容。固定溯源字段（输出口、连线、候选、运行、来源画布等）
+ * 只说明值从哪来，不算内容；序列按来源元素对应镜头和叠加设置，换同资产副本也要
+ * 重新验证绑定，所以序列保留 source，其它节点连 source 一起不算内容。旧字幕任务
+ * 重算历史键时也用这一份投影，避免两处规则走偏。
+ */
+export function contentInputs(
+  inputs: Record<string, readonly unknown[]>,
+  sequence: boolean,
+): Record<string, Record<string, unknown>[]> {
+  return Object.fromEntries(
+    Object.entries(inputs).map(([port, values]) => [
+      port,
+      values.map((value) => contentInputValue(value, sequence)),
+    ]),
+  )
+}
+
+function contentInputValue(value: unknown, sequence: boolean): Record<string, unknown> {
+  const {
+    source,
+    sourcePort: _p,
+    edgeId: _e,
+    resultId: _r,
+    runId: _run,
+    originCanvasId: _canvas,
+    originNodeId: _node,
+    sourceCanvasId: _selection,
+    generationOrigin: _generation,
+    ...content
+  } = value as Record<string, unknown> & { originCanvasId?: string; originNodeId?: string }
+  return sequence ? { source, ...content } : content
+}
 
 export function cacheParams(
   params: Record<string, unknown>,
