@@ -43,6 +43,13 @@ import {
   workbenchDraft,
   type WorkbenchDraft,
 } from './shotWorkbenchModel'
+import {
+  discardWorkbenchDraft,
+  readWorkbenchDraft,
+  saveWorkbenchDraft,
+  workbenchDraftDirty,
+  type WorkbenchDraftSave,
+} from './workbenchDrafts'
 import { useWindowKeyDown } from '../../ui/useWindowKeyDown'
 import { CandidateInspection } from './CandidateInspection'
 import { ObservationSummary } from './ObservationSummary'
@@ -93,7 +100,7 @@ function WorkbenchSession(props: {
   boardId: string
   shotId: string
 }) {
-  // 切镜保留尚未保存的字段；离开本次工作台后不跨项目复用草稿。
+  // 切镜时这里保留尚未保存的字段；关窗或刷新后由本机存储按画布 + 分镜表 + 镜头恢复。
   const drafts = useRef(new Map<string, WorkbenchDraft>())
   return <Workbench key={props.shotId} {...props} drafts={drafts.current} />
 }
@@ -124,13 +131,30 @@ function Workbench({
   const principal = useSession((s) => s.info?.principal)
   const staleNodes = useStale((s) => s.nodes)
   const [boardMap] = useState(() => engine.doc.elementMaps.get(boardId))
-  const [draft, updateDraft] = useState(
-    () => drafts.get(shotId) ?? workbenchDraft(engine.doc, boardId, shotId),
+  const [draft, updateDraft] = useState<WorkbenchDraft | undefined>(() => {
+    const formal = workbenchDraft(engine.doc, boardId, shotId)
+    return drafts.get(shotId) ?? readWorkbenchDraft(canvasId, boardId, shotId, formal) ?? formal
+  })
+  // 仅用于提示：这次打开是从本机恢复的草稿，而不是当前正式内容。
+  const [restoredDraft] = useState(
+    () =>
+      !drafts.has(shotId) &&
+      !!readWorkbenchDraft(canvasId, boardId, shotId, workbenchDraft(engine.doc, boardId, shotId)),
   )
+  const [draftSave, setDraftSave] = useState<WorkbenchDraftSave | null>(null)
+  const [pendingLeave, setPendingLeave] = useState<(() => void) | null>(null)
   const setDraft = (next: WorkbenchDraft | undefined) => {
     if (next) drafts.set(shotId, next)
     else drafts.delete(shotId)
     updateDraft(next)
+    const formal = workbenchDraft(engine.doc, boardId, shotId)
+    if (next && workbenchDraftDirty(next, formal)) {
+      setDraftSave(saveWorkbenchDraft(canvasId, next))
+      return
+    }
+    discardWorkbenchDraft(canvasId, boardId, shotId)
+    setDraftSave(null)
+    if (next && formal) updateDraft(formal)
   }
   const [selectedNode, setSelectedNode] = useState('')
   const [child, setChild] = useState<'controls' | 'sync' | 'pair' | null>(null)
@@ -415,21 +439,37 @@ function Workbench({
       (field) =>
         draft.values[field] !== (typeof original?.[field] === 'string' ? original[field] : ''),
     )
+  // 本机存不下时关窗会丢内容：先确认，别让“已输入”看起来像已经保住。
+  const unsavedLocally = dirty && (draftSave === 'too-large' || draftSave === 'unavailable')
+  const leave = (action: () => void) => {
+    if (unsavedLocally) {
+      setPendingLeave(() => action)
+      return
+    }
+    action()
+  }
   const locate = (id: string, sequence = false) => {
     if (!active() || !engine.doc.has(id)) return
-    close()
-    engine.selection.set([id])
-    engine.zoomToFit([id])
-    if (sequence) useCanvas.getState().openSequence(id)
+    leave(() => {
+      close()
+      engine.selection.set([id])
+      engine.zoomToFit([id])
+      if (sequence) useCanvas.getState().openSequence(id)
+    })
   }
   return (
     // 工作台从 EditorPanels → DeferredPanel 打开，父级没有 Motion 宿主；补在这一层，
     // 里面的 Modal 和它带出来的子面板才拿得到渲染器，不会停在初始帧。
     <LazyMotion>
-      <Modal label="镜头工作台" onClose={close} isolateKeys className="plein-shot-workspace">
+      <Modal
+        label="镜头工作台"
+        onClose={() => leave(close)}
+        isolateKeys
+        className="plein-shot-workspace"
+      >
         <ModalHeader
           title={`镜头工作台 · 镜头 ${shot?.no ?? '已删除'}`}
-          onClose={close}
+          onClose={() => leave(close)}
           meta={
             <span className="text-xs text-ink-subtle">
               {engine.doc.get(boardId)?.name ?? '分镜制作'}
@@ -441,7 +481,7 @@ function Workbench({
             className="ui-btn ui-btn-secondary"
             disabled={!active()}
             onClick={() => {
-              if (active()) useCanvas.getState().openStoryboard(boardId)
+              if (active()) leave(() => useCanvas.getState().openStoryboard(boardId))
             }}
           >
             返回分镜表
@@ -480,9 +520,16 @@ function Workbench({
                 <span className="text-xs text-ink-muted">
                   创作验收：{reviewLabels[shotReviewStatus(nodes, shot)]}
                 </span>
+                {restoredDraft && (
+                  <span role="status" className="text-xs text-ink-muted">
+                    已恢复本机未保存草稿。
+                  </span>
+                )}
                 {dirty && (
                   <span role="status" className="text-xs text-warning">
-                    本镜有未保存字段，切镜时保留，关闭工作台后丢弃。
+                    {unsavedLocally
+                      ? '本镜有未保存字段，暂未存到本机，关闭前会再次确认。'
+                      : '本镜有未保存字段，已暂存在本机，关闭工作台后可恢复。'}
                   </span>
                 )}
                 {!canWrite && <span role="status">当前只读，可查看已有依据与候选。</span>}
@@ -501,7 +548,7 @@ function Workbench({
                     </div>
                     {changed && (
                       <p role="status" className="text-warning">
-                        镜头内容已有新版本，当前草稿保留，请重新载入后再保存。
+                        镜头内容已有新版本，当前草稿保留，不会自动覆盖；请重新载入后再保存。
                       </p>
                     )}
                     {draft &&
@@ -898,6 +945,36 @@ function Workbench({
           </nav>
         )}
       </Modal>
+      {pendingLeave && (
+        <Modal label="草稿未保存" onClose={() => setPendingLeave(null)} top isolateKeys size="sm">
+          <ModalHeader title="草稿未保存到本机" onClose={() => setPendingLeave(null)} />
+          <div className="space-y-3 p-4 text-sm">
+            <p>
+              本机存储不可用或草稿内容超出上限。现在关闭会丢掉这份未保存字段；先返回可继续编辑，或点“保存本镜字段”写入正式分镜。
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="ui-btn ui-btn-primary"
+                onClick={() => setPendingLeave(null)}
+              >
+                继续编辑
+              </button>
+              <button
+                type="button"
+                className="ui-btn ui-btn-secondary"
+                onClick={() => {
+                  const action = pendingLeave
+                  setPendingLeave(null)
+                  action?.()
+                }}
+              >
+                仍然关闭
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
       {child === 'controls' && (
         <ShotControls
           engine={engine}
