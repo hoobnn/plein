@@ -7,6 +7,7 @@ import {
   deleteElements,
   sequenceInstancesOf,
   setParams,
+  writeRun,
 } from '@plein/doc'
 import { openDoc } from '@plein/doc/testing'
 import { arrangeSequence, corePlugin, SequenceClip, sequenceNode } from '@plein/nodes'
@@ -31,7 +32,7 @@ resetStoreAfterEach(useStale)
 const originalAsset = 'a'.repeat(64)
 const nextAsset = 'c'.repeat(64)
 
-function fixture() {
+function fixture(options: { delayMeta?: boolean } = {}) {
   const doc = openDoc()
   const video = describeNode(
     corePlugin.nodes.find((node) => node.type === 'plein/video')!,
@@ -115,6 +116,8 @@ function fixture() {
     } as unknown as Catalog,
   })
   const submissions: Array<{ nodeId: string; body: unknown }> = []
+  let releaseMeta!: () => void
+  const metaGate = new Promise<void>((resolve) => (releaseMeta = resolve))
   mockFetch(async (request) => {
     const path = new URL(request.url).pathname
     const input = /\/nodes\/([^/]+)\/input$/.exec(path)
@@ -139,8 +142,10 @@ function fixture() {
       return Response.json({ runId: 'rework-run' }, { status: 202 })
     }
     if (path === '/api/media/caps') return Response.json({ ffmpeg: true })
-    if (path === `/api/assets/${nextAsset}/meta`)
+    if (/^\/api\/assets\/[^/]+\/meta$/.test(path)) {
+      if (options.delayMeta) await metaGate
       return Response.json({ kind: 'video', duration: 5, width: 160, height: 90 })
+    }
   })
   function Harness() {
     useDocVersion(doc)
@@ -171,7 +176,17 @@ function fixture() {
     [...doc.elements()].filter(
       (element) => element.nodeType === video.type && element.id !== source,
     )
-  return { doc, video, source, sequenceId, engine, submissions, Harness, draftElements }
+  return {
+    doc,
+    video,
+    source,
+    sequenceId,
+    engine,
+    submissions,
+    Harness,
+    draftElements,
+    releaseMeta: () => releaseMeta(),
+  }
 }
 
 it('关闭与刷新后续接同一返工草稿和候选，不重新提交生成', async () => {
@@ -422,6 +437,14 @@ it('返工会话写不进本机时如实提示，关闭前确认且刷新后不�
     expect(await screen.findByRole('dialog', { name: '返工草稿未保存' })).toBeTruthy()
     await first.user.click(screen.getByRole('button', { name: '仍然离开' }))
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '剪辑片段返工' })).toBeNull())
+    // 组件没卸载：继续同一内存草稿时也不能误标成刷新可恢复。
+    await first.user.click(screen.getByRole('button', { name: '继续上次返工草稿' }))
+    const resumed = screen.getByRole('dialog', { name: '剪辑片段返工' })
+    expect(within(resumed).getByText(/本机存储不可用，关闭或刷新后无法续接/)).toBeTruthy()
+    await first.user.click(within(resumed).getByRole('button', { name: '关闭' }))
+    expect(await screen.findByRole('dialog', { name: '返工草稿未保存' })).toBeTruthy()
+    await first.user.click(screen.getByRole('button', { name: '仍然离开' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '剪辑片段返工' })).toBeNull())
     first.unmount()
 
     const second = renderApp(<Harness />)
@@ -435,6 +458,154 @@ it('返工会话写不进本机时如实提示，关闭前确认且刷新后不�
     }
   } finally {
     setItem.mockRestore()
+    doc.destroy()
+  }
+})
+
+it('真实提交一次后刷新续接同 draft 与 run，发布候选并采用不新增 POST', async () => {
+  const { doc, sequenceId, submissions, Harness, draftElements } = fixture()
+  try {
+    const first = renderApp(<Harness />)
+    await first.user.click(screen.getByRole('button', { name: '修改并生成候选' }))
+    const modal = screen.getByRole('dialog', { name: '剪辑片段返工' })
+    const draft = draftElements()[0]!
+    const generator = within(modal).getByTestId('generator')
+    const prompt = within(generator).getByRole('textbox', { name: '提示词' })
+    await waitFor(() => expect(prompt).toBeTruthy())
+    await first.user.click(within(generator).getByRole('button', { name: '生成' }))
+    await waitFor(() => expect(submissions).toHaveLength(1))
+    await act(async () => {
+      writeRun(doc, draft.id, { id: 'rework-run', status: 'running', at: 1 })
+      doc.flush()
+    })
+    first.unmount()
+
+    const second = renderApp(<Harness />)
+    try {
+      await second.user.click(await screen.findByRole('button', { name: '继续上次返工草稿' }))
+      const reopened = screen.getByRole('dialog', { name: '剪辑片段返工' })
+      expect(draftElements()).toHaveLength(1)
+      expect(draftElements()[0]!.id).toBe(draft.id)
+      expect(doc.get(draft.id)?.run).toMatchObject({ id: 'rework-run', status: 'running' })
+      expect(submissions).toHaveLength(1)
+      await act(async () => {
+        writeRun(doc, draft.id, { id: 'rework-run', status: 'succeeded', at: 2 })
+        addResults(doc, draft.id, [
+          {
+            id: 'candidate-combined',
+            runId: 'rework-run',
+            port: 'video',
+            at: 2,
+            value: { type: 'video' as const, assetId: nextAsset },
+          },
+        ])
+        doc.flush()
+      })
+      await second.user.click(within(reopened).getByRole('combobox', { name: '返工视频候选' }))
+      await second.user.click(screen.getByRole('option', { name: '候选 1 · candidate-combined' }))
+      await second.user.click(within(reopened).getByRole('button', { name: '仅替换此剪辑实例' }))
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: '剪辑片段返工' })).toBeNull())
+      expect(sequenceInstancesOf(doc.get(sequenceId)!)[0]?.segment?.selection).toMatchObject({
+        nodeId: draft.id,
+        resultId: 'candidate-combined',
+        runId: 'rework-run',
+      })
+      expect(submissions).toHaveLength(1)
+    } finally {
+      second.unmount()
+    }
+  } finally {
+    doc.destroy()
+  }
+})
+
+it('探测媒体期间同一来源换了采用视频，旧替换不会生效', async () => {
+  const awaitAsset = 'e'.repeat(64)
+  const { doc, source, sequenceId, submissions, Harness, draftElements, releaseMeta } = fixture({
+    delayMeta: true,
+  })
+  try {
+    const view = renderApp(<Harness />)
+    await view.user.click(screen.getByRole('button', { name: '修改并生成候选' }))
+    const draft = draftElements()[0]!
+    await act(async () => {
+      addResults(doc, draft.id, [
+        {
+          id: 'candidate-await',
+          runId: 'rework-run',
+          port: 'video',
+          at: 2,
+          value: { type: 'video' as const, assetId: awaitAsset },
+        },
+      ])
+      doc.flush()
+    })
+    const modal = screen.getByRole('dialog', { name: '剪辑片段返工' })
+    await view.user.click(within(modal).getByRole('combobox', { name: '返工视频候选' }))
+    await view.user.click(screen.getByRole('option', { name: '候选 1 · candidate-await' }))
+    await view.user.click(within(modal).getByRole('button', { name: '仅替换此剪辑实例' }))
+    act(() => {
+      addResults(doc, source, [
+        {
+          id: 'source-b-await',
+          runId: 'source-run-b',
+          port: 'video',
+          at: 2,
+          value: { type: 'video' as const, assetId: 'b'.repeat(64) },
+        },
+      ])
+      doc.mutable(source)!.set('adopted', 'source-b-await')
+      doc.flush()
+    })
+    releaseMeta()
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('来源视频已变化'))
+    expect(sequenceInstancesOf(doc.get(sequenceId)!)[0]?.segment).toBeUndefined()
+    expect(submissions).toHaveLength(0)
+    view.unmount()
+  } finally {
+    doc.destroy()
+  }
+})
+
+it('另起版本会取消仍在探测媒体的旧替换', async () => {
+  const awaitAsset = 'f'.repeat(64)
+  const { doc, sequenceId, submissions, Harness, draftElements, releaseMeta } = fixture({
+    delayMeta: true,
+  })
+  try {
+    const view = renderApp(<Harness />)
+    await view.user.click(screen.getByRole('button', { name: '修改并生成候选' }))
+    const firstDraft = draftElements()[0]!
+    await act(async () => {
+      addResults(doc, firstDraft.id, [
+        {
+          id: 'candidate-stale-run',
+          runId: 'rework-run',
+          port: 'video',
+          at: 2,
+          value: { type: 'video' as const, assetId: awaitAsset },
+        },
+      ])
+      doc.flush()
+    })
+    const modal = screen.getByRole('dialog', { name: '剪辑片段返工' })
+    await view.user.click(within(modal).getByRole('combobox', { name: '返工视频候选' }))
+    await view.user.click(screen.getByRole('option', { name: '候选 1 · candidate-stale-run' }))
+    await view.user.click(within(modal).getByRole('button', { name: '仅替换此剪辑实例' }))
+    await view.user.click(within(modal).getByRole('button', { name: '另起版本' }))
+    await waitFor(() => expect(draftElements()).toHaveLength(2))
+    releaseMeta()
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole('dialog', { name: '剪辑片段返工' })).getByRole('button', {
+          name: '仅替换此剪辑实例',
+        }),
+      ).toBeTruthy(),
+    )
+    expect(sequenceInstancesOf(doc.get(sequenceId)!)[0]?.segment).toBeUndefined()
+    expect(submissions).toHaveLength(0)
+    view.unmount()
+  } finally {
     doc.destroy()
   }
 })

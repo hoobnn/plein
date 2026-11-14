@@ -311,10 +311,13 @@ it('本机存不下时不假装保存，关闭前确认并保留编辑', async (
 
 it('一个镜头本机保存失败后切镜关窗仍确认，回到该镜如实显示未保存', async () => {
   const { board } = fixture()
+  const setItem = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+    throw new Error('quota')
+  })
   const { user } = renderApp(<ShotWorkbench />)
   const field = () => screen.getByRole('textbox', { name: '工作台画面描述' })
-  const tooLong = 'a'.repeat(8_001)
-  fireEvent.change(field(), { target: { value: tooLong } })
+  await user.clear(field())
+  await user.type(field(), 'A 镜本机写不进去的草稿')
   await waitFor(() => expect(screen.getByText(/暂未存到本机/)).toBeTruthy())
   await user.click(screen.getByRole('button', { name: '下一镜' }))
   await waitFor(() => expect(screen.getByText(/另有 1 个镜头的草稿未保存到本机/)).toBeTruthy())
@@ -323,7 +326,7 @@ it('一个镜头本机保存失败后切镜关窗仍确认，回到该镜如实�
   await user.click(screen.getByRole('button', { name: '继续编辑' }))
   await user.click(screen.getByRole('button', { name: '上一镜' }))
   await waitFor(() => {
-    expect(textValue(field())).toBe(tooLong)
+    expect(textValue(field())).toBe('A 镜本机写不进去的草稿')
     expect(screen.getByText(/暂未存到本机/)).toBeTruthy()
     expect(screen.queryByText(/已暂存在本机/)).toBeNull()
     expect(screen.queryByText('已恢复本机未保存草稿。')).toBeNull()
@@ -332,6 +335,7 @@ it('一个镜头本机保存失败后切镜关窗仍确认，回到该镜如实�
   expect(await screen.findByRole('dialog', { name: '草稿未保存' })).toBeTruthy()
   await user.click(screen.getByRole('button', { name: '仍然关闭' }))
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '镜头工作台' })).toBeNull())
+  setItem.mockRestore()
   act(() => useCanvas.setState({ shotWorkbench: { boardId: board, shotId: 'one' } }))
   await waitFor(() => expect(textValue(field())).toBe('镜头 1 原始描述'))
 })

@@ -15,6 +15,7 @@ import { useStale } from '../runs/stale'
 import {
   applyReworkCandidate,
   createReworkDraft,
+  currentReworkSource,
   inspectReworkSource,
   reworkSourcePin,
 } from './rework'
@@ -200,7 +201,21 @@ export function SequenceRework({
         : rawRow.sound
     setSession(saved)
     setRemembered(saved)
-    setSessionPersisted(true)
+    // 内存会话可能因 quota 一直没写进本机；只有存储里确实还是这份会话才算可刷新续接。
+    const stored =
+      canvasId && row.clipInstanceId
+        ? readReworkSession(canvasId, sequenceId, row.clipInstanceId)
+        : undefined
+    setSessionPersisted(
+      !!stored &&
+        stored.draftId === saved.draftId &&
+        stored.candidateId === saved.candidateId &&
+        stored.sound === saved.sound &&
+        stored.sourceResultId === saved.sourceResultId &&
+        stored.sourceRunId === saved.sourceRunId &&
+        stored.sourceAssetId === saved.sourceAssetId &&
+        stored.expected === saved.expected,
+    )
     setDraftId(saved.draftId)
     setPort(saved.port)
     setExpected(saved.expected)
@@ -224,6 +239,10 @@ export function SequenceRework({
     return true
   }
   const start = (resume: boolean) => {
+    // 另起版本或重新打开都显式取消仍在等待媒体探测的旧替换。
+    operation.current++
+    setBusy(false)
+    setError('')
     if (!writable() || !raw) {
       useCanvas.getState().notify('当前序列不可编辑或实例已变化，请重新核对。')
       return
@@ -297,6 +316,29 @@ export function SequenceRework({
     setSessionNotice('')
     setError('')
   }
+  /** 按当前真实 Y.Doc 再核来源 tuple、文件与活跃草稿；每次 await 前后都要过一遍。 */
+  const ensureCurrentSource = () => {
+    if (!session || !canvasId || !row.clipInstanceId) return '返工会话已失效，请重新核对。'
+    const current = currentReworkSource(engine.doc, sequenceId, row.clipInstanceId, canvasId)
+    if ('problem' in current) return current.problem
+    if (current.source.id !== session.sourceId || current.port !== session.port) {
+      setIdentityChanged(true)
+      return '来源片段已变化，不能直接替换；请核对后另起版本。'
+    }
+    if (
+      current.pin.resultId !== session.sourceResultId ||
+      current.pin.runId !== session.sourceRunId ||
+      current.pin.assetId !== session.sourceAssetId
+    ) {
+      setSourcePinChanged(true)
+      return '当前采用的来源视频已变化，请先核对后再替换。'
+    }
+    if (!draft || session.draftId !== draft.id) return '返工会话已切换，请重新核对。'
+    const activeDraft = engine.doc.get(draft.id)
+    if (!activeDraft || activeDraft.kind !== 'node' || activeDraft.locked)
+      return '返工草稿已删除或锁定，请重新打开核对。'
+    return undefined
+  }
   const apply = async () => {
     if (
       !writable() ||
@@ -316,26 +358,14 @@ export function SequenceRework({
     setBusy(true)
     setError('')
     try {
-      // 弹窗打开期间来源可能又被换过：替换前用当前实际来源再对一次起始候选。
-      const current = inspectReworkSource(engine.doc, row, canvasId)
-      if ('problem' in current) throw new Error(current.problem!)
-      if (!session || current.source.id !== session.sourceId || current.port !== session.port) {
-        setIdentityChanged(true)
-        throw new Error('来源片段已变化，不能直接替换；请核对后另起版本。')
-      }
-      const pin = reworkSourcePin(row, current.source, current.port)
-      if (
-        !pin ||
-        pin.resultId !== session.sourceResultId ||
-        pin.runId !== session.sourceRunId ||
-        pin.assetId !== session.sourceAssetId
-      ) {
-        setSourcePinChanged(true)
-        throw new Error('当前采用的来源视频已变化，请先核对后再替换。')
-      }
+      const before = ensureCurrentSource()
+      if (before) throw new Error(before)
       const meta = await loadAssetMeta(chosen.value.assetId)
       if (operation.current !== serial) return
       if (!writable()) throw new Error('当前不可编辑，未替换素材')
+      // 探测媒体期间同一来源可能换了采用视频，raw 实例 JSON 却不变；按实时文档再核一次。
+      const after = ensureCurrentSource()
+      if (after) throw new Error(after)
       if (meta.kind !== 'video' || !meta.duration)
         throw new Error('读不到候选的实际视频时长，请重试')
       const saved = applyReworkCandidate(engine.doc, {
