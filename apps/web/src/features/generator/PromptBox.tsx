@@ -367,8 +367,9 @@ export function PromptBox({
   }
   /** 用选中的完整身份绑定：同名异来源、同源不同输出口都按它自己来。 */
   const insertChoice = (choice: MentionChoice) => {
-    // 参考模式按全画布身份消歧后绑定并插正文；非编号能力没有持久标记解析，
-    // 保持普通 @ 语法，名字仍按可引用目标集合计算，键与正文用同一个名字。
+    // 参考模式按全画布身份消歧后绑定并插正文；非编号能力保持普通 @ 语法与可读名字，
+    // 名字按可引用目标集合计算（避免服务端按名字无法解析的 #序号），
+    // 持久身份仍由服务端按 binding.source 消费，正文与绑定键必须同名。
     const name = choice.identity
       ? bindReferenceName(
           engine.doc,

@@ -31,8 +31,9 @@ export interface PreviewKeyOptions {
  * 移动节点、改无关节点、任务进度这类文档更新不改变摘要，实际输入预览就不必重取。
  * 采用、结果身份、输入顺序、参数、音色、模型、@ 点名与同名歧义都算在内。
  *
- * 绑定的 token 与服务端一致地遮蔽：跨画布失效绑定（目标画布有同名素材）不当普通 @ 解析，
- * 因此改同名素材不会误刷新；绑定本身的身份（参数）和它指向的本画布来源仍参与摘要。
+ * 绑定的 token 与服务端一致地遮蔽：参考模式遮全部；其它能力遮所有独立媒体绑定
+ *（含已连线、未连线、错误类型/输出口）和跨画布失效绑定。独立素材按来源 id/输出口追踪，
+ * 改同名素材不会误刷新；资产卡/节点仍按名字语义，手输未绑定 @ 保持原行为。
  */
 export function previewInputKey(
   engine: Engine,
@@ -46,7 +47,6 @@ export function previewInputKey(
   /** 绑定指向本画布来源时，来源本身也是依赖（换采用/换素材都要重取预览） */
   const boundSources = new Map<string, { source: string; port?: string }>()
   const consumer = doc.get(nodeId)
-  const connected = new Set(inputEdges(doc, nodeId).map((edge) => edge.from[0]))
   const referenceMode = options.referenceMode ?? defaultReferenceMode(consumer)
   const queue = [nodeId]
   while (queue.length) {
@@ -88,7 +88,7 @@ export function previewInputKey(
   )
   const referenced = new Set<string>()
   for (const source of sources) {
-    const masked = maskedTokenStarts(doc, source, connected)
+    const masked = maskedTokenStarts(doc, source)
     for (const token of masked) {
       const binding = referenceBindings(source.params)[token.name]
       const id = binding?.source
@@ -186,9 +186,10 @@ function ownTextSources(el: CanvasElement, referenceMode: boolean | null): TextS
 
 /**
  * 服务端会在这些位置换掉绑定 token，不再当普通 @ 解析：
- * 参考模式遮全部绑定；其它能力只遮「绑定来源不在本画布」的失效/跨画布绑定。
+ * 参考模式遮全部绑定；其它能力遮独立媒体绑定（有效/已连线/错误口）与失效/跨画布绑定，
+ * 资产卡与纯手输未绑定 @ 仍按名字。
  */
-function maskedTokenStarts(doc: PleinDoc, source: TextSource, connected: ReadonlySet<string>) {
+function maskedTokenStarts(doc: PleinDoc, source: TextSource) {
   if (source.mode === 'none') return []
   const bindings = referenceBindings(source.params)
   return boundReferenceTokens(source.text, source.params).filter((token) => {
@@ -201,12 +202,8 @@ function maskedTokenStarts(doc: PleinDoc, source: TextSource, connected: Readonl
     const media = el.kind === 'image' || el.kind === 'video' || el.kind === 'audio'
     // 资产卡/节点仍按原有名字语义，不属于独立素材身份。
     if (!media) return false
-    const matches =
-      !!el.assetId &&
-      binding.type === el.kind &&
-      (!binding.sourcePort || binding.sourcePort === el.kind)
-    // 已连线且输出身份匹配：服务端沿既有输入，不遮蔽。
-    if (connected.has(el.id) && matches) return false
+    // 独立素材的有效绑定（含已连线、错误类型/输出口）都由服务端按来源 id 处理，
+    // 不再当普通 @ 解析；同名素材变化不会改变引用目标。
     return true
   })
 }

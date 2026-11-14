@@ -636,3 +636,47 @@ it('非编号能力的错型绑定明确未送入，可读名与私有标记不�
   expect(input.params.system).toBe('讲述 @风')
   expect(input.prompt).not.toMatch(/\uE000|\uE001|\uE004|\uE005/)
 })
+
+it('已有绑定后把原图连入视觉 LLM：仍按连线送入一次，同名不阻断', async () => {
+  const { server, id, doc } = await boot()
+  const first = createElement(doc, {
+    id: 'linked',
+    kind: 'image',
+    name: '风',
+    assetId: asset('l'),
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  createElement(doc, {
+    id: 'same-name',
+    kind: 'image',
+    name: '风',
+    assetId: asset('s'),
+    x: 0,
+    y: 200,
+    w: 100,
+    h: 100,
+  })
+  const chat = addNode(doc, 'plein/llm', {
+    params: {
+      model: 'plein/mock:agent-vision',
+      prompt: '@风 看看',
+      [boundary('风', first)]: {
+        type: 'image',
+        assetId: asset('l'),
+        source: first,
+        sourcePort: 'image',
+      },
+    },
+    x: 600,
+  })
+  connect(doc, [first, 'image'], [chat, 'images'])
+  const input = await server.runs.preview(id, chat, 'local')
+  expect(input.status).toBe('ready')
+  expect(input.inputs.images).toMatchObject([{ assetId: asset('l'), source: first }])
+  expect(input.inputs.images).toHaveLength(1)
+  expect(input.inputs.images?.some((item) => item.assetId === asset('s'))).toBe(false)
+  expect(input.blocked.some((issue) => issue.message.includes('2 个风'))).toBe(false)
+})

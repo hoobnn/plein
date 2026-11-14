@@ -2316,8 +2316,14 @@ export class NodeRuns implements BatchHost {
             !!source.assetId &&
             binding.type === source.kind &&
             (!binding.sourcePort || binding.sourcePort === source.kind)
-          // 已连线且输出身份匹配：沿既有输入，不重复注入也不遮成失效。
-          if (connectedSources.has(source.id) && matches) continue
+          // 已连线且输出身份匹配：素材已由连线送入，仍遮住 token 避免按同名重新解析；
+          // 不再额外注入命中，避免重复。
+          if (connectedSources.has(source.id) && matches) {
+            const marked = mark(out, token)
+            markers.set(marked.index, { name: token.name, params })
+            out = marked.text
+            continue
+          }
           // 其余（错误类型/输出口、缺资产）明确未送入，保留可读 @ 名称。
           const index = invalidRefs.push({ name: token.name }) - 1
           out = out.slice(0, token.start) + `\uE004${index}\uE005` + out.slice(token.end)
