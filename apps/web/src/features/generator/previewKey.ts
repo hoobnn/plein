@@ -6,7 +6,8 @@ import { mentionTargets } from '../../canvas/nodes'
 /**
  * 会影响这个节点实际输入的文档状态摘要。
  *
- * 只收进本节点、它的上游闭包，以及提示词里真正 @ 到的目标（含它们的参数和连入的定妆图）：
+ * 只收进本节点、实际消费到的上游（已生成的上游到它的结果为止，不展开未提交的草稿），
+ * 以及提示词里真正 @ 到的目标（含它们的参数和连入的定妆图）：
  * 移动节点、改无关节点、任务进度这类文档更新不改变摘要，实际输入预览就不必重取。
  * 采用、结果身份、输入顺序、参数、音色、模型、@ 点名与同名歧义都算在内。
  *
@@ -40,9 +41,14 @@ export function previewInputKey(engine: Engine, nodeId: string): string {
         from: [edge.from[0], edge.from[1]],
         to: edge.to[1],
         current,
+        // 还没有结果时才看上游的最新失败状态（会改变服务端的阻断/提示）；进度不算
+        ...(current || !source ? {} : { run: runStateKey(source) }),
       })
       if (current?.text) sources.push(current.text)
-      if (source && !current) for (const text of textValues(source)) sources.push(text)
+      // 上游这个输出口已经有结果时，服务端直接用那份结果，不读它的参数和上游：
+      // 在这里截断，编辑它还没运行的草稿不会让下游预览失效。换采用会换结果 id，仍会发现。
+      if (current) continue
+      if (source) for (const text of textValues(source)) sources.push(text)
       queue.push(edge.from[0])
     }
   }
@@ -77,11 +83,14 @@ export function previewInputKey(engine: Engine, nodeId: string): string {
     parts.push(elementKey(el))
     for (const edge of inputEdges(doc, id)) {
       const source = doc.get(edge.from[0])
+      const current = source ? resultKey(source, edge.from[1]) : null
       parts.push({
         ref: edge.id,
         from: [edge.from[0], edge.from[1]],
-        current: source ? resultKey(source, edge.from[1]) : null,
-        source: source ? elementKey(source) : null,
+        current,
+        // 已生成的定妆图：服务端只用当前结果，未运行的草稿不算依赖；
+        // 还没有结果时才需要它的参数与最新失败状态（会改变引用提示/阻断）
+        ...(current || !source ? {} : { source: elementKey(source), run: runStateKey(source) }),
       })
     }
   }
@@ -110,6 +119,13 @@ function elementKey(el: CanvasElement) {
     // 采用身份：同一输入下换用另一个候选会改变下游实际输入
     adopted: el.adopted === undefined ? null : el.adopted,
   }
+}
+
+/** 没有结果时上游最新状态：失败原因会改变服务端的提示/阻断，进度百分比无关 */
+function runStateKey(el: CanvasElement) {
+  const run = el.run
+  if (!run) return null
+  return { status: run.status, error: run.error ?? null, errorCode: run.errorCode ?? null }
 }
 
 function resultKey(el: CanvasElement, port?: string) {

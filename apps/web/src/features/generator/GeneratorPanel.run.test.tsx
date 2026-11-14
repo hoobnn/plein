@@ -1,6 +1,14 @@
 // @vitest-environment happy-dom
 import type { Engine } from '@plein/canvas-core'
-import { createElement, writeRun, type PleinDoc } from '@plein/doc'
+import {
+  addResults,
+  adoptResult,
+  connect,
+  createElement,
+  setParam,
+  writeRun,
+  type PleinDoc,
+} from '@plein/doc'
 import { openDoc } from '@plein/doc/testing'
 import { corePlugin } from '@plein/nodes'
 import { describeNode } from '@plein/plugin-sdk'
@@ -323,7 +331,7 @@ function servePreviews(id: string, doc: PleinDoc) {
   })
   // 被新一次预览取代的请求仍留在数组里，但已经取消
   const live = () => previews.filter((preview) => !preview.signal.aborted)
-  return { fetch, runs, live }
+  return { fetch, runs, live, previews }
 }
 
 const readyInput = (nodeId: string, prompt: string, inputHash: string) => ({
@@ -436,6 +444,108 @@ describe('等待预览期间的运行授权', () => {
       runButton().click()
     })
     await waitFor(() => expect(runs).toHaveLength(1))
+  })
+
+  describe('上游已生成时的草稿与采用', () => {
+    function withGeneratedUpstream() {
+      const { id, engine, doc } = setup()
+      const upstream = createElement(doc, {
+        kind: 'node',
+        nodeType: 'plein/image',
+        name: '上游镜头',
+        x: 0,
+        y: -300,
+        w: 160,
+        h: 120,
+        params: { prompt: '上游草稿' },
+        ports: {
+          inputs: [],
+          outputs: [{ id: 'images', label: '图片', type: 'image' }],
+        },
+      })
+      addResults(doc, upstream, [
+        {
+          id: 'up-a',
+          port: 'images',
+          runId: 'run-up-a',
+          at: 1,
+          value: { type: 'image', assetId: 'u'.repeat(64) },
+        },
+        {
+          id: 'up-b',
+          port: 'images',
+          runId: 'run-up-b',
+          at: 2,
+          value: { type: 'image', assetId: 'v'.repeat(64) },
+        },
+      ])
+      connect(doc, [upstream, 'images'], [id, 'references'])
+      doc.flush()
+      return { id, engine, doc, upstream }
+    }
+
+    it('编辑已生成上游的未运行草稿，不会取消正在等的这次生成', async () => {
+      const { id, engine, doc, upstream } = withGeneratedUpstream()
+      const { runs, live } = servePreviews(id, doc)
+      renderPanel(id, engine)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      await act(async () => live()[0]!.resolve(readyInput(id, '透明水杯', 'hash-1') as never))
+
+      typePrompt(doc, '等待中的新镜头输入')
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400)
+      })
+      expect(live()).toHaveLength(1)
+      // 刷新期间按钮是禁用的，用快捷键记下这次生成
+      await act(async () => {
+        fireEvent.keyDown(screen.getByTestId('generator'), { key: 'Enter', metaKey: true })
+      })
+      // 上游已经生成：改它的提示词草稿不改变下游实际输入，这次生成仍然有效
+      act(() => {
+        setParam(doc, upstream, 'prompt', '上游还没跑的新草稿')
+        doc.flush()
+      })
+      expect(live()).toHaveLength(1)
+      await act(async () =>
+        live()[0]!.resolve(readyInput(id, '等待中的新镜头输入', 'hash-2') as never),
+      )
+      await waitFor(() => expect(runs).toHaveLength(1))
+      expect(runs[0]).toMatchObject({ expect: 'hash-2' })
+    })
+
+    it('等待期间换用上游的另一个候选，原授权作废且不提交', async () => {
+      const { id, engine, doc, upstream } = withGeneratedUpstream()
+      const { runs, live } = servePreviews(id, doc)
+      renderPanel(id, engine)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      await act(async () => live()[0]!.resolve(readyInput(id, '透明水杯', 'hash-1') as never))
+
+      typePrompt(doc, '等待中的新镜头输入')
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400)
+      })
+      expect(live()).toHaveLength(1)
+      await act(async () => {
+        fireEvent.keyDown(screen.getByTestId('generator'), { key: 'Enter', metaKey: true })
+      })
+      act(() => {
+        adoptResult(doc, upstream, 'up-b')
+        doc.flush()
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400)
+      })
+      expect(live()).toHaveLength(1)
+      await act(async () =>
+        live()[0]!.resolve(readyInput(id, '等待中的新镜头输入', 'hash-2') as never),
+      )
+      expect(runs).toHaveLength(0)
+      expect(await screen.findByText(/输入已修改，这次生成已取消/)).toBeTruthy()
+    })
   })
 
   it('服务端说输入已变时不自行提交带回的新输入', async () => {

@@ -171,6 +171,71 @@ it('上游采用与输入顺序变化会重取预览，上游多出来的候选�
   expect(f.key()).not.toBe(two)
 })
 
+it('已生成的上游只消费结果：编辑它没运行的草稿不刷新下游预览，换采用仍会', () => {
+  const f = fixture()
+  const generated = createElement(
+    f.doc,
+    node({
+      nodeType: 'llm',
+      name: '台词',
+      ports: {
+        inputs: [{ id: 'in', label: '输入', type: 'text' }],
+        outputs: [{ id: 'out', label: '输出', type: 'text' }],
+      },
+    }),
+  )
+  connect(f.doc, [generated, 'out'], [f.shot, 'prompt'])
+  addResults(
+    f.doc,
+    generated,
+    [
+      { id: 'res-a', port: 'out', runId: 'run-a', at: 1, value: { type: 'text', text: '第一版' } },
+      { id: 'res-b', port: 'out', runId: 'run-b', at: 2, value: { type: 'text', text: '第二版' } },
+    ],
+    { adopt: false },
+  )
+  adoptResult(f.doc, generated, 'res-a')
+  f.doc.flush()
+  const before = f.key()
+
+  // 上游已经生成：编辑它还没运行的提示词草稿，不改变下游实际输入
+  setParam(f.doc, generated, 'prompt', '还没跑的新草稿')
+  expect(f.key()).toBe(before)
+
+  // 换用另一个候选：下游拿到的结果变了
+  adoptResult(f.doc, generated, 'res-b')
+  expect(f.key()).not.toBe(before)
+})
+
+it('还没出结果的上游草稿与真正内联的文本仍参与预览', () => {
+  const f = fixture()
+  const pending = createElement(
+    f.doc,
+    node({
+      nodeType: 'plein/image',
+      name: '上游待生成',
+      params: { prompt: '上游草稿' },
+      ports: {
+        inputs: [],
+        outputs: [{ id: 'image', label: '图片', type: 'image' }],
+      },
+    }),
+  )
+  connect(f.doc, [pending, 'image'], [f.shot, 'references'])
+  f.doc.flush()
+  const before = f.key()
+  setParam(f.doc, pending, 'prompt', '上游草稿改了')
+  expect(f.key()).not.toBe(before)
+
+  // 内联文本（没有结果）直接就是输入：接到提示词端口后改正文
+  const inline = createElement(f.doc, box({ kind: 'markdown', text: '第一幕' }))
+  connect(f.doc, [inline, 'text'], [f.shot, 'prompt'])
+  f.doc.flush()
+  const afterText = f.key()
+  setText(f.doc, inline, '第二幕：天台')
+  expect(f.key()).not.toBe(afterText)
+})
+
 it('@ 到的图片换素材、角色连入的定妆图换素材或采用都会重取预览', () => {
   const f = fixture()
   const before = f.key()
@@ -199,6 +264,87 @@ it('提示词直接 @ 的命名图片换素材会重取预览', () => {
   const before = f.key()
   updateElement(f.doc, named, { assetId: 'scene-b' })
   expect(f.key()).not.toBe(before)
+})
+
+it('@ 卡片连入的已生成定妆图只用结果：草稿不刷新，换采用与失败状态仍会', () => {
+  const f = fixture()
+  const look = createElement(
+    f.doc,
+    node({
+      nodeType: 'plein/image',
+      name: '定妆图生成器',
+      params: { prompt: '定妆图草稿', model: 'p/mock:image' },
+      ports: {
+        inputs: [{ id: 'references', label: '参考图', type: 'image', multiple: true }],
+        outputs: [{ id: 'images', label: '图片', type: 'image' }],
+      },
+    }),
+  )
+  addResults(f.doc, look, [
+    {
+      id: 'look-a',
+      port: 'images',
+      runId: 'run-look-a',
+      at: 1,
+      value: { type: 'image', assetId: 'l'.repeat(64) },
+    },
+    {
+      id: 'look-b',
+      port: 'images',
+      runId: 'run-look-b',
+      at: 2,
+      value: { type: 'image', assetId: 'm'.repeat(64) },
+    },
+  ])
+  connect(f.doc, [look, 'images'], [f.card, 'references'])
+  f.doc.flush()
+  const before = f.key()
+
+  // 定妆图生成器已经出图：编辑它还没运行的提示词草稿，不改变卡片实际提供的参考图
+  setParam(f.doc, look, 'prompt', '换了但还没跑')
+  expect(f.key()).toBe(before)
+  // 换用另一个定妆候选：卡片提供的参考图变了
+  adoptResult(f.doc, look, 'look-b')
+  const adopted = f.key()
+  expect(adopted).not.toBe(before)
+  // 上游进度不算语义变化
+  writeRun(f.doc, look, { id: 'run-look-b', status: 'running', at: 3, progress: 0.6 })
+  expect(f.key()).toBe(adopted)
+})
+
+it('@ 卡片还没有定妆结果时，失败状态与草稿仍会刷新预览', () => {
+  const f = fixture()
+  const pendingLook = createElement(
+    f.doc,
+    node({
+      nodeType: 'plein/image',
+      name: '待生成定妆',
+      params: { prompt: '定妆草稿' },
+      ports: {
+        inputs: [],
+        outputs: [{ id: 'images', label: '图片', type: 'image' }],
+      },
+    }),
+  )
+  connect(f.doc, [pendingLook, 'images'], [f.card, 'references'])
+  f.doc.flush()
+  const before = f.key()
+  setParam(f.doc, pendingLook, 'prompt', '定妆草稿改了')
+  expect(f.key()).not.toBe(before)
+
+  // 进度写回不算语义变化
+  writeRun(f.doc, pendingLook, { id: 'run-look', status: 'running', at: 1, progress: 0.4 })
+  const drafting = f.key()
+  writeRun(f.doc, pendingLook, { id: 'run-look', status: 'running', at: 2, progress: 0.8 })
+  expect(f.key()).toBe(drafting)
+  // 失败原因会改变服务端的提示/阻断
+  writeRun(f.doc, pendingLook, {
+    id: 'run-look',
+    status: 'failed',
+    at: 3,
+    error: '平台审核未通过',
+  })
+  expect(f.key()).not.toBe(drafting)
 })
 
 it('只有被提示词命中的名字才参与摘要：无关目标改名不影响，重名会让预览刷新', () => {
