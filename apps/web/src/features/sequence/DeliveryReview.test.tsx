@@ -39,7 +39,7 @@ function record(id: string): DeliveryRecord {
     notes: [],
   }
 }
-function setup() {
+function setup({ strict = false } = {}) {
   vi.stubGlobal(
     'HTMLMediaElement',
     new Proxy(HTMLMediaElement, {
@@ -77,7 +77,7 @@ function setup() {
   useSession.setState({
     info: { principal: { id: 'local', role: 'owner' }, authRequired: false, needsSetup: false },
   })
-  const view = renderApp(<Review engine={engine} id={id} />)
+  const view = renderApp(<Review engine={engine} id={id} />, { reactStrictMode: strict })
   const read = () => doc.get(id)!.deliveries!
   const write = (records: DeliveryRecord[]) => {
     updateElement(doc, id, { deliveries: records })
@@ -355,4 +355,18 @@ it('历史范围禁止意见和确认写入，同帧变为历史也拒绝旧按�
   expect(
     (screen.getByRole('button', { name: '历史范围确认只读' }) as HTMLButtonElement).disabled,
   ).toBe(true)
+})
+
+it('StrictMode 初次挂载保留实际导出视频来源', () => {
+  const f = setup({ strict: true })
+  expect(f.video().getAttribute('src')).toMatch(/^\/api\/assets\/[a-f0-9]{64}$/)
+})
+
+it('切换交付版本时真实视频标签拿到新来源，不沿用旧资源', async () => {
+  const f = setup()
+  const first = f.video().getAttribute('src')!
+  expect(first).toMatch(/^\/api\/assets\/[a-f0-9]{64}$/)
+  const other = first.includes('a'.repeat(64)) ? 'b' : 'a'
+  await f.chooseVersion(other)
+  expect(f.video().getAttribute('src')).toBe(`/api/assets/${other.repeat(64)}`)
 })

@@ -9,7 +9,7 @@ import {
   sequenceInstancesOf,
 } from '@plein/doc'
 import { sequenceSourcesAt } from '@plein/nodes'
-import { type RefObject, useEffect, useRef, useState } from 'react'
+import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { assetUrls } from '../../api/client'
 import { AssetDownloadButton } from '../../shell/AssetDownloadButton'
 import { useCanvas } from '../../stores/canvas'
@@ -514,23 +514,25 @@ function DeliveryVideoAttempt({
 }) {
   const [failed, setFailed] = useState(false)
   const [loading, setLoading] = useState(true)
-  useEffect(() => {
+  // 来源由布局 effect 统一管理：StrictMode 会保留同一 DOM 重放 effect，清理移除 src 后
+  // 必须在这里恢复，不能只依赖 JSX 只在挂载时写一次属性；换版本时先释放旧媒体再设新来源。
+  useLayoutEffect(() => {
     const element = video.current
+    if (!element) return
+    element.src = src
     return () => {
-      if (!element) return
       if (element.readyState >= 1 && Number.isFinite(element.currentTime))
         positions.set(identity, element.currentTime)
       element.pause()
       element.removeAttribute('src')
       element.load()
     }
-  }, [video, identity, positions])
+  }, [video, identity, positions, src])
   return (
     <>
       {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 实际导出的字幕已烧录在画面内 */}
       <video
         ref={video}
-        src={src}
         controls
         onTimeUpdate={(event) => onTime(event.currentTarget.currentTime)}
         onSeeked={(event) => onTime(event.currentTarget.currentTime)}
