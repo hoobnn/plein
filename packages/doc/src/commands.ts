@@ -18,7 +18,6 @@ import {
   replaceResults,
   resultIndexes,
   resultsContainer,
-  snapshotResult,
   RESULTS_RECORDED_KEY,
   type ResultRemovalReceipt,
 } from './results'
@@ -479,8 +478,8 @@ export function removeResults(
  * 删除结果，并留下「只撤销这一次删除」的凭据。
  *
  * 凭据让撤销不必依赖全局撤销栈：远端把节点整个删掉之后，栈里那一步已经
- * 失效，Yjs 会跳过它去撤更早的操作，把别的编辑撤掉。有了凭据就只动
- * 这次删掉的那几条。
+ * 失效，Yjs 会跳过它去撤更早的操作，把别的编辑撤掉。凭据记着每个来源
+ * 当时的容器身份，可以先核对这一步还撤得回来。
  */
 export function removeResultsWithReceipt(
   doc: PleinDoc,
@@ -495,6 +494,7 @@ export function removeResultsWithReceipt(
   }
   // 单次调用独立成一步撤销，不与相邻的删除或编辑合并。
   doc.undo.stopCapturing()
+  let outcome: { removed: number; receipt: ResultRemovalReceipt[] }
   try {
     // 旧格式节点还没有新容器时，先用系统写入把旧数据搬进新容器：
     // 容器创建不进用户的撤销栈，用户那一步撤销只还原被删的候选。
@@ -513,7 +513,7 @@ export function removeResultsWithReceipt(
         ensureResultsContainer(m)
       }
     }, SYSTEM_ORIGIN)
-    return write(doc, () => {
+    outcome = write(doc, () => {
       let removed = 0
       const receipt: ResultRemovalReceipt[] = []
       for (const [elementId, resultIds] of byElement) {
@@ -521,73 +521,61 @@ export function removeResultsWithReceipt(
         if (!m) continue
         const container = resultsContainer(m)
         if (!container) continue
-        const items = container.toArray()
         const indexes = resultIndexes(container, resultIds)
         if (!indexes.length) continue
-        const entries = indexes.map((index) => ({
-          result: items[index] as NodeResult,
-          index,
-        }))
         removed += deleteResultItems(container, indexes)
         // 用户明确删过：结果归新端接管，旧端迟到的候选不会再复活。
         m.set(RESULTS_RECORDED_KEY, true)
         const adopted = m.get('adopted')
-        receipt.push({
-          elementId,
-          entries,
-          adoptedBefore:
-            typeof adopted === 'string' ? adopted : adopted === null ? null : undefined,
-        })
         if (typeof adopted === 'string' && resultIds.has(adopted)) m.set('adopted', null)
+        receipt.push({ elementId, container, resultIds: [...resultIds] })
       }
       return { removed, receipt }
     })
   } finally {
     doc.undo.stopCapturing()
   }
+  // 记下这次删除在撤销栈上的位置：撤销前要核对它仍是栈顶。
+  // 事务提交之后才拿得到栈项。
+  const stackItem = doc.undo.undoStack.at(-1)
+  for (const entry of outcome.receipt) entry.stackItem = stackItem
+  return outcome
 }
 
 /**
- * 只撤销一次删除：把凭据里的候选逐条插回原位。
+ * 只撤销一次删除。
  *
- * 不走全局撤销栈 —— 那一步可能已因远端删除而失效，Yjs 会跳过它去撤
- * 更早的操作，把别的编辑撤掉。这里只动这次删掉的那几条。
+ * 走 Yjs 自己的撤销：它按相对位置还原，顺序正确，也自带 Redo ——
+ * 删掉 [A,B,C,D] 里的 A、B，期间系统加入 S，撤销后是 [S,A,B,C,D]，
+ * 不是按旧下标硬插出来的 [A,S,B,C,D]。
  *
- * 来源节点已被远端删除时跳过那部分（节点没了，候选无处可放），
- * 其余照常还原；全部失效时什么也不改，由调用方提示用户。
+ * 但 Yjs 的撤销会跳过已经失效的栈项去撤更早的操作，远端把来源节点删掉
+ * 之后就会误撤别的编辑。所以先核对：
+ * - 这次删除仍是撤销栈顶（有更新的本地操作就不动它）；
+ * - 至少一个来源还在，而且还是当时那个容器（节点被删后重建就不算）。
+ * 都不成立就如实报告「撤不回来」，不去碰全局撤销栈。
  */
-export function restoreRemovedResults(
+export function undoResultRemoval(
   doc: PleinDoc,
   receipt: readonly ResultRemovalReceipt[],
-): { restored: number; skipped: string[] } {
-  if (doc.readOnly || !receipt.length) return { restored: 0, skipped: [] }
-  let restored = 0
-  const skipped: string[] = []
-  doc.undo.stopCapturing()
-  try {
-    write(doc, () => {
-      for (const removal of receipt) {
-        const m = doc.mutable(removal.elementId)
-        const container = m ? resultsContainer(m) : undefined
-        if (!m || !container) {
-          skipped.push(removal.elementId)
-          continue
-        }
-        // 位置从后往前插，前面插一条不会挤掉后面待插的位置。
-        const ordered = [...removal.entries].sort((a, b) => b.index - a.index)
-        for (const entry of ordered) {
-          const at = Math.min(entry.index, container.length)
-          container.insert(at, [snapshotResult(entry.result)])
-          restored++
-        }
-        if (typeof removal.adoptedBefore === 'string' && m.get('adopted') === null)
-          m.set('adopted', removal.adoptedBefore)
-      }
-    })
-  } finally {
-    doc.undo.stopCapturing()
-  }
-  return { restored, skipped }
+): { undone: boolean; reason?: string } {
+  if (doc.readOnly) return { undone: false, reason: '画布已变为只读，无法撤销。' }
+  if (!receipt.length) return { undone: false, reason: '没有可撤销的删除记录。' }
+  // 来源还在、容器还是当时那个，才撤得回来。
+  // 远端把来源节点删掉之后，栈里那一步已失效：Yjs 会跳过它去撤更早的
+  // 操作，把别的编辑撤掉 —— 这种情况下如实报告，不去碰全局撤销栈。
+  const alive = receipt.some((entry) => {
+    const m = doc.elementMaps.get(entry.elementId)
+    return m instanceof Y.Map && resultsContainer(m) === entry.container
+  })
+  if (!alive) return { undone: false, reason: '删除的来源已不存在，这一步撤不回来了。' }
+  // 还有更新的本地操作：这一步已经不是栈顶，不动它。
+  const stackItem = receipt.find((entry) => entry.stackItem !== undefined)?.stackItem
+  if (stackItem !== undefined && doc.undo.undoStack.at(-1) !== stackItem)
+    return { undone: false, reason: '删除之后已有其他操作，请用 ⌘Z 逐步撤销。' }
+  const undone = doc.undo.undo()
+  if (!undone) return { undone: false, reason: '删除的来源已不存在，这一步撤不回来了。' }
+  return { undone: true }
 }
 /**
  * 整份替换节点的结果记录（系统写入，不进撤销栈）。

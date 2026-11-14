@@ -8,6 +8,7 @@ import {
   createDoc,
   sequenceSegmentAssets,
   adoptedResultIds,
+  replaceResults,
   type CanvasElement,
 } from '@plein/doc'
 import {
@@ -171,7 +172,8 @@ async function planExport(
             const adopted = adoptedResultIds(el)
             const kept =
               candidates === 'all' ? el.results : el.results.filter((r) => adopted.has(r.id))
-            if (kept.length !== el.results.length) m.set('results', kept)
+            // 裁剪后的结果整份换回容器：新键结构，不再写回普通数组。
+            if (kept.length !== el.results.length) replaceResults(m, kept)
             for (const r of kept) {
               if ('assetId' in r.value) {
                 refAsset(r.value.assetId, where, true)

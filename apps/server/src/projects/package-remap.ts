@@ -9,9 +9,10 @@ import {
   readContinuity,
   createProductionGoals,
   remapSequenceCanvasScopes,
+  replaceResults,
+  readResults,
   snapshotTypedDeliveries,
   type DeliveryRecord,
-  type NodeResult,
   type NodeRun,
 } from '@plein/doc'
 import { remapReferenceParams } from '@plein/plugin-sdk'
@@ -122,7 +123,7 @@ export function remapDoc(data: Uint8Array, map: ReadonlyMap<string, string>): Ui
               if (!Object.hasOwn(current, key) || current[key] !== value) params.set(key, value)
           }
         }
-        const results = m.get('results')
+        const results = readResults(m)
         const deliveries = m.get('deliveries')
         if (Array.isArray(deliveries)) {
           const next = (deliveries as DeliveryRecord[]).map((r) =>
@@ -137,12 +138,11 @@ export function remapDoc(data: Uint8Array, map: ReadonlyMap<string, string>): Ui
           if (next.some((r, i) => r !== deliveries[i]))
             m.set('deliveries', snapshotTypedDeliveries(next))
         }
-        if (Array.isArray(results)) {
-          const next = (results as NodeResult[]).map((r) =>
-            r && typeof r === 'object' && map.has(r.runId) ? { ...r, runId: map.get(r.runId)! } : r,
-          )
-          if (next.some((r, i) => r !== results[i])) m.set('results', next)
-        }
+        // 结果整份换回容器：新键结构，不再写回普通数组。
+        const nextResults = results.map((r) =>
+          r && typeof r === 'object' && map.has(r.runId) ? { ...r, runId: map.get(r.runId)! } : r,
+        )
+        if (nextResults.some((r, i) => r !== results[i])) replaceResults(m, nextResults)
         const run = m.get('run') as NodeRun | undefined
         if (run && typeof run === 'object' && typeof run.status === 'string') {
           let next = settledRun(run, RUNNING_NOTE)

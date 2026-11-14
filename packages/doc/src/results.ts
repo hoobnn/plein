@@ -274,15 +274,19 @@ export function resultIndexes(container: Y.Array<unknown>, ids: ReadonlySet<stri
 /**
  * 一次删除留下的凭据。
  *
- * 有了它就能「只撤销这一次删除」，不必去动全局撤销栈：
- * 全局栈里那一步可能已经因为远端删除而失效，Yjs 会跳过它去撤更早的
- * 操作，把别的编辑撤掉。凭据记着删了哪几条、原本在什么位置，
- * 逐条插回原位即可。
+ * 有了它就能「只撤销这一次删除」，而不必去动全局撤销栈。
+ * 记着每个来源当时的容器身份：容器被换过（节点被删后重建）就不是
+ * 同一份来源了，这时不能拿它去撤销。
  */
 export interface ResultRemovalReceipt {
   elementId: string
-  /** 被删掉的候选，连同它原本在容器里的位置 */
-  entries: Array<{ result: NodeResult; index: number }>
-  /** 删除前的显式采用值；撤销时按需还原 */
-  adoptedBefore: string | null | undefined
+  /** 删除时那个结果容器的实例；换了容器就不是同一份来源 */
+  container: Y.Array<unknown>
+  /** 本次删掉的候选 id */
+  resultIds: string[]
+  /**
+   * 删除时在全局撤销栈上的那一项。
+   * 撤销前用它核对「这一步仍是栈顶」：有更新的本地操作就不动它。
+   */
+  stackItem?: unknown
 }

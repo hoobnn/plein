@@ -21,9 +21,15 @@ export { SCHEMA_VERSION } from './migrate'
 export {
   hasStaleLegacyWrite,
   LEGACY_RESULTS_KEY,
+  replaceResults,
   RESULTS_KEY,
+  RESULTS_RECORDED_KEY,
+  resultsContainer,
+  resultsRecorded,
+  resultsSeen,
   readResults,
   readResultsSnapshot,
+  type ResultRemovalReceipt,
 } from './results'
 export * from './types'
 export * from './domain/delivery'

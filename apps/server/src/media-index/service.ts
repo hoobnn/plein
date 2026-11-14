@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { RESULTS_KEY } from '@plein/doc'
 import type {
   Asset,
   MediaLibraryPage,
@@ -87,9 +88,15 @@ export class MediaIndex {
             (type as unknown) === elements ||
             [...keys].some(
               (key) =>
-                key === 'assetId' || key === 'results' || key === 'adopted' || key === 'name',
+                key === 'assetId' ||
+                key === 'results' ||
+                key === RESULTS_KEY ||
+                key === 'adopted' ||
+                key === 'name',
             ) ||
-            type._item?.parentSub === 'params'
+            type._item?.parentSub === 'params' ||
+            // 结果数组是子类型：逐条插删只改子数组，元素自身的键没动。
+            type._item?.parentSub === RESULTS_KEY
           ) {
             this.dirty.add(id)
             return

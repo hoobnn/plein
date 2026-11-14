@@ -12,6 +12,7 @@ import {
   createContinuityMap,
   readContinuity,
   remapSequenceCanvasScopes,
+  replaceResults,
   snapshotTypedDeliveries,
   type NodeResult,
 } from '@plein/doc'
@@ -289,9 +290,10 @@ export class CheckpointService {
               )
           }
           m.delete('run')
+          // 结果整份换回容器：新键结构，不再写回普通数组。
           if (el.results?.length)
-            m.set(
-              'results',
+            replaceResults(
+              m,
               el.results.map((r): NodeResult => ({ ...r, runId: remap.get(r.runId)! })),
             )
           if (el.deliveries?.length)
