@@ -59,7 +59,7 @@ export function referencePreview({
   referenceLimit?: number
   referenceMediaLimits?: { video: number; audio: number }
   /** 上游文本里未解析的外部/失效引用：面板要能看见它们没有送入。 */
-  staleUnsent?: InputUnsentReference[]
+  staleUnsent?: Array<InputUnsentReference & { identity?: string }>
 }): ReferencePreview {
   if (
     def?.capability !== 'image.generate' &&
@@ -264,14 +264,17 @@ export function referencePreview({
       ...(reason ? { reason, message } : {}),
     })
     if (reason && message)
-      addUnsent({
-        ...(binding?.assetId ? { assetId: binding.assetId } : {}),
-        ...(source ? { elementId: source } : {}),
-        name: token.name,
-        reason,
-        message,
-        origins: ['binding'],
-      })
+      addUnsent(
+        {
+          ...(binding?.assetId ? { assetId: binding.assetId } : {}),
+          ...(source ? { elementId: source } : {}),
+          name: token.name,
+          reason,
+          message,
+          origins: ['binding'],
+        },
+        bindingIdentity(binding),
+      )
   }
 
   for (const mention of mentions) {
@@ -441,7 +444,7 @@ export function referencePreview({
   }
 
   // 上游文本里的失效引用没有原文区间，也放进同一个「未送入」列表，方便重新绑定。
-  for (const item of staleUnsent ?? []) addUnsent(item)
+  for (const item of staleUnsent ?? []) addUnsent(item, item.identity)
 
   // 不再被正文或连线使用的绑定是残留数据；只报告，不参与编号或阻断。
   const usedNames = new Set(bound.map((token) => token.name))
@@ -463,14 +466,17 @@ export function referencePreview({
     )
       continue
     const assetId = binding?.assetId ?? raw.assetId
-    addUnsent({
-      ...(assetId ? { assetId } : {}),
-      ...(source ? { elementId: source } : {}),
-      name,
-      reason: 'stale_binding',
-      message: `残留绑定 @${name} 已忽略（元素已删除，或既未连线也未被 @ 引用）`,
-      origins: ['binding'],
-    })
+    addUnsent(
+      {
+        ...(assetId ? { assetId } : {}),
+        ...(source ? { elementId: source } : {}),
+        name,
+        reason: 'stale_binding',
+        message: `残留绑定 @${name} 已忽略（元素已删除，或既未连线也未被 @ 引用）`,
+        origins: ['binding'],
+      },
+      bindingIdentity(binding),
+    )
   }
   return { sent, unsent, promptReferences }
 }
@@ -500,6 +506,10 @@ function rawBindingEntries(params: unknown) {
   }
   return out
 }
+
+/** 同一来源的同一输出口/媒体类型才算同一引用；不同口、不同类型要分开报告。 */
+const bindingIdentity = (binding?: ReferenceIdentity) =>
+  `${binding?.sourcePort ?? ''}|${binding?.type ?? ''}`
 
 function bindingMatches(
   binding: ReferenceIdentity,

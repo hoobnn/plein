@@ -2190,17 +2190,30 @@ export class NodeRuns implements BatchHost {
       (def.capability === 'video.generate' && el.params?.mode === 'reference')
     // 未解析来源（跨画布失效标记、元素已删除）的持久绑定：任何会消费 @ 的能力都不能把它
     // 当成普通 @ 去解析目标画布的同名素材。先占位，准备完再恢复可读原名并说明未送入。
-    const staleOrder: string[] = []
+    const staleRefs: Array<{
+      name: string
+      source?: string
+      assetId?: string
+      sourcePort?: string
+      type?: ReferenceIdentity['type']
+    }> = []
     const maskStale = (text: string, params: Record<string, unknown>) => {
       const bindings = referenceBindings(params)
-      const tokens = boundReferenceTokens(text, params).filter((token) => {
-        const source = bindings[token.name]?.source
-        return !!source && !doc.has(source)
+      const stale = boundReferenceTokens(text, params).flatMap((token) => {
+        const binding = bindings[token.name]
+        return binding?.source && !doc.has(binding.source) ? [{ token, binding }] : []
       })
-      if (!tokens.length) return text
+      if (!stale.length) return text
       let out = text
-      for (const token of [...tokens].reverse()) {
-        const index = staleOrder.push(token.name) - 1
+      for (const { token, binding } of [...stale].reverse()) {
+        const index =
+          staleRefs.push({
+            name: token.name,
+            source: binding.source,
+            assetId: binding.assetId,
+            sourcePort: binding.sourcePort,
+            type: binding.type,
+          }) - 1
         out = out.slice(0, token.start) + `\uE002${index}\uE003` + out.slice(token.end)
       }
       return out
@@ -2276,12 +2289,12 @@ export class NodeRuns implements BatchHost {
       },
     )
     if (continuation.issue) blocked.push(continuation.issue)
-    const staleUnsents: InputUnsentReference[] = []
-    if (!referenceMode && staleOrder.length) {
+    const staleUnsents: Array<InputUnsentReference & { identity?: string }> = []
+    if (!referenceMode && staleRefs.length) {
       const restoreStale = (text: string) =>
         text.replace(
           /\uE002(\d+)\uE003/g,
-          (_match, index: string) => `@${staleOrder[Number(index)] ?? ''}`,
+          (_match, index: string) => `@${staleRefs[Number(index)]?.name ?? ''}`,
         )
       for (const [key, value] of Object.entries(params))
         if (typeof value === 'string' && value.includes('\uE002')) params[key] = restoreStale(value)
@@ -2291,13 +2304,27 @@ export class NodeRuns implements BatchHost {
         if (item.type === 'text') item.text = restoreStale(item.text)
       const message = (name: string) =>
         `引用 @${name} 的来源不在当前画布（复制时未带入或已删除），本次没有送入；请重新选择素材`
-      for (const name of new Set(staleOrder)) {
-        notices.push({ code: 'stale_binding', message: message(name) })
+      // 同一失效绑定身份（来源 + 输出口 + 媒体类型 + 资产）与原因只报一次；
+      // 不同来源、端口、类型或资产仍是独立引用，各自保留位置证据。
+      const seen = new Set<string>()
+      for (const ref of staleRefs) {
+        const key = [
+          ref.source ?? '',
+          ref.sourcePort ?? '',
+          ref.type ?? '',
+          ref.assetId ?? '',
+        ].join('|')
+        if (seen.has(key)) continue
+        seen.add(key)
+        notices.push({ code: 'stale_binding', message: message(ref.name) })
         staleUnsents.push({
-          name,
+          ...(ref.source ? { elementId: ref.source } : {}),
+          ...(ref.assetId ? { assetId: ref.assetId } : {}),
+          name: ref.name,
           reason: 'stale_binding',
-          message: message(name),
+          message: message(ref.name),
           origins: ['binding'],
+          identity: `${ref.sourcePort ?? ''}|${ref.type ?? ''}`,
         })
       }
     }
