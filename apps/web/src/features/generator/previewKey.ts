@@ -1,6 +1,6 @@
 import type { Engine } from '@plein/canvas-core'
 import { currentResult, inputEdges, type CanvasElement, type PleinDoc } from '@plein/doc'
-import { findMentions, sortMentionTargets } from '@plein/nodes'
+import { ASSET_NODE_TYPES, findMentions, sortMentionTargets } from '@plein/nodes'
 import { boundReferenceTokens, referenceBindings } from '@plein/plugin-sdk'
 import { mentionTargets } from '../../canvas/nodes'
 
@@ -98,7 +98,9 @@ export function previewInputKey(
         })
     }
     for (const mention of findMentions(source.text, targets)) {
-      if (masked.some((token) => token.start === mention.start)) continue
+      // 服务端遮的是整段绑定（名字里可能再带一个 @），区间内的 @ 都不算普通引用
+      if (masked.some((token) => mention.start >= token.start && mention.start < token.end))
+        continue
       parts.push({
         mention: mention.name,
         id: mention.id,
@@ -132,12 +134,27 @@ export function previewInputKey(
   return JSON.stringify(parts)
 }
 
-/** 核心节点的参考模式判断；插件节点由调用方通过 options 明确传入 */
+/** 节点是否按参考模式发送素材：图片生成，或多模态参考模式的视频；生成器与审片共用 */
+export function referenceModeOf(
+  capability: string | undefined,
+  params: Record<string, unknown> | undefined,
+) {
+  return (
+    capability === 'image.generate' ||
+    (capability === 'video.generate' && params?.mode === 'reference')
+  )
+}
+
+/** 缺省判断由节点能力给出；没有目录信息时按核心节点类型兜底 */
 function defaultReferenceMode(el: CanvasElement | undefined) {
   if (!el) return false
-  return (
-    el.nodeType === 'plein/image' ||
-    (el.nodeType === 'plein/video' && el.params?.mode === 'reference')
+  return referenceModeOf(
+    el.nodeType === 'plein/image'
+      ? 'image.generate'
+      : el.nodeType === 'plein/video'
+        ? 'video.generate'
+        : undefined,
+    el.params,
   )
 }
 
@@ -184,9 +201,13 @@ function mergedParams(el: CanvasElement, consumer: CanvasElement): Record<string
   return { ...el.params, ...consumer.params }
 }
 
-/** 被引用/被绑定的来源：已生成时只消费当前结果，否则展开参数、最新状态和连入的依赖 */
+/**
+ * 被引用/被绑定的来源：真正消费结果的生成节点只记当前结果；
+ * 角色/场景等资产卡即使文档里有结果，服务端仍读档案、音色和连入的参考图，必须展开。
+ */
 function referenceSourceParts(doc: PleinDoc, el: CanvasElement, port?: string) {
-  const current = resultKey(el, port)
+  const card = el.kind === 'node' && !!el.nodeType && ASSET_NODE_TYPES.has(el.nodeType)
+  const current = card ? null : resultKey(el, port)
   if (current) return { current }
   return {
     source: elementKey(el),

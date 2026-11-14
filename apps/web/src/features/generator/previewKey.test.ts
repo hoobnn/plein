@@ -434,6 +434,86 @@ it('参考模式下绑定的本画布来源仍按消费结果追踪：草稿不�
   expect(f.key()).not.toBe(before)
 })
 
+it('绑定名字里带 @ 时整段被遮蔽，区间外的同一个 @ 仍然生效', () => {
+  const doc = openDoc()
+  docs.push(doc)
+  const engine = { doc } as Engine
+  const look = createElement(doc, box({ name: '图', assetId: 'c'.repeat(64) }))
+  const binding = `referenceNameBinding:${encodeURIComponent('海报 @图')}:external-source`
+  const consumer = createElement(
+    doc,
+    node({
+      nodeType: 'plein/llm',
+      name: '看图说话',
+      params: {
+        prompt: '看 @海报 @图',
+        [binding]: { type: 'image', assetId: '', source: 'external-source' },
+      },
+    }),
+  )
+  const key = () => {
+    doc.flush()
+    return previewInputKey(engine, consumer)
+  }
+  const before = key()
+  // 绑定遮的是整段「@海报 @图」：里面那个 @图 不是普通引用
+  updateElement(doc, look, { assetId: 'd'.repeat(64) })
+  expect(key()).toBe(before)
+  // 区间外再写一个 @图：它是真正生效的普通引用
+  setParam(doc, consumer, 'prompt', '看 @海报 @图 和 @图')
+  const outside = key()
+  updateElement(doc, look, { assetId: 'e'.repeat(64) })
+  expect(key()).not.toBe(outside)
+})
+
+it('@ 到的角色卡即使文档里有结果，仍追踪档案与连入的定妆图', () => {
+  const f = fixture()
+  addResults(f.doc, f.card, [
+    {
+      id: 'card-stray-result',
+      port: 'image',
+      runId: 'run-card',
+      at: 1,
+      value: { type: 'image', assetId: 'z'.repeat(64) },
+    },
+  ])
+  f.doc.flush()
+  const before = f.key()
+  setParam(f.doc, f.card, 'voiceId', 'v2')
+  expect(f.key()).not.toBe(before)
+  const afterProfile = f.key()
+  updateElement(f.doc, f.look, { assetId: 'look-z' })
+  expect(f.key()).not.toBe(afterProfile)
+})
+
+it('参考模式绑定到本画布角色卡时，仍追踪档案与定妆图而不是卡片上的结果', () => {
+  const f = fixture()
+  addResults(f.doc, f.card, [
+    {
+      id: 'bound-card-result',
+      port: 'image',
+      runId: 'run-bound-card',
+      at: 1,
+      value: { type: 'image', assetId: 'z'.repeat(64) },
+    },
+  ])
+  const binding = `referenceNameBinding:${encodeURIComponent('林夏')}:${f.card}`
+  setParam(f.doc, f.shot, 'prompt', '@林夏 推门')
+  setParam(f.doc, f.shot, binding, {
+    type: 'image',
+    assetId: 'z'.repeat(64),
+    source: f.card,
+    sourcePort: 'image',
+  })
+  f.doc.flush()
+  const before = f.key()
+  setParam(f.doc, f.card, 'voiceId', 'v3')
+  expect(f.key()).not.toBe(before)
+  const afterProfile = f.key()
+  updateElement(f.doc, f.look, { assetId: 'look-y' })
+  expect(f.key()).not.toBe(afterProfile)
+})
+
 it('只有被提示词命中的名字才参与摘要：无关目标改名不影响，重名会让预览刷新', () => {
   const f = fixture()
   const before = f.key()

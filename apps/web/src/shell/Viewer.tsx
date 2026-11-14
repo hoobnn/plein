@@ -296,6 +296,7 @@ function Review({ viewer }: { viewer: View }) {
             canvasId={canvasId}
             viewer={viewer}
             result={result}
+            catalog={catalog}
           />
         )}
         {kind === 'image' && (

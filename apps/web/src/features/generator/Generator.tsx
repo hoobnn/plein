@@ -44,7 +44,7 @@ import { NameField } from './NameField'
 import { PromptBox } from './PromptBox'
 import { runBlockReason, runDisabled as runDisabledState } from './runBlock'
 import { planPendingRun, type PendingRunIntent } from './pendingRun'
-import { previewInputKey } from './previewKey'
+import { previewInputKey, referenceModeOf } from './previewKey'
 import { PromptTools } from './PromptTools'
 import { RecipeLibrary } from './RecipeLibrary'
 import { CharacterImageArchiveButton } from '../library/ArchiveCharacterImage'
@@ -288,9 +288,7 @@ export function GeneratorPanel({
   // 生成前的实际输入：所有要跑的节点都要（插件节点可能没有 capability，
   // 但服务端照样能准备输入；不取预览，生成按钮就一直是禁用的）
   // 参考模式：图片生成，或参考模式的多模态视频；引用绑定按它的语义遮蔽
-  const referenceMode =
-    node.capability === 'image.generate' ||
-    (node.capability === 'video.generate' && params.mode === 'reference')
+  const referenceMode = referenceModeOf(node.capability, params)
   const input = useInputPreview(engine, !pure ? canvasId : null, el.id, referenceMode)
   const imageReferences =
     !input.stale && !input.loading && !input.error && input.data

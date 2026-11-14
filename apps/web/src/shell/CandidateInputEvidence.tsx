@@ -1,8 +1,11 @@
 import type { Engine } from '@plein/canvas-core'
 import type { NodeResult } from '@plein/doc'
+import type { Catalog } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useInputPreview } from '../features/generator/InputPreview'
+import { referenceModeOf } from '../features/generator/previewKey'
+import { findNode } from '../canvas/nodes'
 import { InputDetails } from '../features/storyboard/InputDetails'
 import { useCanvas } from '../stores/canvas'
 import { readCandidateJob } from './candidateInput'
@@ -18,15 +21,23 @@ export function CandidateInputEvidence({
   canvasId,
   viewer,
   result,
+  catalog,
 }: {
   engine: Engine
   canvasId: string | null
   viewer: View
   result: NodeResult
+  /** 与生成器共用同一套参考模式判断（含插件节点的能力） */
+  catalog: Catalog | null
 }) {
   const [open, setOpen] = useState(false)
   const sync = useCanvas((s) => s.sync)
   const nodeId = viewer.nodeId
+  const element = nodeId ? engine.doc.get(nodeId) : undefined
+  const referenceMode = referenceModeOf(
+    element ? findNode(catalog, element.nodeType)?.capability : undefined,
+    element?.params,
+  )
   // 当前输入复用生成器的公共预览：内部按实际输入语义摘要换代，移动节点、无关节点和任务进度
   // 不重取；关闭时停用，重开按当前文档重新读取，关闭期间改过的输入不会沿用旧缓存。
   // 服务端还没收到本机改动时由它标记等同步并在追平后自动重读。
@@ -34,6 +45,7 @@ export function CandidateInputEvidence({
     engine,
     open && canvasId && nodeId ? canvasId : null,
     nodeId ?? '',
+    referenceMode,
   )
 
   const stillViewing = () => {
