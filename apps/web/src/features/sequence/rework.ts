@@ -66,6 +66,30 @@ export function reworkSource(doc: PleinDoc, row: ArrangedClip, canvasId: string 
   return 'problem' in result ? undefined : result
 }
 
+export interface ReworkSourcePin {
+  resultId: string
+  runId: string
+  assetId: string
+}
+
+/**
+ * 钉住片段当前实际采用的候选与文件。只比较来源节点 id 和实例 JSON
+ * 发现不了同一节点把采用视频从 A 换成 B 的情况。
+ */
+export function reworkSourcePin(
+  row: ArrangedClip,
+  source: CanvasElement,
+  port: string,
+): ReworkSourcePin | undefined {
+  const selection = row.segment?.selection
+  const assetId = row.clip.assetId ?? row.segment?.asset?.assetId
+  if (!assetId) return undefined
+  if (selection) return { resultId: selection.resultId, runId: selection.runId, assetId }
+  const adopted = currentResult(source, port)
+  if (adopted?.value.type !== 'video' || adopted.value.assetId !== assetId) return undefined
+  return { resultId: adopted.id, runId: adopted.runId, assetId }
+}
+
 /** Keep incoming references in their exact order; drafts own no old results or task identity. */
 export function createReworkDraft(doc: PleinDoc, source: CanvasElement) {
   if (doc.readOnly || !doc.has(source.id) || doc.get(source.id)?.locked) return null

@@ -105,7 +105,7 @@ describe('workbench drafts', () => {
     ).toBeUndefined()
   })
 
-  it('同一分镜表只保留最近的草稿，丢弃后不再恢复', () => {
+  it('同一分镜表保留所有未应用草稿，容量不足只拒绝新写入而不淘汰其他镜', () => {
     const storage = memoryStorage()
     for (let i = 0; i < 30; i++)
       saveWorkbenchDraft(
@@ -118,13 +118,28 @@ describe('workbench drafts', () => {
       string,
       unknown
     >
-    expect(Object.keys(stored)).toHaveLength(24)
-    expect(stored['shot-0']).toBeUndefined()
+    expect(Object.keys(stored)).toHaveLength(30)
+    expect(stored['shot-0']).toBeDefined()
     expect(stored['shot-29']).toBeDefined()
+    expect(
+      saveWorkbenchDraft(
+        'canvas',
+        draft({ description: 'a'.repeat(WORKBENCH_DRAFT_MAX_FIELD + 1) }, { shotId: 'shot-0' }),
+        storage,
+      ),
+    ).toBe('too-large')
+    expect(
+      readWorkbenchDraft('canvas', 'board', 'shot-0', draft({}, { shotId: 'shot-0' }), storage)
+        ?.values.description,
+    ).toBe('草稿 0')
     discardWorkbenchDraft('canvas', 'board', 'shot-29', storage)
     expect(
       readWorkbenchDraft('canvas', 'board', 'shot-29', draft({}, { shotId: 'shot-29' }), storage),
     ).toBeUndefined()
+    expect(
+      readWorkbenchDraft('canvas', 'board', 'shot-28', draft({}, { shotId: 'shot-28' }), storage)
+        ?.values.description,
+    ).toBe('草稿 28')
   })
 
   it('只把与正式字段不同的内容算作需要保留的草稿', () => {

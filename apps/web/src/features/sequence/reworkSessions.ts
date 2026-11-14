@@ -16,6 +16,10 @@ export interface ReworkSession {
   /** 创建草稿时的来源节点与输出端口，用于确认来源没有被换掉。 */
   sourceId: string
   port: string
+  /** 创建草稿时片段实际采用的来源候选与文件，避免同节点换了采用项仍被当成同一来源。 */
+  sourceResultId: string
+  sourceRunId: string
+  sourceAssetId: string
   draftId: string
   /** 创建草稿时的剪辑实例快照；实例变了就不能直接替换。 */
   expected: string
@@ -37,6 +41,9 @@ function isSession(value: unknown): value is ReworkSession {
     typeof raw.clipInstanceId === 'string' &&
     typeof raw.sourceId === 'string' &&
     typeof raw.port === 'string' &&
+    typeof raw.sourceResultId === 'string' &&
+    typeof raw.sourceRunId === 'string' &&
+    typeof raw.sourceAssetId === 'string' &&
     typeof raw.draftId === 'string' &&
     typeof raw.expected === 'string' &&
     typeof raw.candidateId === 'string' &&
@@ -55,10 +62,9 @@ export function readReworkSession(
   storage?: Pick<Storage, 'getItem' | 'removeItem'>,
 ): ReworkSession | undefined {
   const key = reworkSessionKey(canvasId, sequenceId, clipInstanceId)
-  const target = storage ?? localStorage
   let parsed: unknown
   try {
-    const raw = target.getItem(key)
+    const raw = (storage ?? localStorage).getItem(key)
     if (!raw) return undefined
     parsed = JSON.parse(raw)
   } catch {
@@ -73,7 +79,7 @@ export function readReworkSession(
     now - parsed.savedAt > REWORK_SESSION_TTL
   ) {
     try {
-      target.removeItem(key)
+      ;(storage ?? localStorage).removeItem(key)
     } catch {
       /* 读不到也删不掉时当作没有记录。 */
     }

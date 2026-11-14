@@ -12,7 +12,12 @@ import { Modal, ModalHeader } from '../../ui/Modal'
 import { Select } from '../../ui/Select'
 import { GeneratorPanel } from '../generator/Generator'
 import { useStale } from '../runs/stale'
-import { applyReworkCandidate, createReworkDraft, inspectReworkSource } from './rework'
+import {
+  applyReworkCandidate,
+  createReworkDraft,
+  inspectReworkSource,
+  reworkSourcePin,
+} from './rework'
 import {
   clearReworkSession,
   readReworkSession,
@@ -47,8 +52,11 @@ export function SequenceRework({
   const [candidateId, setCandidateId] = useState('')
   const [sound, setSound] = useState<ReworkSound>('')
   const [identityChanged, setIdentityChanged] = useState(false)
+  const [sourcePinChanged, setSourcePinChanged] = useState(false)
   const [staleInstance, setStaleInstance] = useState(false)
   const [sessionNotice, setSessionNotice] = useState('')
+  const [sessionPersisted, setSessionPersisted] = useState(true)
+  const [pendingLeave, setPendingLeave] = useState<(() => void) | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const operation = useRef(0)
@@ -66,6 +74,17 @@ export function SequenceRework({
     },
     [],
   )
+  const sessionAtRisk = !!session && !sessionPersisted
+  // 本机存不下会话时刷新或关标签会丢续接关系；至少在浏览器离开前提醒一次。
+  useEffect(() => {
+    if (!sessionAtRisk) return
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [sessionAtRisk])
   const sourceState = inspectReworkSource(engine.doc, row, canvasId)
   const local = 'problem' in sourceState ? undefined : sourceState
   const sourceNode = local && findNode(catalog, local.source.nodeType)
@@ -87,13 +106,22 @@ export function SequenceRework({
     setBusy(false)
     setOpen(false)
   }
+  /** 关闭弹窗本身还会保留内存会话；本机没存下时先确认，避免用户以为刷新也能续接。 */
+  const leave = (action: () => void) => {
+    if (sessionAtRisk) {
+      setPendingLeave(() => action)
+      return
+    }
+    action()
+  }
+  const requestClose = () => leave(close)
   const cancelPendingApply = () => {
     operation.current++
     setBusy(false)
     setError('')
   }
   const remember = (next: ReworkSession) => {
-    writeReworkSession(next)
+    setSessionPersisted(writeReworkSession(next))
     setSession(next)
     setRemembered(next)
   }
@@ -103,6 +131,11 @@ export function SequenceRework({
   }
   const openNew = (fresh: ReworkSource, rawRow: NonNullable<typeof raw>) => {
     if (!canvasId || !row.clipInstanceId) return
+    const pin = reworkSourcePin(row, fresh.source, fresh.port)
+    if (!pin) {
+      useCanvas.getState().notify('无法确认片段当前采用的视频候选，请重新核对后再返工。')
+      return
+    }
     const id = createReworkDraft(engine.doc, fresh.source)
     if (!id) return
     const next: ReworkSession = {
@@ -111,6 +144,9 @@ export function SequenceRework({
       clipInstanceId: row.clipInstanceId,
       sourceId: fresh.source.id,
       port: fresh.port,
+      sourceResultId: pin.resultId,
+      sourceRunId: pin.runId,
+      sourceAssetId: pin.assetId,
       draftId: id,
       expected: JSON.stringify(rawRow),
       candidateId: '',
@@ -125,6 +161,7 @@ export function SequenceRework({
     setCandidateId('')
     setSound(next.sound)
     setIdentityChanged(false)
+    setSourcePinChanged(false)
     setStaleInstance(false)
     setSessionNotice('')
     setError('')
@@ -142,6 +179,12 @@ export function SequenceRework({
       saved.sourceId === fresh.source.id &&
       saved.port === fresh.port &&
       savedDraft.nodeType === fresh.source.nodeType
+    const currentPin = reworkSourcePin(row, fresh.source, fresh.port)
+    const sourcePinMatches =
+      !!currentPin &&
+      saved.sourceResultId === currentPin.resultId &&
+      saved.sourceRunId === currentPin.runId &&
+      saved.sourceAssetId === currentPin.assetId
     const instanceMatches = saved.expected === JSON.stringify(rawRow)
     const savedCandidate = (savedDraft.results ?? []).find(
       (result) =>
@@ -157,6 +200,7 @@ export function SequenceRework({
         : rawRow.sound
     setSession(saved)
     setRemembered(saved)
+    setSessionPersisted(true)
     setDraftId(saved.draftId)
     setPort(saved.port)
     setExpected(saved.expected)
@@ -164,13 +208,16 @@ export function SequenceRework({
     setCandidateId(savedCandidate?.id ?? '')
     setSound(savedSound)
     setIdentityChanged(!sourceMatches)
-    setStaleInstance(sourceMatches && !instanceMatches)
+    setSourcePinChanged(sourceMatches && !sourcePinMatches)
+    setStaleInstance(sourceMatches && sourcePinMatches && !instanceMatches)
     setSessionNotice(
       !sourceMatches
         ? '这份返工草稿来自之前的来源片段，当前片段已变化，不能直接替换。请另起版本，或回画布查看旧草稿。'
-        : !instanceMatches
-          ? '此剪辑实例在上次返工后已变化。旧草稿不会自动替换；先核对最新修剪与声音，确认后继续，或另起版本。'
-          : '',
+        : !sourcePinMatches
+          ? '当前片段采用的来源视频已与开始返工时不同。旧草稿不会直接替换，请先核对当前来源，确认继续或另起版本。'
+          : !instanceMatches
+            ? '此剪辑实例在上次返工后已变化。旧草稿不会自动替换；先核对最新修剪与声音，确认后继续，或另起版本。'
+            : '',
     )
     setError('')
     setOpen(true)
@@ -216,8 +263,33 @@ export function SequenceRework({
     }
     openNew(fresh, raw)
   }
+  const confirmSourceChange = () => {
+    if (!session || !local || identityChanged) return
+    const pin = reworkSourcePin(row, local.source, local.port)
+    if (!pin) {
+      setError('无法确认当前采用的来源视频，请重新打开片段核对。')
+      return
+    }
+    const next = {
+      ...session,
+      sourceResultId: pin.resultId,
+      sourceRunId: pin.runId,
+      sourceAssetId: pin.assetId,
+      savedAt: Date.now(),
+    }
+    remember(next)
+    setSourcePinChanged(false)
+    const instanceMatches = !!raw && next.expected === JSON.stringify(raw)
+    setStaleInstance(!instanceMatches)
+    setSessionNotice(
+      instanceMatches
+        ? ''
+        : '此剪辑实例在上次返工后已变化。旧草稿不会自动替换；先核对最新修剪与声音，确认后继续，或另起版本。',
+    )
+    setError('')
+  }
   const confirmInstanceChange = () => {
-    if (!session || !raw || identityChanged) return
+    if (!session || !raw || identityChanged || sourcePinChanged) return
     const next = { ...session, expected: JSON.stringify(raw), savedAt: Date.now() }
     remember(next)
     setExpected(next.expected)
@@ -235,6 +307,7 @@ export function SequenceRework({
       !sound ||
       !row.clipInstanceId ||
       identityChanged ||
+      sourcePinChanged ||
       staleInstance
     )
       return
@@ -243,6 +316,23 @@ export function SequenceRework({
     setBusy(true)
     setError('')
     try {
+      // 弹窗打开期间来源可能又被换过：替换前用当前实际来源再对一次起始候选。
+      const current = inspectReworkSource(engine.doc, row, canvasId)
+      if ('problem' in current) throw new Error(current.problem!)
+      if (!session || current.source.id !== session.sourceId || current.port !== session.port) {
+        setIdentityChanged(true)
+        throw new Error('来源片段已变化，不能直接替换；请核对后另起版本。')
+      }
+      const pin = reworkSourcePin(row, current.source, current.port)
+      if (
+        !pin ||
+        pin.resultId !== session.sourceResultId ||
+        pin.runId !== session.sourceRunId ||
+        pin.assetId !== session.sourceAssetId
+      ) {
+        setSourcePinChanged(true)
+        throw new Error('当前采用的来源视频已变化，请先核对后再替换。')
+      }
       const meta = await loadAssetMeta(chosen.value.assetId)
       if (operation.current !== serial) return
       if (!writable()) throw new Error('当前不可编辑，未替换素材')
@@ -314,26 +404,35 @@ export function SequenceRework({
         </p>
       )}
       {draftId && <p>返工草稿保留在画布上，可继续上次会话或重新定位查看生成任务与历史。</p>}
+      {sessionAtRisk && (
+        <p role="status" className="text-warning">
+          本机存储不可用，刷新或离开后无法续接这份返工会话；草稿本身仍在画布上，请保持窗口打开并先完成替换。
+        </p>
+      )}
       {open && (
-        <Modal label="剪辑片段返工" top isolateKeys onClose={close} size="lg">
-          <ModalHeader title="剪辑片段返工" onClose={close} />
+        <Modal label="剪辑片段返工" top isolateKeys onClose={requestClose} size="lg">
+          <ModalHeader title="剪辑片段返工" onClose={requestClose} />
           <div className="overflow-auto p-4 space-y-4">
             <p className="text-sm">
               当前使用来源节点现在的输入，并非历史候选的输入快照。修改和生成只作用于独立草稿；生成整段视频，费用按所选平台计算。点击下方替换才改变剪辑。
             </p>
             <p className="text-xs">
-              关闭窗口或刷新后仍会继续这份草稿与任务；不会自动重新请求生成，也不会重复扣费。
+              {sessionAtRisk
+                ? '本机存储不可用，关闭或刷新后无法续接这次返工会话；草稿和任务仍在画布上，但需要重新定位。'
+                : '关闭窗口或刷新后仍会继续这份草稿与任务；不会自动重新请求生成，也不会重复扣费。'}
             </p>
             <button
               type="button"
               className="ui-btn ui-btn-quiet ui-btn-xs"
-              onClick={() => {
-                if (draftId && engine.doc.has(draftId)) {
-                  engine.selection.set([draftId])
-                  engine.zoomToFit([draftId])
-                  useCanvas.getState().openSequence(null)
-                }
-              }}
+              onClick={() =>
+                leave(() => {
+                  if (draftId && engine.doc.has(draftId)) {
+                    engine.selection.set([draftId])
+                    engine.zoomToFit([draftId])
+                    useCanvas.getState().openSequence(null)
+                  }
+                })
+              }
             >
               回画布定位返工草稿
             </button>
@@ -434,7 +533,17 @@ export function SequenceRework({
             <p className="text-xs">
               保留本实例的入出点、变速、对白、音效和字幕设置；替换后字幕需要重新核对。其他实例与来源节点采用项保持原样。
             </p>
-            {staleInstance && !identityChanged && (
+            {sourcePinChanged && !identityChanged && (
+              <button
+                type="button"
+                className="ui-btn ui-btn-secondary"
+                disabled={!writable()}
+                onClick={confirmSourceChange}
+              >
+                我已核对当前采用的来源视频，继续此草稿
+              </button>
+            )}
+            {staleInstance && !identityChanged && !sourcePinChanged && (
               <button
                 type="button"
                 className="ui-btn ui-btn-secondary"
@@ -461,6 +570,7 @@ export function SequenceRework({
                   !draft ||
                   draft.locked ||
                   identityChanged ||
+                  sourcePinChanged ||
                   staleInstance
                 }
                 onClick={() => void apply()}
@@ -474,6 +584,40 @@ export function SequenceRework({
                 onClick={() => start(false)}
               >
                 另起版本
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+      {pendingLeave && (
+        <Modal
+          label="返工草稿未保存"
+          onClose={() => setPendingLeave(null)}
+          top
+          isolateKeys
+          size="sm"
+        >
+          <ModalHeader title="返工会话未保存到本机" onClose={() => setPendingLeave(null)} />
+          <div className="space-y-3 p-4 text-sm">
+            <p>本机存储不可用，关闭或离开后无法继续同一返工草稿与任务；草稿本身仍在画布上。</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="ui-btn ui-btn-primary"
+                onClick={() => setPendingLeave(null)}
+              >
+                继续编辑
+              </button>
+              <button
+                type="button"
+                className="ui-btn ui-btn-secondary"
+                onClick={() => {
+                  const action = pendingLeave
+                  setPendingLeave(null)
+                  action?.()
+                }}
+              >
+                仍然离开
               </button>
             </div>
           </div>

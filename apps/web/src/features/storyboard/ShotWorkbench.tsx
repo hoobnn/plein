@@ -101,8 +101,12 @@ function WorkbenchSession(props: {
   shotId: string
 }) {
   // 切镜时这里保留尚未保存的字段；关窗或刷新后由本机存储按画布 + 分镜表 + 镜头恢复。
+  // 保存失败也按镜头记在会话上，切到别的镜头再关窗仍然能拦住。
   const drafts = useRef(new Map<string, WorkbenchDraft>())
-  return <Workbench key={props.shotId} {...props} drafts={drafts.current} />
+  const failures = useRef(new Map<string, Exclude<WorkbenchDraftSave, 'saved'>>())
+  return (
+    <Workbench key={props.shotId} {...props} drafts={drafts.current} failures={failures.current} />
+  )
 }
 
 function Workbench({
@@ -111,12 +115,14 @@ function Workbench({
   boardId,
   shotId,
   drafts,
+  failures,
 }: {
   engine: Engine
   canvasId: string
   boardId: string
   shotId: string
   drafts: Map<string, WorkbenchDraft>
+  failures: Map<string, Exclude<WorkbenchDraftSave, 'saved'>>
 }) {
   const version = useDocVersion(engine.doc)
   const catalog = useCatalog((s) => s.catalog)
@@ -141,19 +147,32 @@ function Workbench({
       !drafts.has(shotId) &&
       !!readWorkbenchDraft(canvasId, boardId, shotId, workbenchDraft(engine.doc, boardId, shotId)),
   )
-  const [draftSave, setDraftSave] = useState<WorkbenchDraftSave | null>(null)
+  const draftSave = failures.get(shotId) ?? null
   const [pendingLeave, setPendingLeave] = useState<(() => void) | null>(null)
+  // 本机存不下时刷新或关标签同样会丢草稿，浏览器离开前再提醒一次。
+  const unsavedShots = failures.size
+  useEffect(() => {
+    if (!unsavedShots) return
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [unsavedShots])
   const setDraft = (next: WorkbenchDraft | undefined) => {
     if (next) drafts.set(shotId, next)
     else drafts.delete(shotId)
     updateDraft(next)
     const formal = workbenchDraft(engine.doc, boardId, shotId)
     if (next && workbenchDraftDirty(next, formal)) {
-      setDraftSave(saveWorkbenchDraft(canvasId, next))
+      const saved = saveWorkbenchDraft(canvasId, next)
+      if (saved === 'saved') failures.delete(shotId)
+      else failures.set(shotId, saved)
       return
     }
+    failures.delete(shotId)
     discardWorkbenchDraft(canvasId, boardId, shotId)
-    setDraftSave(null)
     if (next && formal) updateDraft(formal)
   }
   const [selectedNode, setSelectedNode] = useState('')
@@ -439,10 +458,11 @@ function Workbench({
       (field) =>
         draft.values[field] !== (typeof original?.[field] === 'string' ? original[field] : ''),
     )
-  // 本机存不下时关窗会丢内容：先确认，别让“已输入”看起来像已经保住。
-  const unsavedLocally = dirty && (draftSave === 'too-large' || draftSave === 'unavailable')
+  // 任何镜头在本机存不下都算：切镜后关窗也不能静默丢掉别的镜头。
+  const unsavedLocally = dirty && !!draftSave
+  const otherUnsaved = failures.size - (draftSave ? 1 : 0)
   const leave = (action: () => void) => {
-    if (unsavedLocally) {
+    if (failures.size) {
       setPendingLeave(() => action)
       return
     }
@@ -528,8 +548,13 @@ function Workbench({
                 {dirty && (
                   <span role="status" className="text-xs text-warning">
                     {unsavedLocally
-                      ? '本镜有未保存字段，暂未存到本机，关闭前会再次确认。'
+                      ? '本镜有未保存字段，暂未存到本机，关闭或离开前会再次确认。'
                       : '本镜有未保存字段，已暂存在本机，关闭工作台后可恢复。'}
+                  </span>
+                )}
+                {otherUnsaved > 0 && (
+                  <span role="status" className="text-xs text-warning">
+                    另有 {otherUnsaved} 个镜头的草稿未保存到本机，关闭或离开前会再次确认。
                   </span>
                 )}
                 {!canWrite && <span role="status">当前只读，可查看已有依据与候选。</span>}
@@ -950,7 +975,8 @@ function Workbench({
           <ModalHeader title="草稿未保存到本机" onClose={() => setPendingLeave(null)} />
           <div className="space-y-3 p-4 text-sm">
             <p>
-              本机存储不可用或草稿内容超出上限。现在关闭会丢掉这份未保存字段；先返回可继续编辑，或点“保存本镜字段”写入正式分镜。
+              本机存储不可用或草稿内容超出上限，有 {failures.size}{' '}
+              个镜头的草稿未保存。现在关闭会丢掉这些字段；先返回可继续编辑，或切到对应镜头点“保存本镜字段”写入正式分镜。
             </p>
             <div className="flex flex-wrap gap-2">
               <button

@@ -3,6 +3,7 @@ import {
   addResults,
   connect,
   createElement,
+  currentResult,
   deleteElements,
   sequenceInstancesOf,
   setParams,
@@ -11,7 +12,7 @@ import { openDoc } from '@plein/doc/testing'
 import { arrangeSequence, corePlugin, SequenceClip, sequenceNode } from '@plein/nodes'
 import { describeNode } from '@plein/plugin-sdk'
 import type { Catalog, PreparedInput } from '@plein/protocol'
-import { expect, it } from 'vite-plus/test'
+import { expect, it, vi } from 'vite-plus/test'
 import { useDocVersion } from '../../canvas/hooks'
 import { mediaTestEngine } from '../../shell/media-tools/testEngine'
 import { useCanvas } from '../../stores/canvas'
@@ -143,6 +144,7 @@ function fixture() {
   })
   function Harness() {
     useDocVersion(doc)
+    const adopted = currentResult(doc.get(source)!, 'video')
     const row = arrangeSequence(
       {
         instanceVersion: 2,
@@ -153,7 +155,7 @@ function fixture() {
           {
             type: 'video',
             kind: 'video',
-            assetId: originalAsset,
+            assetId: adopted?.value.type === 'video' ? adopted.value.assetId : originalAsset,
             source,
             sourcePort: 'video',
             edgeId: edge.id,
@@ -326,6 +328,113 @@ it('草稿被删除或明确另起版本时安全处理，不误用旧关系', a
       second.unmount()
     }
   } finally {
+    doc.destroy()
+  }
+})
+it('来源节点换了采用视频时旧草稿不能直接替换，明确核对后才继续', async () => {
+  const { doc, source, sequenceId, submissions, Harness, draftElements } = fixture()
+  try {
+    const first = renderApp(<Harness />)
+    await first.user.click(screen.getByRole('button', { name: '修改并生成候选' }))
+    const draft = draftElements()[0]!
+    await act(async () => {
+      addResults(doc, draft.id, [
+        {
+          id: 'candidate-new',
+          runId: 'rework-run',
+          port: 'video',
+          at: 2,
+          value: { type: 'video' as const, assetId: nextAsset },
+        },
+      ])
+      doc.flush()
+    })
+    const modal = screen.getByRole('dialog', { name: '剪辑片段返工' })
+    await first.user.click(within(modal).getByRole('combobox', { name: '返工视频候选' }))
+    await first.user.click(screen.getByRole('option', { name: '候选 1 · candidate-new' }))
+    await first.user.click(within(modal).getByRole('button', { name: '关闭' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '剪辑片段返工' })).toBeNull())
+    act(() => {
+      addResults(doc, source, [
+        {
+          id: 'source-b',
+          runId: 'source-run-b',
+          port: 'video',
+          at: 2,
+          value: { type: 'video' as const, assetId: 'b'.repeat(64) },
+        },
+      ])
+      doc.mutable(source)!.set('adopted', 'source-b')
+      doc.flush()
+    })
+    first.unmount()
+
+    const second = renderApp(<Harness />)
+    try {
+      await second.user.click(await screen.findByRole('button', { name: '继续上次返工草稿' }))
+      const reopened = screen.getByRole('dialog', { name: '剪辑片段返工' })
+      expect(within(reopened).getByText(/采用的来源视频已与开始返工时不同/)).toBeTruthy()
+      const apply = () => within(reopened).getByRole('button', { name: '仅替换此剪辑实例' })
+      expect(apply().hasAttribute('disabled')).toBe(true)
+      expect(
+        within(reopened).getByRole('button', { name: '另起版本' }).hasAttribute('disabled'),
+      ).toBe(false)
+      await second.user.click(
+        within(reopened).getByRole('button', {
+          name: '我已核对当前采用的来源视频，继续此草稿',
+        }),
+      )
+      await waitFor(() => expect(apply().hasAttribute('disabled')).toBe(false))
+      await second.user.click(apply())
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: '剪辑片段返工' })).toBeNull())
+      expect(sequenceInstancesOf(doc.get(sequenceId)!)[0]?.segment?.selection).toMatchObject({
+        nodeId: draft.id,
+        resultId: 'candidate-new',
+      })
+      expect(submissions).toHaveLength(0)
+    } finally {
+      second.unmount()
+    }
+  } finally {
+    doc.destroy()
+  }
+})
+
+it('返工会话写不进本机时如实提示，关闭前确认且刷新后不假装能续接', async () => {
+  const setItem = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+    throw new Error('quota')
+  })
+  const { doc, Harness } = fixture()
+  try {
+    const first = renderApp(<Harness />)
+    await first.user.click(screen.getByRole('button', { name: '修改并生成候选' }))
+    const modal = screen.getByRole('dialog', { name: '剪辑片段返工' })
+    expect(within(modal).getByText(/本机存储不可用，关闭或刷新后无法续接/)).toBeTruthy()
+    await first.user.click(within(modal).getByRole('button', { name: '关闭' }))
+    expect(await screen.findByRole('dialog', { name: '返工草稿未保存' })).toBeTruthy()
+    await first.user.click(screen.getByRole('button', { name: '继续编辑' }))
+    expect(screen.getByRole('dialog', { name: '剪辑片段返工' })).toBeTruthy()
+    await first.user.click(
+      within(screen.getByRole('dialog', { name: '剪辑片段返工' })).getByRole('button', {
+        name: '关闭',
+      }),
+    )
+    expect(await screen.findByRole('dialog', { name: '返工草稿未保存' })).toBeTruthy()
+    await first.user.click(screen.getByRole('button', { name: '仍然离开' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '剪辑片段返工' })).toBeNull())
+    first.unmount()
+
+    const second = renderApp(<Harness />)
+    try {
+      await waitFor(() =>
+        expect(screen.queryByRole('button', { name: '继续上次返工草稿' })).toBeNull(),
+      )
+      expect(screen.getByRole('button', { name: '修改并生成候选' })).toBeTruthy()
+    } finally {
+      second.unmount()
+    }
+  } finally {
+    setItem.mockRestore()
     doc.destroy()
   }
 })

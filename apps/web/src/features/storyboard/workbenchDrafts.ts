@@ -3,8 +3,6 @@ import { WORKBENCH_FIELDS, type WorkbenchDraft, type WorkbenchField } from './sh
 /** 单字段与整份草稿的本机上限：提示词够长，但别把工作台当成整画布备份。 */
 export const WORKBENCH_DRAFT_MAX_FIELD = 8_000
 export const WORKBENCH_DRAFT_MAX_TOTAL = 32_000
-/** 同一分镜表最多保留这么多镜的本机草稿，旧的先淘汰。 */
-const MAX_DRAFTS_PER_BOARD = 24
 const KEY_PREFIX = 'plein:workbench-draft:v1'
 
 export type WorkbenchDraftSave = 'saved' | 'too-large' | 'unavailable'
@@ -65,15 +63,14 @@ function writeBoard(
   board: StoredBoard,
   storage?: Pick<Storage, 'setItem' | 'removeItem'>,
 ) {
-  const target = storage ?? localStorage
   try {
+    const target = storage ?? localStorage
     const entries = Object.entries(board)
     if (!entries.length) {
       target.removeItem(key)
       return
     }
-    const kept = entries.sort((a, b) => b[1].savedAt - a[1].savedAt).slice(0, MAX_DRAFTS_PER_BOARD)
-    target.setItem(key, JSON.stringify(Object.fromEntries(kept)))
+    target.setItem(key, JSON.stringify(Object.fromEntries(entries)))
   } catch {
     /* 存储不可用时由调用方提示，并保留本次打开中的内存草稿。 */
   }
@@ -136,7 +133,9 @@ export function saveWorkbenchDraft(
   )
     return 'too-large'
   const key = workbenchDraftKey(canvasId, draft.boardId)
-  const board = readBoard(key, storage) ?? {}
+  const board = readBoard(key, storage)
+  // 读不出已有记录时不能拿空对象回写，否则会把其他镜头的草稿一起覆盖掉。
+  if (!board) return 'unavailable'
   board[draft.shotId] = {
     source: draft.source,
     values: { ...draft.values },
@@ -144,10 +143,7 @@ export function saveWorkbenchDraft(
   }
   try {
     const target = storage ?? localStorage
-    const kept = Object.entries(board)
-      .sort((a, b) => b[1].savedAt - a[1].savedAt)
-      .slice(0, MAX_DRAFTS_PER_BOARD)
-    target.setItem(key, JSON.stringify(Object.fromEntries(kept)))
+    target.setItem(key, JSON.stringify(Object.fromEntries(Object.entries(board))))
     return 'saved'
   } catch {
     return 'unavailable'
