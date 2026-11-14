@@ -219,6 +219,8 @@ export async function applyMentions(
     acceptsImages?: boolean
     /** 当前注册表的平台显示名，用于跨平台音色提醒。 */
     providerTitle?: (provider: string) => string | undefined
+    /** 持久绑定按来源 id 注入的命中（未连线普通素材），按全局标记序号与普通 @ 合流。 */
+    boundHits?: Map<number, { name: string; elementId: string }>
   },
 ): Promise<AppliedMentions> {
   const params = { ...el.params }
@@ -232,12 +234,14 @@ export async function applyMentions(
     (def.capability === 'video.generate' && params.mode === 'reference')
   const texts: MentionText[] = []
   for (const [key, value] of Object.entries(params)) {
-    if (typeof value !== 'string' || !value.includes('@')) continue
+    // 只有持久标记、没有普通 @ 的正文也要参与命中合流（未连线独立素材）。
+    if (typeof value !== 'string' || (!value.includes('@') && !value.includes('\uE000'))) continue
     texts.push({ value, write: (text) => (params[key] = text) })
   }
   // 上游文本与本节点正文共用同一套引用解析，最终拼接前已经完成编号和去重。
   for (const item of inputs.prompt ?? []) {
-    if (item.type !== 'text' || !item.text.includes('@')) continue
+    if (item.type !== 'text' || (!item.text.includes('@') && !item.text.includes('\uE000')))
+      continue
     texts.push({ value: item.text, write: (text) => (item.text = text) })
   }
   const deferred = new Map<MentionText, Array<{ mention: Mention; hit?: Hit }>>()
@@ -245,13 +249,33 @@ export async function applyMentions(
     const { value } = source
     const found = findMentions(value, targets).filter((m) => m.id !== el.id)
     const broken = findBrokenMentions(value, targets)
-    if (found.length === 0) {
+    // 持久绑定按标记位置插入；同一段正文里与普通 @ 一起按出现顺序进入命中顺序。
+    const bound = [...value.matchAll(/\uE000(\d+)\uE001/g)].flatMap((match) => {
+      const extra = opts?.boundHits?.get(Number(match[1]))
+      const element = extra ? doc.get(extra.elementId) : undefined
+      if (!extra || !element) return []
+      return [
+        {
+          start: match.index,
+          hit: { name: extra.name, index: 0, total: 1, el: element, pick: {} } as Hit,
+        },
+      ]
+    })
+    if (found.length === 0 && bound.length === 0) {
       for (const b of broken) notices.push(brokenNotice(b.name, b.candidates))
       continue
     }
+    const ordered = [...found.map((mention) => ({ start: mention.start, mention })), ...bound].sort(
+      (a, b) => a.start - b.start,
+    )
     let text = ''
     let last = 0
-    for (const m of found) {
+    for (const entry of ordered) {
+      if (!('mention' in entry)) {
+        hit.set(hitKey(entry.hit), entry.hit)
+        continue
+      }
+      const m = entry.mention
       const h = checkMention(m, byId, blocked)
       if (numbered) {
         const list = deferred.get(source) ?? []
@@ -311,7 +335,15 @@ export async function applyMentions(
       groups.push({
         rank: RANK.length,
         priority,
-        images: [{ type: 'image', assetId: target.assetId, kind: 'image', source: target.id }],
+        images: [
+          {
+            type: 'image',
+            assetId: target.assetId,
+            kind: 'image',
+            source: target.id,
+            sourcePort: target.kind,
+          },
+        ],
       })
       refList.push({ name: label(h), elementId: target.id, assetIds: [target.assetId] })
       const current = detail(target, label(h), priority, [target.assetId], hitIdentity(h))
@@ -596,7 +628,21 @@ export async function applyMentions(
     const picked = referenced.flatMap((d) =>
       d.available
         .filter((assetId) => kept.has(assetId))
-        .map((assetId): PortValue => ({ type: kind, assetId, kind, source: d.elementId })),
+        .map((assetId): PortValue => {
+          // 独立素材按它自己的输出口记身份；资产卡的参考图来自卡片内部，不带口。
+          const source = d.elementId ? doc.get(d.elementId) : undefined
+          const natural =
+            source?.kind === 'image' || source?.kind === 'video' || source?.kind === 'audio'
+              ? source.kind
+              : undefined
+          return {
+            type: kind,
+            assetId,
+            kind,
+            source: d.elementId,
+            ...(natural ? { sourcePort: natural } : {}),
+          }
+        }),
     )
     if (ownMedia.length || picked.length)
       merged = { ...merged, [mediaPort]: dedupe([...ownMedia, ...picked]) }

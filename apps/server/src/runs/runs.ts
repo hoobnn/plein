@@ -2269,18 +2269,44 @@ export class NodeRuns implements BatchHost {
       }
       return out
     }
-    const upstreamReferences: Array<{
-      item: Extract<PortValue, { type: 'text' }>
-      tokens: ReturnType<typeof boundReferenceTokens>
-      /** 上游文本自己的持久绑定（如 Markdown 元素上的失效引用）与本节点绑定合并后的参数。 */
-      params: Record<string, unknown>
-    }> = []
+    const connectedSources = new Set(
+      [...doc.edges()].filter((edge) => edge.to[0] === el.id).map((edge) => edge.from[0]),
+    )
+    /**
+     * 未连线普通素材的持久绑定：按 binding.source 的 id 直接把命中交给 applyMentions 的
+     * 原生排序 / 平台限额 / 拒绝流程，不再按名称回去解析（后来出现同名素材也不会替换）。
+     * 已连线的素材继续走原有输入身份，不重复算成 @ 来源。
+     */
+    // 全局唯一的标记序号：两段各自从 0 开始会串用同一份持久身份。
+    const markers = new Map<number, { name: string; params: Record<string, unknown> }>()
+    let markerSeq = 0
+    const mark = (text: string, token: { start: number; end: number }) => {
+      const index = markerSeq++
+      const marker = `\uE000${index}\uE001`
+      return { index, text: text.slice(0, token.start) + marker + text.slice(token.end) }
+    }
+    const boundHits = new Map<number, { name: string; elementId: string }>()
+    const standaloneHit = (name: string, params: Record<string, unknown>) => {
+      const binding = referenceBindings(params)[name]
+      if (!binding?.source) return undefined
+      const source = doc.get(binding.source)
+      if (!source?.assetId || connectedSources.has(source.id)) return undefined
+      if (source.kind !== 'image' && source.kind !== 'video' && source.kind !== 'audio')
+        return undefined
+      if (binding.type !== source.kind) return undefined
+      if (binding.sourcePort && binding.sourcePort !== source.kind) return undefined
+      return { name, elementId: source.id }
+    }
     if (referenceMode) {
-      for (const [index, token] of [...referenceTokens.entries()].reverse())
-        referencePrompt =
-          referencePrompt.slice(0, token.start) +
-          `\uE000${index}\uE001` +
-          referencePrompt.slice(token.end)
+      const ownParams = el.params ?? {}
+      // 持久命中按全局标记序号登记，applyMentions 会与普通 @ 按位置合流。
+      for (const token of [...referenceTokens].reverse()) {
+        const hit = standaloneHit(token.name, ownParams)
+        const marked = mark(referencePrompt, token)
+        markers.set(marked.index, { name: token.name, params: ownParams })
+        if (hit) boundHits.set(marked.index, hit)
+        referencePrompt = marked.text
+      }
       // 上游也在展开 @ 之前标记原始绑定；后面只还原这些位置，不扫描新生成的编号。
       for (const item of continuation.inputs.prompt ?? []) {
         if (item.type !== 'text') continue
@@ -2290,10 +2316,13 @@ export class NodeRuns implements BatchHost {
         const params = source?.params ? { ...source.params, ...el.params } : (el.params ?? {})
         const tokens = boundReferenceTokens(item.text, params)
         if (!tokens.length) continue
-        upstreamReferences.push({ item, tokens, params })
-        for (const [index, token] of [...tokens.entries()].reverse())
-          item.text =
-            item.text.slice(0, token.start) + `\uE000${index}\uE001` + item.text.slice(token.end)
+        for (const token of [...tokens].reverse()) {
+          const hit = standaloneHit(token.name, params)
+          const marked = mark(item.text, token)
+          markers.set(marked.index, { name: token.name, params })
+          if (hit) boundHits.set(marked.index, hit)
+          item.text = marked.text
+        }
       }
     }
     const referenceParams: Record<string, unknown> = { ...el.params }
@@ -2337,6 +2366,7 @@ export class NodeRuns implements BatchHost {
       {
         acceptsImages: spec?.features?.includes('vision') === true,
         providerTitle: (provider) => this.host.registry.providers.get(provider)?.def.title,
+        boundHits,
       },
     )
     if (continuation.issue) blocked.push(continuation.issue)
@@ -2425,22 +2455,17 @@ export class NodeRuns implements BatchHost {
             message: `残留绑定 @${name} 已忽略（元素已删除，或既未连线也未被 @ 引用）`,
           })
       }
-      params.prompt = String(params.prompt ?? '').replace(
-        /\uE000(\d+)\uE001/g,
-        (_match, index: string) => {
-          const alias = referenceTokens[Number(index)]!.name
-          const result = resolveOne(alias)
-          report(result, alias)
-          return result.text
-        },
-      )
-      for (const { item, tokens, params } of upstreamReferences)
-        item.text = item.text.replace(/\uE000(\d+)\uE001/g, (_match, index: string) => {
-          const alias = tokens[Number(index)]!.name
-          const result = resolveOne(alias, params)
-          report(result, alias)
+      const resolveMarkers = (text: string) =>
+        text.replace(/\uE000(\d+)\uE001/g, (match, index: string) => {
+          const marked = markers.get(Number(index))
+          if (!marked) return match
+          const result = resolveOne(marked.name, marked.params)
+          report(result, marked.name)
           return result.text
         })
+      params.prompt = resolveMarkers(String(params.prompt ?? ''))
+      for (const item of continuation.inputs.prompt ?? [])
+        if (item.type === 'text') item.text = resolveMarkers(item.text)
     }
 
     const effective = this.latestParams(el, { def, params, inputs }) ?? {}

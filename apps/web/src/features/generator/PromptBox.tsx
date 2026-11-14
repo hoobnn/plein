@@ -367,8 +367,12 @@ export function PromptBox({
   }
   /** 用选中的完整身份绑定：同名异来源、同源不同输出口都按它自己来。 */
   const insertChoice = (choice: MentionChoice) => {
-    if (choice.identity) bindReferenceName(engine.doc, selfId, choice.identity)
-    insertName(choice.insert)
+    // 菜单的 insert 只看可引用目标；持久绑定按全画布命名。以实际写入的别名插正文，
+    // 避免同名便签等非引用元素让正文和绑定键分歧、再被普通 @ 按名字接管。
+    const name = choice.identity
+      ? bindReferenceName(engine.doc, selfId, choice.identity)
+      : choice.insert
+    insertName(name)
   }
   const applyPreset = (p: PromptPreset) => {
     onPreset(p)

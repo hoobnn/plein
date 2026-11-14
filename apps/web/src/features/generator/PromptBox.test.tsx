@@ -6,6 +6,7 @@ import { createRef } from 'react'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { useDocVersion } from '../../canvas/hooks'
 import { mockResizeObserver } from '../../testing/browser'
+import { boundReferenceTokens, referenceBindings } from '@plein/plugin-sdk'
 import { act, fireEvent, renderApp, screen, waitFor, within } from '../../testing/render'
 import { PromptBox } from './PromptBox'
 
@@ -20,31 +21,41 @@ function setup(
     name: string
     type?: string
     params?: Record<string, unknown>
-    kind?: 'image' | 'video' | 'audio'
+    kind?: 'image' | 'video' | 'audio' | 'markdown'
     assetId?: string
   }> = [{ name: '小岚 · 测试' }],
 ) {
   const doc = openDoc()
   docs.push(doc)
   const ids = targets.map((target) =>
-    target.kind
+    target.kind === 'markdown'
       ? createElement(doc, {
-          kind: target.kind,
+          kind: 'markdown',
           name: target.name,
-          assetId: target.assetId ?? 'asset-' + target.name,
+          text: '',
           x: 0,
           y: 200,
           w: 120,
           h: 90,
         })
-      : createElement(
-          doc,
-          node({
-            nodeType: 'plein/' + (target.type ?? 'character'),
+      : target.kind
+        ? createElement(doc, {
+            kind: target.kind,
             name: target.name,
-            params: target.params ?? {},
-          }),
-        ),
+            assetId: target.assetId ?? 'asset-' + target.name,
+            x: 0,
+            y: 200,
+            w: 120,
+            h: 90,
+          })
+        : createElement(
+            doc,
+            node({
+              nodeType: 'plein/' + (target.type ?? 'character'),
+              name: target.name,
+              params: target.params ?? {},
+            }),
+          ),
   )
   const selfId = createElement(
     doc,
@@ -387,4 +398,52 @@ it('重名角色档案补全保留消歧编号，候选缩略图来自所选时�
   field.setSelectionRange(0, 1)
   fireEvent.click(field, { metaKey: true })
   expect(f.select).toHaveBeenLastCalledWith([second.id])
+})
+
+it('同名便签不抢选图别名：正文使用绑定实际别名，新增同名素材后仍归原图', async () => {
+  const f = setup('', [
+    { name: '风', kind: 'image', assetId: 'asset-wind' },
+    { name: '风', kind: 'markdown' },
+  ])
+  f.field().focus()
+  f.field().setSelectionRange(f.field().value.length, f.field().value.length)
+  await f.user.type(f.field(), '@')
+  const menu = await screen.findByRole('dialog', { name: '引用素材' })
+  const search = within(menu).getByRole<HTMLInputElement>('textbox', { name: '搜索引用素材' })
+  await f.user.type(search, '风')
+  await f.user.click(within(menu).getAllByRole('option')[0]!)
+  await waitFor(() => expect(f.field().value.startsWith('@风')).toBe(true))
+  act(() => f.doc.flush())
+  const params = f.doc.get(f.selfId)!.params!
+  const bindings = referenceBindings(params)
+  const alias = Object.keys(bindings)[0]!
+  expect(bindings[alias]).toMatchObject({
+    type: 'image',
+    assetId: 'asset-wind',
+    source: f.target,
+    sourcePort: 'image',
+  })
+  // 正文和绑定键使用同一个别名，普通名字解析不会分叉。
+  expect(f.field().value).toBe(`@${alias} `)
+  expect(boundReferenceTokens(String(params.text), params).map((token) => token.name)).toEqual([
+    alias,
+  ])
+
+  // 之后再加一个同名可引用素材，既有引用仍按原绑定来源。
+  act(() => {
+    createElement(f.doc, {
+      kind: 'image',
+      name: '风',
+      assetId: 'asset-late',
+      x: 0,
+      y: 400,
+      w: 120,
+      h: 90,
+    })
+    f.doc.flush()
+  })
+  expect(referenceBindings(f.doc.get(f.selfId)!.params)[alias]).toMatchObject({
+    source: f.target,
+    assetId: 'asset-wind',
+  })
 })
