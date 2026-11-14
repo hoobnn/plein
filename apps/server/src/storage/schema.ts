@@ -187,6 +187,11 @@ export const batchItems = sqliteTable(
     reason: text(),
     /** 启动时批准的 inputHash；有待解析依赖时为空 */
     input_hash: text(),
+    /**
+     * 批准/快照时每个目标采用的候选（JSON：结果 id + 采用版本）。
+     * 批次等待期间用户改了采用，后续 start 仍按这个基线判断晚到的结果要不要只进候选。
+     */
+    adoption: text(),
     /** 节点自身参数与模型的哈希：有待解析依赖时据此判断计划有没有变 */
     plan_hash: text(),
     /** 待解析的依赖（BatchDependency[] JSON） */

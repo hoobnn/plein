@@ -117,4 +117,10 @@ export const MIGRATIONS: Migration[] = [
     hash: '92e8e4a4471f89eb9076c80fc86509c11ee14a4c37c98dd0352fa2cdbb550725',
     statements: ['ALTER TABLE `jobs` ADD `adoption` text;'],
   },
+  {
+    tag: '0010_dazzling_sinister_six',
+    when: 1794628033906,
+    hash: '6102eae22980e59cebb49c97a99a0cc1c7af8f4254143a4c9a871069561b0b42',
+    statements: ['ALTER TABLE `batch_items` ADD `adoption` text;'],
+  },
 ]

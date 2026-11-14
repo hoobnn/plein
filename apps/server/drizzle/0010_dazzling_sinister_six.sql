@@ -1,0 +1,1 @@
+ALTER TABLE `batch_items` ADD `adoption` text;
