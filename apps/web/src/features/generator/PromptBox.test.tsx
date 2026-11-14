@@ -6,7 +6,7 @@ import { createRef } from 'react'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { useDocVersion } from '../../canvas/hooks'
 import { mockResizeObserver } from '../../testing/browser'
-import { boundReferenceTokens, referenceBindings } from '@plein/plugin-sdk'
+import { referenceBindings } from '@plein/plugin-sdk'
 import { act, fireEvent, renderApp, screen, waitFor, within } from '../../testing/render'
 import { PromptBox } from './PromptBox'
 
@@ -400,7 +400,7 @@ it('重名角色档案补全保留消歧编号，候选缩略图来自所选时�
   expect(f.select).toHaveBeenLastCalledWith([second.id])
 })
 
-it('同名便签不抢选图别名：正文使用绑定实际别名，新增同名素材后仍归原图', async () => {
+it('同名便签不改变普通 @ 语法，选图后键与正文用同一个可引用名字', async () => {
   const f = setup('', [
     { name: '风', kind: 'image', assetId: 'asset-wind' },
     { name: '风', kind: 'markdown' },
@@ -416,20 +416,13 @@ it('同名便签不抢选图别名：正文使用绑定实际别名，新增同�
   act(() => f.doc.flush())
   const params = f.doc.get(f.selfId)!.params!
   const bindings = referenceBindings(params)
-  const alias = Object.keys(bindings)[0]!
-  expect(bindings[alias]).toMatchObject({
-    type: 'image',
-    assetId: 'asset-wind',
-    source: f.target,
-    sourcePort: 'image',
+  // 非编号能力沿用普通 @ 语法：便签不计入可引用目标，名字仍是「风」。
+  expect(f.field().value).toBe('@风 ')
+  expect(bindings).toMatchObject({
+    风: { type: 'image', assetId: 'asset-wind', source: f.target, sourcePort: 'image' },
   })
-  // 正文和绑定键使用同一个别名，普通名字解析不会分叉。
-  expect(f.field().value).toBe(`@${alias} `)
-  expect(boundReferenceTokens(String(params.text), params).map((token) => token.name)).toEqual([
-    alias,
-  ])
 
-  // 之后再加一个同名可引用素材，既有引用仍按原绑定来源。
+  // 之后再加一个同名可引用素材，既有绑定保持不变（手输同名 @ 的语义不受影响）。
   act(() => {
     createElement(f.doc, {
       kind: 'image',
@@ -442,8 +435,20 @@ it('同名便签不抢选图别名：正文使用绑定实际别名，新增同�
     })
     f.doc.flush()
   })
-  expect(referenceBindings(f.doc.get(f.selfId)!.params)[alias]).toMatchObject({
+  expect(referenceBindings(f.doc.get(f.selfId)!.params)['风']).toMatchObject({
     source: f.target,
     assetId: 'asset-wind',
   })
+})
+
+it('旧未绑定手输 @ 保持普通文本语义', async () => {
+  const f = setup('', [
+    { name: '风', kind: 'image', assetId: 'asset-wind' },
+    { name: '风', kind: 'markdown' },
+  ])
+  f.field().focus()
+  await f.user.type(f.field(), '@风 停一下')
+  act(() => f.doc.flush())
+  expect(f.doc.get(f.selfId)!.params?.text).toBe('@风 停一下')
+  expect(referenceBindings(f.doc.get(f.selfId)!.params)).toEqual({})
 })

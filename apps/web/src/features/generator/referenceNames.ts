@@ -10,8 +10,14 @@ export function referenceName(doc: PleinDoc, item: ReferenceIdentity) {
   return referenceAlias(doc, item) ?? '参考素材'
 }
 
-export function bindReferenceName(doc: PleinDoc, nodeId: string, item: ReferenceIdentity) {
-  const name = referenceName(doc, item)
+export function bindReferenceName(
+  doc: PleinDoc,
+  nodeId: string,
+  item: ReferenceIdentity,
+  /** 非编号能力沿用普通 @ 语法时，用可引用目标集合算出的名字绑定。 */
+  explicitName?: string,
+) {
+  const name = explicitName ?? referenceName(doc, item)
   setParam(
     doc,
     nodeId,
