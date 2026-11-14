@@ -1306,12 +1306,15 @@ export class NodeRuns implements BatchHost {
         opt.action === 'attach' ? opt.remoteId : undefined,
       )
     }
-    // 恢复是用户明确发起的重新受理：以此刻的采用身份为准，之后不再当成「生成期间改过」
-    const acceptance = this.rooms.withDoc(canvasId, (doc) => {
-      const node = doc.get(row.node_id)
-      return adoptionSnapshot(doc, node, node ? (currentResult(node)?.id ?? null) : null)
-    })
-    if (acceptance !== undefined) this.store.update(jobId, { adoption: acceptance })
+    // 只有「核查后重新提交」是新的受理时点：refetch / attach 都只是把同一次作业取回来，
+    // 不能据此覆盖运行期间用户改过的采用选择；沿用原受理时冻结的采用凭据。
+    if (opt.action === 'resubmit') {
+      const acceptance = this.rooms.withDoc(canvasId, (doc) => {
+        const node = doc.get(row.node_id)
+        return adoptionSnapshot(doc, node, node ? (currentResult(node)?.id ?? null) : null)
+      })
+      if (acceptance !== undefined) this.store.update(jobId, { adoption: acceptance })
+    }
     this.resume(row, stored, opt.action !== 'refetch')
     return this.jobInfo(this.store.get(jobId)!)
   }

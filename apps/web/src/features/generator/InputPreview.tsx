@@ -11,6 +11,10 @@ import { previewInputKey } from './previewKey'
 
 /** 改动后多久重新准备一次实际输入：打字时不逐字请求 */
 const DEBOUNCE_MS = 400
+/** 服务端还没收到本机改动时自动重读的退避：连接没变也会自己恢复，次数有上限 */
+const SYNC_RETRY_BASE_MS = 300
+const SYNC_RETRY_MAX_MS = 2000
+const SYNC_RETRY_LIMIT = 6
 
 /**
  * 节点的实际输入（服务端准备，不调用付费生成）。
@@ -33,6 +37,9 @@ export function useInputPreview(engine: Engine, canvasId: string | null, nodeId:
   // 记已发起读取的目标；未发请求就被取消的首次计时仍应立即重排（含 StrictMode）。
   const previewTarget = useRef<string | null>(null)
   const activeRequest = useRef<AbortController | null>(null)
+  // 连续「服务端还没同步到」的次数与重试计时：追平后自动恢复，失败次数有上限
+  const syncAttempts = useRef(0)
+  const syncRetryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const sync = useCanvas((s) => s.sync)
   useEffect(() => {
     const read = () => {
@@ -69,6 +76,8 @@ export function useInputPreview(engine: Engine, canvasId: string | null, nodeId:
           .nodeInput(canvasId, nodeId, request.signal)
           .then((r) => {
             if (!current()) return
+            syncAttempts.current = 0
+            clearTimeout(syncRetryTimer.current)
             dataKey.current = asked
             setData(r)
             setSyncPending(false)
@@ -76,8 +85,22 @@ export function useInputPreview(engine: Engine, canvasId: string | null, nodeId:
           .catch((err: unknown) => {
             if (!current()) return
             // 本机改动还没到服务端：保留旧输入，标明「等同步」，不能当成读取失败
-            setSyncPending(err instanceof ApiError && err.code === 'sync_pending')
+            const pending = err instanceof ApiError && err.code === 'sync_pending'
+            setSyncPending(pending)
             setError((err as Error).message)
+            if (!pending) return
+            // 连接一直在 connected、只是服务端还没追平时，自己退避重试；断线等情况等连接恢复
+            syncAttempts.current += 1
+            clearTimeout(syncRetryTimer.current)
+            if (syncAttempts.current > SYNC_RETRY_LIMIT) return
+            const delay = Math.min(
+              SYNC_RETRY_BASE_MS * 2 ** (syncAttempts.current - 1),
+              SYNC_RETRY_MAX_MS,
+            )
+            syncRetryTimer.current = setTimeout(() => {
+              if (useCanvas.getState().sync === 'connected') setRev((r) => r + 1)
+              else syncAttempts.current = 0
+            }, delay)
           })
           .finally(() => current() && setLoading(false))
       },
@@ -91,8 +114,16 @@ export function useInputPreview(engine: Engine, canvasId: string | null, nodeId:
   }, [canvasId, nodeId, key, rev])
   // 同步恢复后重取当前预览：旧预览在同步确认前都不算新鲜。
   useEffect(() => {
-    if (syncPending && sync === 'connected') setRev((r) => r + 1)
+    if (syncPending && sync === 'connected') {
+      syncAttempts.current = 0
+      setRev((r) => r + 1)
+    }
   }, [sync, syncPending])
+  // 换了输入重新读：给新的输入一份完整的重试预算
+  useEffect(() => {
+    syncAttempts.current = 0
+  }, [key])
+  useEffect(() => () => clearTimeout(syncRetryTimer.current), [])
   // 换画布或节点时不显示上一个对象的结果。
   useEffect(() => {
     setData(null)
@@ -123,7 +154,10 @@ export function useInputPreview(engine: Engine, canvasId: string | null, nodeId:
     syncPending,
     /** 当前实际输入的语义摘要，与准备这份预览时的摘要不同就过期 */
     inputKey: key,
-    retry: () => setRev((r) => r + 1),
+    retry: () => {
+      syncAttempts.current = 0
+      setRev((r) => r + 1)
+    },
     setData: replaceData,
   }
 }

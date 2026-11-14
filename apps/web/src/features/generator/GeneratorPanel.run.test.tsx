@@ -479,6 +479,64 @@ describe('等待预览期间的运行授权', () => {
   })
 })
 
+it('连接一直正常但服务端两次未追平时，自动退避重读，追平后直接可用且不提交', async () => {
+  const { id, engine } = setup()
+  const runs: string[] = []
+  let inputs = 0
+  mockFetch(async (request) => {
+    const path = new URL(request.url).pathname
+    if (request.method === 'POST' && path.endsWith('/run')) {
+      runs.push(await request.text())
+      return Response.json({ runId: 'run-1' }, { status: 202 })
+    }
+    if (request.method === 'POST' && path.endsWith('/input')) {
+      inputs++
+      if (inputs <= 2)
+        return Response.json(
+          { error: 'sync_pending', message: '本机改动还没有同步到服务端，请等同步完成后再操作' },
+          { status: 409 },
+        )
+      return Response.json(readyInput(id, '追平后的输入', 'hash-9'))
+    }
+    return undefined
+  })
+  renderPanel(id, engine)
+  // 连接状态一直不变：只靠预览自己的退避重试恢复
+  await act(async () => {
+    useCanvas.setState({ sync: 'connected' })
+  })
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0)
+  })
+  expect(inputs).toBe(1)
+  expect(screen.getAllByText(/本机改动还没有同步到服务端/).length).toBeGreaterThan(0)
+  expect((runButton() as HTMLButtonElement).disabled).toBe(true)
+
+  // 第一次 409 后 300ms 重读，第二次后 600ms 再重读
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(400)
+  })
+  expect(inputs).toBe(2)
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(700)
+  })
+  expect(inputs).toBe(3)
+  await waitFor(() => expect((runButton() as HTMLButtonElement).disabled).toBe(false))
+  // 追平后直接显示新输入，不需要点「重新读取」，也没有替用户提交
+  expect(screen.queryByText(/本机改动还没有同步到服务端/)).toBeNull()
+  await act(async () => {
+    screen.getByRole('button', { name: /实际输入/ }).click()
+  })
+  expect(screen.getByTestId('final-prompt').textContent).toContain('追平后的输入')
+  expect(runs).toHaveLength(0)
+
+  await act(async () => {
+    runButton().click()
+  })
+  await waitFor(() => expect(runs).toHaveLength(1))
+  expect(JSON.parse(runs[0]!) as Record<string, unknown>).toMatchObject({ expect: 'hash-9' })
+})
+
 it('服务端还没收到本机改动时预览等同步，同步后重新读取才允许生成', async () => {
   const { id, engine } = setup()
   const runs: string[] = []

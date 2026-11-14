@@ -16,7 +16,11 @@ it('版本变了就算人工改过，A→B→A 与首次采用的既有批次都
   expect(
     adoptionChanged({ result: 'res-a', revision: 'rev-1' }, { result: 'res-a', revision: 'rev-1' }),
   ).toBe(false)
-  // 旧画布没有版本：退回比较结果 id
+  // 版本没变但采用的结果 id 变了（旧客户端 / 低层写入 / 运行中撤销回另一个候选）
+  expect(
+    adoptionChanged({ result: 'res-b', revision: 'rev-1' }, { result: 'res-a', revision: 'rev-1' }),
+  ).toBe(true)
+  // 旧画布没有版本：比较结果 id
   expect(adoptionChanged({ result: null }, { result: 'res-a', revision: undefined })).toBe(true)
   expect(adoptionChanged({ result: 'res-a' }, { result: 'res-a', revision: undefined })).toBe(false)
   // 受理时没有版本、后来有了：期间发生过显式采用

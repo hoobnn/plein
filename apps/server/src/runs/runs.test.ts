@@ -9,7 +9,7 @@ import {
   writeRun,
 } from '@plein/doc'
 import type { Canvas, PreparedInput } from '@plein/protocol'
-import { beforeAll, describe, expect, it } from 'vite-plus/test'
+import { beforeAll, describe, expect, it, vi } from 'vite-plus/test'
 import { addNode, mockSettings, startTestServer, until } from '../testing'
 
 /** 等节点的运行状态满足条件 */
@@ -187,6 +187,48 @@ describe('节点运行接口', () => {
     })
   })
 
+  it('采用版本没变但结果 id 变了（旧客户端/撤销回另一候选）也保住人工选择', async () => {
+    const { canvas, doc } = await newCanvas()
+    mockSettings(server, { latencyMs: 800 })
+    const id = addNode(doc, 'plein/image', { params: { prompt: '版本不变但改了采用' } })
+    addResults(doc, id, [
+      {
+        id: 'same-rev-a',
+        port: 'images',
+        runId: 'run-same-rev-a',
+        at: 1,
+        value: { type: 'image', assetId: 'a'.repeat(64) },
+      },
+      {
+        id: 'same-rev-b',
+        port: 'images',
+        runId: 'run-same-rev-b',
+        at: 2,
+        value: { type: 'image', assetId: 'b'.repeat(64) },
+      },
+    ])
+    // 受理时采用 A，采用版本 rev-1
+    adoptResult(doc, id, 'same-rev-a')
+    doc.mutable(id)!.set('adoptionRevision', 'rev-1')
+
+    const res = await fetch(`${base}/api/canvases/${canvas.id}/nodes/${id}/run`, {
+      method: 'POST',
+    })
+    expect(res.status).toBe(202)
+    // 旧客户端或低层写入只改 adopted，不推进版本
+    adoptResult(doc, id, 'same-rev-b')
+
+    const el = await waitFor(doc, id, (s) => s === 'succeeded' || s === 'failed')
+    expect(el.run?.status).toBe('succeeded')
+    expect(el.adopted).toBe('same-rev-b')
+    expect(server.runs.list(canvas.id).jobs.find((j) => j.nodeId === id)?.recovery).toMatchObject({
+      state: 'stored',
+      held: 'adopted_during_run',
+    })
+    // 采用版本保持低层写入的值，不被系统写回
+    expect(doc.mutable(id)!.get('adoptionRevision')).toBe('rev-1')
+  })
+
   it('旧画布没有采用版本时退回比较采用的结果 id', async () => {
     const { canvas, doc } = await newCanvas()
     mockSettings(server, { latencyMs: 800 })
@@ -217,6 +259,70 @@ describe('节点运行接口', () => {
 
     const el = await waitFor(doc, id, (s) => s === 'succeeded' || s === 'failed')
     expect(el.adopted).toBe('legacy-b')
+    expect(server.runs.list(canvas.id).jobs.find((j) => j.nodeId === id)?.recovery).toMatchObject({
+      state: 'stored',
+      held: 'adopted_during_run',
+    })
+  })
+
+  it('结果写回前的最后复核期间采用：仍保住人工选择', async () => {
+    const { canvas, doc } = await newCanvas()
+    mockSettings(server, { latencyMs: 0 })
+    const id = addNode(doc, 'plein/image', { params: { prompt: '最后复核期间改采用' } })
+    addResults(doc, id, [
+      {
+        id: 'late-a',
+        port: 'images',
+        runId: 'run-late-a',
+        at: 1,
+        value: { type: 'image', assetId: 'a'.repeat(64) },
+      },
+      {
+        id: 'late-b',
+        port: 'images',
+        runId: 'run-late-b',
+        at: 2,
+        value: { type: 'image', assetId: 'b'.repeat(64) },
+      },
+    ])
+    adoptResult(doc, id, 'late-a')
+
+    // 卡在结果写回前的复核（第二次 prepare）上：这里正是采用可能被改的窗口
+    const runs = server.runs as unknown as {
+      prepare(
+        doc: unknown,
+        el: unknown,
+        ownerId: string,
+        signal: AbortSignal,
+        canvasId?: string,
+      ): Promise<unknown>
+    }
+    const real = runs.prepare.bind(runs)
+    let calls = 0
+    let release!: () => void
+    let entered!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const reached = new Promise<void>((resolve) => (entered = resolve))
+    const spy = vi.spyOn(runs, 'prepare').mockImplementation(async (...args) => {
+      calls++
+      if (calls === 2) {
+        entered()
+        await gate
+      }
+      return real(...args)
+    })
+
+    const res = await fetch(`${base}/api/canvases/${canvas.id}/nodes/${id}/run`, {
+      method: 'POST',
+    })
+    expect(res.status).toBe(202)
+    await reached
+    adoptResult(doc, id, 'late-b')
+    release()
+    const el = await waitFor(doc, id, (s) => s === 'succeeded' || s === 'failed')
+    spy.mockRestore()
+    expect(el.run?.status).toBe('succeeded')
+    expect(el.adopted).toBe('late-b')
     expect(server.runs.list(canvas.id).jobs.find((j) => j.nodeId === id)?.recovery).toMatchObject({
       state: 'stored',
       held: 'adopted_during_run',

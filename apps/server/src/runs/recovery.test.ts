@@ -450,6 +450,148 @@ describe('远端成功、本地获取失败', () => {
     expect(doc.get(target)?.results).toHaveLength(1)
   })
 
+  it('重新获取同一作业不覆盖运行期间的人工采用，新产物只进候选', async () => {
+    const { server } = await boot()
+    mock(server, { latencyMs: 0 })
+    const submit = vi.spyOn(mockProvider, 'submit')
+    vi.spyOn(server.assets, 'ingest').mockRejectedValueOnce(new Error('磁盘已满'))
+    const { id, doc } = await canvas(server)
+    const node = addNode(doc, 'plein/image', { params: { prompt: '取回不覆盖采用', count: 1 } })
+    const run = server.runs.start(id, node, 'local')
+    expect(await server.runs.wait(run)).toBe('failed')
+    await until(() => !server.runs.isRunning(id, node))
+
+    // 运行期间用户改用了另一个已有候选
+    addResults(
+      doc,
+      node,
+      [
+        {
+          id: 'keep-a',
+          port: 'images',
+          runId: 'run-a',
+          at: 1,
+          value: { type: 'image', assetId: 'a'.repeat(64) },
+        },
+        {
+          id: 'keep-b',
+          port: 'images',
+          runId: 'run-b',
+          at: 2,
+          value: { type: 'image', assetId: 'b'.repeat(64) },
+        },
+      ],
+      { adopt: false },
+    )
+    adoptResult(doc, node, 'keep-b')
+    // 受理时的采用凭据保持原样，不被取回动作改写
+    expect(JSON.parse(server.runs.store.get(run)!.adoption!)).toEqual({ result: null })
+
+    expect((await recover(server, id, run, { action: 'refetch' })).status).toBe(200)
+    await until(() => status(server, run) === 'succeeded')
+    expect(doc.get(node)?.adopted).toBe('keep-b')
+    expect(job(server, id, run).recovery).toMatchObject({
+      state: 'stored',
+      held: 'adopted_during_run',
+    })
+    // 取回不重新提交平台
+    expect(submit).toHaveBeenCalledTimes(1)
+  })
+
+  it('挂回同一远端作业也不覆盖人工采用；平台不重提', async () => {
+    withoutLookup()
+    const { server } = await boot()
+    mock(server, { latencyMs: 200 })
+    const lost = loseSubmitResponse()
+    const { id, doc } = await canvas(server)
+    const node = addNode(doc, 'plein/image', { params: { prompt: '挂回同一任务', count: 1 } })
+    const run = server.runs.start(id, node, 'local')
+    expect(await server.runs.wait(run)).toBe('failed')
+    await until(() => !server.runs.isRunning(id, node))
+    addResults(
+      doc,
+      node,
+      [
+        {
+          id: 'attach-a',
+          port: 'images',
+          runId: 'run-a',
+          at: 1,
+          value: { type: 'image', assetId: 'a'.repeat(64) },
+        },
+        {
+          id: 'attach-b',
+          port: 'images',
+          runId: 'run-b',
+          at: 2,
+          value: { type: 'image', assetId: 'b'.repeat(64) },
+        },
+      ],
+      { adopt: false },
+    )
+    adoptResult(doc, node, 'attach-b')
+
+    const attached = await recover(server, id, run, {
+      action: 'attach',
+      remoteId: lost.remoteId(),
+    })
+    expect(attached.status).toBe(200)
+    await until(() => status(server, run) === 'succeeded')
+    expect(doc.get(node)?.adopted).toBe('attach-b')
+    expect(job(server, id, run).recovery).toMatchObject({
+      state: 'stored',
+      held: 'adopted_during_run',
+    })
+    expect(lost.submit).toHaveBeenCalledTimes(1)
+  })
+
+  it('重启后取回同一作业仍沿用原受理凭据', async () => {
+    const first = await bootServer()
+    mock(first.server, { latencyMs: 0 })
+    vi.spyOn(first.server.assets, 'ingest').mockRejectedValueOnce(new Error('磁盘已满'))
+    const { id, doc } = await canvas(first.server)
+    const node = addNode(doc, 'plein/image', { params: { prompt: '重启后取回', count: 1 } })
+    const run = first.server.runs.start(id, node, 'local')
+    expect(await first.server.runs.wait(run)).toBe('failed')
+    await until(() => !first.server.runs.isRunning(id, node))
+    addResults(
+      doc,
+      node,
+      [
+        {
+          id: 'boot-a',
+          port: 'images',
+          runId: 'run-a',
+          at: 1,
+          value: { type: 'image', assetId: 'a'.repeat(64) },
+        },
+        {
+          id: 'boot-b',
+          port: 'images',
+          runId: 'run-b',
+          at: 2,
+          value: { type: 'image', assetId: 'b'.repeat(64) },
+        },
+      ],
+      { adopt: false },
+    )
+    adoptResult(doc, node, 'boot-b')
+    expect(first.server.rooms.get(id).persistNow()).toBe(true)
+    await first.close()
+
+    const second = await bootServer({ dataDir: first.dataDir })
+    mock(second.server, { latencyMs: 0 })
+    const reopened = createDoc(second.server.rooms.get(id).doc, { schedule: () => {} })
+    expect(currentResult(reopened.get(node)!)?.id).toBe('boot-b')
+    expect((await recover(second.server, id, run, { action: 'refetch' })).status).toBe(200)
+    await until(() => status(second.server, run) === 'succeeded')
+    expect(reopened.get(node)?.adopted).toBe('boot-b')
+    expect(job(second.server, id, run).recovery).toMatchObject({
+      state: 'stored',
+      held: 'adopted_during_run',
+    })
+  })
+
   it('保存失败：不算完成；重新获取后入库，不重新提交', async () => {
     const { server } = await boot()
     mock(server, { latencyMs: 0 })

@@ -63,15 +63,13 @@ export function parseAdoption(value: string | null | undefined): FrozenAdoption 
 
 /**
  * 最终写入前判断用户是否在生成期间换过采用项。
- * 有采用版本时比版本（A→B→A 也算改过）；旧画布没有版本时退回比较当前采用的结果 id。
+ * 采用版本变了（A→B→A、撤销回退）或采用的结果 id 变了（旧客户端、低层写入没带版本，
+ * 或受理前已选 B 后运行中撤销回 A）都算人工改过；两者取并集，任一不同即保护。
  */
 export function adoptionChanged(
   frozen: FrozenAdoption | undefined,
   current: { result: string | null; revision: string | undefined },
 ) {
   if (!frozen) return false
-  // 受理时没有版本、现在有了：期间一定发生过显式采用
-  if (frozen.revision !== undefined || current.revision !== undefined)
-    return current.revision !== frozen.revision
-  return current.result !== frozen.result
+  return current.revision !== frozen.revision || current.result !== frozen.result
 }
