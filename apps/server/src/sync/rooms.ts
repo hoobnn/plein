@@ -209,6 +209,19 @@ export class Room {
     this.writeTimer.unref?.()
   }
 
+  /**
+   * 缓冲的增量是否已经写进 SQLite。
+   * 收到（内存里的文档）和保存下来是两回事：只有这里返回 true 才能对外说「已保存」。
+   */
+  persistNow() {
+    try {
+      this.flush()
+    } catch {
+      return false
+    }
+    return this.buffer.length === 0 && !this.flushing
+  }
+
   /** 把缓冲的增量合并成一条写库；攒够条数再整体合并成快照 */
   flush() {
     if (this.writeTimer) {

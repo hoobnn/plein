@@ -135,7 +135,7 @@ function engineFor(doc: PleinDoc, id: string) {
 function mockPreparedInput() {
   mockFetch((request) => {
     const path = new URL(request.url).pathname
-    if (request.method === 'GET' && /^\/api\/canvases\/[^/]+\/nodes\/[^/]+\/input$/.test(path))
+    if (request.method === 'POST' && /^\/api\/canvases\/[^/]+\/nodes\/[^/]+\/input$/.test(path))
       return Response.json({
         v: PREPARED_INPUT_VERSION,
         nodeId: 'n',

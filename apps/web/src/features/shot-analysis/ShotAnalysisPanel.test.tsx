@@ -168,7 +168,7 @@ it('开始响应晚回不重置用户已选择的历史清单', async () => {
   const gate = new Promise<void>((resolve) => (release = resolve))
   mockFetch((request) => {
     const path = new URL(request.url).pathname
-    if (request.method === 'GET' && path === `/api/canvases/canvas/nodes/${id}/input`)
+    if (request.method === 'POST' && path === `/api/canvases/canvas/nodes/${id}/input`)
       return Response.json({
         status: 'ready',
         inputHash: 'frozen',

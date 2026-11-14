@@ -28,6 +28,8 @@ export interface RunBlockInput {
   stale: boolean
   /** 实际输入读取失败 */
   error: boolean
+  /** 本机改动还没同步到服务端：这份预览不能用来提交 */
+  syncPending: boolean
 }
 
 /** 按钮禁用时用的原因；没禁用时返回 null */
@@ -38,6 +40,7 @@ export function runBlockReason(input: RunBlockInput): string | null {
   if (input.awaitingAcceptance) return '正在提交生成请求…'
   // 任务在跑时按钮是取消，不要用输入相关的理由盖住
   if (input.running) return null
+  if (input.syncPending) return '本机改动还没有同步到服务端，等同步完成后再生成'
   if (input.stale && !input.error) return '实际输入已更新，正在重新准备…'
   if (input.requiresInput && !input.loading && !input.hasInput)
     return '正在准备实际输入，备好后即可生成'
@@ -48,6 +51,7 @@ export function runBlockReason(input: RunBlockInput): string | null {
 export function runDisabled(input: RunBlockInput): boolean {
   if (input.canceling || input.awaitingAcceptance) return true
   if (!input.running && input.problem) return true
+  if (!input.running && input.syncPending) return true
   if (!input.running && input.requiresInput && !input.loading && !input.hasInput) return true
   if (!input.running && input.stale && !input.error) return true
   return false

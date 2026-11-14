@@ -5,6 +5,23 @@ export interface NodeRunStarted {
   runId: string
 }
 
+/**
+ * 本机文档的同步凭据：客户端 `Y.encodeSnapshot(Y.snapshot(ydoc))` 的 base64。
+ * 预览实际输入和提交任务时带上；服务端必须已包含这份文档（含删除）才继续，
+ * 否则返回 409 sync_pending。只放在请求正文里，不拼进 URL。
+ */
+export const SyncCredential = z.string().min(1).max(4_000_000)
+
+/** 读取实际输入时带的同步凭据 */
+export const NodeInputOptions = z.object({
+  expectSnapshot: SyncCredential.optional(),
+})
+export type NodeInputOptions = z.infer<typeof NodeInputOptions>
+
+/** 只确认服务端是否已收到浏览器这一版文档（含删除），不读文档内容 */
+export const SyncCheckRequest = z.object({ expectSnapshot: SyncCredential })
+export type SyncCheckRequest = z.infer<typeof SyncCheckRequest>
+
 /** 开始运行单个节点的选项 */
 export const NodeRunOptions = z.object({
   /**
@@ -14,6 +31,8 @@ export const NodeRunOptions = z.object({
   expect: z.string().max(128).optional(),
   /** 重试用户看到的失败任务；任务已更新时拒绝提交。 */
   retryOf: z.string().min(1).max(256).optional(),
+  /** 本机文档尚未同步时拒绝提交，见 SyncCredential */
+  expectSnapshot: SyncCredential.optional(),
 })
 export type NodeRunOptions = z.infer<typeof NodeRunOptions>
 
@@ -228,6 +247,8 @@ export const GroupRunOptions = z.object({
   video: z.boolean().default(false),
   /** 忽略缓存：参数和输入都没变的节点也重新运行 */
   force: z.boolean().default(false),
+  /** 本机文档尚未同步时拒绝提交，见 SyncCredential */
+  expectSnapshot: SyncCredential.optional(),
 })
 export type GroupRunOptions = z.infer<typeof GroupRunOptions>
 
@@ -236,12 +257,16 @@ export const FlowRunOptions = z.object({
   scope: z.enum(['upstream', 'downstream']),
   /** 忽略缓存，范围内的节点全部重新运行 */
   force: z.boolean().default(false),
+  /** 本机文档尚未同步时拒绝提交，见 SyncCredential */
+  expectSnapshot: SyncCredential.optional(),
 })
 export type FlowRunOptions = z.infer<typeof FlowRunOptions>
 
 /** 从一个节点发起批量运行（分镜的「批量出分镜图」）：这些节点重新运行，@ 到的卡片的上游先跑 */
 export const BatchRunOptions = z.object({
   nodes: z.array(z.string().min(1).max(200)).min(1).max(500),
+  /** 本机文档尚未同步时拒绝提交，见 SyncCredential */
+  expectSnapshot: SyncCredential.optional(),
 })
 export type BatchRunOptions = z.infer<typeof BatchRunOptions>
 

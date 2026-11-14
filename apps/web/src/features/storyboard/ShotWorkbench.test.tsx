@@ -353,7 +353,7 @@ it('旧 JobInfo 与 nodeInput 晚回不串入已切换镜头', async () => {
   const executions: string[] = []
   mockFetch((request) => {
     const path = new URL(request.url).pathname
-    if (request.method === 'GET' && path === '/api/canvases/canvas/nodes/video-one/input') {
+    if (request.method === 'POST' && path === '/api/canvases/canvas/nodes/video-one/input') {
       inputEntered()
       return inputGate.then(() => Response.json(prepared('video-one', '第一镜迟到的当前输入')))
     }
@@ -371,7 +371,7 @@ it('旧 JobInfo 与 nodeInput 晚回不串入已切换镜头', async () => {
         }),
       )
     }
-    if (request.method === 'GET' && path === '/api/canvases/canvas/nodes/video-two/input')
+    if (request.method === 'POST' && path === '/api/canvases/canvas/nodes/video-two/input')
       return Response.json(prepared('video-two', '第二镜当前输入'))
     if (request.method === 'POST' && path === '/api/canvases/canvas/jobs/latest')
       return Response.json({ jobs: [] })
@@ -402,7 +402,7 @@ function workbenchReads(doc: PleinDoc, reads: string[]) {
   mockFetch((request) => {
     const path = new URL(request.url).pathname
     const input = path.match(/^\/api\/canvases\/canvas\/nodes\/([^/]+)\/input$/)
-    if (request.method === 'GET' && input) {
+    if (request.method === 'POST' && input) {
       reads.push(input[1]!)
       return Response.json(prepared(input[1]!, String(doc.get(input[1]!)?.params?.prompt)))
     }

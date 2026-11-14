@@ -30,6 +30,7 @@ export type CanceledBy = 'user' | 'remote' | 'system'
  * - node_deleted：节点已删除，结果只留在执行记录里
  * - superseded：节点已经有更新一次运行的结果
  * - candidate_only：用户只要求生成候选，没有批准替换当前结果
+ * - adopted_during_run：生成期间用户采用了别的结果，这次结果只进候选
  */
 export type HeldReason =
   | 'canceled'
@@ -37,6 +38,7 @@ export type HeldReason =
   | 'node_deleted'
   | 'superseded'
   | 'candidate_only'
+  | 'adopted_during_run'
 
 export interface CredentialLost {
   reason: 'missing' | 'replaced'

@@ -111,4 +111,16 @@ export const MIGRATIONS: Migration[] = [
     hash: '91efcc1befb929e5aa0c92a20221673200cbf9ed0aca40b0aded6c14444fcf45',
     statements: ['ALTER TABLE `agent_sessions` ADD `context_summary` text;'],
   },
+  {
+    tag: '0009_violet_war_machine',
+    when: 1794626294481,
+    hash: '92e8e4a4471f89eb9076c80fc86509c11ee14a4c37c98dd0352fa2cdbb550725',
+    statements: ['ALTER TABLE `jobs` ADD `adoption` text;'],
+  },
+  {
+    tag: '0010_dazzling_sinister_six',
+    when: 1794628033906,
+    hash: '6102eae22980e59cebb49c97a99a0cc1c7af8f4254143a4c9a871069561b0b42',
+    statements: ['ALTER TABLE `batch_items` ADD `adoption` text;'],
+  },
 ]

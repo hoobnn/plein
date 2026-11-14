@@ -32,6 +32,8 @@ interface CanvasStore extends EngineState {
   /** 本机缓存（IndexedDB）可用；是否写入完成另由 cacheSaved 表示 */
   localCache: boolean
   cacheSaved: boolean
+  /** 本机有既未写入本机缓存、也未得到服务端确认的改动；离开页面前要询问 */
+  localEdits: boolean
   /** 正在导入的文件：已完成 / 总数 */
   importing: { done: number; total: number } | null
   notice: string | null
@@ -81,6 +83,7 @@ interface CanvasStore extends EngineState {
   attach(engine: Engine, localAssetUrls?: ReadonlyMap<string, string>): () => void
   setSync(sync: SyncStatus, localCache?: boolean): void
   setCacheSaved(saved: boolean): void
+  setLocalEdits(pending: boolean): void
   setImporting(importing: { done: number; total: number } | null): void
   notify(notice: string | null, action?: NoticeAction, scope?: 'canvas' | 'app'): void
   setCanvasId(id: string | null): void
@@ -122,6 +125,7 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
   sync: 'local',
   localCache: true,
   cacheSaved: true,
+  localEdits: false,
   importing: null,
   notice: null,
   noticeScope: 'canvas',
@@ -184,11 +188,13 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
         tasks: false,
         impact: false,
         mode: 'flow',
+        localEdits: false,
         ...initial,
       })
     }
   },
   setCacheSaved: (cacheSaved) => set({ cacheSaved }),
+  setLocalEdits: (localEdits) => set({ localEdits }),
   setCanvasId: (canvasId) => set({ canvasId }),
   setMenu: (menu) => set({ menu }),
   openStoryboard: (storyboard) =>

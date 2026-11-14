@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { ApplyEditPlan, type EditPlan, EditScope } from './edit-plan'
+import { SyncCredential } from './runs'
 import type { StoryboardBatchPlan } from './storyboard-batch'
 
 /**
@@ -294,6 +295,8 @@ export const SendAgentMessage = z.object({
   plan: z.boolean().optional(),
   /** 本机 CLI 的电脑权限，默认 auto */
   access: AgentAccess.optional(),
+  /** 浏览器打开的这份画布文档还没同步时拒绝开始新回合，见 SyncCredential */
+  expectSnapshot: SyncCredential.optional(),
 })
 export type SendAgentMessage = z.infer<typeof SendAgentMessage>
 
@@ -306,6 +309,8 @@ export const DecideAgentApproval = z.object({
   scope: EditScope.optional(),
   only: ApplyEditPlan.shape.only,
   skip: ApplyEditPlan.shape.skip,
+  /** 允许执行（会创建付费任务）时带上浏览器这份文档的同步凭据 */
+  expectSnapshot: SyncCredential.optional(),
 })
 export type DecideAgentApproval = z.infer<typeof DecideAgentApproval>
 

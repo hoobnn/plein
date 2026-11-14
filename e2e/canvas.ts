@@ -65,6 +65,8 @@ declare global {
           rect(id: string): { x: number; y: number; w: number; h: number } | undefined
         }
       }
+      /** 离开保护用的未保存状态 */
+      unsaved(): boolean
       /** 按节点声明建节点、连线（L4 实验脚本批量搭画布用） */
       addNode(input: {
         type: string
