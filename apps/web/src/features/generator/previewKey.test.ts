@@ -541,3 +541,67 @@ it('只有被提示词命中的名字才参与摘要：无关目标改名不影�
   expect(f.key()).not.toBe(renamed)
   expect(twin).toBeTruthy()
 })
+
+it('普通文本/视觉能力按持久绑定来源追踪独立素材，同名未绑定输入保持原状', () => {
+  const doc = openDoc()
+  docs.push(doc)
+  const engine = { doc } as Engine
+  const first = createElement(doc, box({ name: '风', assetId: 'b'.repeat(64) }))
+  const second = createElement(doc, box({ name: '风', assetId: 'a'.repeat(64) }))
+  const binding = `referenceNameBinding:${encodeURIComponent('风')}:${first}`
+  const consumer = createElement(
+    doc,
+    node({
+      nodeType: 'plein/llm',
+      name: '看图说话',
+      params: {
+        prompt: '看 @风',
+        [binding]: { type: 'image', assetId: 'b'.repeat(64), source: first, sourcePort: 'image' },
+      },
+    }),
+  )
+  const key = () => {
+    doc.flush()
+    return previewInputKey(engine, consumer, { referenceMode: false })
+  }
+  const before = key()
+  // 绑定来源的素材内容变了：服务端会按来源 id 送新结果，预览必须重取。
+  updateElement(doc, first, { assetId: 'c'.repeat(64) })
+  expect(key()).not.toBe(before)
+  const afterSource = key()
+  // 同名但没被绑定的另一张图变化不改变这个引用。
+  updateElement(doc, second, { assetId: 'd'.repeat(64) })
+  expect(key()).toBe(afterSource)
+
+  // 旧的无后缀手输 @ 配上已保存别名 #2：也按 binding.source 追踪原图。
+  const legacy = createElement(
+    doc,
+    node({
+      nodeType: 'plein/llm',
+      name: '旧引用',
+      params: {
+        prompt: '看 @风#2',
+        [`referenceNameBinding:${encodeURIComponent('风#2')}:${first}`]: {
+          type: 'image',
+          assetId: 'c'.repeat(64),
+          source: first,
+          sourcePort: 'image',
+        },
+      },
+    }),
+  )
+  doc.flush()
+  const legacyKey = previewInputKey(engine, legacy, { referenceMode: false })
+  updateElement(doc, first, { assetId: 'e'.repeat(64) })
+  expect(previewInputKey(engine, legacy, { referenceMode: false })).not.toBe(legacyKey)
+
+  // 手输同名 @ 但没有绑定时仍沿用原行为：不把任何一个候选当依赖。
+  const plain = createElement(
+    doc,
+    node({ nodeType: 'plein/llm', name: '没有绑定', params: { prompt: '看 @风' } }),
+  )
+  doc.flush()
+  const plainKey = previewInputKey(engine, plain, { referenceMode: false })
+  updateElement(doc, second, { assetId: 'f'.repeat(64) })
+  expect(previewInputKey(engine, plain, { referenceMode: false })).toBe(plainKey)
+})

@@ -46,6 +46,7 @@ export function previewInputKey(
   /** 绑定指向本画布来源时，来源本身也是依赖（换采用/换素材都要重取预览） */
   const boundSources = new Map<string, { source: string; port?: string }>()
   const consumer = doc.get(nodeId)
+  const connected = new Set(inputEdges(doc, nodeId).map((edge) => edge.from[0]))
   const referenceMode = options.referenceMode ?? defaultReferenceMode(consumer)
   const queue = [nodeId]
   while (queue.length) {
@@ -87,7 +88,7 @@ export function previewInputKey(
   )
   const referenced = new Set<string>()
   for (const source of sources) {
-    const masked = maskedTokenStarts(doc, source)
+    const masked = maskedTokenStarts(doc, source, connected)
     for (const token of masked) {
       const binding = referenceBindings(source.params)[token.name]
       const id = binding?.source
@@ -187,14 +188,27 @@ function ownTextSources(el: CanvasElement, referenceMode: boolean | null): TextS
  * 服务端会在这些位置换掉绑定 token，不再当普通 @ 解析：
  * 参考模式遮全部绑定；其它能力只遮「绑定来源不在本画布」的失效/跨画布绑定。
  */
-function maskedTokenStarts(doc: { has(id: string): boolean }, source: TextSource) {
+function maskedTokenStarts(doc: PleinDoc, source: TextSource, connected: ReadonlySet<string>) {
   if (source.mode === 'none') return []
   const bindings = referenceBindings(source.params)
-  return boundReferenceTokens(source.text, source.params).filter((token) =>
-    source.mode === 'all'
-      ? true
-      : !!bindings[token.name]?.source && !doc.has(bindings[token.name]!.source!),
-  )
+  return boundReferenceTokens(source.text, source.params).filter((token) => {
+    if (source.mode === 'all') return true
+    const binding = bindings[token.name]
+    if (!binding?.source) return false
+    if (!doc.has(binding.source)) return true
+    const el = doc.get(binding.source)
+    if (!el) return true
+    const media = el.kind === 'image' || el.kind === 'video' || el.kind === 'audio'
+    // 资产卡/节点仍按原有名字语义，不属于独立素材身份。
+    if (!media) return false
+    const matches =
+      !!el.assetId &&
+      binding.type === el.kind &&
+      (!binding.sourcePort || binding.sourcePort === el.kind)
+    // 已连线且输出身份匹配：服务端沿既有输入，不遮蔽。
+    if (connected.has(el.id) && matches) return false
+    return true
+  })
 }
 
 function mergedParams(el: CanvasElement, consumer: CanvasElement): Record<string, unknown> {
