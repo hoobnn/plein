@@ -8,6 +8,7 @@ import {
   sequenceInstancesOf,
   writeRun,
   type PleinDoc,
+  setResults,
 } from '@plein/doc'
 import { referenceClipboard } from '@plein/capabilities'
 import { arrangeSequence, sequenceNode, sequenceSpec } from '@plein/nodes'
@@ -41,7 +42,7 @@ async function generated(
   })
   connect(doc, [source, 'video'], [sequence, 'clips'])
   const published = () => {
-    const rows = doc.mutable(source)?.get('results') as unknown[] | undefined
+    const rows = doc.get(source)?.results
     const job = server.runs.store.latestForNodes(id, [source])[0]
     if (checkPublished && rows?.length && job?.frozen)
       checkPublished(JSON.parse(job.frozen), rows[0])
@@ -181,7 +182,7 @@ describe.skipIf(!available)('P11原执行出处与候选承载位置分离', () 
     const sourceHash = batchSourceKey(f.doc, f.doc.get(f.source)!)
     const planHash = batchSourceKey(f.doc, f.doc.get(f.sequence)!)
     const legacy = { ...f.result, generationOrigin: undefined }
-    f.doc.mutable(f.source)!.set('results', [legacy])
+    setResults(f.doc, f.source, [legacy])
     const after = await f.server.runs.preview(f.id, f.sequence, 'local')
     expect(after.inputHash).toBe(before.inputHash)
     expect(after.inputs).toEqual(before.inputs)

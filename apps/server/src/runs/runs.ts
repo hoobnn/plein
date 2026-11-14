@@ -162,6 +162,20 @@ export type VerifiedSequenceMedia = Map<string, Promise<{ kind: string; info: Me
 /** 进度写回文档的最小间隔，避免高频同步 */
 const PROGRESS_INTERVAL_MS = 500
 
+/**
+ * 常规媒体生成器：这些节点的输出就是一段媒体，重跑后可以只进候选等用户确认。
+ * 分镜、序列、动画等结构化节点不在其中：它们的输出还要写回参数。
+ * 语音识别、抠图这类加工节点也不在其中：它们的产出是分析结果，不是可选的媒体。
+ */
+const MEDIA_GENERATE_CAPABILITIES = new Set([
+  'image.generate',
+  'image.edit',
+  'video.generate',
+  'audio.speech',
+  'audio.music',
+  'audio.sfx',
+])
+
 /** 任务的取消事实保留在历史里；已取回并入库的具体结果仍可按输入键沿用。 */
 function reusableResult(job: JobRow, resultId: string): boolean {
   if (job.status === 'succeeded') return true
@@ -601,6 +615,18 @@ export class NodeRuns implements BatchHost {
       )
         throw new NodeRunError('recovery_required', '原任务尚待核查或取回，请先恢复或标记已处理')
       const id = newId('run')
+      // 常规媒体重跑一个已经有采用结果的节点：受理时就定下「只进候选」并随任务持久化。
+      // 取回、挂回、重新提交和重启都据此执行，不看返回时的当前采用。
+      const candidateOnly =
+        !groupId &&
+        MEDIA_GENERATE_CAPABILITIES.has(
+          this.host.registry.latestNode(el.nodeType)?.def?.capability ?? '',
+        ) &&
+        currentResult(el) !== undefined
+      const storedExpect: JobExpect | undefined =
+        expect || candidateOnly
+          ? { ...expect, ...(candidateOnly ? { candidateOnly: true } : {}) }
+          : undefined
       this.store.insert({
         id,
         ownerId,
@@ -608,7 +634,7 @@ export class NodeRuns implements BatchHost {
         nodeId,
         groupId,
         nodeType: el.nodeType,
-        ...(expect ? { expect: JSON.stringify(expect) } : {}),
+        ...(storedExpect ? { expect: JSON.stringify(storedExpect) } : {}),
         // 受理时的采用身份：生成期间用户换了采用项，晚到的结果只进候选。
         // 批次批准时就冻结了的沿用那份基线：等待上游期间改选候选也不会被覆盖。
         adoption: adoption ?? adoptionSnapshot(doc, el, currentResult(el)?.id ?? null),
@@ -1867,6 +1893,26 @@ export class NodeRuns implements BatchHost {
   }
 
   /**
+   * 单节点重跑一个「已经有采用结果」的节点时，新结果只进候选，等用户确认。
+   *
+   * 只针对常规媒体生成器：分镜、序列、动画这些结构化节点的输出要写回参数
+   * （applyOutputs），让它们停在待采用会把参数留在旧值上，所以照旧自动采用。
+   * 明确批量运行的流水线同理：用户已经批准了那批结果。
+   */
+  private rerunHoldsCandidate(
+    def: NodeDefinition | undefined,
+    group: GroupRow | undefined,
+    expect: JobExpect | undefined,
+  ): boolean {
+    // 恢复、挂回、重新提交同一个作业只是把同一次执行接着做完，不是用户又点了一次生成：
+    // 只看受理时持久化的策略，不看 quiet，也不读返回时的当前采用。
+    // 旧任务没有这个字段：保持原来的自动采用。
+    if (group) return false
+    if (!MEDIA_GENERATE_CAPABILITIES.has(def?.capability ?? '')) return false
+    return expect?.candidateOnly === true
+  }
+
+  /**
    * 执行一次：收集输入、核对批准的计划、冻结输入、调执行器、写回结果。
    * 已经调用过平台（重启、重试、重新获取）时按冻结的输入接着做，不再读画布：
    * 输入改过也不会让调用对不上记录而重新提交。返回结果是否被采用
@@ -2067,15 +2113,20 @@ export class NodeRuns implements BatchHost {
     const group = a.groupId ? this.store.group(a.groupId) : undefined
     const candidateOnly =
       el.nodeType === MOTION_TYPE ||
-      (group && (JSON.parse(group.options) as StoredGroupOptions).candidateOnly)
+      (group && (JSON.parse(group.options) as StoredGroupOptions).candidateOnly) ||
+      // 单节点重跑已有采用的节点：新结果只进候选，等用户确认再替换。
+      // 明确批量运行的流水线照旧自动采用，动态合成的审看策略也不变。
+      this.rerunHoldsCandidate(def, group, parseExpect(row?.expect))
     let held =
       (await this.heldReason(doc, a, el, frozen.inputHash, row?.created_at ?? 0, signal)) ??
       (candidateOnly ? 'candidate_only' : undefined)
     // 写结果前最后核对一次采用身份（这里没有 await）：复核期间用户刚采用过的话，
     // 这次结果只进候选。A→B→A 也会因为采用版本变了而算人工改过。
+    // 常规媒体重跑本来就会停在候选，但「运行期间人工改过」是更具体的原因，
+    // 要如实报告给恢复流程，不能被笼统的 candidate_only 盖掉。
     const now = doc.get(el.id)
     if (
-      !held &&
+      (!held || held === 'candidate_only') &&
       adoptionChanged(parseAdoption(row?.adoption), {
         result: now ? (currentResult(now)?.id ?? null) : null,
         revision: adoptionRevisionOf(doc, now),
@@ -2090,7 +2141,7 @@ export class NodeRuns implements BatchHost {
       this.store.update(a.id, { cache_key: this.cacheKey(el, prepared, []) })
       return { state: 'stored', held, assets }
     }
-    addResults(doc, el.id, results, { adopt: !held })
+    addResults(doc, el.id, results, { adopt: !held, canvasId: a.canvasId })
     appendDeliveryRecord(
       doc,
       el.id,
