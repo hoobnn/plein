@@ -293,13 +293,24 @@ export function PromptBox({
     // 搜索由菜单完成；名称的消歧序号仍使用完整画布目标集。
     const target = engine.doc.get(t.id)
     if (!target || connectedIds.has(t.id)) continue
+    // 未连线的素材元素也是媒体，不能一律当成资产卡。
+    const mediaKind =
+      target.kind === 'image' || target.kind === 'video' || target.kind === 'audio'
+        ? target.kind
+        : undefined
     choices.push({
       key: t.id,
       name: t.total > 1 ? `${t.name} #${t.nth}` : t.name,
       insert: t.insert,
-      category: target.kind === 'image' ? 'image' : 'asset',
+      category: mediaKind ?? 'asset',
       description: targetKind(target),
-      thumbnail: targetImages(engine, target)[0],
+      thumbnail:
+        mediaKind === 'audio'
+          ? undefined
+          : mediaKind
+            ? target.assetId
+            : targetImages(engine, target)[0],
+      poster: mediaKind === 'video',
       used: mentions.some((m) => m.id === t.id),
     })
   }
@@ -573,6 +584,8 @@ const SLOT_ICONS = {
 } as const
 
 function targetKind(t: CanvasElement) {
+  if (t.kind === 'video') return '视频'
+  if (t.kind === 'audio') return '音频'
   if (t.nodeType === 'plein/character') return '角色'
   if (t.nodeType === 'plein/scene') return '场景'
   if (t.nodeType === 'plein/prop') return '道具'
