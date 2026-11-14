@@ -70,7 +70,7 @@ it('生成视频只为采用结果显示唯一工具入口，锁定后移至浮�
         height: 90,
         duration: 3,
       })
-    if (request.method === 'GET' && path === `/api/canvases/canvas/nodes/${id}/input`)
+    if (request.method === 'POST' && path === `/api/canvases/canvas/nodes/${id}/input`)
       return Response.json({
         v: PREPARED_INPUT_VERSION,
         nodeId: id,

@@ -90,7 +90,7 @@ it.each(['output', 'readonly'] as const)(
     const reads: string[] = []
     mockFetch((request) => {
       const path = new URL(request.url).pathname
-      if (request.method === 'GET' && path.endsWith('/input')) {
+      if (request.method === 'POST' && path.endsWith('/input')) {
         reads.push(path)
         checkedId = path.split('/').at(-2)!
         return new Promise<Response>((resolve) => {

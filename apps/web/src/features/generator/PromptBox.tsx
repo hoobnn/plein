@@ -274,11 +274,18 @@ export function PromptBox({
     for (const item of items) {
       if (item.source) connectedIds.add(item.source)
       const source = item.source ? engine.doc.get(item.source) : undefined
+      const identity: ReferenceIdentity = {
+        type: item.type,
+        assetId: item.assetId,
+        ...(item.source ? { source: item.source } : {}),
+        ...(item.sourcePort ? { sourcePort: item.sourcePort } : {}),
+      }
       choices.push({
         key: item.token,
         connected: true,
         name: source?.name ?? referenceName(engine.doc, item),
         insert: referenceName(engine.doc, item),
+        identity,
         category: item.type,
         description: `@${referenceName(engine.doc, item)}`,
         thumbnail: item.type === 'audio' ? undefined : item.assetId,
@@ -293,13 +300,34 @@ export function PromptBox({
     // 搜索由菜单完成；名称的消歧序号仍使用完整画布目标集。
     const target = engine.doc.get(t.id)
     if (!target || connectedIds.has(t.id)) continue
+    // 未连线的素材元素也是媒体，不能一律当成资产卡。
+    const mediaKind =
+      target.kind === 'image' || target.kind === 'video' || target.kind === 'audio'
+        ? target.kind
+        : undefined
     choices.push({
       key: t.id,
       name: t.total > 1 ? `${t.name} #${t.nth}` : t.name,
       insert: t.insert,
-      category: target.kind === 'image' ? 'image' : 'asset',
+      ...(mediaKind && target.assetId
+        ? {
+            identity: {
+              type: mediaKind,
+              assetId: target.assetId,
+              source: target.id,
+              sourcePort: mediaKind,
+            },
+          }
+        : {}),
+      category: mediaKind ?? 'asset',
       description: targetKind(target),
-      thumbnail: targetImages(engine, target)[0],
+      thumbnail:
+        mediaKind === 'audio'
+          ? undefined
+          : mediaKind
+            ? target.assetId
+            : targetImages(engine, target)[0],
+      poster: mediaKind === 'video',
       used: mentions.some((m) => m.id === t.id),
     })
   }
@@ -334,17 +362,13 @@ export function PromptBox({
       ref.current?.setSelectionRange(a!, b!)
     })
   }
-  const insert = (name: string) => {
-    const item =
-      prepared && !preparing
-        ? referenceMedia(
-            prepared,
-            engine.doc.get(selfId)?.params,
-            upstreams(engine, selfId, catalog),
-          ).find((entry) => referenceName(engine.doc, entry) === name)
-        : undefined
-    if (item) bindReferenceName(engine.doc, selfId, item)
+  const insertName = (name: string) => {
     replaceQuery(`@${name} `, (r) => [r.length, r.length])
+  }
+  /** 用选中的完整身份绑定：同名异来源、同源不同输出口都按它自己来。 */
+  const insertChoice = (choice: MentionChoice) => {
+    if (choice.identity) bindReferenceName(engine.doc, selfId, choice.identity)
+    insertName(choice.insert)
   }
   const applyPreset = (p: PromptPreset) => {
     onPreset(p)
@@ -356,8 +380,8 @@ export function PromptBox({
   }
   const pick = (i: number) => {
     if (query?.kind === '/') applyPreset(presetOptions[i]!)
-    else if (profileOpts.length) insert(profileOpts[i]!.insert)
-    else insert(mentionOptions[i]!.insert)
+    else if (profileOpts.length) insertName(profileOpts[i]!.insert)
+    else insertName(mentionOptions[i]!.insert)
   }
   /** 候选项：按下时不让文本框失焦 */
   const option = (key: string, i: number, onClick: () => void, body: React.ReactNode) => (
@@ -501,7 +525,7 @@ export function PromptBox({
               option(
                 o.key,
                 i,
-                () => insert(o.insert),
+                () => insertName(o.insert),
                 <>
                   {o.images[0] ? (
                     <img
@@ -532,7 +556,7 @@ export function PromptBox({
           anchor={ref.current}
           query={query.query}
           choices={choices}
-          onPick={insert}
+          onPick={insertChoice}
           onClose={() => setQuery(null)}
         />
       )}
@@ -573,6 +597,8 @@ const SLOT_ICONS = {
 } as const
 
 function targetKind(t: CanvasElement) {
+  if (t.kind === 'video') return '视频'
+  if (t.kind === 'audio') return '音频'
   if (t.nodeType === 'plein/character') return '角色'
   if (t.nodeType === 'plein/scene') return '场景'
   if (t.nodeType === 'plein/prop') return '道具'

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import type { Engine } from '@plein/canvas-core'
 import { connect, createElement, inputEdges, type PleinDoc } from '@plein/doc'
-import { openDoc } from '@plein/doc/testing'
+import { node, openDoc } from '@plein/doc/testing'
 import { corePlugin } from '@plein/nodes'
 import { describeNode } from '@plein/plugin-sdk'
 import type { PreparedInput } from '@plein/protocol'
@@ -477,6 +477,45 @@ describe('多模态参考名称', () => {
     expect(order()).toEqual([f.sources[0]])
   })
 
+  it('替换成还没生成的新来源也同步正文与绑定，一步撤销恢复整步', async () => {
+    const f = setup()
+    await f.user.click(screen.getByRole('button', { name: '@素材0' }))
+    let replacement = ''
+    act(() => {
+      replacement = createElement(
+        doc,
+        node({
+          id: 'new-gen',
+          name: '新生成',
+          nodeType: 'plein/image',
+          ports: {
+            inputs: [{ id: 'prompt', label: '提示词', type: 'text', multiple: true }],
+            outputs: [{ id: 'images', label: '图片', type: 'image' }],
+          },
+        }),
+      )
+      doc.flush()
+    })
+    await f.user.click(screen.getByTitle('管理参考 1：素材0'))
+    await f.user.click(screen.getByRole('button', { name: '替换参考 1' }))
+    await f.user.click(screen.getByRole('combobox', { name: '替换参考素材' }))
+    await f.user.click(screen.getByRole('option', { name: /新生成 · 图片/ }))
+    await waitFor(() => expect(doc.get(f.id)?.params?.prompt).toBe('参考 @新生成 '))
+    expect(inputEdges(doc, f.id, 'images')[0]!.from[0]).toBe(replacement)
+    // 新来源还没有结果，绑定先记为空资产，生成后只用它自己的结果。
+    expect(
+      doc.get(f.id)?.params?.[
+        `referenceNameBinding:${encodeURIComponent('新生成')}:${replacement}`
+      ],
+    ).toMatchObject({ type: 'image', assetId: '', source: replacement })
+    act(() => {
+      doc.undo.undo()
+      doc.flush()
+    })
+    expect(doc.get(f.id)?.params?.prompt).toBe('参考 @素材0 ')
+    expect(inputEdges(doc, f.id, 'images')[0]!.from[0]).toBe(f.sources[0])
+  })
+
   it('从画布替换参考时，正文同步换成新图片名', async () => {
     const f = setup()
     await f.user.click(screen.getByRole('button', { name: '@素材0' }))
@@ -573,6 +612,22 @@ describe('参考预览与上传竞态', () => {
       f.sources[0],
     ])
     expect(f.doc.get(f.target)?.run).toBeUndefined()
+  })
+  it('上传失败时逐个保留具体原因，不只报文件名', async () => {
+    const f = setup(true)
+    vi.mocked(importFiles).mockResolvedValue({
+      created: [],
+      skipped: [{ name: '坏图.png', reason: '网络不可用，请检查连接后重试' }],
+    })
+    await f.user.click(screen.getByRole('button', { name: '上传参考' }))
+    await f.user.click(screen.getByRole('button', { name: '原图' }))
+    const file = document.querySelector<HTMLInputElement>('input[type="file"]')!
+    fireEvent.change(file, {
+      target: { files: [new File(['image'], '坏图.png', { type: 'image/png' })] },
+    })
+    await waitFor(() =>
+      expect(useCanvas.getState().notice).toContain('坏图.png（网络不可用，请检查连接后重试）'),
+    )
   })
   it('单输入上传期间新增参考不覆盖，上传素材保留并解释原因', async () => {
     const f = setup(true)

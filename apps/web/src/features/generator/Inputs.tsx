@@ -147,7 +147,7 @@ export function Inputs({
         selectedFiles,
         { x: rect.x - UPLOAD_OFFSET, y: rect.y + rect.h / 2 },
         batch.progress,
-        { signal: batch.signal, select: false },
+        { signal: batch.signal, select: false, keepCapturing: true },
       )
       if (useCanvas.getState().engine !== engine || !engine.doc.has(el.id)) return
       if (!port.multiple && !target?.edgeId && inputEdges(engine.doc, el.id, port.id).length) {
@@ -170,22 +170,42 @@ export function Inputs({
         const src = engine.doc.get(id)
         const out = src && (src.kind === 'image' || src.kind === 'video' || src.kind === 'audio')
         if (out) {
-          engine.doc.undo.stopCapturing()
           if (target?.edgeId) {
-            if (replaceInput(engine.doc, target.edgeId, [id, src.kind]) && expected && src.assetId)
-              replaceReferenceName(engine.doc, el.id, expected.from[0], {
-                type: src.kind as 'image' | 'video' | 'audio',
-                source: id,
-                assetId: src.assetId,
-              })
+            if (replaceInput(engine.doc, target.edgeId, [id, src.kind]) && expected)
+              replaceReferenceName(
+                engine.doc,
+                el.id,
+                expected.from[0],
+                {
+                  type: src.kind as 'image' | 'video' | 'audio',
+                  source: id,
+                  sourcePort: src.kind,
+                  assetId: src.assetId ?? '',
+                },
+                expected.from[1],
+              )
           } else connect(engine.doc, [id, src.kind], [el.id, port.id])
-          engine.doc.undo.stopCapturing()
         }
       }
-      if (res.skipped.length) notes.push(`${res.skipped.map((s) => s.name).join('，')} 未导入`)
+      // 每个失败文件给出具体原因（网络断开、格式不支持、服务端报错各说各的）。
+      if (res.skipped.length) {
+        const shown = res.skipped.slice(0, 3).map((s) => `${s.name}（${s.reason}）`)
+        notes.push(
+          `${res.skipped.length} 个参考素材未上传：${shown.join('，')}${res.skipped.length > 3 ? ' 等' : ''}`,
+        )
+      }
     } catch (error) {
-      if (!batch.signal.aborted) notes.push(error instanceof Error ? error.message : '素材导入失败')
+      // 画布切换等主动中止和网络失败分开说，不能把中止当成「素材已就绪」。
+      notes.push(
+        batch.signal.aborted
+          ? '参考上传已停止'
+          : error instanceof Error
+            ? error.message
+            : '素材导入失败',
+      )
     } finally {
+      // 导入内部在网络返回后开步；这里收口，让落元素、接线/替换共用一步撤销。
+      engine.doc.undo.stopCapturing()
       batch.finish(notes)
     }
   }
@@ -834,17 +854,35 @@ export function Inputs({
                 const value = upstreams(engine, el.id, null)
                   .get(replacing.port.id)
                   ?.find((up) => up.edgeId === replacing.edgeId)?.value
-                if (
-                  ok &&
-                  previous &&
-                  value &&
-                  (value.type === 'image' || value.type === 'video' || value.type === 'audio')
-                )
-                  replaceReferenceName(engine.doc, el.id, previous.from[0], {
-                    type: value.type,
-                    source: id,
-                    assetId: value.assetId,
-                  })
+                if (ok && previous) {
+                  // 新来源可能还没有结果：仍要更新绑定与正文，等它生成后用它的结果，
+                  // 不能边指向新素材、正文还留着旧引用。类型先按输入口/来源元素推断。
+                  const source = engine.doc.get(id)
+                  const kind =
+                    value?.type && value.type !== 'text' && value.type !== 'json'
+                      ? value.type
+                      : replacing.port.type === 'image' ||
+                          replacing.port.type === 'video' ||
+                          replacing.port.type === 'audio'
+                        ? replacing.port.type
+                        : source?.kind === 'image' ||
+                            source?.kind === 'video' ||
+                            source?.kind === 'audio'
+                          ? source.kind
+                          : 'image'
+                  replaceReferenceName(
+                    engine.doc,
+                    el.id,
+                    previous.from[0],
+                    {
+                      type: kind,
+                      source: id,
+                      sourcePort: portId,
+                      assetId: value && 'assetId' in value ? value.assetId : '',
+                    },
+                    previous.from[1],
+                  )
+                }
                 engine.doc.undo.stopCapturing()
                 if (!ok) useCanvas.getState().notify('无法替换：素材重复或类型不匹配')
                 setReplacing(null)
@@ -893,7 +931,12 @@ export function Inputs({
 function identityOf(up: Upstream): ReferenceIdentity | undefined {
   const value = up.value
   if (!value || value.type === 'text' || value.type === 'json') return undefined
-  return { type: value.type, assetId: value.assetId, source: up.source.id }
+  return {
+    type: value.type,
+    assetId: value.assetId,
+    source: up.source.id,
+    sourcePort: up.sourcePort,
+  }
 }
 
 function preview(v: ResultValue | undefined) {

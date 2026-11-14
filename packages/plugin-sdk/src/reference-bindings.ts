@@ -4,6 +4,8 @@ export interface ReferenceIdentity {
   type: 'image' | 'video' | 'audio'
   assetId: string
   source?: string
+  /** 来源节点上具体取哪个输出口；旧绑定没有这个字段时按来源 + 类型唯一匹配。 */
+  sourcePort?: string
 }
 export type ReferenceBindings = Record<string, ReferenceIdentity>
 
@@ -37,6 +39,23 @@ export function remapReferenceParams(
     if (changed) change('referenceImagePicks', Object.fromEntries(entries))
   }
 
+  // 旧画布的嵌套绑定表里，值上的 source 也是来源元素 id；复制/导入时一并映射。
+  const nested = params.referenceBindings
+  if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+    let changed = false
+    const entries = Object.entries(nested as Record<string, unknown>).map(([alias, value]) => {
+      if (!value || typeof value !== 'object' || Array.isArray(value))
+        return [alias, value] as const
+      const source = (value as ReferenceIdentity).source
+      if (typeof source !== 'string') return [alias, value] as const
+      const mapped = ids.get(source)
+      if (mapped === undefined || mapped === source) return [alias, value] as const
+      changed = true
+      return [alias, { ...value, source: mapped }] as const
+    })
+    if (changed) change('referenceBindings', Object.fromEntries(entries))
+  }
+
   for (const [key, value] of Object.entries(params)) {
     if (!key.startsWith('referenceNameBinding:')) continue
     const separator = key.lastIndexOf(':')
@@ -54,6 +73,44 @@ export function remapReferenceParams(
       value.source === source
         ? { ...value, source: mapped }
         : value
+  }
+
+  // 旧扁平绑定（referenceBinding:别名:来源[:资产]）与 SDK 仍接受的编号键
+  // （image1:来源:资产）把来源写在键名里，值上也有一份 source；两边都要映射，
+  // 未随复制纳入的外部来源保持原样。
+  const remapIdentity = (value: unknown) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+    const source = (value as ReferenceIdentity).source
+    if (typeof source !== 'string') return undefined
+    const mapped = ids.get(source)
+    return mapped === undefined || mapped === source ? undefined : { ...value, source: mapped }
+  }
+  const remapKey = (key: string) => {
+    const legacy = key.startsWith('referenceBinding:')
+    const parts = key.split(':')
+    // referenceBinding:别名:来源[:资产] 与 image1:来源:资产 的来源位置不同。
+    const at = legacy ? 2 : 1
+    if (!legacy && !/^(image|video|audio)[1-9]\d*$/.test(parts[0] ?? '')) return undefined
+    const source = parts[at]
+    if (!source) return undefined
+    const mapped = ids.get(source)
+    if (mapped === undefined || mapped === source) return undefined
+    parts[at] = mapped
+    return legacy ? `referenceBinding:${parts.slice(1).join(':')}` : parts.join(':')
+  }
+  for (const [key, value] of Object.entries(params)) {
+    // 只动声明为引用绑定的键；插件自定义参数（如 customModelConfig.source）里的同名字段
+    // 不是元素引用，不能按画布 id 重映射。
+    const bindingKey =
+      key.startsWith('referenceBinding:') || /^(image|video|audio)[1-9]\d*(?::|$)/.test(key)
+    if (!bindingKey) continue
+    const identity = remapIdentity(value)
+    const remappedKey = remapKey(key)
+    if (!identity && !remappedKey) continue
+    if (next === params) next = { ...params }
+    // 新键已被占用时不并到同一名上，避免两个来源挤成一个别名。
+    if (remappedKey && remappedKey !== key && !(remappedKey in params)) delete next[key]
+    next[remappedKey && !(remappedKey in params) ? remappedKey : key] = identity ?? value
   }
   return next
 }
@@ -115,6 +172,15 @@ export function referenceBindings(value: unknown): ReferenceBindings {
 
 export function sameReference(a: ReferenceIdentity, b: ReferenceIdentity) {
   return a.type === b.type && a.assetId === b.assetId && a.source === b.source
+}
+
+/**
+ * 绑定和某个实际输出是不是同一份素材。旧绑定没写输出口时只能按来源 + 类型认，
+ * 真正的歧义（同源同类型多个口）由调用方用候选数量判断，不能取第一个。
+ */
+export function sameOutput(binding: ReferenceIdentity, item: ReferenceIdentity) {
+  if (binding.type !== item.type || !binding.source || binding.source !== item.source) return false
+  return !binding.sourcePort || binding.sourcePort === item.sourcePort
 }
 
 export function referenceAliases<T extends ReferenceIdentity>(items: T[], value: unknown) {
@@ -184,11 +250,16 @@ export function resolveReferenceBindings(
         key.startsWith(`referenceNameBinding:${encodeURIComponent(name)}:`),
       )
     const legacy = !named && /^(image|video|audio)[1-9]\d*$/.test(name)
-    const current = numbered.find((item) =>
-      legacy || !binding.source
-        ? sameReference(binding, item)
-        : binding.source === item.source && binding.type === item.type,
+    const candidates = numbered.filter((item) =>
+      legacy || !binding.source ? sameReference(binding, item) : sameOutput(binding, item),
     )
+    const current = binding.sourcePort
+      ? candidates.find((item) => item.sourcePort === binding.sourcePort)
+      : candidates.length === 1
+        ? candidates[0]
+        : undefined
+    if (!current && candidates.length > 1)
+      return { error: `引用 @${name} 对应多个输出，请从参考素材重新选择` }
     if (!current) return { error: `引用 @${name} 的素材已删除、替换或未送入，请重新选择` }
     text = text.slice(0, token.start) + format(current) + text.slice(token.end)
   }

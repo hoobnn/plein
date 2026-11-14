@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { StrictMode } from 'react'
 import type { Engine } from '@plein/canvas-core'
-import { createElement, type PleinDoc, setParam } from '@plein/doc'
+import { createElement, type PleinDoc, moveElements, setParam, writeRun } from '@plein/doc'
 import { openDoc, node as makeNode } from '@plein/doc/testing'
 import type { PreparedInput } from '@plein/protocol'
 import { PREPARED_INPUT_VERSION } from '@plein/protocol'
@@ -98,7 +98,7 @@ it('StrictMode 首次立即读取，文档连续变化防抖，失败可重试�
   const methods: string[] = []
   const requests = mockFetch((request) => {
     methods.push(request.method)
-    if (request.method === 'GET' && new URL(request.url).pathname.endsWith('/input'))
+    if (request.method === 'POST' && new URL(request.url).pathname.endsWith('/input'))
       return failing
         ? Response.json({ message: '输入服务暂不可用' }, { status: 503 })
         : Response.json(prepared(id, { prompt: '雨后的天台' }))
@@ -129,14 +129,14 @@ it('StrictMode 首次立即读取，文档连续变化防抖，失败可重试�
   expect(screen.getByTestId('stale').textContent).toBe('true')
   await advance(300)
   expect(requests).toHaveBeenCalledTimes(3)
-  expect(methods).toEqual(['GET', 'GET', 'GET'])
+  expect(methods).toEqual(['POST', 'POST', 'POST'])
 })
 
 it('首次计时触发前连续改动只读取最新版本，不重复请求或退回防抖等待', async () => {
   vi.useFakeTimers()
   const { engine, doc, id } = fixture()
   const requests = mockFetch((request) => {
-    if (request.method === 'GET' && new URL(request.url).pathname.endsWith('/input'))
+    if (request.method === 'POST' && new URL(request.url).pathname.endsWith('/input'))
       return Response.json(prepared(id, { prompt: String(doc.get(id)!.params?.prompt) }))
   })
   const { user } = renderApp(
@@ -275,6 +275,46 @@ it('同一资产来自两个节点时保留两个顺序项，参数显示标签�
   expect(errors.mock.calls.filter(([message]) => String(message).includes('same key'))).toEqual([])
 })
 
+it('无关节点的进度与布局不打断预览，只有本节点输入变化才重取', async () => {
+  vi.useFakeTimers()
+  const { engine, doc, id } = fixture()
+  const other = createElement(doc, makeNode({ name: '别的节点' }))
+  doc.flush()
+  const requests = mockFetch((request) =>
+    request.method === 'POST' && new URL(request.url).pathname.endsWith('/input')
+      ? Response.json(prepared(id, { prompt: '稳定输入' }))
+      : undefined,
+  )
+  renderApp(<Harness engine={engine} id={id} />)
+  await advance()
+  expect(requests).toHaveBeenCalledOnce()
+  expect(screen.getByTestId('stale').textContent).toBe('false')
+
+  // 无关节点移动、进度写回，以及本节点自己挪位置：都不影响实际输入
+  act(() => {
+    moveElements(doc, [other], 400, 300)
+    moveElements(doc, [id], 60, 40)
+    writeRun(doc, other, { id: 'run-other', status: 'running', at: 1, progress: 0.5 })
+    doc.flush()
+  })
+  await advance(1000)
+  expect(requests).toHaveBeenCalledOnce()
+  expect(screen.getByTestId('stale').textContent).toBe('false')
+  expect((screen.getByRole('button', { name: /实际输入/ }) as HTMLButtonElement).disabled).toBe(
+    false,
+  )
+
+  // 本节点提示词变了：预览过期，防抖后重取
+  act(() => {
+    setParam(doc, id, 'prompt', '新的输入')
+    doc.flush()
+  })
+  expect(screen.getByTestId('stale').textContent).toBe('true')
+  await advance(400)
+  expect(requests).toHaveBeenCalledTimes(2)
+  expect(screen.getByTestId('stale').textContent).toBe('false')
+})
+
 it('提交回执在防抖计时中抵达时，不再发起已经过时的预览请求', async () => {
   vi.useFakeTimers()
   const { engine, doc, id } = fixture()
@@ -291,6 +331,41 @@ it('提交回执在防抖计时中抵达时，不再发起已经过时的预览�
   await advance(400)
   expect(fetch).toHaveBeenCalledOnce()
   expect(screen.getByTestId('input-preview').getAttribute('aria-busy')).toBe('false')
+})
+
+it('有效参数里的嵌套选项可展开查看，只显示实际用的模型且不出现 [object Object]', async () => {
+  const { engine, doc, id } = fixture()
+  const { user } = renderApp(
+    <InputPreview
+      engine={engine}
+      el={doc.get(id)!}
+      node={definition}
+      data={prepared(id, {
+        model: { ref: 'p/mock:image', provider: 'p/mock', title: 'Mock 图片' },
+        params: {
+          mode: 'image',
+          options: {
+            'p/mock:image': { quality: 'high', seed: 7, watermark: false },
+            'p/other:model': { unused: true },
+          },
+        },
+      })}
+      loading={false}
+      error={null}
+      onRetry={() => {}}
+    />,
+  )
+  await user.click(screen.getByRole('button', { name: /实际输入/ }))
+  const summary = screen.getByText(/options/, { selector: 'summary' })
+  expect(summary.textContent).toContain('3 项')
+  await user.click(summary)
+  expect(screen.getByText('quality')).toBeTruthy()
+  expect(screen.getByText('high')).toBeTruthy()
+  expect(screen.getByText('seed')).toBeTruthy()
+  expect(screen.getByText('7')).toBeTruthy()
+  expect(screen.getByText('关闭')).toBeTruthy()
+  expect(screen.queryByText('unused')).toBeNull()
+  expect(screen.queryByText('[object Object]')).toBeNull()
 })
 
 it('折叠时展示字符数，说明收在字符右侧的可聚焦标记中', async () => {

@@ -6,6 +6,7 @@ import {
   type KeyboardEvent,
   type Ref,
 } from 'react'
+import type { ReferenceIdentity } from '@plein/plugin-sdk'
 import { assetUrls } from '../../api/client'
 import { Icon, type IconName } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
@@ -14,6 +15,8 @@ export interface MentionChoice {
   key: string
   name: string
   insert: string
+  /** 选中即绑定的完整引用身份；只传插入字符串会在别名相同时绑错来源。 */
+  identity?: ReferenceIdentity
   category: 'image' | 'video' | 'audio' | 'asset'
   description: string
   thumbnail?: string
@@ -45,7 +48,7 @@ export function MentionPicker({
   anchor: HTMLElement
   query: string
   choices: MentionChoice[]
-  onPick(insert: string): void
+  onPick(choice: MentionChoice): void
   onClose(): void
 }) {
   const [search, setSearch] = useState(query)
@@ -67,7 +70,7 @@ export function MentionPicker({
   const total = items.length + (home ? CATEGORIES.length : 0)
   const choose = (i: number) => {
     const item = items[i]
-    if (item && !item.disabled) onPick(item.insert)
+    if (item && !item.disabled) onPick(item)
     else if (home && CATEGORIES[i - items.length]) {
       setCategory(CATEGORIES[i - items.length]!.id)
       setActive(0)
@@ -156,7 +159,7 @@ export function MentionPicker({
               title={`${item.name} · ${item.description}`}
               onPointerDown={(e) => e.preventDefault()}
               onPointerEnter={() => setActive(i)}
-              onClick={() => onPick(item.insert)}
+              onClick={() => onPick(item)}
             >
               {item.thumbnail ? (
                 <img

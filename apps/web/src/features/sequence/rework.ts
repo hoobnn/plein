@@ -66,6 +66,68 @@ export function reworkSource(doc: PleinDoc, row: ArrangedClip, canvasId: string 
   return 'problem' in result ? undefined : result
 }
 
+export type ReworkSource = { source: CanvasElement; port: string }
+
+export interface ReworkSourcePin {
+  resultId: string
+  runId: string
+  assetId: string
+}
+
+/**
+ * 钉住片段当前实际采用的候选与文件。只比较来源节点 id 和实例 JSON
+ * 发现不了同一节点把采用视频从 A 换成 B 的情况。
+ */
+export function reworkSourcePin(
+  row: ArrangedClip,
+  source: CanvasElement,
+  port: string,
+): ReworkSourcePin | undefined {
+  const selection = row.segment?.selection
+  const assetId = row.clip.assetId ?? row.segment?.asset?.assetId
+  if (!assetId) return undefined
+  if (selection) return { resultId: selection.resultId, runId: selection.runId, assetId }
+  const adopted = currentResult(source, port)
+  if (adopted?.value.type !== 'video' || adopted.value.assetId !== assetId) return undefined
+  return { resultId: adopted.id, runId: adopted.runId, assetId }
+}
+
+/** 从当前 Y.Doc 重读实例与来源，避免 await 期间同一来源换了采用视频。 */
+export function currentReworkSource(
+  doc: PleinDoc,
+  sequenceId: string,
+  clipInstanceId: string,
+  canvasId: string | null,
+): (ReworkSource & { pin: ReworkSourcePin }) | { problem: string } {
+  const sequence = doc.get(sequenceId)
+  const raw = sequence
+    ? sequenceInstancesOf(sequence).find((clip) => clip.clipInstanceId === clipInstanceId)
+    : undefined
+  if (!sequence || !raw) return { problem: '这段剪辑实例已不存在，请重新核对。' }
+  const selection = raw.segment?.selection
+  const node = doc.get(raw.segment ? (selection?.nodeId ?? '') : raw.source)
+  const port = raw.segment ? (selection?.port ?? '') : raw.port
+  const adopted = node && port ? currentResult(node, port) : undefined
+  const assetId =
+    raw.segment?.asset.assetId ??
+    (adopted?.value.type === 'video' ? adopted.value.assetId : undefined)
+  const row = {
+    clipInstanceId,
+    source: raw.source,
+    port: raw.port,
+    edgeId: raw.edgeId,
+    segment: raw.segment,
+    clip: { assetId },
+  } as unknown as ArrangedClip
+  const inspected = inspectReworkSource(doc, row, canvasId)
+  if (inspected.problem || !inspected.source || !inspected.port)
+    return { problem: inspected.problem ?? '无法确认片段当前采用的视频候选，请重新核对。' }
+  const pin = reworkSourcePin(row, inspected.source, inspected.port)
+  return pin
+    ? { source: inspected.source, port: inspected.port, pin }
+    : { problem: '无法确认片段当前采用的视频候选，请重新核对。' }
+}
+
 /** Keep incoming references in their exact order; drafts own no old results or task identity. */
 export function createReworkDraft(doc: PleinDoc, source: CanvasElement) {
   if (doc.readOnly || !doc.has(source.id) || doc.get(source.id)?.locked) return null

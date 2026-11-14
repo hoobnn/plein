@@ -127,6 +127,11 @@ export const jobs = sqliteTable(
     frozen: text(),
     /** 恢复状态（JobRecovery JSON）：失败在哪一步、谁取消的、产物是否待采用 */
     recovery: text(),
+    /**
+     * 受理时节点采用的候选（JSON：`null` 表示还没采用，字符串是结果 id）。
+     * 生成期间用户换了采用项，晚到的结果只进候选；旧任务没有这一列，按未记录处理。
+     */
+    adoption: text(),
     error: text(),
     created_at: integer().notNull(),
     started_at: integer(),
@@ -182,6 +187,11 @@ export const batchItems = sqliteTable(
     reason: text(),
     /** 启动时批准的 inputHash；有待解析依赖时为空 */
     input_hash: text(),
+    /**
+     * 批准/快照时每个目标采用的候选（JSON：结果 id + 采用版本）。
+     * 批次等待期间用户改了采用，后续 start 仍按这个基线判断晚到的结果要不要只进候选。
+     */
+    adoption: text(),
     /** 节点自身参数与模型的哈希：有待解析依赖时据此判断计划有没有变 */
     plan_hash: text(),
     /** 待解析的依赖（BatchDependency[] JSON） */

@@ -16,21 +16,35 @@ afterEach(() => {
 
 function setup(
   text: string,
-  targets: Array<{ name: string; type?: string; params?: Record<string, unknown> }> = [
-    { name: '小岚 · 测试' },
-  ],
+  targets: Array<{
+    name: string
+    type?: string
+    params?: Record<string, unknown>
+    kind?: 'image' | 'video' | 'audio'
+    assetId?: string
+  }> = [{ name: '小岚 · 测试' }],
 ) {
   const doc = openDoc()
   docs.push(doc)
   const ids = targets.map((target) =>
-    createElement(
-      doc,
-      node({
-        nodeType: 'plein/' + (target.type ?? 'character'),
-        name: target.name,
-        params: target.params ?? {},
-      }),
-    ),
+    target.kind
+      ? createElement(doc, {
+          kind: target.kind,
+          name: target.name,
+          assetId: target.assetId ?? 'asset-' + target.name,
+          x: 0,
+          y: 200,
+          w: 120,
+          h: 90,
+        })
+      : createElement(
+          doc,
+          node({
+            nodeType: 'plein/' + (target.type ?? 'character'),
+            name: target.name,
+            params: target.params ?? {},
+          }),
+        ),
   )
   const selfId = createElement(
     doc,
@@ -290,6 +304,39 @@ it('@ 菜单分类搜索不修改正文，选择后保留原内容并还焦点',
   fireEvent.keyDown(search, { key: 'Enter' })
   await waitFor(() => expect(f.field().value).toBe('@小岚 · 测试 与 @人物11 '))
   expect(document.activeElement).toBe(f.field())
+})
+
+it('未连线的视频、音频和图片按媒体分类列出，不再全算资产', async () => {
+  const f = setup('', [
+    { name: '空镜视频', kind: 'video' },
+    { name: '环境音', kind: 'audio' },
+    { name: '参考图', kind: 'image' },
+    { name: '林夏' },
+  ])
+  f.field().focus()
+  f.field().setSelectionRange(f.field().value.length, f.field().value.length)
+  await f.user.type(f.field(), '@')
+  const menu = await screen.findByRole('dialog', { name: '引用素材' })
+  const open = async (name: string) => {
+    await f.user.click(within(menu).getByRole('option', { name }))
+    return within(menu)
+      .getAllByRole('option')
+      .map((item) => item.textContent ?? '')
+  }
+  const video = await open('视频')
+  expect(video.some((text) => text.includes('空镜视频'))).toBe(true)
+  expect(video.some((text) => text.includes('环境音'))).toBe(false)
+  await f.user.click(within(menu).getByRole('button', { name: '视频' }))
+  const audio = await open('音频')
+  expect(audio.some((text) => text.includes('环境音'))).toBe(true)
+  expect(audio.some((text) => text.includes('空镜视频'))).toBe(false)
+  await f.user.click(within(menu).getByRole('button', { name: '音频' }))
+  const image = await open('图片')
+  expect(image.some((text) => text.includes('参考图'))).toBe(true)
+  await f.user.click(within(menu).getByRole('button', { name: '图片' }))
+  const asset = await open('资产')
+  expect(asset.some((text) => text.includes('林夏'))).toBe(true)
+  expect(asset.some((text) => text.includes('空镜视频'))).toBe(false)
 })
 
 it('邮箱、转义说明不触发补全或缺失提示，正文按原样保存', async () => {

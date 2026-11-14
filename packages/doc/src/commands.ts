@@ -263,13 +263,22 @@ export function deleteElements(doc: PleinDoc, ids: Iterable<string>) {
   })
 }
 
-/** 连线或来源元素消失时，同步清掉指向它的名称 / 旧编号绑定；正文仍保留，预览会标为断链。 */
+/**
+ * 连线或来源元素消失时，同步清掉指向它的名称 / 旧编号绑定；正文仍保留，预览会标为断链。
+ * match 用于只清被操作的那个输出口：同源其他输出口的绑定必须保留。
+ */
 function clearReferenceBindings(
   doc: PleinDoc,
   sources: ReadonlySet<string>,
   targetId?: string,
   elements: Iterable<CanvasElement> = doc.elements(),
+  match?: (source: string, key: string, value: unknown) => boolean,
 ) {
+  const clears = (key: string, value: unknown) => {
+    const source = referenceBindingSource(key, value)
+    if (!source || !sources.has(source)) return false
+    return !match || match(source, key, value)
+  }
   for (const el of elements) {
     if (targetId && el.id !== targetId) continue
     const params = el.params
@@ -277,16 +286,12 @@ function clearReferenceBindings(
     const patch: Record<string, unknown> = {}
     for (const [key, value] of Object.entries(params)) {
       if (key === 'referenceBindings') continue
-      const source = referenceBindingSource(key, value)
-      if (source && sources.has(source)) patch[key] = undefined
+      if (clears(key, value)) patch[key] = undefined
     }
     const nested = params.referenceBindings
     if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
       const entries = Object.entries(nested as Record<string, unknown>)
-      const kept = entries.filter(([key, value]) => {
-        const source = referenceBindingSource(key, value)
-        return !source || !sources.has(source)
-      })
+      const kept = entries.filter(([key, value]) => !clears(key, value))
       if (kept.length !== entries.length) patch.referenceBindings = Object.fromEntries(kept)
     }
     if (Object.keys(patch).length) setParams(doc, el.id, patch)
@@ -1035,14 +1040,14 @@ export function replaceInput(doc: PleinDoc, edgeId: string, from: PortAddress): 
 
 export function removeEdges(doc: PleinDoc, ids: Iterable<string>) {
   write(doc, () => {
-    const detached = new Map<string, Set<string>>()
+    const detached = new Map<string, Edge[]>()
     for (const id of ids) {
       const edge = doc.edgeMap.get(id)
       if (edge) {
         const target = doc.get(edge.to[0])
-        const sources = detached.get(edge.to[0]) ?? new Set<string>()
-        sources.add(edge.from[0])
-        detached.set(edge.to[0], sources)
+        const removed = detached.get(edge.to[0]) ?? []
+        removed.push(edge)
+        detached.set(edge.to[0], removed)
         if (target?.nodeType === 'plein/sequence' && target.params?.instanceVersion === 2)
           setParams(doc, target.id, {
             clips: (Array.isArray(target.params.clips) ? target.params.clips : []).filter(
@@ -1052,6 +1057,41 @@ export function removeEdges(doc: PleinDoc, ids: Iterable<string>) {
       }
       doc.edgeMap.delete(id)
     }
-    for (const [targetId, sources] of detached) clearReferenceBindings(doc, sources, targetId)
+    for (const [targetId, removed] of detached) {
+      const sources = new Set(removed.map((edge) => edge.from[0]))
+      // 只清被断开的那个输出口的绑定：同一来源的另一个输出口（如视频的尾帧）仍然有效。
+      const remaining = inputEdges(doc, targetId)
+      const match = (source: string, _key: string, value: unknown) => {
+        const ports = new Set(
+          removed.filter((edge) => edge.from[0] === source).map((edge) => edge.from[1]),
+        )
+        const remainingPorts = new Set(
+          remaining.filter((edge) => edge.from[0] === source).map((edge) => edge.from[1]),
+        )
+        const port = bindingPortOf(value)
+        if (port) return ports.has(port) && !remainingPorts.has(port)
+        const type = bindingTypeOf(value)
+        // 没有身份信息的旧绑定：整个来源都断开了才清。
+        if (!type) return remainingPorts.size === 0
+        const src = doc.get(source)
+        const kind = (portId: string) => findPort(src, portId, 'outputs')?.type
+        const removedKinds = new Set([...ports].map(kind))
+        const remainingKinds = new Set([...remainingPorts].map(kind))
+        return removedKinds.has(type) && !remainingKinds.has(type)
+      }
+      clearReferenceBindings(doc, sources, targetId, doc.elements(), match)
+    }
   })
+}
+
+function bindingPortOf(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const port = (value as { sourcePort?: unknown }).sourcePort
+  return typeof port === 'string' ? port : undefined
+}
+
+function bindingTypeOf(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const type = (value as { type?: unknown }).type
+  return type === 'image' || type === 'video' || type === 'audio' ? type : undefined
 }

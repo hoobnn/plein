@@ -3,6 +3,8 @@ import {
   connect,
   createElement,
   currentResult,
+  fixSequenceInstance,
+  type HistoryEntry,
   sequenceInstancesOf,
   setParams,
   updateElement,
@@ -11,7 +13,14 @@ import { node, openDoc } from '@plein/doc/testing'
 import { describe, expect, it } from 'vite-plus/test'
 import type { ArrangedClip } from '@plein/nodes'
 import { arrangeSequence, SequenceClip } from '@plein/nodes'
-import { applyReworkCandidate, createReworkDraft, reworkSource } from './rework'
+import * as Y from 'yjs'
+import { historyMaterial } from '../../canvas/historyMaterial'
+import {
+  applyReworkCandidate,
+  createReworkDraft,
+  currentReworkSource,
+  reworkSource,
+} from './rework'
 const A = 'a'.repeat(64),
   B = 'b'.repeat(64)
 function fixture() {
@@ -256,5 +265,126 @@ describe('sequence rework isolation', () => {
     row.segment!.selection = undefined
     expect(reworkSource(doc, row, 'canvas')).toBeUndefined()
     doc.destroy()
+  })
+})
+
+describe('history video fixed origin survives reopen', () => {
+  it('真实固定后经 Yjs 快照重开仍能核对返工来源', () => {
+    const doc = openDoc()
+    const source = createElement(
+      doc,
+      node({
+        nodeType: 'plein/video',
+        name: '原镜头',
+        params: { prompt: '向前走' },
+        ports: {
+          inputs: [{ id: 'refs', label: '参考', type: 'image', multiple: true }],
+          outputs: [{ id: 'video', label: '视频', type: 'video' }],
+        },
+      }),
+    )
+    const origin = {
+      canvasId: 'canvas',
+      nodeId: source,
+      port: 'video',
+      resultId: 'candidate',
+      runId: 'run',
+    }
+    addResults(
+      doc,
+      source,
+      [
+        {
+          id: 'candidate',
+          runId: 'run',
+          port: 'video',
+          at: 1,
+          generationOrigin: origin,
+          value: { type: 'video', assetId: A, mime: 'video/mp4' },
+        },
+      ],
+      { adopt: true },
+    )
+    const entry: HistoryEntry = {
+      elementId: source,
+      result: doc.get(source)!.results![0]! as HistoryEntry['result'],
+      adopted: true,
+    }
+    const material = historyMaterial(doc, 'canvas', entry, {
+      id: A,
+      kind: 'video',
+      mime: 'video/mp4',
+      name: '片段.mp4',
+      size: 1,
+      duration: 5,
+      width: 1920,
+      height: 1080,
+      variants: [],
+      createdAt: 1,
+    })
+    if ('problem' in material) throw new Error(material.problem)
+    const placed = createElement(doc, { ...material.input, x: 100, y: 100 })
+    const sequence = createElement(
+      doc,
+      node({
+        nodeType: 'plein/sequence',
+        nodeVersion: 2,
+        params: {
+          instanceVersion: 2,
+          clips: [
+            {
+              clipInstanceId: 'clip',
+              source: placed,
+              port: 'video',
+              sound: 'native',
+              in: 0,
+              out: 4,
+            },
+          ],
+        },
+        ports: {
+          inputs: [{ id: 'clips', label: '片段', type: 'video', multiple: true }],
+          outputs: [{ id: 'video', label: '成片', type: 'video' }],
+        },
+      }),
+    )
+    expect(
+      fixSequenceInstance(doc, sequence, 'clip', {
+        canvasId: 'canvas',
+        assetId: A,
+        duration: 5,
+        sound: 'native',
+      }),
+    ).toBe(true)
+    const fixed = sequenceInstancesOf(doc.get(sequence)!)[0]!
+    expect(fixed.segment).toMatchObject({
+      duration: 5,
+      origin,
+      selection: {
+        canvasId: 'canvas',
+        nodeId: source,
+        port: 'video',
+        resultId: 'candidate',
+        runId: 'run',
+      },
+    })
+    const current = currentReworkSource(doc, sequence, 'clip', 'canvas')
+    if ('problem' in current) throw new Error(current.problem)
+    expect(current.source.id).toBe(source)
+    expect(current.pin).toEqual({ resultId: 'candidate', runId: 'run', assetId: A })
+
+    const reopenedDoc = openDoc(new Y.Doc())
+    try {
+      Y.applyUpdate(reopenedDoc.ydoc, Y.encodeStateAsUpdate(doc.ydoc))
+      reopenedDoc.flush()
+      const reopened = currentReworkSource(reopenedDoc, sequence, 'clip', 'canvas')
+      if ('problem' in reopened) throw new Error(reopened.problem)
+      expect(reopened.source.id).toBe(source)
+      expect(reopened.pin).toEqual({ resultId: 'candidate', runId: 'run', assetId: A })
+      expect(sequenceInstancesOf(reopenedDoc.get(sequence)!)[0]!.segment).toEqual(fixed.segment)
+    } finally {
+      reopenedDoc.destroy()
+      doc.destroy()
+    }
   })
 })

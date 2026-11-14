@@ -11,6 +11,7 @@ import type {
 } from '@plein/protocol'
 import type { FlowGraph } from '@plein/flow'
 import * as Y from 'yjs'
+import { adoptionSnapshot } from './adoption'
 import { parseRecovery } from './recovery'
 import type { Inspection } from './runs'
 import type { BatchItemRow, JobRow, JobStore } from './store'
@@ -182,6 +183,8 @@ export async function snapshotBatch(
         stage,
         reason: reason ?? null,
         input_hash: !deps.length && input.inputHash ? input.inputHash : null,
+        // 批准时的采用身份：等待上游期间改选过候选，后续结果不能顶掉它
+        adoption: adoptionSnapshot(doc, el, currentResult(el)?.id ?? null) ?? null,
         plan_hash: host.planKey(el),
         deps: JSON.stringify(deps),
         input: JSON.stringify(input),

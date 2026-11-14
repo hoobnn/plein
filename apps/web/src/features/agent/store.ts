@@ -14,6 +14,7 @@ import {
 } from '@plein/protocol'
 import { create } from 'zustand'
 import { api } from '../../api/client'
+import { canvasSyncCredential } from '../../canvas/syncBarrier'
 import { useCanvas } from '../../stores/canvas'
 
 /** 吉祥物的心情：跟着智能体的状态走 */
@@ -496,8 +497,11 @@ export const useAgent = create<AgentStore>((set, get) => {
 
     async decide(approvalId, allow, pick) {
       if (get().pendingActions[`${get().session?.id}/revise/${approvalId}`]) return
+      // 允许执行可能创建付费任务：服务端必须已经收到浏览器这一版文档
+      const canvasId = get().session?.canvasId
+      const expectSnapshot = allow && canvasId ? canvasSyncCredential(canvasId) : undefined
       await sessionAction(`decide/${approvalId}`, (id) =>
-        api.decideAgentApproval(id, approvalId, allow, pick),
+        api.decideAgentApproval(id, approvalId, allow, pick, expectSnapshot),
       )
     },
 
@@ -625,6 +629,10 @@ export const useAgent = create<AgentStore>((set, get) => {
         plan: get().plan,
         access: get().access,
         ...(skill ? { skill: skill.id } : {}),
+        // 新回合可能直接创建付费任务：带上浏览器这份文档的同步凭据
+        ...(canvasSyncCredential(canvasId)
+          ? { expectSnapshot: canvasSyncCredential(canvasId) }
+          : {}),
       }
       const settings = get().modelPreferences[agent]
       set({ error: null, sending: { ...get().sending, [canvasId]: true } })

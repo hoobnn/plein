@@ -262,7 +262,10 @@ export async function createServer(config: Config): Promise<Server> {
   app.route('/', pluginInstallRoutes(pluginInstaller))
   app.route('/', promptRoutes(plugins))
   app.route('/', runApi)
-  app.route('/', agentRoutes(db, agents))
+  app.route(
+    '/',
+    agentRoutes(db, agents, (canvasId, credential) => runs.assertSynced(canvasId, credential)),
+  )
   app.route('/', capabilityRoutes({ db, rooms, runs, host: plugins, assets, library }))
   app.route('/', mcpRoutes(external))
   app.all('/api/*', (c) => c.json({ error: 'not_found', message: '接口不存在' }, 404))

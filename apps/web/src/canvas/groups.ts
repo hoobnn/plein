@@ -165,9 +165,17 @@ function describeRun(title: string, r: GroupRun) {
   return parts.join('，')
 }
 
+/** 模板/副本所属画布：只有当前引擎对应的画布才确知。 */
+function canvasIdFor(engine: Engine) {
+  const state = useCanvas.getState()
+  return state.engine === engine ? (state.canvasId ?? undefined) : undefined
+}
+
 /** 导出 Frame 为模板数据：去掉生成结果和运行状态，只留结构和参数 */
 export function templateData(engine: Engine, frameId: string): ClipboardData {
-  const data = referenceClipboard.copy(engine.doc, [frameId])
+  const data = referenceClipboard.copy(engine.doc, [frameId], {
+    canvasId: canvasIdFor(engine),
+  })
   return {
     ...data,
     elements: data.elements.map(({ results: _r, adopted: _a, run: _run, ...el }) => el),
@@ -178,10 +186,7 @@ export function templateData(engine: Engine, frameId: string): ClipboardData {
 export function placeTemplate(engine: Engine, data: ClipboardData, at: { x: number; y: number }) {
   const root = data.elements[0]
   const ids = referenceClipboard.paste(engine.doc, data, {
-    canvasId:
-      useCanvas.getState().engine === engine
-        ? (useCanvas.getState().canvasId ?? undefined)
-        : undefined,
+    canvasId: canvasIdFor(engine),
     dx: Math.round(at.x - (root?.x ?? 0)),
     dy: Math.round(at.y - (root?.y ?? 0)),
   })

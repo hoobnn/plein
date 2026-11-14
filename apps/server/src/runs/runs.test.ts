@@ -9,8 +9,8 @@ import {
   writeRun,
 } from '@plein/doc'
 import type { Canvas, PreparedInput } from '@plein/protocol'
-import { beforeAll, describe, expect, it } from 'vite-plus/test'
-import { addNode, startTestServer, until } from '../testing'
+import { beforeAll, describe, expect, it, vi } from 'vite-plus/test'
+import { addNode, mockSettings, startTestServer, until } from '../testing'
 
 /** 等节点的运行状态满足条件 */
 const waitFor = (doc: PleinDoc, id: string, done: (s?: string) => boolean) =>
@@ -103,6 +103,248 @@ describe('节点运行接口', () => {
       { type: 'image', assetId: 'held-asset', source: a },
     ])
   })
+  it('生成期间采用别的候选：新结果只进候选，不顶掉用户的选择', async () => {
+    const { canvas, doc } = await newCanvas()
+    mockSettings(server, { latencyMs: 1200 })
+    const id = addNode(doc, 'plein/image', { params: { prompt: '同一份输入的两次生成' } })
+    addResults(doc, id, [
+      {
+        id: 'old-a',
+        port: 'images',
+        runId: 'run-old-a',
+        at: 1,
+        value: { type: 'image', assetId: 'a'.repeat(64) },
+      },
+      {
+        id: 'old-b',
+        port: 'images',
+        runId: 'run-old-b',
+        at: 2,
+        value: { type: 'image', assetId: 'b'.repeat(64) },
+      },
+    ])
+    adoptResult(doc, id, 'old-a')
+
+    const res = await fetch(`${base}/api/canvases/${canvas.id}/nodes/${id}/run`, {
+      method: 'POST',
+    })
+    expect(res.status).toBe(202)
+    // 受理之后、结果回来之前：用户改用另一个已有候选
+    adoptResult(doc, id, 'old-b')
+
+    const el = await waitFor(doc, id, (s) => s === 'succeeded' || s === 'failed')
+    expect(el.run?.status).toBe('succeeded')
+    // 用户的采用保留，新结果只进了候选
+    expect(el.adopted).toBe('old-b')
+    expect(el.results?.[0]?.runId).not.toBe('run-old-b')
+    expect(server.runs.list(canvas.id).jobs.find((j) => j.nodeId === id)?.recovery).toMatchObject({
+      state: 'stored',
+      held: 'adopted_during_run',
+    })
+  })
+
+  it('A→B→A：采用绕回同一结果也算人工改过，晚到结果不顶掉', async () => {
+    const { canvas, doc } = await newCanvas()
+    mockSettings(server, { latencyMs: 800 })
+    const id = addNode(doc, 'plein/image', { params: { prompt: '绕回同一候选' } })
+    addResults(doc, id, [
+      {
+        id: 'old-a',
+        port: 'images',
+        runId: 'run-old-a',
+        at: 1,
+        value: { type: 'image', assetId: 'a'.repeat(64) },
+      },
+      {
+        id: 'old-b',
+        port: 'images',
+        runId: 'run-old-b',
+        at: 2,
+        value: { type: 'image', assetId: 'b'.repeat(64) },
+      },
+    ])
+    // 显式采用命令会写采用版本；旧画布没有这个字段
+    const adopt = (resultId: string, revision: string) => {
+      adoptResult(doc, id, resultId)
+      doc.mutable(id)!.set('adoptionRevision', revision)
+    }
+    adopt('old-a', 'rev-1')
+
+    const res = await fetch(`${base}/api/canvases/${canvas.id}/nodes/${id}/run`, {
+      method: 'POST',
+    })
+    expect(res.status).toBe(202)
+    // 生成期间先改用 B，又改回 A：采用的结果 id 和受理时一样，但选择确实变过
+    adopt('old-b', 'rev-2')
+    adopt('old-a', 'rev-3')
+
+    const el = await waitFor(doc, id, (s) => s === 'succeeded' || s === 'failed')
+    expect(el.run?.status).toBe('succeeded')
+    expect(el.adopted).toBe('old-a')
+    expect(server.runs.list(canvas.id).jobs.find((j) => j.nodeId === id)?.recovery).toMatchObject({
+      state: 'stored',
+      held: 'adopted_during_run',
+    })
+  })
+
+  it('采用版本没变但结果 id 变了（旧客户端/撤销回另一候选）也保住人工选择', async () => {
+    const { canvas, doc } = await newCanvas()
+    mockSettings(server, { latencyMs: 800 })
+    const id = addNode(doc, 'plein/image', { params: { prompt: '版本不变但改了采用' } })
+    addResults(doc, id, [
+      {
+        id: 'same-rev-a',
+        port: 'images',
+        runId: 'run-same-rev-a',
+        at: 1,
+        value: { type: 'image', assetId: 'a'.repeat(64) },
+      },
+      {
+        id: 'same-rev-b',
+        port: 'images',
+        runId: 'run-same-rev-b',
+        at: 2,
+        value: { type: 'image', assetId: 'b'.repeat(64) },
+      },
+    ])
+    // 受理时采用 A，采用版本 rev-1
+    adoptResult(doc, id, 'same-rev-a')
+    doc.mutable(id)!.set('adoptionRevision', 'rev-1')
+
+    const res = await fetch(`${base}/api/canvases/${canvas.id}/nodes/${id}/run`, {
+      method: 'POST',
+    })
+    expect(res.status).toBe(202)
+    // 旧客户端或低层写入只改 adopted，不推进版本
+    adoptResult(doc, id, 'same-rev-b')
+
+    const el = await waitFor(doc, id, (s) => s === 'succeeded' || s === 'failed')
+    expect(el.run?.status).toBe('succeeded')
+    expect(el.adopted).toBe('same-rev-b')
+    expect(server.runs.list(canvas.id).jobs.find((j) => j.nodeId === id)?.recovery).toMatchObject({
+      state: 'stored',
+      held: 'adopted_during_run',
+    })
+    // 采用版本保持低层写入的值，不被系统写回
+    expect(doc.mutable(id)!.get('adoptionRevision')).toBe('rev-1')
+  })
+
+  it('旧画布没有采用版本时退回比较采用的结果 id', async () => {
+    const { canvas, doc } = await newCanvas()
+    mockSettings(server, { latencyMs: 800 })
+    const id = addNode(doc, 'plein/image', { params: { prompt: '旧画布没有采用版本' } })
+    addResults(doc, id, [
+      {
+        id: 'legacy-a',
+        port: 'images',
+        runId: 'run-legacy-a',
+        at: 1,
+        value: { type: 'image', assetId: 'a'.repeat(64) },
+      },
+      {
+        id: 'legacy-b',
+        port: 'images',
+        runId: 'run-legacy-b',
+        at: 2,
+        value: { type: 'image', assetId: 'b'.repeat(64) },
+      },
+    ])
+    adoptResult(doc, id, 'legacy-a')
+
+    const res = await fetch(`${base}/api/canvases/${canvas.id}/nodes/${id}/run`, {
+      method: 'POST',
+    })
+    expect(res.status).toBe(202)
+    adoptResult(doc, id, 'legacy-b')
+
+    const el = await waitFor(doc, id, (s) => s === 'succeeded' || s === 'failed')
+    expect(el.adopted).toBe('legacy-b')
+    expect(server.runs.list(canvas.id).jobs.find((j) => j.nodeId === id)?.recovery).toMatchObject({
+      state: 'stored',
+      held: 'adopted_during_run',
+    })
+  })
+
+  it('结果写回前的最后复核期间采用：仍保住人工选择', async () => {
+    const { canvas, doc } = await newCanvas()
+    mockSettings(server, { latencyMs: 0 })
+    const id = addNode(doc, 'plein/image', { params: { prompt: '最后复核期间改采用' } })
+    addResults(doc, id, [
+      {
+        id: 'late-a',
+        port: 'images',
+        runId: 'run-late-a',
+        at: 1,
+        value: { type: 'image', assetId: 'a'.repeat(64) },
+      },
+      {
+        id: 'late-b',
+        port: 'images',
+        runId: 'run-late-b',
+        at: 2,
+        value: { type: 'image', assetId: 'b'.repeat(64) },
+      },
+    ])
+    adoptResult(doc, id, 'late-a')
+
+    // 卡在结果写回前的复核（第二次 prepare）上：这里正是采用可能被改的窗口
+    const runs = server.runs as unknown as {
+      prepare(
+        doc: unknown,
+        el: unknown,
+        ownerId: string,
+        signal: AbortSignal,
+        canvasId?: string,
+      ): Promise<unknown>
+    }
+    const real = runs.prepare.bind(runs)
+    let calls = 0
+    let release!: () => void
+    let entered!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const reached = new Promise<void>((resolve) => (entered = resolve))
+    const spy = vi.spyOn(runs, 'prepare').mockImplementation(async (...args) => {
+      calls++
+      if (calls === 2) {
+        entered()
+        await gate
+      }
+      return real(...args)
+    })
+
+    const res = await fetch(`${base}/api/canvases/${canvas.id}/nodes/${id}/run`, {
+      method: 'POST',
+    })
+    expect(res.status).toBe(202)
+    await reached
+    adoptResult(doc, id, 'late-b')
+    release()
+    const el = await waitFor(doc, id, (s) => s === 'succeeded' || s === 'failed')
+    spy.mockRestore()
+    expect(el.run?.status).toBe('succeeded')
+    expect(el.adopted).toBe('late-b')
+    expect(server.runs.list(canvas.id).jobs.find((j) => j.nodeId === id)?.recovery).toMatchObject({
+      state: 'stored',
+      held: 'adopted_during_run',
+    })
+  })
+
+  it('没有人工改进采用时，重新生成照常替换当前结果', async () => {
+    const { canvas, doc } = await newCanvas()
+    mockSettings(server, { latencyMs: 0 })
+    const id = addNode(doc, 'plein/image', { params: { prompt: '第一次生成' } })
+    const first = server.runs.start(canvas.id, id, 'local')
+    expect(await server.runs.wait(first)).toBe('succeeded')
+    const adopted = doc.get(id)?.adopted
+    expect(adopted).toBeTruthy()
+    await until(() => !server.runs.isRunning(canvas.id, id))
+
+    const second = server.runs.start(canvas.id, id, 'local')
+    expect(await server.runs.wait(second)).toBe('succeeded')
+    expect(doc.get(id)?.adopted).not.toBe(adopted)
+    expect(doc.get(id)?.adopted).toBe(doc.get(id)?.results?.[0]?.id)
+  })
+
   it('旧任务重试不能在节点已有新成功任务后再次提交', async () => {
     const { canvas, doc } = await newCanvas()
     const id = addNode(doc, 'plein/image', { params: { prompt: '已完成的水杯' } })

@@ -158,3 +158,59 @@ it('删除元素时只清理指向它的绑定，其它节点的绑定不受影�
   expect(params).toHaveProperty(`referenceNameBinding:${encodeURIComponent('第三个.png')}:${other}`)
   f.doc.destroy()
 })
+
+it('断开同一来源的一个输出口只清理该口绑定，旧无端口绑定按类型区分', () => {
+  const doc = openDoc()
+  const source = createElement(doc, {
+    kind: 'node',
+    nodeType: 'plein/video',
+    name: '片段',
+    ports: {
+      inputs: [],
+      outputs: [
+        { id: 'video', label: '视频', type: 'video' },
+        { id: 'lastFrame', label: '尾帧', type: 'image' },
+      ],
+    },
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  const target = createElement(doc, {
+    kind: 'node',
+    nodeType: 'plein/video',
+    ports: {
+      inputs: [
+        { id: 'images', label: '图片', type: 'image', multiple: true },
+        { id: 'videos', label: '参考视频', type: 'video', multiple: true },
+      ],
+      outputs: [],
+    },
+    params: {},
+    x: 0,
+    y: 300,
+    w: 200,
+    h: 100,
+  })
+  const videoEdge = connect(doc, [source, 'video'], [target, 'videos'])!
+  const frameEdge = connect(doc, [source, 'lastFrame'], [target, 'images'])!
+  const videoKey = `referenceNameBinding:${encodeURIComponent('片段')}:${source}`
+  const frameKey = `referenceNameBinding:${encodeURIComponent('片段·尾帧')}:${source}`
+  const legacyKey = `referenceNameBinding:${encodeURIComponent('旧尾帧')}:${source}`
+  setParams(doc, target, {
+    [videoKey]: { type: 'video', assetId: 'vid', source, sourcePort: 'video' },
+    [frameKey]: { type: 'image', assetId: 'frame', source, sourcePort: 'lastFrame' },
+    [legacyKey]: { type: 'image', assetId: 'old-frame', source },
+  })
+  doc.undo.stopCapturing()
+  removeEdges(doc, [frameEdge.id])
+  expect(doc.get(target)?.params).toHaveProperty(videoKey)
+  expect(doc.get(target)?.params).not.toHaveProperty(frameKey)
+  // 旧绑定没有端口，按媒体类型归到尾帧这一路；视频绑定不受影响。
+  expect(doc.get(target)?.params).not.toHaveProperty(legacyKey)
+  doc.undo.stopCapturing()
+  removeEdges(doc, [videoEdge.id])
+  expect(doc.get(target)?.params).not.toHaveProperty(videoKey)
+  doc.destroy()
+})

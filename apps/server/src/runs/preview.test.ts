@@ -686,9 +686,24 @@ describe('实际输入预览', () => {
     const shot = addNode(doc, 'plein/image', { params: { prompt: '@测试角色 转身' } })
     expect(connect(doc, [up, 'front'], [shot, 'references'])).not.toBeNull()
     const input = await preview(server, id, shot)
+    // 普通输入也带实际输出口：同源不同口是不同的引用身份。
     expect(input.inputs.references).toEqual([
-      { type: 'image', assetId: asset('e'), source: up, resultId: 'front', runId: 'multi-output' },
-      { type: 'image', assetId: asset('f'), source: up, resultId: 'side', runId: 'multi-output' },
+      {
+        type: 'image',
+        assetId: asset('e'),
+        source: up,
+        sourcePort: 'front',
+        resultId: 'front',
+        runId: 'multi-output',
+      },
+      {
+        type: 'image',
+        assetId: asset('f'),
+        source: up,
+        sourcePort: 'side',
+        resultId: 'side',
+        runId: 'multi-output',
+      },
     ])
   })
 

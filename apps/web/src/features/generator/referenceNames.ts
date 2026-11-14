@@ -1,14 +1,13 @@
-import { type PleinDoc, setParam, setParams } from '@plein/doc'
+import { referenceAlias } from '@plein/capabilities'
+import { elementPorts, type PleinDoc, setParam, setParams } from '@plein/doc'
 import { boundReferenceTokens, referenceBindings, type ReferenceIdentity } from '@plein/plugin-sdk'
 
-/** 名称重复时按元素 id 消歧，顺序不随连线或结果变化。 */
+/**
+ * 名称重复时按元素 id 消歧，非默认输出口再加「·端口名」，
+ * 顺序不随连线、结果或插入顺序变化。
+ */
 export function referenceName(doc: PleinDoc, item: ReferenceIdentity) {
-  const source = item.source && doc.get(item.source)
-  const name = (source && source.name?.trim()) || '参考素材'
-  const peers = [...doc.elements()]
-    .filter((el) => (el.name?.trim() || '参考素材') === name)
-    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-  return peers.length > 1 ? `${name}#${peers.findIndex((el) => el.id === item.source) + 1}` : name
+  return referenceAlias(doc, item) ?? '参考素材'
 }
 
 export function bindReferenceName(doc: PleinDoc, nodeId: string, item: ReferenceIdentity) {
@@ -21,6 +20,7 @@ export function bindReferenceName(doc: PleinDoc, nodeId: string, item: Reference
       type: item.type,
       assetId: item.assetId,
       ...(item.source ? { source: item.source } : {}),
+      ...(item.sourcePort ? { sourcePort: item.sourcePort } : {}),
     },
   )
   return name
@@ -66,7 +66,10 @@ export function replaceReferenceName(
   nodeId: string,
   oldSource: string,
   item: ReferenceIdentity,
+  /** 被替换的那条连线读的是哪个输出口；旧绑定没记录端口时按媒体类型判断。 */
+  oldSourcePort?: string,
 ) {
+  const oldType = outputKind(doc, oldSource, oldSourcePort)
   const el = doc.get(nodeId)
   if (!el) return
   const bindings = referenceBindings(el.params)
@@ -90,31 +93,75 @@ export function replaceReferenceName(
   }
   let next = prompt
   for (const token of tokens.sort((a, b) => b.start - a.start)) {
-    if (bindings[token.name]?.source !== oldSource) continue
+    if (!bindingIsOutput(bindings[token.name], oldSource, oldSourcePort, oldType)) continue
     const name = bindReferenceName(doc, nodeId, item)
     next = next.slice(0, token.start) + `@${name}` + next.slice(token.end)
   }
   if (next !== prompt) setParam(doc, nodeId, 'prompt', next)
-  // 换掉来源后，旧来源的绑定就是残留数据：一起清掉，避免编号时又把它算进去。
-  clearSourceBindings(doc, nodeId, oldSource)
+  // 换掉来源后，旧来源这一路的绑定就是残留数据：一起清掉，同源其他输出口保留。
+  clearSourceBindings(doc, nodeId, oldSource, oldSourcePort)
 }
 
-/** 清掉指向某个来源元素的全部绑定（名称绑定、旧编号绑定都算）。 */
-export function clearSourceBindings(doc: PleinDoc, nodeId: string, source: string) {
+/** 清掉指向某个来源（或它某个输出口）的绑定（名称绑定、旧编号绑定都算）。 */
+export function clearSourceBindings(
+  doc: PleinDoc,
+  nodeId: string,
+  source: string,
+  sourcePort?: string,
+) {
   const el = doc.get(nodeId)
   if (!el?.params) return
+  const oldType = outputKind(doc, source, sourcePort)
+  const matches = (key: string, value: unknown) => {
+    if (bindingSource(key, value) !== source) return false
+    return bindingIsOutput(bindingOf(value), source, sourcePort, oldType)
+  }
   const patch: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(el.params)) {
     if (key === 'referenceBindings') continue
-    if (bindingSource(key, value) === source) patch[key] = undefined
+    if (matches(key, value)) patch[key] = undefined
   }
   const nested = el.params.referenceBindings
   if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
     const entries = Object.entries(nested as Record<string, unknown>)
-    const kept = entries.filter(([key, value]) => bindingSource(key, value) !== source)
+    const kept = entries.filter(([key, value]) => !matches(key, value))
     if (kept.length !== entries.length) patch.referenceBindings = Object.fromEntries(kept)
   }
   if (Object.keys(patch).length) setParams(doc, nodeId, patch)
+}
+
+/** 一条绑定是不是某个输出口：新绑定看 sourcePort，旧绑定按媒体类型区分同源不同口。 */
+function bindingIsOutput(
+  binding: ReferenceIdentity | undefined,
+  source: string,
+  sourcePort: string | undefined,
+  oldType: ReferenceIdentity['type'] | undefined,
+) {
+  if (!binding || binding.source !== source) return false
+  if (!sourcePort) return true
+  if (binding.sourcePort) return binding.sourcePort === sourcePort
+  return !oldType || binding.type === oldType
+}
+
+/** 输出口的媒体类型；来源或端口不存在时返回 undefined。 */
+function outputKind(doc: PleinDoc, source: string, sourcePort?: string) {
+  if (!sourcePort) return undefined
+  const el = doc.get(source)
+  const port = el ? elementPorts(el)?.outputs.find((item) => item.id === sourcePort) : undefined
+  const type = port?.type
+  return type === 'image' || type === 'video' || type === 'audio' ? type : undefined
+}
+
+function bindingOf(value: unknown): ReferenceIdentity | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const item = value as Partial<ReferenceIdentity>
+  if (item.type !== 'image' && item.type !== 'video' && item.type !== 'audio') return undefined
+  return {
+    type: item.type,
+    assetId: typeof item.assetId === 'string' ? item.assetId : '',
+    ...(typeof item.source === 'string' ? { source: item.source } : {}),
+    ...(typeof item.sourcePort === 'string' ? { sourcePort: item.sourcePort } : {}),
+  }
 }
 
 /** 一条绑定指向哪个来源元素；旧编号绑定从键名里取。 */

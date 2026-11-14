@@ -194,6 +194,152 @@ it('切镜保留未保存草稿，远端冲突禁止覆盖且只读不写', asyn
   expect(useCanvas.getState().shotWorkbench).toBeNull()
 })
 
+it('关闭与刷新后按画布恢复两镜草稿，应用与丢弃互不影响', async () => {
+  const { doc, board } = fixture()
+  const { user } = renderApp(<ShotWorkbench />)
+  let field = screen.getByRole('textbox', { name: '工作台画面描述' })
+  await user.clear(field)
+  await user.type(field, '第一镜本机草稿')
+  await user.click(screen.getByRole('button', { name: '下一镜' }))
+  field = screen.getByRole('textbox', { name: '工作台画面描述' })
+  await waitFor(() => expect(textValue(field)).toBe('镜头 2 原始描述'))
+  await user.clear(field)
+  await user.type(field, '第二镜本机草稿')
+  await user.click(screen.getByRole('button', { name: '关闭' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '镜头工作台' })).toBeNull())
+  act(() => useCanvas.setState({ shotWorkbench: { boardId: board, shotId: 'one' } }))
+  field = screen.getByRole('textbox', { name: '工作台画面描述' })
+  await waitFor(() => expect(textValue(field)).toBe('第一镜本机草稿'))
+  expect(screen.getByText('已恢复本机未保存草稿。')).toBeTruthy()
+  await user.click(screen.getByRole('button', { name: '保存本镜字段' }))
+  await waitFor(() =>
+    expect((doc.get(board)!.params!.shots as ReturnType<typeof rows>)[0]!.description).toBe(
+      '第一镜本机草稿',
+    ),
+  )
+  expect((doc.get(board)!.params!.shots as ReturnType<typeof rows>)[1]!.description).toBe(
+    '镜头 2 原始描述',
+  )
+  await user.click(screen.getByRole('button', { name: '下一镜' }))
+  field = screen.getByRole('textbox', { name: '工作台画面描述' })
+  await waitFor(() => expect(textValue(field)).toBe('第二镜本机草稿'))
+  await user.click(screen.getByRole('button', { name: '重新载入本镜' }))
+  await waitFor(() => expect(textValue(field)).toBe('镜头 2 原始描述'))
+  await user.click(screen.getByRole('button', { name: '上一镜' }))
+  await waitFor(() =>
+    expect(textValue(screen.getByRole('textbox', { name: '工作台画面描述' }))).toBe(
+      '第一镜本机草稿',
+    ),
+  )
+  expect(screen.queryByText('已恢复本机未保存草稿。')).toBeNull()
+  expect(doc.get(board)?.params?.shots).toEqual(
+    rows().map((shot, index) =>
+      index ? shot : { ...shot, description: '第一镜本机草稿', edited: true },
+    ),
+  )
+})
+
+it('同一分镜表在不同画布不串本机草稿', async () => {
+  const { board } = fixture()
+  const { user } = renderApp(<ShotWorkbench />)
+  const field = () => screen.getByRole('textbox', { name: '工作台画面描述' })
+  await user.clear(field())
+  await user.type(field(), '画布一草稿')
+  await user.click(screen.getByRole('button', { name: '关闭' }))
+  act(() =>
+    useCanvas.setState({
+      canvasId: 'canvas-two',
+      shotWorkbench: { boardId: board, shotId: 'one' },
+    }),
+  )
+  await waitFor(() => expect(textValue(field())).toBe('镜头 1 原始描述'))
+  act(() =>
+    useCanvas.setState({ canvasId: 'canvas', shotWorkbench: { boardId: board, shotId: 'one' } }),
+  )
+  await waitFor(() => expect(textValue(field())).toBe('画布一草稿'))
+})
+
+it('正式内容已变化时保留恢复的草稿并阻止直接保存', async () => {
+  const { doc, board } = fixture()
+  const { user } = renderApp(<ShotWorkbench />)
+  const field = () => screen.getByRole('textbox', { name: '工作台画面描述' })
+  await user.clear(field())
+  await user.type(field(), '待核对草稿')
+  await user.click(screen.getByRole('button', { name: '关闭' }))
+  act(() => {
+    setParam(
+      doc,
+      board,
+      'shots',
+      rows().map((shot, index) => (index ? shot : { ...shot, description: '远端新版本' })),
+    )
+    doc.flush()
+    useCanvas.setState({ shotWorkbench: { boardId: board, shotId: 'one' } })
+  })
+  await waitFor(() => expect(textValue(field())).toBe('待核对草稿'))
+  expect(screen.getByText(/镜头内容已有新版本/)).toBeTruthy()
+  expect((screen.getByRole('button', { name: '保存本镜字段' }) as HTMLButtonElement).disabled).toBe(
+    true,
+  )
+  await user.click(screen.getByRole('button', { name: '重新载入本镜' }))
+  await waitFor(() => expect(textValue(field())).toBe('远端新版本'))
+  expect((doc.get(board)!.params!.shots as ReturnType<typeof rows>)[0]!.description).toBe(
+    '远端新版本',
+  )
+})
+
+it('本机存不下时不假装保存，关闭前确认并保留编辑', async () => {
+  const { board } = fixture()
+  const { user } = renderApp(<ShotWorkbench />)
+  const field = () => screen.getByRole('textbox', { name: '工作台画面描述' })
+  const tooLong = 'a'.repeat(8_001)
+  fireEvent.change(field(), { target: { value: tooLong } })
+  await waitFor(() => expect(screen.getByText(/暂未存到本机/)).toBeTruthy())
+  await user.click(screen.getByRole('button', { name: '关闭' }))
+  expect(await screen.findByRole('dialog', { name: '草稿未保存' })).toBeTruthy()
+  await user.click(screen.getByRole('button', { name: '继续编辑' }))
+  expect(screen.getByRole('dialog', { name: '镜头工作台' })).toBeTruthy()
+  expect(textValue(field())).toBe(tooLong)
+  await user.click(screen.getByRole('button', { name: '关闭' }))
+  expect(await screen.findByRole('dialog', { name: '草稿未保存' })).toBeTruthy()
+  await user.click(screen.getByRole('button', { name: '仍然关闭' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '镜头工作台' })).toBeNull())
+  act(() => useCanvas.setState({ shotWorkbench: { boardId: board, shotId: 'one' } }))
+  await waitFor(() => expect(textValue(field())).toBe('镜头 1 原始描述'))
+  expect(screen.queryByText('已恢复本机未保存草稿。')).toBeNull()
+})
+
+it('一个镜头本机保存失败后切镜关窗仍确认，回到该镜如实显示未保存', async () => {
+  const { board } = fixture()
+  const setItem = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+    throw new Error('quota')
+  })
+  const { user } = renderApp(<ShotWorkbench />)
+  const field = () => screen.getByRole('textbox', { name: '工作台画面描述' })
+  await user.clear(field())
+  await user.type(field(), 'A 镜本机写不进去的草稿')
+  await waitFor(() => expect(screen.getByText(/暂未存到本机/)).toBeTruthy())
+  await user.click(screen.getByRole('button', { name: '下一镜' }))
+  await waitFor(() => expect(screen.getByText(/另有 1 个镜头的草稿未保存到本机/)).toBeTruthy())
+  await user.click(screen.getByRole('button', { name: '关闭' }))
+  expect(await screen.findByRole('dialog', { name: '草稿未保存' })).toBeTruthy()
+  await user.click(screen.getByRole('button', { name: '继续编辑' }))
+  await user.click(screen.getByRole('button', { name: '上一镜' }))
+  await waitFor(() => {
+    expect(textValue(field())).toBe('A 镜本机写不进去的草稿')
+    expect(screen.getByText(/暂未存到本机/)).toBeTruthy()
+    expect(screen.queryByText(/已暂存在本机/)).toBeNull()
+    expect(screen.queryByText('已恢复本机未保存草稿。')).toBeNull()
+  })
+  await user.click(screen.getByRole('button', { name: '关闭' }))
+  expect(await screen.findByRole('dialog', { name: '草稿未保存' })).toBeTruthy()
+  await user.click(screen.getByRole('button', { name: '仍然关闭' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '镜头工作台' })).toBeNull())
+  setItem.mockRestore()
+  act(() => useCanvas.setState({ shotWorkbench: { boardId: board, shotId: 'one' } }))
+  await waitFor(() => expect(textValue(field())).toBe('镜头 1 原始描述'))
+})
+
 it('旧 JobInfo 与 nodeInput 晚回不串入已切换镜头', async () => {
   const { doc } = fixture(true)
   let releaseInput!: () => void
@@ -207,7 +353,7 @@ it('旧 JobInfo 与 nodeInput 晚回不串入已切换镜头', async () => {
   const executions: string[] = []
   mockFetch((request) => {
     const path = new URL(request.url).pathname
-    if (request.method === 'GET' && path === '/api/canvases/canvas/nodes/video-one/input') {
+    if (request.method === 'POST' && path === '/api/canvases/canvas/nodes/video-one/input') {
       inputEntered()
       return inputGate.then(() => Response.json(prepared('video-one', '第一镜迟到的当前输入')))
     }
@@ -225,7 +371,7 @@ it('旧 JobInfo 与 nodeInput 晚回不串入已切换镜头', async () => {
         }),
       )
     }
-    if (request.method === 'GET' && path === '/api/canvases/canvas/nodes/video-two/input')
+    if (request.method === 'POST' && path === '/api/canvases/canvas/nodes/video-two/input')
       return Response.json(prepared('video-two', '第二镜当前输入'))
     if (request.method === 'POST' && path === '/api/canvases/canvas/jobs/latest')
       return Response.json({ jobs: [] })
@@ -256,7 +402,7 @@ function workbenchReads(doc: PleinDoc, reads: string[]) {
   mockFetch((request) => {
     const path = new URL(request.url).pathname
     const input = path.match(/^\/api\/canvases\/canvas\/nodes\/([^/]+)\/input$/)
-    if (request.method === 'GET' && input) {
+    if (request.method === 'POST' && input) {
       reads.push(input[1]!)
       return Response.json(prepared(input[1]!, String(doc.get(input[1]!)?.params?.prompt)))
     }

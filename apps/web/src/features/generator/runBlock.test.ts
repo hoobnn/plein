@@ -11,6 +11,7 @@ const base = {
   hasInput: false,
   stale: false,
   error: false,
+  syncPending: false,
 }
 
 describe('生成按钮的禁用原因', () => {
@@ -51,6 +52,12 @@ describe('生成按钮的禁用原因', () => {
     expect(runBlockReason({ ...base, requiresInput: true, hasInput: true, stale: true })).toBe(
       '实际输入已更新，正在重新准备…',
     )
+  })
+
+  it('本机改动还没同步到服务端时禁用，说明在等同步', () => {
+    const pending = { ...base, requiresInput: true, hasInput: true, stale: true, syncPending: true }
+    expect(runDisabled(pending)).toBe(true)
+    expect(runBlockReason(pending)).toBe('本机改动还没有同步到服务端，等同步完成后再生成')
   })
 
   it('读取实际输入失败时不锁死生成，用户还能提交', () => {

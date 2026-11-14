@@ -35,6 +35,7 @@ type JobPatch = Partial<
     | 'input'
     | 'expect'
     | 'frozen'
+    | 'adoption'
     | 'recovery'
     | 'error'
     | 'started_at'
@@ -65,6 +66,8 @@ export class JobStore {
     nodeType: string
     /** 批准的计划（JobExpect JSON） */
     expect?: string
+    /** 受理时节点采用的候选（JSON：null 或结果 id） */
+    adoption?: string
   }) {
     this.db
       .insert(jobs)
@@ -76,6 +79,7 @@ export class JobStore {
         group_id: job.groupId ?? null,
         node_type: job.nodeType,
         expect: job.expect ?? null,
+        adoption: job.adoption ?? null,
         status: 'queued',
         created_at: Date.now(),
       })

@@ -1,5 +1,5 @@
 import { Camera, type Engine, Scene } from '@plein/canvas-core'
-import { createElement, type PleinDoc } from '@plein/doc'
+import { connect, createElement, setParam, type PleinDoc } from '@plein/doc'
 import { openDoc } from '@plein/doc/testing'
 import type { Asset } from '@plein/protocol'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
@@ -70,6 +70,94 @@ it('上传最多三份并发，乱序返回仍按文件顺序放置，整批只�
   doc.undo.redo()
   expect(result.created.map((id) => doc.worldRect(id))).toEqual(rects)
 })
+it('keepCapturing 让调用方把导入和后续接线并成一步撤销', async () => {
+  const { doc, engine } = setup()
+  vi.spyOn(api, 'upload').mockImplementation(async (file) => asset(file.name))
+  const target = createElement(doc, {
+    kind: 'node',
+    nodeType: 'plein/video',
+    x: 0,
+    y: 0,
+    w: 200,
+    h: 100,
+    ports: {
+      inputs: [{ id: 'images', label: '图片', type: 'image', multiple: true }],
+      outputs: [],
+    },
+    params: {},
+  })
+  doc.undo.stopCapturing()
+  engine.doc.undo.stopCapturing()
+  const result = await importFiles(engine, [image('a.png')], { x: 100, y: 300 }, undefined, {
+    select: false,
+    keepCapturing: true,
+  })
+  connect(doc, [result.created[0]!, 'image'], [target, 'images'])
+  doc.undo.stopCapturing()
+  doc.flush()
+  expect(doc.get(target)).toBeTruthy()
+  doc.undo.undo()
+  doc.flush()
+  // 导入与接线一起撤销，之前就存在的目标节点保留。
+  expect(result.created.map((id) => doc.get(id))).toEqual([undefined])
+  expect(doc.get(target)).toBeTruthy()
+  expect(
+    [...doc.edges()].filter((edge) => edge.to[0] === target && edge.to[1] === 'images'),
+  ).toHaveLength(0)
+})
+
+it('上传等待期间的正文编辑不与导入、接线一起撤销', async () => {
+  const { doc, engine } = setup()
+  const target = createElement(doc, {
+    kind: 'node',
+    nodeType: 'plein/video',
+    x: 0,
+    y: 0,
+    w: 200,
+    h: 100,
+    ports: {
+      inputs: [{ id: 'images', label: '图片', type: 'image', multiple: true }],
+      outputs: [],
+    },
+    params: { prompt: 'before' },
+  })
+  let release!: () => void
+  vi.spyOn(api, 'upload').mockImplementation(
+    (file) =>
+      new Promise((resolve) => {
+        release = () => resolve(asset(file.name))
+      }),
+  )
+  doc.undo.stopCapturing()
+  const pending = importFiles(engine, [image('a.png')], { x: 100, y: 300 }, undefined, {
+    select: false,
+    keepCapturing: true,
+  })
+  // 上传还没返回时用户改了另一个提示词。
+  setParam(doc, target, 'prompt', 'edit-while-upload')
+  doc.flush()
+  release()
+  const result = await pending
+  connect(doc, [result.created[0]!, 'image'], [target, 'images'])
+  doc.undo.stopCapturing()
+  doc.flush()
+  expect(doc.get(result.created[0]!)).toBeTruthy()
+
+  // 第一次撤销：只回退这批素材与接线，上传期间的编辑保留。
+  doc.undo.undo()
+  doc.flush()
+  expect(doc.get(result.created[0]!)).toBeUndefined()
+  expect(
+    [...doc.edges()].filter((edge) => edge.to[0] === target && edge.to[1] === 'images'),
+  ).toHaveLength(0)
+  expect(doc.get(target)?.params?.prompt).toBe('edit-while-upload')
+
+  // 第二次撤销才回退那段编辑。
+  doc.undo.undo()
+  doc.flush()
+  expect(doc.get(target)?.params?.prompt).toBe('before')
+})
+
 it('混合导入保留正文和成功媒体，逐项报告失败与不支持格式，后台模式不改选择', async () => {
   const { doc, engine, select } = setup()
   const text = Array.from({ length: 30 }, (_, i) => `正文 ${i}`).join('\n')

@@ -48,7 +48,17 @@ describe('图片精修前端合同', () => {
     } as unknown as CanvasElement
     const source = { id: 'source', kind: 'image', assetId: 'a'.repeat(64) } as CanvasElement
     const ups = new Map<string, Upstream[]>([
-      ['image', [{ edgeId: 'edge', source, value: { type: 'image', assetId: source.assetId! } }]],
+      [
+        'image',
+        [
+          {
+            edgeId: 'edge',
+            source,
+            sourcePort: 'image',
+            value: { type: 'image', assetId: source.assetId! },
+          },
+        ],
+      ],
     ])
     expect(validate(node, el, ups, catalog)).toBeNull()
     expect(validate(node, el, new Map(), catalog)).toBe('需要连入原图')

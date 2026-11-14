@@ -236,6 +236,8 @@ export function placeElement(
 export interface Upstream {
   edgeId: string
   source: CanvasElement
+  /** 这条连线读的上游输出口（如视频节点的 video / lastFrame）。 */
+  sourcePort: string
   /** 连线读取的上游输出标签，用于说明当前候选缺少哪个输出。 */
   outputLabel?: string
   /** 上游当前能提供的值；为空表示没有生效结果（未生成或待采用） */
@@ -281,6 +283,7 @@ export function upstreams(
     list.push({
       edgeId: e.id,
       source,
+      sourcePort: e.from[1],
       value,
       outputLabel: source.ports?.outputs.find((p) => p.id === e.from[1])?.label ?? e.from[1],
     })

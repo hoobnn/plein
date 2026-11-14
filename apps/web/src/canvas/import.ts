@@ -101,7 +101,7 @@ export async function importFiles(
   files: File[],
   at: { x: number; y: number },
   onProgress?: (done: number, total: number) => void,
-  options: { signal?: AbortSignal; select?: boolean } = {},
+  options: { signal?: AbortSignal; select?: boolean; keepCapturing?: boolean } = {},
 ): Promise<ImportResult> {
   const { signal } = options
   signal?.throwIfAborted()
@@ -143,13 +143,22 @@ export async function importFiles(
     list.push({ ...input, x, y: at.y - input.h / 2 } as NewElement)
     x += input.w + GAP
   }
-  const created = placeImports(engine, list)
+  // keepCapturing 也要等网络上传完成后再开步：上传期间用户改的正文不能和这批素材一起撤销。
+  if (options.keepCapturing) engine.doc.undo.stopCapturing()
+  const created = placeImports(engine, list, { keepCapturing: options.keepCapturing })
   if (created.length && options.select !== false) engine.selection.set(created)
   return { created, skipped }
 }
 
-/** 按世界坐标布局整批避让并归组，保留相对位置与一步撤销。 */
-export function placeImports(engine: Engine, list: NewElement[]): string[] {
+/**
+ * 按世界坐标布局整批避让并归组，保留相对位置与一步撤销。
+ * keepCapturing：调用方已经开了撤销步骤时不要再分段，让导入和后续接线合成一步。
+ */
+export function placeImports(
+  engine: Engine,
+  list: NewElement[],
+  opts: { keepCapturing?: boolean } = {},
+): string[] {
   if (!list.length) return []
   const x0 = Math.min(...list.map((el) => el.x))
   const y0 = Math.min(...list.map((el) => el.y))
@@ -171,9 +180,9 @@ export function placeImports(engine: Engine, list: NewElement[]): string[] {
       y: Math.round(y - origin.y),
     } as NewElement
   })
-  engine.doc.undo.stopCapturing()
+  if (!opts.keepCapturing) engine.doc.undo.stopCapturing()
   const created = createElements(engine.doc, placed)
-  engine.doc.undo.stopCapturing()
+  if (!opts.keepCapturing) engine.doc.undo.stopCapturing()
   return created
 }
 

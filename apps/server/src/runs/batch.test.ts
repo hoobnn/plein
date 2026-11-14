@@ -1,4 +1,13 @@
-import { connect, currentResult, removeEdges, setParams, type PleinDoc } from '@plein/doc'
+import {
+  addResults,
+  adoptResult,
+  connect,
+  createDoc,
+  currentResult,
+  removeEdges,
+  setParams,
+  type PleinDoc,
+} from '@plein/doc'
 import { ProviderError } from '@plein/plugin-sdk'
 import { mockProvider } from '@plein/providers'
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
@@ -402,4 +411,233 @@ describe('批量出分镜图', () => {
     const again = server.runs.runBatch(id, shots[0]!, shots, 'local')
     expect((await done(again.groupId)).summary).toMatchObject({ succeeded: 2, cached: 1 })
   }, 30_000)
+})
+
+describe('批次批准时的采用基线', () => {
+  /** 上游要重新生成、下游要等它：同时准备两个已有候选并采用 A */
+  function waitingPair(doc: PleinDoc) {
+    const up = addNode(doc, 'plein/image', { params: { prompt: '批量上游' } })
+    const down = addNode(doc, 'plein/image', { params: { prompt: '批量下游' }, x: 300 })
+    connect(doc, [up, 'images'], [down, 'references'])
+    addResults(
+      doc,
+      down,
+      ['a', 'b'].map((k, i) => ({
+        id: `cand-${k}`,
+        runId: `old-${k}`,
+        port: 'images',
+        at: i + 1,
+        value: { type: 'image', assetId: k.repeat(64) },
+      })),
+      { adopt: false },
+    )
+    adoptResult(doc, down, 'cand-a')
+    doc.mutable(down)!.set('adoptionRevision', 'rev-a')
+    return { up, down }
+  }
+
+  async function awaiting(
+    server: Server,
+    canvasId: string,
+    groupId: string,
+    up: string,
+    down: string,
+  ) {
+    await until(() => {
+      const item = server.runs.store.batchItem(groupId, down)
+      return item?.outcome === 'pending' && !item.job_id && server.runs.isRunning(canvasId, up)
+    })
+  }
+
+  it('等待上游期间改选 B：批准基线不变，晚到结果只进候选', async () => {
+    const { server } = await bootServer()
+    mockSettings(server, { latencyMs: 350 })
+    const { id, doc } = await createCanvas(server)
+    const { up, down } = waitingPair(doc)
+    const group = server.runs.runFlow(id, down, 'local', { scope: 'upstream', force: true })
+    await awaiting(server, id, group.groupId, up, down)
+    // 快照里已经记下批准时的采用身份
+    expect(JSON.parse(server.runs.store.batchItem(group.groupId, down)!.adoption!)).toEqual({
+      result: 'cand-a',
+      revision: 'rev-a',
+    })
+
+    adoptResult(doc, down, 'cand-b')
+    doc.mutable(down)!.set('adoptionRevision', 'rev-b')
+    await done(server, group.groupId)
+    const item = server.runs.store.batchItem(group.groupId, down)!
+    expect(item.outcome).toBe('succeeded')
+    expect(doc.get(down)?.adopted).toBe('cand-b')
+    const job = server.runs.store.get(item.job_id!)!
+    expect(JSON.parse(job.recovery!).held).toBe('adopted_during_run')
+    // 系统写入不改人工采用版本
+    expect(doc.mutable(down)!.get('adoptionRevision')).toBe('rev-b')
+  })
+
+  it('等待期间 A→B→A（含撤销回退）也保住人工选择', async () => {
+    const { server } = await bootServer()
+    mockSettings(server, { latencyMs: 350 })
+    const { id, doc } = await createCanvas(server)
+    const { up, down } = waitingPair(doc)
+    const group = server.runs.runFlow(id, down, 'local', { scope: 'upstream', force: true })
+    await awaiting(server, id, group.groupId, up, down)
+
+    adoptResult(doc, down, 'cand-b')
+    doc.mutable(down)!.set('adoptionRevision', 'rev-b')
+    adoptResult(doc, down, 'cand-a')
+    doc.mutable(down)!.set('adoptionRevision', 'rev-c')
+    await done(server, group.groupId)
+    const item = server.runs.store.batchItem(group.groupId, down)!
+    expect(item.outcome).toBe('succeeded')
+    expect(doc.get(down)?.adopted).toBe('cand-a')
+    expect(JSON.parse(server.runs.store.get(item.job_id!)!.recovery!).held).toBe(
+      'adopted_during_run',
+    )
+  })
+
+  it('没人动过采用时，批次结束照常自动采用新结果', async () => {
+    const { server } = await bootServer()
+    mockSettings(server, { latencyMs: 200 })
+    const { id, doc } = await createCanvas(server)
+    const { down } = waitingPair(doc)
+    const group = server.runs.runFlow(id, down, 'local', { scope: 'upstream', force: true })
+    await done(server, group.groupId)
+    const item = server.runs.store.batchItem(group.groupId, down)!
+    expect(item.outcome).toBe('succeeded')
+    expect(doc.get(down)?.adopted).toBe(item.result_id)
+    expect(doc.get(down)?.adopted).not.toBe('cand-a')
+  })
+
+  it('旧批次没有采用基线时仍按开始时刻冻结，兼容原有行为', async () => {
+    const { server } = await bootServer()
+    mockSettings(server, { latencyMs: 350 })
+    const { id, doc } = await createCanvas(server)
+    const { up, down } = waitingPair(doc)
+    const group = server.runs.runFlow(id, down, 'local', { scope: 'upstream', force: true })
+    await awaiting(server, id, group.groupId, up, down)
+    // 模拟升级前的批次记录
+    server.db.$client
+      .prepare('UPDATE batch_items SET adoption = NULL WHERE group_id = ? AND node_id = ?')
+      .run(group.groupId, down)
+    adoptResult(doc, down, 'cand-b')
+    doc.mutable(down)!.set('adoptionRevision', 'rev-b')
+    await done(server, group.groupId)
+    const item = server.runs.store.batchItem(group.groupId, down)!
+    // 没有基线：按 start 这一刻的采用冻结，新结果自动采用（旧行为）
+    expect(doc.get(down)?.adopted).toBe(item.result_id)
+  })
+
+  it('重启后继续的批次仍按批准时的采用基线判断', async () => {
+    const first = await bootServer()
+    mockSettings(first.server, { latencyMs: 300 })
+    const { id, doc } = await createCanvas(first.server)
+    const { up, down } = waitingPair(doc)
+    const group = first.server.runs.runFlow(id, down, 'local', { scope: 'upstream', force: true })
+    await awaiting(first.server, id, group.groupId, up, down)
+    adoptResult(doc, down, 'cand-b')
+    doc.mutable(down)!.set('adoptionRevision', 'rev-b')
+    expect(first.server.rooms.get(id).persistNow()).toBe(true)
+    await first.close()
+
+    const second = await bootServer({ dataDir: first.dataDir })
+    mockSettings(second.server, { latencyMs: 200 })
+    const reopened = createDoc(second.server.rooms.get(id).doc, { schedule: () => {} })
+    await until(
+      () => second.server.runs.groupState(group.groupId, 'local')?.status !== 'running',
+      15_000,
+    )
+    const item = second.server.runs.store.batchItem(group.groupId, down)!
+    expect(item.outcome).toBe('succeeded')
+    expect(reopened.get(down)?.adopted).toBe('cand-b')
+    expect(JSON.parse(second.server.runs.store.get(item.job_id!)!.recovery!).held).toBe(
+      'adopted_during_run',
+    )
+  })
+
+  it('缓存候选与人工采用不一致时标记需审，不让下游拿到未采用的候选', async () => {
+    const { server } = await bootServer()
+    mockSettings(server, { latencyMs: 0 })
+    const { id, doc } = await createCanvas(server)
+    const up = addNode(doc, 'plein/image', { params: { prompt: '缓存候选与采用' } })
+    const down = addNode(doc, 'plein/image', { params: { prompt: '下游要等上游' }, x: 300 })
+    connect(doc, [up, 'images'], [down, 'references'])
+    addResults(doc, up, [
+      {
+        id: 'cached-a',
+        runId: 'run-a',
+        port: 'images',
+        at: 1,
+        value: { type: 'image', assetId: 'a'.repeat(64) },
+      },
+      {
+        id: 'cached-b',
+        runId: 'run-b',
+        port: 'images',
+        at: 2,
+        value: { type: 'image', assetId: 'b'.repeat(64) },
+      },
+    ])
+    adoptResult(doc, up, 'cached-a')
+    const submit = vi.spyOn(mockProvider, 'submit')
+
+    const insert = server.runs.store.insertBatchItems.bind(server.runs.store)
+    vi.spyOn(server.runs.store, 'insertBatchItems').mockImplementation((rows) => {
+      insert(rows)
+      // 快照落库之后、目标开始之前：用户改用了另一个候选
+      adoptResult(doc, up, 'cached-b')
+    })
+    vi.spyOn(server.runs, 'isFresh').mockResolvedValue(false)
+    vi.spyOn(server.runs, 'isKept').mockResolvedValue(false)
+    vi.spyOn(server.runs, 'cachedCandidate').mockImplementation((el) =>
+      el.id === up ? 'auto-hit' : undefined,
+    )
+    const group = server.runs.runImpact(id, 'local', { nodes: [up, down], force: false })
+    await done(server, group.groupId)
+
+    const item = server.runs.store.batchItem(group.groupId, up)!
+    // 没有沿用、也没有采用：批次明确标记需审，而不是登记一个没采用的候选结果
+    expect(item.outcome).toBe('review')
+    expect(item.result_id).toBeNull()
+    expect(item.reason).toContain('缓存候选与当前采用不一致')
+    expect(doc.get(up)?.adopted).toBe('cached-b')
+    // 下游不能因为上游的「自动结果」获得提交授权
+    const downstream = server.runs.store.batchItem(group.groupId, down)!
+    expect(submit).not.toHaveBeenCalled()
+    expect(downstream.outcome).not.toBe('succeeded')
+    expect(downstream.outcome).not.toBe('cached')
+    expect(downstream.result_id ?? null).not.toBe('auto-hit')
+  })
+
+  it('没人改过采用时，缓存候选照常沿用并登记为批次结果', async () => {
+    const { server } = await bootServer()
+    mockSettings(server, { latencyMs: 0 })
+    const { id, doc } = await createCanvas(server)
+    const node = addNode(doc, 'plein/image', { params: { prompt: '缓存候选照常沿用' } })
+    addResults(doc, node, [
+      {
+        id: 'keep-a',
+        runId: 'run-a',
+        port: 'images',
+        at: 1,
+        value: { type: 'image', assetId: 'a'.repeat(64) },
+      },
+      {
+        id: 'keep-b',
+        runId: 'run-b',
+        port: 'images',
+        at: 2,
+        value: { type: 'image', assetId: 'b'.repeat(64) },
+      },
+    ])
+    adoptResult(doc, node, 'keep-a')
+    vi.spyOn(server.runs, 'isFresh').mockResolvedValue(false)
+    vi.spyOn(server.runs, 'isKept').mockResolvedValue(false)
+    vi.spyOn(server.runs, 'cachedCandidate').mockReturnValue('keep-b')
+    const group = server.runs.runImpact(id, 'local', { nodes: [node], force: false })
+    await done(server, group.groupId)
+    const item = server.runs.store.batchItem(group.groupId, node)!
+    expect(item.outcome).toBe('cached')
+    expect(item.result_id).toBe('keep-b')
+    expect(doc.get(node)?.adopted).toBe('keep-b')
+  })
 })

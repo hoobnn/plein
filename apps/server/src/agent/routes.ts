@@ -8,10 +8,11 @@ import {
   UpdateAgentSession,
   ToggleAgentSkill,
 } from '@plein/protocol'
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { AuthEnv } from '../auth'
 import { ownsCanvas } from '../storage/canvases'
+import { NodeRunError } from '../plugins/provider-protocol'
 import type { DB } from '../storage/db'
 import { progressTokenOf, type RequestContext } from './mcp'
 import { cliDetails, isCliKind, updateCli } from './cli'
@@ -27,8 +28,26 @@ const STATUS: Record<AgentError['code'], 400 | 403 | 404 | 409 | 503> = {
   invalid_input: 400,
 }
 
+/** 浏览器文档还没同步：明确拒绝，不要让它当成普通参数错误 */
+function syncError(c: Context<AuthEnv>, err: NodeRunError) {
+  return c.json(
+    { error: err.code, message: err.message },
+    err.code === 'sync_pending' || err.code === 'sync_invalid' ? 409 : 400,
+  )
+}
+
 /** 智能体会话接口（需登录态，走 /api 鉴权） */
-export function agentRoutes(db: DB, agents: AgentSessions) {
+export function agentRoutes(
+  db: DB,
+  agents: AgentSessions,
+  /** 浏览器把本机文档同步凭据带上来时，服务端必须已经收到那一版才继续 */
+  assertSynced?: (canvasId: string, credential?: string) => void,
+) {
+  const checkSynced = (id: string, owner: string, credential?: string) => {
+    if (!credential || !assertSynced) return
+    const session = agents.get(id, owner)
+    if (session) assertSynced(session.canvasId, credential)
+  }
   const notFound = { error: 'not_found', message: '会话不存在' }
   const forbidden = { error: 'forbidden', message: '只读成员不能使用智能体' }
   const disabled = { error: 'disabled', message: '本机 AI 只在本机模式可用' }
@@ -148,6 +167,7 @@ export function agentRoutes(db: DB, agents: AgentSessions) {
         const body = SendAgentMessage.safeParse(await c.req.json().catch(() => null))
         if (!body.success) return c.json({ error: 'invalid_input', message: '消息不能为空' }, 400)
         try {
+          checkSynced(c.req.param('id'), p.id, body.data.expectSnapshot)
           await agents.send(
             c.req.param('id'),
             p.id,
@@ -160,6 +180,7 @@ export function agentRoutes(db: DB, agents: AgentSessions) {
           )
           return c.body(null, 202)
         } catch (err) {
+          if (err instanceof NodeRunError) return syncError(c, err)
           if (!(err instanceof AgentError)) throw err
           return c.json({ error: err.code, message: err.message }, STATUS[err.code])
         }
@@ -177,6 +198,8 @@ export function agentRoutes(db: DB, agents: AgentSessions) {
         if (!body.success) return c.json({ error: 'invalid_input', message: '参数不对' }, 400)
         try {
           const { allow, scope, only, skip } = body.data
+          // 拒绝、停止不受同步状态影响；只有会真的开始执行时才要求服务端收到本机文档
+          if (allow) checkSynced(c.req.param('id'), p.id, body.data.expectSnapshot)
           agents.decide(
             c.req.param('id'),
             p.id,
@@ -186,6 +209,7 @@ export function agentRoutes(db: DB, agents: AgentSessions) {
           )
           return c.body(null, 204)
         } catch (err) {
+          if (err instanceof NodeRunError) return syncError(c, err)
           if (!(err instanceof AgentError)) throw err
           return c.json({ error: err.code, message: err.message }, STATUS[err.code])
         }
