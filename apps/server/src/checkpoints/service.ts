@@ -33,6 +33,7 @@ import type { Rooms } from '../sync/rooms'
 import { checkpointAssetIds, type CheckpointRow } from './archive'
 import { CheckpointStore } from './store'
 import { compositionReferences } from '../media-index/references'
+import { includesSnapshot } from '../sync/snapshot'
 
 const id = (prefix: string) => `${prefix}_${randomBytes(12).toString('base64url')}`
 const sha = (state: Uint8Array) => createHash('sha256').update(state).digest('hex')
@@ -47,12 +48,7 @@ export class CheckpointError extends Error {
 }
 
 /** 增量时钟和全部删除区间都已收到才可抓取；单独 state vector 会漏掉纯删除。 */
-export function includesSnapshot(actual: Y.Snapshot, expected: Y.Snapshot) {
-  return (
-    [...expected.sv].every(([client, clock]) => (actual.sv.get(client) ?? 0) >= clock) &&
-    Y.equalDeleteSets(actual.ds, Y.mergeDeleteSets([actual.ds, expected.ds]))
-  )
-}
+export { includesSnapshot } from '../sync/snapshot'
 
 export function createCheckpointService(deps: {
   db: DB

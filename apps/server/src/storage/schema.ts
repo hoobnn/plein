@@ -127,6 +127,11 @@ export const jobs = sqliteTable(
     frozen: text(),
     /** 恢复状态（JobRecovery JSON）：失败在哪一步、谁取消的、产物是否待采用 */
     recovery: text(),
+    /**
+     * 受理时节点采用的候选（JSON：`null` 表示还没采用，字符串是结果 id）。
+     * 生成期间用户换了采用项，晚到的结果只进候选；旧任务没有这一列，按未记录处理。
+     */
+    adoption: text(),
     error: text(),
     created_at: integer().notNull(),
     started_at: integer(),

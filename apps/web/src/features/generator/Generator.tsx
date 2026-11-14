@@ -43,6 +43,8 @@ import { composingKey } from './composingKey'
 import { NameField } from './NameField'
 import { PromptBox } from './PromptBox'
 import { runBlockReason, runDisabled as runDisabledState } from './runBlock'
+import { planPendingRun, type PendingRunIntent } from './pendingRun'
+import { previewInputKey } from './previewKey'
 import { PromptTools } from './PromptTools'
 import { RecipeLibrary } from './RecipeLibrary'
 import { CharacterImageArchiveButton } from '../library/ArchiveCharacterImage'
@@ -391,6 +393,7 @@ export function GeneratorPanel({
     hasInput: !!input.data?.inputHash,
     stale: input.stale,
     error: !!input.error,
+    syncPending: input.syncPending,
   }
   const blockReason = runBlockReason(blockInput)
   const runDisabled = runDisabledState(blockInput)
@@ -398,7 +401,9 @@ export function GeneratorPanel({
   const inputWaiting =
     !running &&
     !problem &&
-    (input.stale || (requiresInput && !input.loading && !input.data?.inputHash))
+    (input.syncPending ||
+      input.stale ||
+      (requiresInput && !input.loading && !input.data?.inputHash))
 
   // 双击节点、套用预设后聚焦提示词；有【占位】时选中第一个，直接打字替换
   useEffect(() => {
@@ -492,6 +497,8 @@ export function GeneratorPanel({
     }
     // 带上用户看到的实际输入：提交时输入已经变了就不运行，换成新的预览
     if (problem) return false
+    // 本机改动还没到服务端：服务端会拒绝，也不该把本机的输入当成已提交的输入
+    if (input.syncPending) return false
     // 实际输入还在准备或已经过期：这时提交会被服务端判成输入已变，
     // 白跑一次还把这次生成丢掉。等新的实际输入备好再提交。
     // 刷新失败除外：这时拿不到新的实际输入，锁死生成会让用户动不了，
@@ -508,32 +515,61 @@ export function GeneratorPanel({
     return true
   }
 
-  // 按钮或快捷键比实际输入备好更早触发：先记下这次生成，备好后照常提交，
-  // 不能像以前那样静默丢掉这次生成。
-  const pendingRun = useRef(false)
+  // 按钮或快捷键比实际输入备好更早触发：记下这次生成，绑定点击时的输入，
+  // 备好后只有输入没变才提交。用户随后改了输入，那次点击就不再算数。
+  const [intent, setIntent] = useState<PendingRunIntent | null>(null)
+  const [intentNote, setIntentNote] = useState<string | null>(null)
+  const intentNode = { canvasId, nodeId: el.id }
+  // 每次渲染后按最新状态判一次：这里读的值很多（输入摘要、加载、过期、错误、运行中），
+  // 列全依赖等于每次渲染都跑；记录下来的意图只在满足条件时才提交或作废。
+  // oxlint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (!pendingRun.current) return
-    if (input.loading || (input.stale && !input.error)) return
-    // 调模型的节点要等实际输入备好；执行器节点没有也照样能生成。
-    if (requiresInput && !input.data?.inputHash) return
-    // 已经有任务在跑时不取消它：这次生成等任务结束再提交
-    if (running) return
-    pendingRun.current = false
-    run()
+    const decision = planPendingRun({
+      intent,
+      canvasId,
+      nodeId: el.id,
+      key: input.inputKey,
+      loading: input.loading,
+      stale: input.stale,
+      syncPending: input.syncPending,
+      error: !!input.error,
+      hasInput: !!input.data?.inputHash,
+      requiresInput,
+      problem,
+      running,
+    })
+    if (decision.kind === 'submit') {
+      if (run()) {
+        setIntent(null)
+        setIntentNote(null)
+      }
+    } else if (decision.kind === 'cancel') {
+      setIntent(null)
+      setIntentNote(decision.reason)
+    }
   })
+  // 换节点 / 换画布后旧的回执不能补提
+  useEffect(() => {
+    setIntent(null)
+    setIntentNote(null)
+  }, [canvasId, el.id])
 
-  /** 输入还在准备时按下：记下来等它备好，不用让用户再点一次 */
+  /** 输入还在准备时按下：记下这一次，等它备好、且输入没变时再提交 */
   const requestRun = () => {
-    // 实际输入还在准备或正在刷新：先记下，等拿到这份输入再提交，
-    // 否则会拿着上一版的哈希提交，被服务端判成输入已变；
-    // 这次也不能先提交一遍：刷新完再提交会多跑一次。
-    if (
-      !running &&
-      (input.loading || (input.stale && !input.error) || (requiresInput && !input.data?.inputHash))
+    if (run()) {
+      setIntent(null)
+      setIntentNote(null)
+      return
+    }
+    if (canceling || awaitingAcceptance || running || problem || input.syncPending) return
+    if (!input.loading && !input.stale && !(requiresInput && !input.data?.inputHash)) return
+    // 已经记着同一个节点的这次生成：重复点击不叠加成两次
+    setIntent((current) =>
+      current?.canvasId === intentNode.canvasId && current.nodeId === el.id
+        ? current
+        : { ...intentNode, key: previewInputKey(engine, el.id) },
     )
-      pendingRun.current = true
-    // 这一步已经提交过了就别再记着：输入刷新完再补一次会重复生成。
-    if (run()) pendingRun.current = false
+    setIntentNote('已记下这次生成，实际输入准备好后自动提交。')
   }
 
   return (
@@ -656,6 +692,7 @@ export function GeneratorPanel({
               data={input.data}
               loading={input.loading}
               error={input.error}
+              syncPending={input.syncPending}
               onRetry={input.retry}
             />
           </div>
@@ -779,6 +816,11 @@ export function GeneratorPanel({
           {!canceling && !awaitingAcceptance && inputWaiting && (
             <p role="status" className="text-xs text-ink-muted">
               {blockReason}
+            </p>
+          )}
+          {intentNote && !inputWaiting && (
+            <p role="status" className="text-xs text-ink-muted">
+              {intentNote}
             </p>
           )}
         </footer>

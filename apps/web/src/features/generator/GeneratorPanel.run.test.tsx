@@ -4,7 +4,7 @@ import { createElement, writeRun, type PleinDoc } from '@plein/doc'
 import { openDoc } from '@plein/doc/testing'
 import { corePlugin } from '@plein/nodes'
 import { describeNode } from '@plein/plugin-sdk'
-import type { Catalog } from '@plein/protocol'
+import type { Catalog, PreparedInput } from '@plein/protocol'
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import { useDocVersion } from '../../canvas/hooks'
 import { useCancelRequests } from '../runs/cancelRequests'
@@ -286,6 +286,243 @@ describe('生成受理等待与取消', () => {
     })
     await waitFor(() => expect(calls).toHaveLength(1))
   })
+})
+
+const promptBox = () => screen.getByRole('textbox', { name: '提示词' })
+const typePrompt = (doc: PleinDoc, value: string) => {
+  fireEvent.change(promptBox(), { target: { value } })
+  // 测试文档的 schedule 是空操作：显式 flush 才通知订阅者
+  act(() => doc.flush())
+}
+
+interface DeferredPreview {
+  prompt: string
+  signal: AbortSignal
+  resolve(input: PreparedInput): void
+}
+
+/** 预览请求由用例控制返回顺序；运行请求只记账 */
+function servePreviews(id: string, doc: PleinDoc) {
+  const runs: Array<Record<string, unknown>> = []
+  const previews: DeferredPreview[] = []
+  const fetch = mockFetch(async (request) => {
+    const path = new URL(request.url).pathname
+    if (request.method === 'POST' && path.endsWith('/run')) {
+      runs.push(JSON.parse(await request.text()) as never)
+      return Response.json({ runId: 'run-1' }, { status: 202 })
+    }
+    if (request.method === 'POST' && path.endsWith('/input'))
+      return new Promise<Response>((resolve) =>
+        previews.push({
+          prompt: String(doc.get(id)?.params?.prompt ?? ''),
+          signal: request.signal,
+          resolve: (input) => resolve(Response.json(input)),
+        }),
+      )
+    return undefined
+  })
+  // 被新一次预览取代的请求仍留在数组里，但已经取消
+  const live = () => previews.filter((preview) => !preview.signal.aborted)
+  return { fetch, runs, live }
+}
+
+const readyInput = (nodeId: string, prompt: string, inputHash: string) => ({
+  v: 1,
+  nodeId,
+  nodeType: 'plein/image',
+  preparedAt: 1,
+  status: 'ready',
+  inputHash,
+  inputs: {},
+  params: {},
+  prompt,
+  refs: [],
+  blocked: [],
+  notices: [],
+  media: [],
+  texts: [],
+})
+
+describe('等待预览期间的运行授权', () => {
+  it('首次预览还没回来时点击，改成新输入后原授权作废；重新确认只提交一次', async () => {
+    const { id, engine, doc } = setup()
+    const { runs, live } = servePreviews(id, doc)
+    renderPanel(id, engine)
+    // 首次读取立即发起，还没有结果：按钮可用
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(live().map((p) => p.prompt)).toEqual(['透明水杯'])
+    expect((runButton() as HTMLButtonElement).disabled).toBe(false)
+
+    // 点击时授权的是「透明水杯」这一版
+    await act(async () => {
+      runButton().click()
+    })
+    typePrompt(doc, '雨后的天台')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400)
+    })
+    expect(live().map((p) => p.prompt)).toEqual(['雨后的天台'])
+
+    // 用户又改成另一版：点击时授权的那一版已经被替换
+    typePrompt(doc, '清晨的天台')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400)
+    })
+    expect(live().map((p) => p.prompt)).toEqual(['清晨的天台'])
+    await act(async () => live()[0]!.resolve(readyInput(id, '清晨的天台', 'hash-2') as never))
+
+    // 输入变了，原授权作废：没有提交，界面上说清楚了
+    expect(runs).toHaveLength(0)
+    expect(await screen.findByText(/输入已修改，这次生成已取消/)).toBeTruthy()
+
+    // 用户再次明确运行：只提交一次，带上当前新预览的哈希
+    await act(async () => {
+      runButton().click()
+    })
+    await waitFor(() => expect(runs).toHaveLength(1))
+    expect(runs[0]).toMatchObject({ expect: 'hash-2' })
+  })
+
+  it('快捷键与按钮重复按下时，输入没变就只提交一次', async () => {
+    const { id, engine } = setup()
+    const { runs, live } = servePreviews(id, engine.doc)
+    renderPanel(id, engine)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(live()).toHaveLength(1)
+    // 快捷键和按钮记的是同一次生成
+    await act(async () => {
+      fireEvent.keyDown(screen.getByTestId('generator'), { key: 'Enter', metaKey: true })
+      runButton().click()
+      runButton().click()
+    })
+    expect(runs).toHaveLength(0)
+    await act(async () => live()[0]!.resolve(readyInput(id, '透明水杯', 'hash-1') as never))
+    await waitFor(() => expect(runs).toHaveLength(1))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500)
+    })
+    expect(runs).toHaveLength(1)
+    expect(runs[0]).toMatchObject({ expect: 'hash-1' })
+  })
+
+  it('关掉生成器后，迟到的预览不会补提交', async () => {
+    const { id, engine } = setup()
+    const { runs, live } = servePreviews(id, engine.doc)
+    const view = renderPanel(id, engine)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await act(async () => {
+      runButton().click()
+    })
+    const pending = live()[0]!
+    view.unmount()
+    // 已经取消的请求迟到的应答不能再提交
+    await act(async () => pending.resolve(readyInput(id, '透明水杯', 'hash-1') as never))
+    expect(runs).toHaveLength(0)
+
+    // 重新打开后要重新确认
+    renderPanel(id, engine)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(live()).toHaveLength(1)
+    await act(async () => live()[0]!.resolve(readyInput(id, '透明水杯', 'hash-1') as never))
+    await act(async () => {
+      runButton().click()
+    })
+    await waitFor(() => expect(runs).toHaveLength(1))
+  })
+
+  it('服务端说输入已变时不自行提交带回的新输入', async () => {
+    const { id, engine } = setup()
+    const runs: Array<Record<string, unknown>> = []
+    mockFetch(async (request) => {
+      const path = new URL(request.url).pathname
+      if (request.method === 'POST' && path.endsWith('/run')) {
+        runs.push(JSON.parse(await request.text()) as never)
+        return Response.json(
+          {
+            error: 'input_changed',
+            message: '实际输入在预览后变了，请确认后再生成',
+            input: readyInput(id, '服务端的新输入', 'hash-9'),
+          },
+          { status: 409 },
+        )
+      }
+      if (request.method === 'POST' && path.endsWith('/input'))
+        return Response.json(readyInput(id, '透明水杯', 'hash-1'))
+      return undefined
+    })
+    renderPanel(id, engine)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await waitFor(() => expect((runButton() as HTMLButtonElement).disabled).toBe(false))
+    await act(async () => {
+      runButton().click()
+    })
+    await waitFor(() => expect(runs).toHaveLength(1))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    // 只提交了用户确认的那一次，没有拿新回执自动再跑
+    expect(runs).toHaveLength(1)
+    await act(async () => {
+      runButton().click()
+    })
+    await waitFor(() => expect(runs).toHaveLength(2))
+  })
+})
+
+it('服务端还没收到本机改动时预览等同步，同步后重新读取才允许生成', async () => {
+  const { id, engine } = setup()
+  const runs: string[] = []
+  let pending = true
+  const fetch = mockFetch(async (request) => {
+    const path = new URL(request.url).pathname
+    if (request.method === 'POST' && path.endsWith('/run')) {
+      runs.push(await request.text())
+      return Response.json({ runId: 'run-1' }, { status: 202 })
+    }
+    if (request.method === 'POST' && path.endsWith('/input'))
+      return pending
+        ? Response.json(
+            { error: 'sync_pending', message: '本机改动还没有同步到服务端，请等同步完成后再操作' },
+            { status: 409 },
+          )
+        : Response.json(readyInput(id, '透明水杯', 'hash-1'))
+    return undefined
+  })
+  renderPanel(id, engine)
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0)
+  })
+  await waitFor(() =>
+    expect(screen.getAllByText(/本机改动还没有同步到服务端/).length).toBeGreaterThan(0),
+  )
+  expect((runButton() as HTMLButtonElement).disabled).toBe(true)
+  expect(fetch).toHaveBeenCalledTimes(1)
+
+  // 同步恢复：重新读取实际输入，这份输入才能用来提交
+  pending = false
+  await act(async () => {
+    useCanvas.setState({ sync: 'connected' })
+  })
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(400)
+  })
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+  await waitFor(() => expect((runButton() as HTMLButtonElement).disabled).toBe(false))
+  await act(async () => {
+    runButton().click()
+  })
+  await waitFor(() => expect(runs).toHaveLength(1))
+  expect(JSON.parse(runs[0]!) as Record<string, unknown>).toMatchObject({ expect: 'hash-1' })
 })
 
 it('失败记录明确标为上次结果，不把当前可运行输入标为失败', async () => {

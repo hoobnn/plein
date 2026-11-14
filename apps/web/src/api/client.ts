@@ -1,4 +1,5 @@
 import type { PanoramaCaptureRequest } from '@plein/nodes'
+import { canvasSyncCredential } from '../canvas/syncBarrier'
 import {
   API,
   type AgentAccess,
@@ -91,11 +92,26 @@ import { ApiError, json, reportUnauthorized, request, send, setUnauthorizedHandl
 
 export { ApiError, reportUnauthorized, request, send, setUnauthorizedHandler }
 
+/**
+ * 带本机文档同步凭据的 POST：服务端必须已包含浏览器这一版文档（含删除）才执行。
+ * 只表示「服务端收到了」，能不能安全离开要看持久化确认（见 canvasSync）。
+ */
+async function synced<T>(
+  canvasId: string,
+  path: string,
+  body: object = {},
+  signal?: AbortSignal,
+): Promise<T> {
+  const expectSnapshot = canvasSyncCredential(canvasId)
+  const init = json('POST', expectSnapshot ? { ...body, expectSnapshot } : body)
+  return request<T>(path, signal ? { ...init, signal } : init)
+}
+
 export const api = {
   storyboardBatchPreview: (canvasId: string, boardId: string, body: StoryboardBatchRequest) =>
-    request<StoryboardBatchPlan>(API.storyboardBatchPreview(canvasId, boardId), json('POST', body)),
+    synced<StoryboardBatchPlan>(canvasId, API.storyboardBatchPreview(canvasId, boardId), body),
   storyboardBatchCommit: (canvasId: string, boardId: string, token: string) =>
-    request<GroupRunStarted>(API.storyboardBatchCommit(canvasId, boardId), json('POST', { token })),
+    synced<GroupRunStarted>(canvasId, API.storyboardBatchCommit(canvasId, boardId), { token }),
   session: () => request<SessionInfo>(API.session),
   /** 首次创建所有者账号（Better Auth 注册，成功后即登录） */
   setup: (input: { name: string; email: string; password: string }) =>
@@ -245,10 +261,20 @@ export const api = {
       plan?: boolean
       access?: AgentAccess
       skill?: string
+      expectSnapshot?: string
     } = {},
   ) => request<void>(API.agentMessages(id), json('POST', { text, selection, ...opts })),
-  decideAgentApproval: (id: string, approvalId: string, allow: boolean, pick?: ApplyEditPlan) =>
-    request<void>(API.agentApproval(id, approvalId), json('POST', { allow, ...pick })),
+  decideAgentApproval: (
+    id: string,
+    approvalId: string,
+    allow: boolean,
+    pick?: ApplyEditPlan,
+    expectSnapshot?: string,
+  ) =>
+    request<void>(
+      API.agentApproval(id, approvalId),
+      json('POST', { allow, ...pick, ...(expectSnapshot ? { expectSnapshot } : {}) }),
+    ),
   reviseAgentEditPlan: (id: string, approvalId: string, edits: ReviseEditPlan['edits']) =>
     request<EditPlan>(API.agentEditPlan(id, approvalId), json('POST', { edits })),
   stopAgent: (id: string) => request<void>(API.agentStop(id), json('POST', {})),
@@ -271,21 +297,32 @@ export const api = {
 
   /** expect 为用户看过的实际输入哈希：输入在那之后变了，服务端返回 409 input_changed */
   runNode: (canvasId: string, nodeId: string, opts: NodeRunOptions = {}) =>
-    request<NodeRunStarted>(API.nodeRun(canvasId, nodeId), json('POST', opts)),
-  /** 节点的实际输入预览（不调用付费生成） */
+    synced<NodeRunStarted>(canvasId, API.nodeRun(canvasId, nodeId), opts),
+  /** 节点的实际输入预览（不调用付费生成）；带上本机文档同步凭据，服务端未收到本机改动时 409 sync_pending */
   nodeInput: (canvasId: string, nodeId: string, signal?: AbortSignal) =>
-    request<PreparedInput>(API.nodeInput(canvasId, nodeId), { signal }),
+    synced<PreparedInput>(canvasId, API.nodeInput(canvasId, nodeId), {}, signal),
   cancelNode: (canvasId: string, nodeId: string, opts: NodeCancelOptions = {}) =>
     request<void>(API.nodeCancel(canvasId, nodeId), json('POST', opts)),
   /** 整组运行 Frame 里的节点 */
   runFrame: (canvasId: string, frameId: string, body: GroupRunOptions) =>
-    request<GroupRunStarted>(API.frameRun(canvasId, frameId), json('POST', body)),
+    synced<GroupRunStarted>(canvasId, API.frameRun(canvasId, frameId), body),
   /** 运行到此处 / 运行下游 */
   runFlow: (canvasId: string, nodeId: string, body: FlowRunOptions) =>
-    request<GroupRunStarted>(API.nodeFlowRun(canvasId, nodeId), json('POST', body)),
+    synced<GroupRunStarted>(canvasId, API.nodeFlowRun(canvasId, nodeId), body),
   /** 批量运行一组节点，它们 @ 到的卡片的上游先跑 */
   runBatch: (canvasId: string, nodeId: string, body: BatchRunOptions) =>
-    request<GroupRunStarted>(API.nodeBatchRun(canvasId, nodeId), json('POST', body)),
+    synced<GroupRunStarted>(canvasId, API.nodeBatchRun(canvasId, nodeId), body),
+  /**
+   * 服务端是否已经收到并保存了这版文档。
+   * 只是「收到」不算保存：服务端要真正写进数据库才回 persisted。
+   */
+  canvasSync: (canvasId: string, expectSnapshot: string) =>
+    request<{ included: boolean; persisted: boolean }>(
+      API.canvasSync(canvasId),
+      json('POST', { expectSnapshot }),
+    )
+      .then((result) => result.persisted === true)
+      .catch(() => false),
   groupRun: (groupId: string, signal?: AbortSignal) =>
     request<GroupRunState>(API.groupRun(groupId), { signal }),
   cancelGroup: (groupId: string) => request<void>(API.groupCancel(groupId), { method: 'POST' }),
@@ -303,7 +340,7 @@ export const api = {
     request<void>(API.impactDecision(canvasId, id), { method: 'DELETE' }),
   /** 只运行勾选的受影响节点 */
   runImpact: (canvasId: string, body: ImpactRunOptions) =>
-    request<GroupRunStarted>(API.impactRun(canvasId), json('POST', body)),
+    synced<GroupRunStarted>(canvasId, API.impactRun(canvasId), body),
 
   mediaDerive: (body: MediaDeriveRequest, signal?: AbortSignal) =>
     request<MediaDerivation>(API.mediaDerive, { ...json('POST', body), signal }),

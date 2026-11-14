@@ -50,6 +50,7 @@ import {
 } from '@plein/doc'
 import { FlowGraph, runDag, type StepOutcome } from '@plein/flow'
 import { stableStringify } from '@plein/canonical'
+import * as Y from 'yjs'
 import {
   executionOf,
   CompositionSourceRef,
@@ -116,7 +117,9 @@ import {
   type OutputEvidence,
   parseFrozen,
 } from './frozen'
+import { adoptionChanged, adoptionRevisionOf, adoptionSnapshot, parseAdoption } from './adoption'
 import { continuationInputs } from './continuation-inputs'
+import { decodeSyncCredential, includesSnapshot } from '../sync/snapshot'
 import { referencePreview, type ReferencePreview } from './reference-preview'
 import { mediaRequirementIssues } from './media-requirements'
 import { type GroupRow, type JobRow, type JobStatus, JobStore } from './store'
@@ -508,6 +511,20 @@ export class NodeRuns implements BatchHost {
     return this.active.has(this.key(canvasId, nodeId))
   }
 
+  /**
+   * 浏览器文档同步凭据：服务端文档必须已经包含客户端这一版（含删除）才能读取实际输入、提交任务。
+   * 没带凭据时放行（旧客户端兼容）；带坏凭据说清楚，不猜。
+   */
+  assertSynced(canvasId: string, expectSnapshot?: string) {
+    const expected = decodeSyncCredential(expectSnapshot)
+    if (expected === undefined) return
+    if (!expected)
+      throw new NodeRunError('sync_invalid', '本机文档的同步凭据无效，请刷新页面后重试')
+    const room = this.rooms.get(canvasId)
+    if (!includesSnapshot(Y.snapshot(room.doc), expected))
+      throw new NodeRunError('sync_pending', '本机改动还没有同步到服务端，请等同步完成后再操作')
+  }
+
   // ── 单节点 ────────────────────────────────────────
 
   /** 开始运行（先进队列），立即返回运行 id；校验失败直接抛 NodeRunError */
@@ -577,6 +594,8 @@ export class NodeRuns implements BatchHost {
         groupId,
         nodeType: el.nodeType,
         ...(expect ? { expect: JSON.stringify(expect) } : {}),
+        // 受理时的采用身份：生成期间用户换了采用项，晚到的结果只进候选
+        adoption: adoptionSnapshot(doc, el, currentResult(el)?.id ?? null),
       })
       writeRun(doc, nodeId, { id, status: 'queued', at: Date.now() })
       this.enqueue({ id, canvasId, nodeId, ownerId, groupId })
@@ -595,7 +614,9 @@ export class NodeRuns implements BatchHost {
     ownerId: string,
     expect?: string,
     retryOf?: string,
+    expectSnapshot?: string,
   ): Promise<{ runId: string } | { changed: PreparedInput }> {
+    this.assertSynced(canvasId, expectSnapshot)
     if (expect) {
       const now = await this.preview(canvasId, nodeId, ownerId)
       if (!now.inputHash || now.inputHash !== expect) return { changed: now }
@@ -613,7 +634,13 @@ export class NodeRuns implements BatchHost {
   }
 
   /** 节点的实际输入：最终提示词、参考图及顺序、音色、模型与有效参数；不调用付费生成 */
-  async preview(canvasId: string, nodeId: string, ownerId: string): Promise<PreparedInput> {
+  async preview(
+    canvasId: string,
+    nodeId: string,
+    ownerId: string,
+    expectSnapshot?: string,
+  ): Promise<PreparedInput> {
+    this.assertSynced(canvasId, expectSnapshot)
     const lease = this.rooms.acquire(canvasId)
     const doc = createDoc(lease.room.doc, { origin: SYSTEM_ORIGIN })
     try {
@@ -961,6 +988,7 @@ export class NodeRuns implements BatchHost {
     ownerId: string,
     options: FlowRunOptions,
   ): GroupRunStarted {
+    this.assertSynced(canvasId, options.expectSnapshot)
     const targets = this.rooms.withDoc(canvasId, (doc) => {
       if (doc.get(nodeId)?.kind !== 'node') throw new NodeRunError('not_found', '节点不存在')
       const graph = runGraph(doc)
@@ -996,7 +1024,9 @@ export class NodeRuns implements BatchHost {
     sourceId: string,
     nodeIds: string[],
     ownerId: string,
+    expectSnapshot?: string,
   ): GroupRunStarted {
+    this.assertSynced(canvasId, expectSnapshot)
     const targets = this.rooms.withDoc(canvasId, (doc) => {
       const picked = [...new Set(nodeIds)].filter((id) => this.isJobNode(doc.get(id)))
       const mentioned = new FlowGraph(mentionEdges(doc))
@@ -1067,6 +1097,7 @@ export class NodeRuns implements BatchHost {
     ownerId: string,
     options: ImpactRunOptions & { candidateOnly?: boolean },
   ): GroupRunStarted {
+    this.assertSynced(canvasId, options.expectSnapshot)
     const targets = this.rooms.withDoc(canvasId, (doc) =>
       [...new Set(options.nodes)].filter((id) => this.isJobNode(doc.get(id))),
     )
@@ -1140,6 +1171,7 @@ export class NodeRuns implements BatchHost {
     ownerId: string,
     options: GroupRunOptions,
   ): GroupRunStarted {
+    this.assertSynced(canvasId, options.expectSnapshot)
     const targets = this.rooms.withDoc(canvasId, (doc) => {
       if (doc.get(frameId)?.kind !== 'frame') throw new NodeRunError('not_found', '分组框不存在')
       return this.groupTargets(doc, frameId, options.video)
@@ -1274,6 +1306,12 @@ export class NodeRuns implements BatchHost {
         opt.action === 'attach' ? opt.remoteId : undefined,
       )
     }
+    // 恢复是用户明确发起的重新受理：以此刻的采用身份为准，之后不再当成「生成期间改过」
+    const acceptance = this.rooms.withDoc(canvasId, (doc) => {
+      const node = doc.get(row.node_id)
+      return adoptionSnapshot(doc, node, node ? (currentResult(node)?.id ?? null) : null)
+    })
+    if (acceptance !== undefined) this.store.update(jobId, { adoption: acceptance })
     this.resume(row, stored, opt.action !== 'refetch')
     return this.jobInfo(this.store.get(jobId)!)
   }
@@ -1977,9 +2015,21 @@ export class NodeRuns implements BatchHost {
     const candidateOnly =
       el.nodeType === MOTION_TYPE ||
       (group && (JSON.parse(group.options) as StoredGroupOptions).candidateOnly)
-    const held =
+    let held =
       (await this.heldReason(doc, a, el, frozen.inputHash, row?.created_at ?? 0, signal)) ??
       (candidateOnly ? 'candidate_only' : undefined)
+    // 写结果前最后核对一次采用身份（这里没有 await）：复核期间用户刚采用过的话，
+    // 这次结果只进候选。A→B→A 也会因为采用版本变了而算人工改过。
+    const now = doc.get(el.id)
+    if (
+      !held &&
+      adoptionChanged(parseAdoption(row?.adoption), {
+        result: now ? (currentResult(now)?.id ?? null) : null,
+        revision: adoptionRevisionOf(doc, now),
+      })
+    ) {
+      held = 'adopted_during_run'
+    }
     const resultIds = results.map((r) => r.id)
     if (held === 'node_deleted') {
       // 节点没了：产物只留在执行记录里

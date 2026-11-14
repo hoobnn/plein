@@ -96,7 +96,11 @@ export class StoryboardBatches {
     ownerId: string,
     request: StoryboardBatchRequest,
   ) {
-    const built = await this.build(canvasId, sourceId, ownerId, request)
+    // 预览也要基于服务端已收到的那一版：断线时不要给出和画布不一致的清单
+    this.runs.assertSynced(canvasId, request.expectSnapshot)
+    // 同步凭据只用于这次校验，不随清单回显给客户端或智能体
+    const { expectSnapshot: _credential, ...plan } = request
+    const built = await this.build(canvasId, sourceId, ownerId, plan)
     return this.remember(canvasId, ownerId, built)
   }
 
@@ -106,8 +110,10 @@ export class StoryboardBatches {
     ownerId: string,
     token: string,
     assertOpen?: () => void,
+    expectSnapshot?: string,
   ): Promise<{ started: GroupRunStarted } | { changed: StoryboardBatchPlan }> {
     assertOpen?.()
+    this.runs.assertSynced(canvasId, expectSnapshot)
     this.get(canvasId, sourceId, ownerId, token)
     const stored = this.plans.get(token)!
     const built = await this.build(canvasId, sourceId, ownerId, stored.plan.request)

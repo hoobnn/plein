@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { PreparedInput } from './runs'
+import { SyncCredential, type PreparedInput } from './runs'
 
 export const StoryboardBatchRequest = z.object({
   shotIds: z.array(z.string().min(1).max(200)).min(1).max(500),
@@ -7,6 +7,8 @@ export const StoryboardBatchRequest = z.object({
   sequenceId: z.string().min(1).max(200).optional(),
   /** 补齐未完成项时保留所有已有采用结果；所选或全新候选模式则重新生成目标。 */
   reuseExisting: z.boolean().default(true),
+  /** 本机文档尚未同步时拒绝预览，见 SyncCredential */
+  expectSnapshot: SyncCredential.optional(),
 })
 export type StoryboardBatchRequest = z.infer<typeof StoryboardBatchRequest>
 
@@ -68,4 +70,8 @@ export interface StoryboardBatchPlan {
   }
 }
 
-export const CommitStoryboardBatch = z.object({ token: z.string().min(1).max(200) })
+export const CommitStoryboardBatch = z.object({
+  token: z.string().min(1).max(200),
+  /** 本机文档尚未同步时拒绝提交，见 SyncCredential */
+  expectSnapshot: SyncCredential.optional(),
+})

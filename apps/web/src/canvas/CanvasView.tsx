@@ -11,7 +11,7 @@ import {
 import { useEffect, useRef } from 'react'
 import { WebsocketProvider } from 'y-websocket'
 import * as Y from 'yjs'
-import { assetUrls, syncUrl } from '../api/client'
+import { api, assetUrls, syncUrl } from '../api/client'
 import { navigate } from '../router'
 import { useAgent } from '../features/agent/store'
 import { assetMetaCache, loadAssetMeta } from '../stores/assetMeta'
@@ -23,6 +23,7 @@ import { importFiles, importText, revealImports } from './import'
 import { beginImport } from './importProgress'
 import { importLocation, watchImportView } from './importView'
 import { openLocalCache, watchCacheWrites } from './localCache'
+import { watchDocSync } from './syncBarrier'
 import { activateNode, rendererRegistry } from './node-registry'
 import { abortGroupRuns } from '../features/runs/groupRuns'
 import { watchStale } from '../features/runs/stale'
@@ -142,6 +143,8 @@ export function CanvasView({
           if (e2e)
             (window as { __plein?: unknown }).__plein = {
               engine,
+              // 离开保护用的未保存状态：e2e 等真实浏览器断言用
+              unsaved: () => useCanvas.getState().localEdits,
               memoryStats: () => ({ markdown: overlays.stats, assetMeta: assetMetaCache.stats }),
               // 模拟小满改动了这些元素（光晕 + 光标）
               agentTouch: (ids: string[]) => {
@@ -236,26 +239,28 @@ export function CanvasView({
         setSync(sync, false)
       })
       setSync('connecting', !!local)
-      let cachePending = false
+      // 本机改动什么时候算安全（本机缓存或服务端确认）：离开保护据此判断
+      let docSync: ReturnType<typeof watchDocSync> | null = null
       if (local) {
         const stop = watchCacheWrites(ydoc, local, (state) => {
           if (disposed) return
-          cachePending = state !== 'saved'
-          useCanvas.getState().setCacheSaved(!cachePending)
+          useCanvas.getState().setCacheSaved(state === 'saved')
+          if (state === 'saved') docSync?.cacheSaved()
           if (state === 'failed') setSync(useCanvas.getState().sync, false)
         })
-        const beforeUnload = (event: BeforeUnloadEvent) => {
-          if (!cachePending || useCanvas.getState().sync !== 'disconnected') return
-          event.preventDefault()
-          event.returnValue = ''
-        }
-        window.addEventListener('beforeunload', beforeUnload)
-        cleanups.push(() => {
-          stop()
-          window.removeEventListener('beforeunload', beforeUnload)
-        })
+        cleanups.push(stop)
       }
       const provider = new WebsocketProvider(syncUrl(), canvasId, ydoc)
+      docSync = watchDocSync({
+        canvasId,
+        ydoc,
+        remote: provider,
+        cache: local ?? undefined,
+        connected: () => provider.synced && useCanvas.getState().sync === 'connected',
+        probe: (credential) => api.canvasSync(canvasId, credential),
+        change: (dirty) => useCanvas.getState().setLocalEdits(dirty),
+      })
+      cleanups.push(() => docSync?.dispose())
       const offAgentRender = watchAgentRender(provider.awareness)
       provider.awareness.setLocalStateField('user', { name: '我', color: '#2869f0' })
       // 断线后 y-websocket 会反复「连接中 → 断开」重试：「连接中」不改状态，免得来回闪
@@ -272,7 +277,7 @@ export function CanvasView({
           provider.disconnect()
           void local?.clearData().catch(() => {})
           notify('画布不存在或已被删除', undefined, 'app')
-          navigate({ name: 'home' }, { replace: true })
+          navigate({ name: 'home' }, { replace: true, force: true })
           return
         }
         // 一次都没连上时 y-websocket 不发「断开」状态：服务没起来、从缓存打开的画布也要显示离线
@@ -304,6 +309,8 @@ export function CanvasView({
         if (!synced || disposed) return
         setSync('connected')
         lost = false
+        // 重连后确认服务端确实拿到了断线期间的改动，才解除离开保护
+        void docSync.confirmNow()
         if (!doc) return open()
         // 从缓存打开或断线重连：期间加载失败的预览图重新加载
         useCanvas.getState().engine?.reloadMedia()
@@ -322,6 +329,7 @@ export function CanvasView({
         void local?.destroy().catch(() => {})
         doc?.destroy()
         ydoc.destroy()
+        useCanvas.getState().setLocalEdits(false)
       })
     }
 

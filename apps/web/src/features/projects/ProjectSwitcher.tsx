@@ -195,7 +195,11 @@ export function ProjectSwitcher({ canvas }: { canvas: Canvas }) {
     // 清单读取期间用户可能已切走或换到新会话：迟到结果只完成数据更新，不再接管导航
     if (!isCurrent()) return
     const next = others[0]
-    navigate(next ? { name: 'canvas', id: next.id } : { name: 'home' }, { replace: true })
+    navigate(next ? { name: 'canvas', id: next.id } : { name: 'home' }, {
+      replace: true,
+      // 画布已经删除了：不需要再问要不要保存
+      force: true,
+    })
   }
 
   return (

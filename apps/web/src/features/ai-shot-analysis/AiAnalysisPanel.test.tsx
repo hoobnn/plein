@@ -163,7 +163,7 @@ it('建立计划和预检零调用，确认前不提交模型', async () => {
   mockFetch((request) => {
     const path = new URL(request.url).pathname
     const match = path.match(/^\/api\/canvases\/canvas\/nodes\/([^/]+)\/input$/)
-    if (request.method === 'GET' && match) return Response.json(prepared(doc, match[1]!))
+    if (request.method === 'POST' && match) return Response.json(prepared(doc, match[1]!))
     if (request.method === 'POST' && path.endsWith('/run')) runs.push(path)
     return undefined
   })
@@ -259,7 +259,7 @@ it('部分失败只保留并重新预检失败镜，成功镜不重复提交', a
   mockFetch((request) => {
     const path = new URL(request.url).pathname
     const input = path.match(/^\/api\/canvases\/canvas\/nodes\/([^/]+)\/input$/)
-    if (request.method === 'GET' && input) return Response.json(prepared(doc, input[1]!))
+    if (request.method === 'POST' && input) return Response.json(prepared(doc, input[1]!))
     const run = path.match(/^\/api\/canvases\/canvas\/nodes\/([^/]+)\/run$/)
     if (request.method === 'POST' && run) {
       const nodeId = run[1]!

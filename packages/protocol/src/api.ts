@@ -86,6 +86,8 @@ export const API = {
     `/api/canvases/${encodeURIComponent(canvasId)}/nodes/${encodeURIComponent(nodeId)}/storyboard-batch/commit`,
   /** 需要重跑的节点，返回 StaleNodes */
   canvasStale: (canvasId: string) => `/api/canvases/${encodeURIComponent(canvasId)}/stale`,
+  /** 确认服务端已收到浏览器这一版文档（含删除），body 为 SyncCheckRequest */
+  canvasSync: (canvasId: string) => `/api/canvases/${encodeURIComponent(canvasId)}/sync`,
   /** 修改的影响，返回 ImpactReport；只读，不调用付费平台 */
   canvasImpact: (canvasId: string) => `/api/canvases/${encodeURIComponent(canvasId)}/impact`,
   /** 保留过期结果，body 为 KeepResults，返回 ImpactDecision[] */

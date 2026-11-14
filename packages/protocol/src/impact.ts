@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { SyncCredential } from './runs'
 
 /**
  * 结果过期的原因，对比的是产生当前结果时冻结的实际输入（JobInfo.input）与现在准备出的：
@@ -130,5 +131,7 @@ export const ImpactRunOptions = z.object({
   nodes: z.array(z.string().min(1).max(200)).min(1).max(500),
   /** 不沿用已有候选，勾选的全部重新生成 */
   force: z.boolean().default(false),
+  /** 本机文档尚未同步时拒绝提交，见 SyncCredential */
+  expectSnapshot: SyncCredential.optional(),
 })
 export type ImpactRunOptions = z.infer<typeof ImpactRunOptions>

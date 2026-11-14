@@ -3,35 +3,51 @@ import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement } from '@plein/doc'
 import type { InputIssue, PreparedInput } from '@plein/protocol'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api } from '../../api/client'
+import { ApiError, api } from '../../api/client'
 import { fieldsOf, type NodeInfo } from '../../canvas/nodes'
 import { Icon } from '../../ui/icons'
 import { useCanvas } from '../../stores/canvas'
+import { previewInputKey } from './previewKey'
 
 /** 改动后多久重新准备一次实际输入：打字时不逐字请求 */
 const DEBOUNCE_MS = 400
 
 /**
- * 节点的实际输入（服务端准备，不调用付费生成）。文档有改动时防抖后重新拉；
- * setData 用于提交时服务端发现输入变了、带回的新结果
+ * 节点的实际输入（服务端准备，不调用付费生成）。
+ *
+ * 只有在会影响实际输入的文档变化后才防抖重取：移动节点、无关节点、任务进度不打断预览。
+ * 读取时带上本机文档同步凭据；服务端还没收到本机改动时是「等同步」而不是「读取失败」，
+ * 这份预览也不能用来提交。setData 用于提交时服务端发现输入变了、带回的新结果
  */
 export function useInputPreview(engine: Engine, canvasId: string | null, nodeId: string) {
   const [data, setData] = useState<PreparedInput | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [syncPending, setSyncPending] = useState(false)
   const requestId = useRef(0)
   const [rev, setRev] = useState(0)
-  // 取这份预览时的文档版本；文档又变了，这份预览就不是当前状态了。
-  const dataRev = useRef(-1)
+  // 取这份预览时的实际输入摘要；摘要又变了，这份预览就不是当前状态了。
+  const dataKey = useRef('')
+  // 与预览对应的输入摘要，文档每次变化后重算；无关变化不换代。
+  const [key, setKey] = useState(() => previewInputKey(engine, nodeId))
   // 记已发起读取的目标；未发请求就被取消的首次计时仍应立即重排（含 StrictMode）。
   const previewTarget = useRef<string | null>(null)
   const activeRequest = useRef<AbortController | null>(null)
-  useEffect(() => engine.doc.subscribe(() => setRev((r) => r + 1)), [engine])
+  const sync = useCanvas((s) => s.sync)
+  useEffect(() => {
+    const read = () => {
+      const next = previewInputKey(engine, nodeId)
+      setKey((current) => (current === next ? current : next))
+    }
+    read()
+    return engine.doc.subscribe(read)
+  }, [engine, nodeId])
   useEffect(() => {
     if (!canvasId) {
       previewTarget.current = null
       setLoading(false)
       setError(null)
+      setSyncPending(false)
       return
     }
     const target = `${canvasId}:${nodeId}`
@@ -41,8 +57,8 @@ export function useInputPreview(engine: Engine, canvasId: string | null, nodeId:
     let live = true
     const id = ++requestId.current
     const current = () => live && id === requestId.current
-    // 发起时的文档版本：回来时若已经变了，这份预览一落地就是旧的。
-    const asked = rev
+    // 发起时的实际输入摘要：回来时若已经变了，这份预览一落地就是旧的。
+    const asked = key
     setLoading(true)
     setError(null)
     const timer = setTimeout(
@@ -53,11 +69,16 @@ export function useInputPreview(engine: Engine, canvasId: string | null, nodeId:
           .nodeInput(canvasId, nodeId, request.signal)
           .then((r) => {
             if (!current()) return
-            dataRev.current = asked
+            dataKey.current = asked
             setData(r)
+            setSyncPending(false)
           })
-          // 保留旧输入供查看，但必须标明刷新失败；不能把旧阻断当成现在的状态。
-          .catch((err: unknown) => current() && setError((err as Error).message))
+          .catch((err: unknown) => {
+            if (!current()) return
+            // 本机改动还没到服务端：保留旧输入，标明「等同步」，不能当成读取失败
+            setSyncPending(err instanceof ApiError && err.code === 'sync_pending')
+            setError((err as Error).message)
+          })
           .finally(() => current() && setLoading(false))
       },
       first ? 0 : DEBOUNCE_MS,
@@ -67,33 +88,67 @@ export function useInputPreview(engine: Engine, canvasId: string | null, nodeId:
       clearTimeout(timer)
       request.abort()
     }
-  }, [canvasId, nodeId, rev])
+  }, [canvasId, nodeId, key, rev])
+  // 同步恢复后重取当前预览：旧预览在同步确认前都不算新鲜。
+  useEffect(() => {
+    if (syncPending && sync === 'connected') setRev((r) => r + 1)
+  }, [sync, syncPending])
   // 换画布或节点时不显示上一个对象的结果。
-  useEffect(() => setData(null), [canvasId, nodeId])
+  useEffect(() => {
+    setData(null)
+    setSyncPending(false)
+  }, [canvasId, nodeId])
   const replaceData = useCallback(
     (next: PreparedInput) => {
       // 提交的 409 回执比此前发出的预览请求新，尚在路上的响应不能覆盖它。
       requestId.current++
       activeRequest.current?.abort()
-      dataRev.current = rev
+      dataKey.current = previewInputKey(engine, nodeId)
       setData(next)
       setError(null)
+      setSyncPending(false)
       setLoading(false)
     },
-    [rev],
+    [engine, nodeId],
   )
   const shown = data?.nodeId === nodeId ? data : null
-  // 文档改过之后，预览没重新取到之前它就不再是当前输入：
-  // 拿旧预览的 inputHash 去提交，服务端会判成输入已变。
-  const stale = !!shown && dataRev.current !== rev
+  // 输入摘要变过、或服务端还没收到本机改动时，这份预览都不再是当前输入：
+  // 拿旧预览的 inputHash 去提交，服务端会判成输入已变或拒绝提交。
+  const stale = !!shown && (dataKey.current !== key || syncPending)
   return {
     data: shown,
     loading,
     stale,
     error,
+    syncPending,
+    /** 当前实际输入的语义摘要，与准备这份预览时的摘要不同就过期 */
+    inputKey: key,
     retry: () => setRev((r) => r + 1),
     setData: replaceData,
   }
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === 'object' && !Array.isArray(value)
+
+/** 冻结输入里的值转成可读文字；嵌套值展开一层，不显示 [object Object] */
+function readableValue(value: unknown): string {
+  if (value === null || value === undefined) return '—'
+  if (typeof value === 'boolean') return value ? '开启' : '关闭'
+  if (Array.isArray(value)) return value.map(readableValue).join('、')
+  if (typeof value === 'object')
+    return readableRows(value as Record<string, unknown>)
+      .map(([k, v]) => `${k} ${v}`)
+      .join('；')
+  return String(value)
+}
+
+/** 只展开一层键值：再多就把可读性也丢了 */
+function readableRows(record: Record<string, unknown>): Array<[string, string]> {
+  return Object.entries(record)
+    .filter(([, value]) => value !== undefined && value !== '')
+    .slice(0, 16)
+    .map(([key, value]) => [key, readableValue(value)])
 }
 
 /** 提示和阻断给人看的文案；同一条提示可能按引用记了多次，只显示一次 */
@@ -162,6 +217,7 @@ export function InputPreview({
   data,
   loading,
   error,
+  syncPending = false,
   onRetry,
 }: {
   engine: Engine
@@ -170,10 +226,25 @@ export function InputPreview({
   data: PreparedInput | null
   loading: boolean
   error: string | null
+  /** 本机改动还没同步到服务端：这份输入既不是读取失败，也不能用来提交 */
+  syncPending?: boolean
   onRetry(): void
 }) {
   const [open, setOpen] = useState(false)
-  const status = error ? (
+  const status = syncPending ? (
+    <div role="status" className="flex items-start gap-2 text-xs text-warning">
+      <p className="min-w-0 flex-1">
+        本机改动还没有同步到服务端，正在等同步完成；下面是上次读取的输入，暂不能生成。
+      </p>
+      <button
+        type="button"
+        className="ui-btn ui-btn-xs ui-btn-secondary flex-none"
+        onClick={onRetry}
+      >
+        重新读取
+      </button>
+    </div>
+  ) : error ? (
     <div role="alert" className="flex items-start gap-2 text-xs text-warning">
       <p className="min-w-0 flex-1">
         读取实际输入失败：{error}。
@@ -204,8 +275,21 @@ export function InputPreview({
     ) : null
   const fields = new Map(fieldsOf(node))
   const params = Object.entries(data.params).filter(
-    ([k, v]) => k !== 'model' && v !== '' && v !== undefined && typeof v !== 'object',
+    ([k, v]) => k !== 'model' && v !== '' && v !== undefined && !isRecord(v),
   )
+  // 选项、模型参数这类嵌套值不能藏起来，也不能显示成 [object Object]
+  const nested = Object.entries(data.params)
+    .filter(([k, v]) => k !== 'model' && isRecord(v))
+    .map(([k, v]) => {
+      const record = v as Record<string, unknown>
+      // 模型选项按平台分层（每个模型一份）：只展开实际用的那个
+      const own =
+        k === 'options' && data.model?.ref && isRecord(record[data.model.ref])
+          ? (record[data.model.ref] as Record<string, unknown>)
+          : record
+      return { key: k, rows: readableRows(own) }
+    })
+    .filter((entry) => entry.rows.length > 0)
   const issues = data.blocked.length + data.notices.length
 
   return (
@@ -273,7 +357,7 @@ export function InputPreview({
                 </p>
               </section>
             )}
-            {(params.length > 0 || data.voice) && (
+            {(params.length > 0 || nested.length > 0 || data.voice) && (
               <section className="flex flex-wrap items-center gap-1.5">
                 <h4 className="ui-section-title mr-1">有效参数</h4>
                 {data.voice && (
@@ -294,9 +378,28 @@ export function InputPreview({
                             ? v
                               ? '开启'
                               : '关闭'
-                            : String(v))}
+                            : readableValue(v))}
                     </span>
                   </span>
+                ))}
+                {nested.map(({ key, rows }) => (
+                  <details
+                    key={key}
+                    className="w-full rounded-md bg-surface-2 px-2.5 py-1.5 text-ink-subtle"
+                  >
+                    <summary className="cursor-pointer text-ink">
+                      {fields.get(key)?.title ?? key}
+                      <span className="ml-1">（{rows.length} 项）</span>
+                    </summary>
+                    <dl className="mt-1 flex flex-col gap-0.5">
+                      {rows.map(([label, value]) => (
+                        <div key={label} className="flex min-w-0 gap-2">
+                          <dt className="flex-none text-ink-subtle">{label}</dt>
+                          <dd className="min-w-0 break-all text-ink">{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </details>
                 ))}
               </section>
             )}

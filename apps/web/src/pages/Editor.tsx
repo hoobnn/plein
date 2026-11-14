@@ -48,12 +48,13 @@ import { useLibrary } from '../features/library/store'
 import { type SyncStatus, switchMode, useCanvas } from '../stores/canvas'
 import { useSidebar } from '../stores/sidebar'
 import { useTemplates } from '../features/templates/store'
-import { navigate } from '../router'
+import { leaveBlocked, navigate } from '../router'
 import { AnimatePresence } from '../ui/motion'
 import { zoomView } from '../ui/viewTransition'
 import { Toast } from '../ui/Toast'
 import { CHROME_INSET, minWidth, panelFootprint } from '../ui/layout'
 import { useShallow } from 'zustand/react/shallow'
+import { useLeaveGuard } from '../shell/useLeaveGuard'
 
 const SYNC_LABELS: Record<SyncStatus, string> = {
   local: '本地演示',
@@ -105,6 +106,9 @@ export function Editor({
 
   const engine = useCanvas((s) => s.engine)
   const catalog = useCatalog((s) => s.catalog)
+  // 本机独有、服务端和本机缓存都没确认的改动：离开前要问一次
+  const localEdits = useCanvas((s) => s.localEdits)
+  useLeaveGuard(source.kind === 'remote' && localEdits, canvas?.title)
   useEffect(() => {
     if (!engine || !catalog || !canvasId) return
     const place = () => {
@@ -196,6 +200,11 @@ export function Editor({
             onClick={(e) => {
               if (!isPlainClick(e)) return
               e.preventDefault()
+              // 还有没保存的改动：不走离开动画，直接交给离开保护询问
+              if (leaveBlocked({ name: 'home' })) {
+                navigate({ name: 'home' })
+                return
+              }
               const projectId = canvas?.projectId
               zoomView('leave', () => navigate({ name: 'home' }), {
                 to: () =>
