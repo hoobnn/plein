@@ -759,3 +759,14 @@ it('确认期间新固定引用：全部被保护时说明留存原因，不给�
   // 没有发生删除，因此没有可撤销动作（不能给会撤掉别的操作的按钮）
   expect(useCanvas.getState().noticeAction).toBeNull()
 })
+
+it('旧版本客户端清空结果时说明已清空，新结果仍保留', () => {
+  const f = setup()
+  act(() => {
+    f.doc.mutable(f.ids[0]!)!.set('results', [])
+    f.doc.flush()
+  })
+  expect(screen.getByRole('status').textContent).toContain('1 个节点的候选被旧版本客户端改过')
+  expect(screen.getByText(/旧版本客户端清空过结果，已保留当前 1 项/)).toBeTruthy()
+  expect(f.doc.get(f.ids[0]!)!.results!.map((r) => r.id)).toEqual([f.results[0]!.id])
+})

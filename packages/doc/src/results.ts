@@ -121,6 +121,11 @@ export interface StaleLegacyConflict {
   current: string[]
   /** 旧端迟到写入、未被采纳的候选 id，按旧端顺序 */
   stale: string[]
+  /**
+   * 旧端这次写的是空数组：旧客户端把结果清空了。
+   * 新结果照旧保留，但界面要说明旧端确实动过，不能和「没有旧键」混为一谈。
+   */
+  cleared: boolean
 }
 
 /**
@@ -137,8 +142,7 @@ export function staleLegacyResults(
     if (!hasStaleLegacyWrite(m)) continue
     const current = (resultsContainer(m)?.toArray() ?? []).filter(isResult).map((r) => r.id)
     const stale = (legacyResults(m) ?? []).filter(isResult).map((r) => r.id)
-    if (!stale.length) continue
-    out.push({ elementId, current, stale })
+    out.push({ elementId, current, stale, cleared: stale.length === 0 })
   }
   return out
 }

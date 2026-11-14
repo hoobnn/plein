@@ -19,7 +19,6 @@ import {
   deleteResultItems,
   ensureResultsContainer,
   insertResultsFront,
-  legacyResults,
   readResults,
   replaceResults,
   resultIndexes,
@@ -563,13 +562,10 @@ export function removeResultsWithReceipt(
       for (const [elementId, resultIds] of byElement) {
         const m = doc.elementMaps.get(elementId)
         if (!(m instanceof Y.Map)) continue
-        const container = resultsContainer(m)
-        const legacy = legacyResults(m)
-        // 容器里有内容就看容器；容器空着就看旧端留下的候选。
-        const source: NodeResult[] = container?.length
-          ? (container.toArray() as NodeResult[])
-          : (legacy ?? [])
-        if (!source.some((r) => r.id && resultIds.has(r.id))) continue
+        // 按有效结果读取预检：旧键里可能混着 null 或结构不完整的记录，
+        // 直接读原始数组会在 r.id 上抛错，正常的删除和撤销都做不了。
+        const source = readResults(m)
+        if (!source.some((r) => resultIds.has(r.id))) continue
         ensureResultsContainer(m)
       }
     }, SYSTEM_ORIGIN)

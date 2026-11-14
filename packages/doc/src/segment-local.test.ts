@@ -6,7 +6,9 @@ import {
   fixedResultHolders,
   readResults,
   removeResultsWithReceipt,
+  undoResultRemoval,
   relatedOutputIds,
+  staleLegacyResults,
   resultsContainer,
   verifiedLocalSelection,
   withVerifiedLocalSelection,
@@ -322,7 +324,7 @@ describe('旧端迟到写入的冲突证据', () => {
     expect(doc.get(source)!.results!.map((r) => r.id)).toEqual(['R', 'T'])
     const { staleLegacyResults } = await import('./index')
     expect(staleLegacyResults(doc.elementMaps)).toEqual([
-      { elementId: source, current: ['R', 'T'], stale: ['L'] },
+      { elementId: source, current: ['R', 'T'], stale: ['L'], cleared: false },
     ])
     doc.destroy()
   })
@@ -358,5 +360,39 @@ describe('关联输出与既有 relatedResult 同规则', () => {
       },
     ]
     expect([...relatedOutputIds(results, 'v')]).toEqual(['v'])
+  })
+})
+
+describe('旧端清空与坏记录的两条兼容路径', () => {
+  it('旧端把结果清空时新结果保留，并报告清空意图', () => {
+    const { doc, source } = fixture()
+    doc.ydoc.transact(() => {
+      doc.mutable(source)!.set('results', [])
+    })
+    doc.flush()
+    expect(doc.get(source)!.results!.map((r) => r.id)).toEqual(['R', 'T'])
+    expect(staleLegacyResults(doc.elementMaps)).toEqual([
+      { elementId: source, current: ['R', 'T'], stale: [], cleared: true },
+    ])
+    doc.destroy()
+  })
+
+  it('旧键里混着 null 时仍能正常删除有效候选并撤销', () => {
+    const doc = createDoc(undefined, { schedule: () => {} })
+    // 已升 v12 但还没被新端接管：空容器 + 旧键里的坏记录与有效候选
+    const source = createElement(doc, { kind: 'node', x: 0, y: 0, w: 10, h: 10 })
+    const m = doc.mutable(source)!
+    resultsContainer(m)!.delete(0, resultsContainer(m)!.length)
+    m.set('results', [null, video('R')])
+    doc.flush()
+    expect(doc.get(source)!.results!.map((r) => r.id)).toEqual(['R'])
+    const outcome = removeResultsWithReceipt(doc, [{ elementId: source, resultId: 'R' }], {
+      canvasId: null,
+    })
+    expect(outcome.removed).toBe(1)
+    expect(doc.get(source)!.results).toEqual([])
+    expect(undoResultRemoval(doc, outcome.receipt).undone).toBe(true)
+    expect(doc.get(source)!.results!.map((r) => r.id)).toEqual(['R'])
+    doc.destroy()
   })
 })

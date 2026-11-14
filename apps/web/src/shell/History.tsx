@@ -425,8 +425,10 @@ function HistoryPanel({ engine }: { engine: Engine }) {
             <ul className="mt-1 flex flex-col gap-1">
               {stale.map((conflict) => (
                 <li key={conflict.elementId}>
-                  {conflict.name || '未命名节点'}：保留 {conflict.current.length} 项，旧记录{' '}
-                  {conflict.stale.length} 项未被采纳
+                  {conflict.name || '未命名节点'}：
+                  {conflict.cleared
+                    ? `旧版本客户端清空过结果，已保留当前 ${conflict.current.length} 项`
+                    : `保留 ${conflict.current.length} 项，旧记录 ${conflict.stale.length} 项未被采纳`}
                 </li>
               ))}
             </ul>
