@@ -1,5 +1,12 @@
 import type { Engine } from '@plein/canvas-core'
-import { addResults, createDoc, createElement, deleteElements, type NodeResult } from '@plein/doc'
+import {
+  addResults,
+  createDoc,
+  createElement,
+  deleteElements,
+  type NodeResult,
+  setResults,
+} from '@plein/doc'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { useCanvas } from '../stores/canvas'
 import { currentReviewCandidates, isCurrentReview, runReviewAction } from './reviewActions'
@@ -69,9 +76,7 @@ for (const change of ['removed', 'asset', 'port', 'run'] as const) {
         : change === 'port'
           ? { ...results[1]!, port: 'other' }
           : { ...results[1]!, runId: 'other' }
-    doc
-      .mutable(id)!
-      .set('results', change === 'removed' ? results.slice(0, 1) : [results[0], changed])
+    setResults(doc, id, change === 'removed' ? results.slice(0, 1) : [results[0]!, changed])
     expect(runReviewAction(target, 'adopt')).toContain('候选已变化')
     expect(doc.get(id)?.adopted).toBe('a')
   })
@@ -92,11 +97,11 @@ it('来源删除后不选择不存在的节点，恢复后可重新定位', () =
 it('实时浏览列表只取原端口，移除、恢复与新增立即反映到结果', () => {
   const { doc, id, results, target } = setup()
   expect(currentReviewCandidates(target, 'image').map((result) => result.id)).toEqual(['a', 'b'])
-  doc.mutable(id)!.set('results', [{ ...results[0], id: 'foreign', port: 'metadata' }, results[1]])
+  setResults(doc, id, [{ ...results[0]!, id: 'foreign', port: 'metadata' }, results[1]!])
   expect(currentReviewCandidates(target, 'image').map((result) => result.id)).toEqual(['b'])
-  doc.mutable(id)!.set('results', [])
+  setResults(doc, id, [])
   expect(currentReviewCandidates(target, 'image')).toEqual([])
-  doc.mutable(id)!.set('results', [{ ...results[0], id: 'new' }, ...results])
+  setResults(doc, id, [{ ...results[0]!, id: 'new' }, ...results])
   expect(currentReviewCandidates(target, 'image').map((result) => result.id)).toEqual([
     'new',
     'a',

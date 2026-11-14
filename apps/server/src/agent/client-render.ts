@@ -91,6 +91,7 @@ export const captureStage = cap({
         element: doc.elementMaps.get(a.id),
         adopted: el.adopted,
         result: currentResult(el, 'image')?.id,
+        revision: el.adoptionRevision,
       }
     })
     const time = captured.scene.motion ? (a.time ?? 0) : undefined
@@ -110,8 +111,12 @@ export const captureStage = cap({
         at,
         ...(time === undefined ? {} : { time }),
       }
+      // 结果相同还不够：A→B→A 之后结果 id 又回到受理时的那个，但采用版本变了，
+      // 说明用户期间确实改过选择，新截图只能作候选。
       const adopt =
-        el.adopted === captured.adopted && currentResult(el, 'image')?.id === captured.result
+        el.adopted === captured.adopted &&
+        currentResult(el, 'image')?.id === captured.result &&
+        el.adoptionRevision === captured.revision
       doc.ydoc.transact(() => {
         addResults(
           doc,

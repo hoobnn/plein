@@ -1,7 +1,7 @@
 import type { Composition } from '@hyperframes/sdk'
 import type { Engine } from '@plein/canvas-core'
 import {
-  adoptResult,
+  adoptResultManually,
   currentResult,
   setParam,
   setParamEntry,
@@ -750,7 +750,7 @@ function Editor({
                             onClick={() => {
                               if (canWrite())
                                 writeMotionEdit(engine.doc, id, () =>
-                                  adoptResult(engine.doc, id, result.id),
+                                  adoptResultManually(engine.doc, id, result.id),
                                 )
                             }}
                           >

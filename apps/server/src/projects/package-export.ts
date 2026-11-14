@@ -8,6 +8,9 @@ import {
   createDoc,
   sequenceSegmentAssets,
   adoptedResultIds,
+  fixedReferencedResultIds,
+  relatedOutputIds,
+  replaceResults,
   type CanvasElement,
 } from '@plein/doc'
 import {
@@ -168,10 +171,26 @@ async function planExport(
           for (const delivery of el.deliveries ?? [])
             refAsset(delivery.assetId, `${where} / 交付 ${delivery.version}`, true)
           if (el.results?.length) {
-            const adopted = adoptedResultIds(el)
-            const kept =
-              candidates === 'all' ? el.results : el.results.filter((r) => adopted.has(r.id))
-            if (kept.length !== el.results.length) m.set('results', kept)
+            // current 是「当前采用组 + 固定片段精确依赖的候选」，其关联输出
+            // （视频配对的尾帧等）一并保留；all 保留全部历史。
+            const keepIds =
+              candidates === 'all' ? new Set(el.results.map((r) => r.id)) : adoptedResultIds(el)
+            if (candidates !== 'all') {
+              // 与手工删除共用同一套完整身份核对：画布、节点、端口、候选、运行、
+              // 文件都对上才算固定引用；同名节点或同 id 换了运行的候选不能带进来。
+              const fixed = fixedReferencedResultIds(doc.elements(), {
+                canvasId: row.id,
+                nodeId: el.id,
+                results: el.results,
+              })
+              for (const id of fixed) keepIds.add(id)
+              // 固定候选的关联输出（配对尾帧等）一并带走，返工时才配得上对。
+              for (const id of [...keepIds])
+                for (const related of relatedOutputIds(el.results, id)) keepIds.add(related)
+            }
+            const kept = el.results.filter((r) => keepIds.has(r.id))
+            // 裁剪后的结果整份换回容器：新键结构，不再写回普通数组。
+            if (kept.length !== el.results.length) replaceResults(m, kept)
             for (const r of kept) {
               if ('assetId' in r.value) {
                 refAsset(r.value.assetId, where, true)
@@ -416,7 +435,10 @@ async function planExport(
 
   const manifest: ProjectPackageManifest = {
     format: PROJECT_PACKAGE_FORMAT,
-    formatVersion: packageCheckpoints.length ? PROJECT_PACKAGE_VERSION : 1,
+    // 文档已用新物理编码（Y.Array + 新键）。无法安全重映射这种文档的旧版本
+    // 导入器必须在预检就明确拒绝，而不是导入一半、跳过结果和素材。
+    // 新版仍继续读 v1 / v2 旧包。
+    formatVersion: PROJECT_PACKAGE_VERSION,
     createdAt: Date.now(),
     candidates,
     project: { id: project.id, title: project.title, createdAt: project.created_at },

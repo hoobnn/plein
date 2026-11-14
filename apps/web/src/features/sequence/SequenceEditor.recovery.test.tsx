@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { zipSync } from 'fflate'
-import { connect, setParams } from '@plein/doc'
+import { connect, setParams, setResults } from '@plein/doc'
 import { expect, it, vi } from 'vite-plus/test'
 import { act, fireEvent, renderApp, screen, waitFor } from '../../testing/render'
 import { mockFetch } from '../../testing/fetch'
@@ -178,8 +178,7 @@ it.each(['cancel', 'close', 'edit', 'preparing-close'] as const)(
 it('失败成片可展开原始错误且说明已有交付被保留', async () => {
   const f = sequenceFixture({ animatic: true })
   act(() => {
-    const node = f.doc.mutable(f.id)!
-    node.set('results', [
+    setResults(f.doc, f.id, [
       {
         id: 'old',
         runId: 'old-job',
@@ -188,6 +187,7 @@ it('失败成片可展开原始错误且说明已有交付被保留', async () =
         value: { type: 'video', assetId: 'old-film' },
       },
     ])
+    const node = f.doc.mutable(f.id)!
     node.set('adopted', 'old')
     node.set('run', { id: 'failed-job', status: 'failed', error: '原始素材已损坏' })
     f.refresh()

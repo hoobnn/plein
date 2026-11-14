@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { adoptResult, currentResult, setParam } from '@plein/doc'
+import { adoptResultManually, currentResult, setParam } from '@plein/doc'
 import {
   STAGE_TYPE,
   STAGE_BLOCKS,
@@ -439,6 +439,7 @@ export function StagePanel({
       const captured = stageSceneOf(node?.params)
       const baseline = {
         resultId: node ? currentResult(node, 'image')?.id : undefined,
+        revision: node?.adoptionRevision,
         element: target.current,
       }
       const capturedTime = stageTime(captured, timeRef.current)
@@ -649,7 +650,7 @@ export function StagePanel({
                         )
                           return
                         writeStageEdit(engine.doc, id, () =>
-                          adoptResult(engine.doc, id, record.resultId),
+                          adoptResultManually(engine.doc, id, record.resultId),
                         )
                       }}
                     >

@@ -9,9 +9,13 @@ import {
   readContinuity,
   createProductionGoals,
   remapSequenceCanvasScopes,
+  replaceResults,
+  readResults,
   snapshotTypedDeliveries,
+  withVerifiedClipSelections,
+  withVerifiedLocalSelection,
+  isVideoSegment,
   type DeliveryRecord,
-  type NodeResult,
   type NodeRun,
 } from '@plein/doc'
 import { remapReferenceParams } from '@plein/plugin-sdk'
@@ -122,7 +126,7 @@ export function remapDoc(data: Uint8Array, map: ReadonlyMap<string, string>): Ui
               if (!Object.hasOwn(current, key) || current[key] !== value) params.set(key, value)
           }
         }
-        const results = m.get('results')
+        const results = readResults(m)
         const deliveries = m.get('deliveries')
         if (Array.isArray(deliveries)) {
           const next = (deliveries as DeliveryRecord[]).map((r) =>
@@ -137,17 +141,42 @@ export function remapDoc(data: Uint8Array, map: ReadonlyMap<string, string>): Ui
           if (next.some((r, i) => r !== deliveries[i]))
             m.set('deliveries', snapshotTypedDeliveries(next))
         }
-        if (Array.isArray(results)) {
-          const next = (results as NodeResult[]).map((r) =>
-            r && typeof r === 'object' && map.has(r.runId) ? { ...r, runId: map.get(r.runId)! } : r,
-          )
-          if (next.some((r, i) => r !== results[i])) m.set('results', next)
-        }
+        // 结果整份换回容器：新键结构，不再写回普通数组。
+        const nextResults = results.map((r) =>
+          r && typeof r === 'object' && map.has(r.runId) ? { ...r, runId: map.get(r.runId)! } : r,
+        )
+        if (nextResults.some((r, i) => r !== results[i])) replaceResults(m, nextResults)
         const run = m.get('run') as NodeRun | undefined
         if (run && typeof run === 'object' && typeof run.status === 'string') {
           let next = settledRun(run, RUNNING_NOTE)
           if (map.has(next.id)) next = { ...next, id: map.get(next.id)! }
           if (next !== run) m.set('run', next)
+        }
+      }
+      // 结果里的运行 id 已经换新，再核对固定片段的本地候选位置。
+      // 历史 origin / selection 与旧交付证据不动，只另存核实过的本地定位。
+      const lookup = (id: string) => {
+        const found = elements.get(id)
+        return found instanceof Y.Map ? found : undefined
+      }
+      for (const m of elements.values()) {
+        if (!(m instanceof Y.Map)) continue
+        const segment = m.get('videoSegment')
+        if (isVideoSegment(segment)) {
+          const verified = withVerifiedLocalSelection(segment, lookup, map)
+          if (verified !== segment) m.set('videoSegment', verified)
+        }
+        const params = m.get('params')
+        if (
+          params instanceof Y.Map &&
+          m.get('nodeType') === 'plein/sequence' &&
+          params.get('instanceVersion') === 2
+        ) {
+          const clips = params.get('clips')
+          if (Array.isArray(clips)) {
+            const verified = withVerifiedClipSelections(clips, lookup, map)
+            if (verified !== clips) params.set('clips', verified)
+          }
         }
       }
     })

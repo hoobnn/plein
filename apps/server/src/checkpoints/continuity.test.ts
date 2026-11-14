@@ -27,6 +27,7 @@ import {
   recordContinuityObservation,
   registerContinuitySubject,
   resolvedShotState,
+  setResults,
 } from '@plein/doc'
 import { Shot } from '@plein/nodes'
 import { mockProvider } from '@plein/providers'
@@ -254,7 +255,7 @@ describe.skipIf(!available)('P06协议的实际相邻两镜三个独立变体', 
         }
         addResults(doc, beforeNode, [result])
         // 模拟旧候选已被候选限额或用户清理淘汰；资产只能由观察保留。
-        doc.mutable(beforeNode)!.set('results', [result])
+        setResults(doc, beforeNode, [result])
         expect(currentContinuityObservations(doc, scope, first.shotId)).toEqual([])
         expect(continuityOf(doc, boardId).observations.some((o) => o.target.assetId === a.id)).toBe(
           true,

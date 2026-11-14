@@ -1,7 +1,15 @@
 import { definePlugin, defineServerPlugin, PLUGIN_API_VERSION } from '@plein/plugin-sdk'
 import { emptyProductionGoal, productionGoalHeads } from '@plein/doc'
 import { Readable } from 'node:stream'
-import { addResults, createElement, connect, sequenceInstancesOf, updateElement } from '@plein/doc'
+import {
+  addResults,
+  adoptResultManually,
+  connect,
+  createElement,
+  deleteElements,
+  sequenceInstancesOf,
+  updateElement,
+} from '@plein/doc'
 import { describe, expect, it } from 'vite-plus/test'
 import sharp from 'sharp'
 import { addNode, bootServer, createCanvas } from '../testing'
@@ -274,6 +282,132 @@ describe('画布与 Agent 能力契约', () => {
     expect(f.doc.get(node)!.adopted).toBeUndefined()
   })
 
+  it('delete_results 的 current_changed 只按实际删除的候选计算', async () => {
+    const f = await fixture()
+    const node = addNode(f.doc, 'plein/video')
+    addResults(
+      f.doc,
+      node,
+      [
+        {
+          id: 'R',
+          port: 'video',
+          runId: 'run-r',
+          at: 2,
+          value: { type: 'video', assetId: 'a'.repeat(64), mime: 'video/webm' },
+        },
+        {
+          id: 'U',
+          port: 'video',
+          runId: 'run-u',
+          at: 1,
+          value: { type: 'video', assetId: 'b'.repeat(64), mime: 'video/webm' },
+        },
+      ],
+      { adopt: false },
+    )
+    adoptResultManually(f.doc, node, 'R')
+    const holder = createElement(f.doc, {
+      kind: 'video',
+      assetId: 'a'.repeat(64),
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 100,
+    })
+    f.doc.mutable(holder)!.set('videoSegment', {
+      version: 1,
+      segmentId: 'segment-current',
+      asset: { assetId: 'a'.repeat(64), kind: 'video' },
+      duration: 2,
+      selection: {
+        canvasId: f.id,
+        nodeId: node,
+        port: 'video',
+        resultId: 'R',
+        runId: 'run-r',
+      },
+    })
+
+    // 采用中的 R 被固定保护，实际只删 U：不能报告当前采用已改变
+    const mixed = (await f.invoke('delete_results', { id: node, result_ids: ['R', 'U'] })) as {
+      removed: number
+      current_changed: boolean
+      kept_fixed: Array<{ result_id: string }>
+    }
+    expect(mixed).toMatchObject({ removed: 1, current_changed: false })
+    expect(mixed.kept_fixed.map((k) => k.result_id)).toEqual(['R'])
+    expect(f.doc.get(node)!.adopted).toBe('R')
+
+    // 真正删掉采用中的 R 时仍是 true
+    deleteElements(f.doc, [holder])
+    f.doc.flush()
+    const actual = (await f.invoke('delete_results', { id: node, result_ids: ['R'] })) as {
+      removed: number
+      current_changed: boolean
+    }
+    expect(actual).toMatchObject({ removed: 1, current_changed: true })
+    expect(f.doc.get(node)!.adopted).toBeNull()
+  })
+
+  it('Agent 独立撤销栈把采用改回去时也推进版本记号', async () => {
+    const f = await fixture()
+    const node = addNode(f.doc, 'plein/image')
+    addResults(
+      f.doc,
+      node,
+      [
+        {
+          id: 'a',
+          port: 'images',
+          runId: 'run-a',
+          at: 1,
+          value: { type: 'image', assetId: 'a'.repeat(64) },
+        },
+        {
+          id: 'b',
+          port: 'images',
+          runId: 'run-b',
+          at: 2,
+          value: { type: 'image', assetId: 'b'.repeat(64) },
+        },
+      ],
+      { adopt: false },
+    )
+    adoptResultManually(f.doc, node, 'a')
+    const changes = new AgentChanges(
+      'agent-undo-adoption',
+      f.id,
+      'local',
+      f.server.rooms,
+      f.server.runs,
+    )
+    try {
+      const ctx = serverContext({ ...f.env, origin: changes.origin })
+      const pick = async (turn: string, resultId: string) => {
+        changes.begin(turn)
+        await serverCapabilities.invoke('adopt_result', ctx, { id: node, result_id: resultId })
+        changes.end()
+      }
+      await pick('first', 'b')
+      await pick('second', 'a')
+      const revisionA = f.doc.get(node)!.adoptionRevision
+      expect(revisionA).toBeTruthy()
+
+      expect(changes.undoTurn('second')).toBe(true)
+      expect(f.doc.get(node)!.adopted).toBe('b')
+      const revisionB = f.doc.get(node)!.adoptionRevision
+      expect(revisionB).toBeTruthy()
+      expect(revisionB).not.toBe(revisionA)
+
+      expect(changes.undoTurn('first')).toBe(true)
+      expect(f.doc.get(node)!.adopted).toBe('a')
+      expect(f.doc.get(node)!.adoptionRevision).not.toBe(revisionB)
+    } finally {
+      changes.release()
+    }
+  })
+
   it('delete_results 删除历史候选，报告当前输出是否改变，需要确认', async () => {
     const f = await fixture()
     const node = addNode(f.doc, 'plein/image')
@@ -448,6 +582,57 @@ describe('画布与 Agent 能力契约', () => {
     expect(await pending).toMatchObject({ asset_id: image.id })
     expect(awareness.getLocalState()).toBeNull()
     expect(f.doc.get(stage)!.params?.snapshots).toHaveLength(1)
+  })
+
+  it('客户端截图期间 A→B→A：结果 id 相同也按采用版本变化只作候选', async () => {
+    const f = await fixture()
+    const bytes = await sharp({
+      create: { width: 32, height: 32, channels: 3, background: 'gray' },
+    })
+      .png()
+      .toBuffer()
+    const image = await f.server.assets.ingest('local', Readable.from([bytes]), {
+      name: 'stage.png',
+      mime: 'image/png',
+    })
+    const stage = addNode(f.doc, 'plein/stage')
+    addResults(
+      f.doc,
+      stage,
+      [
+        {
+          id: 'A',
+          port: 'image',
+          runId: 'run-a',
+          at: 1,
+          value: { type: 'image', assetId: 'a'.repeat(64), mime: 'image/png' },
+        },
+        {
+          id: 'B',
+          port: 'image',
+          runId: 'run-b',
+          at: 2,
+          value: { type: 'image', assetId: 'b'.repeat(64), mime: 'image/png' },
+        },
+      ],
+      { adopt: false },
+    )
+    adoptResultManually(f.doc, stage, 'A')
+
+    const awareness = f.server.rooms.get(f.id).awareness
+    awareness.getStates().set(123, { canvasRenderer: 1, view: { at: 1 } })
+    const pending = f.invoke('capture_stage', { id: stage })
+    const requests = awareness.getLocalState()?.canvasRenderRequests as Record<string, unknown>
+    const requestId = Object.keys(requests)[0]!
+    // 渲染等待期间人工改了又改回：结果 id 回到 A，采用版本不同
+    adoptResultManually(f.doc, stage, 'B')
+    adoptResultManually(f.doc, stage, 'A')
+    awareness.getStates().set(123, { canvasRenderResults: { [requestId]: { assetId: image.id } } })
+    awareness.emit('change', [{ added: [], updated: [123], removed: [] }, null])
+
+    expect(await pending).toMatchObject({ asset_id: image.id, adopted: false })
+    expect(f.doc.get(stage)!.adopted).toBe('A')
+    expect(f.doc.get(stage)!.results!.length).toBe(3)
   })
 
   it('媒体协议新字段均可从工具 schema 发现；无客户端截图明确失败', async () => {

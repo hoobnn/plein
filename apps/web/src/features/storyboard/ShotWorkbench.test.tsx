@@ -10,6 +10,7 @@ import {
   registerContinuitySubject,
   setParam,
   type PleinDoc,
+  setResults,
 } from '@plein/doc'
 import { Shot } from '@plein/nodes'
 import type { Catalog, InputRef, PreparedInput } from '@plein/protocol'
@@ -94,7 +95,7 @@ function fixture(expanded = false) {
             runId: 'run-one',
             port: 'video',
             at: 1,
-            value: { type: 'video', assetId: 'a'.repeat(64) },
+            value: { type: 'video' as const, assetId: 'a'.repeat(64) },
           },
         ])
       else {
@@ -102,9 +103,10 @@ function fixture(expanded = false) {
           id: `candidate-${shot.id}`,
           port: 'video',
           at: 1,
-          value: { type: 'video', assetId: 'a'.repeat(64) },
+          value: { type: 'video' as const, assetId: 'a'.repeat(64) },
         }
-        doc.mutable(node)!.set('results', [legacy])
+        // 模拟旧候选没有 runId 的异常记录，仍按公开入口写入
+        setResults(doc, node, [legacy as never])
         doc.mutable(node)!.set('adopted', legacy.id)
       }
     }
@@ -480,7 +482,7 @@ it('保存为可用记录当前候选，本镜下游影响定位真实序列并�
 it('历史预览不自动采用，切候选和关闭回收媒体，重开立即读取新输入', async () => {
   const { doc } = fixture(true)
   const old = doc.get('video-one')!.results![0]!
-  doc.mutable('video-one')!.set('results', [old, { ...old, id: 'history' }])
+  setResults(doc, 'video-one', [old, { ...old, id: 'history' }])
   const reads: string[] = []
   workbenchReads(doc, reads)
   const { user } = renderApp(<ShotWorkbench />)
@@ -518,7 +520,7 @@ it('历史预览不自动采用，切候选和关闭回收媒体，重开立即�
 it('同帧阶段改绑拒绝采用与审片，只读转换拒绝保存草稿', async () => {
   const { doc, board } = fixture(true)
   const old = doc.get('video-one')!.results![0]!
-  doc.mutable('video-one')!.set('results', [old, { ...old, id: 'history' }])
+  setResults(doc, 'video-one', [old, { ...old, id: 'history' }])
   workbenchReads(doc, [])
   const { user } = renderApp(<ShotWorkbench />)
   await screen.findByRole('button', { name: '保存为可用' })
@@ -614,7 +616,7 @@ it('摘要按当前输入预览标记参考图将送入，不把丢弃的图说�
 it('对照只取采用视频同组的末帧，缺失时回退分镜图', async () => {
   const { doc } = fixture(true)
   const video = doc.get('video-one')!.results![0]!
-  doc.mutable('video-one')!.set('results', [
+  setResults(doc, 'video-one', [
     video,
     {
       ...video,
@@ -647,7 +649,7 @@ it('对照只取采用视频同组的末帧，缺失时回退分镜图', async (
   renderApp(<ShotWorkbench />)
   expect((screen.getByAltText('视频末帧') as HTMLImageElement).src).toContain('b'.repeat(64))
   act(() => {
-    doc.mutable('video-one')!.set('results', [video])
+    setResults(doc, 'video-one', [video])
     doc.flush()
   })
   await waitFor(() =>
@@ -716,7 +718,7 @@ it('候选操作随镜头图、视频与采用状态变化', async () => {
           port: 'video',
           runId: 'video-run',
           at: 1,
-          value: { type: 'video', assetId: 'a'.repeat(64) },
+          value: { type: 'video' as const, assetId: 'a'.repeat(64) },
         },
       ],
       adopted: null,
@@ -1313,7 +1315,7 @@ it('同一角色多句配音音色不同时提示并列出各句音色', async (
 it('查看历史候选时对照区主按钮让位给采用候选', async () => {
   const { doc } = fixture(true)
   const currentTwo = doc.get('video-two')!.results![0]!
-  doc.mutable('video-two')!.set('results', [currentTwo, { ...currentTwo, id: 'history' }])
+  setResults(doc, 'video-two', [currentTwo, { ...currentTwo, id: 'history' }])
   expect(
     recordCreativeReview(doc, 'video-two', {
       target: { kind: 'video', assetId: 'a'.repeat(64), resultId: currentTwo.id },
@@ -1386,7 +1388,7 @@ it('查看镜头图阶段时只读并提示切回视频阶段', async () => {
 it('展示节点没有候选的默认状态不算不一致：可写并标明写入目标', async () => {
   const { doc } = fixture(true)
   // 本镜镜头图已就绪，视频节点已展开但还没有候选：衔接目标在镜头图候选上
-  doc.mutable('video-two')!.set('results', [])
+  setResults(doc, 'video-two', [])
   createElement(doc, {
     id: 'image-two',
     kind: 'node',
@@ -1470,7 +1472,7 @@ it('查看历史候选时只读并显示该候选自己的衔接意见', async (
   const { doc } = fixture(true)
   const a = doc.get('video-two')!.results![0]!
   const b = { ...a, id: 'history-b' }
-  doc.mutable('video-two')!.set('results', [a, b])
+  setResults(doc, 'video-two', [a, b])
   // 先在 b 是采用项时记录，再切回 a；b 的意见只随 b 显示
   doc.mutable('video-two')!.set('adopted', 'history-b')
   expect(
@@ -1507,7 +1509,7 @@ it('查看历史候选时只读并显示该候选自己的衔接意见', async (
 it('查看尾帧时按同组关联到所属视频候选，多组不串', async () => {
   const { doc } = fixture(true)
   const base = doc.get('video-two')!.results![0]!
-  doc.mutable('video-two')!.set('results', [
+  setResults(doc, 'video-two', [
     { ...base, runId: 'run-two', outputGroup: 'a' },
     {
       ...base,
@@ -1560,7 +1562,7 @@ it('查看尾帧时按同组关联到所属视频候选，多组不串', async (
 it('旧数据无法唯一确定尾帧所属视频候选时只读并说明', async () => {
   const { doc } = fixture(true)
   const base = doc.get('video-two')!.results![0]!
-  doc.mutable('video-two')!.set('results', [
+  setResults(doc, 'video-two', [
     base,
     { ...base, id: 'video-c', runId: 'run-two', at: 2 },
     { ...base, id: 'video-d', runId: 'run-two', at: 3 },
@@ -1594,7 +1596,7 @@ it('查看非采用候选时提示已采用候选的衔接意见', async () => {
     }),
   ).toBeTruthy()
   const currentTwo = doc.get('video-two')!.results![0]!
-  doc.mutable('video-two')!.set('results', [currentTwo, { ...currentTwo, id: 'history-b' }])
+  setResults(doc, 'video-two', [currentTwo, { ...currentTwo, id: 'history-b' }])
   useCanvas.setState({ shotWorkbench: { boardId: 'board', shotId: 'two' } })
   workbenchReads(doc, [])
   const { user } = renderApp(<ShotWorkbench />)

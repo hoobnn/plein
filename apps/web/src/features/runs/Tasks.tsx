@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { adoptResult, type PleinDoc } from '@plein/doc'
+import { adoptResultManually, type PleinDoc } from '@plein/doc'
 import { STORYBOARD_TYPE } from '@plein/nodes'
 import type { Catalog, GroupInfo, JobInfo, JobList, RecoverJobOptions } from '@plein/protocol'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -915,7 +915,7 @@ export function RecoveryBlock(props: {
             type="button"
             className={btn}
             onClick={() => {
-              adoptResult(doc, el.id, pick)
+              adoptResultManually(doc, el.id, pick)
               if (canvasId)
                 void client.invalidateQueries({ queryKey: queryKeys.canvasJobs(canvasId) })
             }}

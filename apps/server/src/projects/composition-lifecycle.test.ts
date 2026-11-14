@@ -11,6 +11,7 @@ import {
   currentResult,
   MAX_RESULTS,
   setParam,
+  setResults,
   type NodeResult,
 } from '@plein/doc'
 import type { CompositionSourceRef } from '@plein/plugin-sdk'
@@ -135,18 +136,19 @@ function malformedSource(bytes: Uint8Array) {
   const canvas = manifest.canvases[0]!
   const ydoc = new Y.Doc()
   Y.applyUpdate(ydoc, files[canvas.file.path]!)
-  const elements = ydoc.getMap<Y.Map<unknown>>('elements')
-  for (const element of elements.values()) {
-    const results = element.get('results') as NodeResult[] | undefined
-    if (results?.length)
-      element.set(
-        'results',
-        results.map((result) => ({
-          ...result,
-          value: { ...result.value, compositionSource: { version: 999 } },
-        })),
-      )
+  const doc = createDoc(ydoc, { schedule: () => {} })
+  for (const element of doc.elements()) {
+    if (!element.results?.length) continue
+    setResults(
+      doc,
+      element.id,
+      element.results.map((result) => ({
+        ...result,
+        value: { ...result.value, compositionSource: { version: 999 } },
+      })) as NodeResult[],
+    )
   }
+  doc.destroy()
   const state = Y.encodeStateAsUpdate(ydoc)
   files[canvas.file.path] = new Uint8Array(state)
   canvas.file.sha256 = createHash('sha256').update(state).digest('hex')
@@ -190,7 +192,7 @@ describe('动态合成来源生命周期', () => {
       .prepare('SELECT asset_id FROM checkpoint_assets WHERE checkpoint_id=?')
       .all(cp.id) as Array<{ asset_id: string }>
     expect(pins.map((row) => row.asset_id).sort()).toEqual(expected)
-    s.doc.ydoc.transact(() => s.doc.mutable(s.nodeId)!.set('results', [s.older]), s.doc.origin)
+    setResults(s.doc, s.nodeId, [s.older])
     setParam(s.doc, s.nodeId, 'title', '检查点之后')
     const restored = s.server.checkpoints.restore('local', cp.id)
     const recovered = createDoc(s.server.rooms.get(restored.canvasId).doc, { schedule: () => {} })
@@ -347,7 +349,7 @@ describe('动态合成来源生命周期', () => {
     const secret = await s.asset('foreign-secret-source-name', 'other')
     const source = { ...sourceOf(s.older), bundleAssetId: secret.id }
     const result = { ...s.older, value: { ...s.older.value, compositionSource: source } }
-    s.doc.ydoc.transact(() => s.doc.mutable(s.nodeId)!.set('results', [result]), s.doc.origin)
+    setResults(s.doc, s.nodeId, [result])
     s.server.rooms.get(s.canvasId).flush()
     expect(() => s.server.mediaIndex.sources('local', secret.id, { limit: 50 })).toThrow(
       '素材不存在',
@@ -444,7 +446,7 @@ describe('动态合成来源生命周期', () => {
     addResults(s.doc, s.nodeId, batch, { adopt: false })
     expect(currentResult(s.doc.get(s.nodeId)!)?.id).toBe(s.older.id)
     expect(s.doc.get(s.nodeId)?.results?.map((result) => result.id)).not.toContain(s.newer.id)
-    s.doc.ydoc.transact(() => s.doc.mutable(s.nodeId)!.set('results', [s.older]), s.doc.origin)
+    setResults(s.doc, s.nodeId, [s.older])
     s.server.rooms.get(s.canvasId).flush()
     const ids = new Set(documentReferences(s.doc).map((ref) => ref.assetId))
     for (const id of compositionAssetIds(currentSource)) {

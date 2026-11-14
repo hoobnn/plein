@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { connect, deleteElements, setParam, updateElement } from '@plein/doc'
+import { connect, deleteElements, setParam, updateElement, setResults } from '@plein/doc'
 import { useCanvas } from '../../stores/canvas'
 import { mockFetch } from '../../testing/fetch'
 import { mockResizeObserver } from '../../testing/browser'
@@ -781,13 +781,13 @@ it.each(['dialogue', 'sfx', 'music'])(
     expect(screen.getByRole<HTMLButtonElement>('button', { name: '导出 MP4' }).disabled).toBe(true)
     expect(screen.getByRole<HTMLButtonElement>('button', { name: '导出工程' }).disabled).toBe(true)
     act(() => {
-      f.doc.mutable(source)!.set('results', [
+      setResults(f.doc, source!, [
         {
           id: 'audio',
           runId: 'run',
           at: 1,
           port: 'audio',
-          value: { type: 'audio', assetId: assets[1] },
+          value: { type: 'audio', assetId: assets[1]! },
         },
       ])
       f.refresh()

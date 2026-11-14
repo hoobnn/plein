@@ -17,6 +17,15 @@ export interface VideoSegment {
   origin?: GenerationOrigin
   /** Local candidate location when fixed; never proof of its original generation scope. */
   selection?: GenerationOrigin
+  /**
+   * 导入或恢复后核实过的本地候选位置。
+   *
+   * `selection` 保留固定当时的身份，是历史证据；换到另一套安装后画布、节点、
+   * 运行 id 都会变，直接改写 `selection` 会和同一片段旧交付里记的 selection
+   * 对不上，被误判成冲突。这里另存一份完整核对过的本地定位：只有来源节点、
+   * 候选、运行和视频文件都随包恢复且能对上时才会写入。
+   */
+  localSelection?: GenerationOrigin
 }
 
 export interface NarrativeScope {
@@ -78,7 +87,11 @@ export function isVideoSegment(value: unknown): value is VideoSegment {
     value.duration <= 0
   )
     return false
-  return optional(value.origin, isGenerationOrigin) && optional(value.selection, isGenerationOrigin)
+  return (
+    optional(value.origin, isGenerationOrigin) &&
+    optional(value.selection, isGenerationOrigin) &&
+    optional(value.localSelection, isGenerationOrigin)
+  )
 }
 
 export function isSequenceInstance(value: unknown): value is SequenceInstance {

@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { createDoc, createElement, deleteElements, type NodeResult } from '@plein/doc'
+import { createDoc, createElement, deleteElements, type NodeResult, setResults } from '@plein/doc'
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import { watchVideoAspect } from './videoAspect'
 
@@ -30,7 +30,7 @@ function setup() {
     return id
   }
   const change = (id: string, assetId: string) => {
-    doc.ydoc.transact(() => doc.mutable(id)!.set('results', [result(assetId)]))
+    doc.ydoc.transact(() => setResults(doc, id, [result(assetId)]))
     doc.flush()
   }
   const ratioOf = vi.fn(async () => 2)

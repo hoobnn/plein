@@ -12,7 +12,11 @@ import {
   createContinuityMap,
   readContinuity,
   remapSequenceCanvasScopes,
+  replaceResults,
   snapshotTypedDeliveries,
+  withVerifiedClipSelections,
+  withVerifiedLocalSelection,
+  isVideoSegment,
   type NodeResult,
 } from '@plein/doc'
 import type {
@@ -285,9 +289,10 @@ export class CheckpointService {
               )
           }
           m.delete('run')
+          // 结果整份换回容器：新键结构，不再写回普通数组。
           if (el.results?.length)
-            m.set(
-              'results',
+            replaceResults(
+              m,
               el.results.map((r): NodeResult => ({ ...r, runId: remap.get(r.runId)! })),
             )
           if (el.deliveries?.length)
@@ -300,6 +305,32 @@ export class CheckpointService {
           const library = el.params?.libraryId
           if (typeof library === 'string' && !this.store().libraryItemExists(owner, library))
             (m.get('params') as Y.Map<unknown>)?.delete('libraryId')
+        }
+        // 结果里的运行 id 和画布 id 已换新，再核实固定片段的本地候选位置。
+        // 历史 origin / selection 与旧交付证据不动。
+        const lookup = (id: string) => {
+          const found = doc!.elementMaps.get(id)
+          return found instanceof Y.Map ? found : undefined
+        }
+        for (const m of doc!.elementMaps.values()) {
+          if (!(m instanceof Y.Map)) continue
+          const segment = m.get('videoSegment')
+          if (isVideoSegment(segment)) {
+            const verified = withVerifiedLocalSelection(segment, lookup, remap)
+            if (verified !== segment) m.set('videoSegment', verified)
+          }
+          const params = m.get('params')
+          if (
+            params instanceof Y.Map &&
+            m.get('nodeType') === 'plein/sequence' &&
+            params.get('instanceVersion') === 2
+          ) {
+            const clips = params.get('clips')
+            if (Array.isArray(clips)) {
+              const verified = withVerifiedClipSelections(clips, lookup, remap)
+              if (verified !== clips) params.set('clips', verified)
+            }
+          }
         }
       })
       const now = Date.now()

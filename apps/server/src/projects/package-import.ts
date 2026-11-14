@@ -342,7 +342,7 @@ export async function inspectPackage(
     if (jobList.length)
       notices.push(`${jobList.length} 条运行记录只作历史保留：导入后不会续查或重新提交任何任务`)
     if (manifest.candidates === 'current')
-      notices.push('导出时只带了每个节点当前采用的结果，没有历史候选')
+      notices.push('导出时只带了每个节点当前采用的结果和固定剪辑依赖的候选，没有其他历史候选')
     if (newer) notices.push(`${newer} 张画布来自更新版本的 Plein，导入后只读打开`)
     if (manifest.checkpoints.length)
       notices.push(`${manifest.checkpoints.length} 个命名检查点和它们引用的素材会完整迁入`)

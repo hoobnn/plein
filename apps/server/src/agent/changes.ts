@@ -1,3 +1,4 @@
+import { watchAdoptionRevisions } from '@plein/doc'
 import * as Y from 'yjs'
 import type { NodeRuns } from '../runs/runs'
 import type { RoomLease, Rooms } from '../sync/rooms'
@@ -196,6 +197,9 @@ export class AgentChanges {
         if (e.type === 'undo') e.stackItem.meta.set('turn', this.turn)
       },
     )
+    // Agent 的撤销栈是独立的一份：它把采用改回去时，也要留下新的采用版本记号，
+    // 否则恢复流程还会拿着旧的 rev 放行一个已经被撤销掉的人选。
+    watchAdoptionRevisions(ydoc, elements, ydoc.getMap<string>('adoptionRevisions'), undo)
     const onElements = (events: Array<Y.YEvent<Y.AbstractType<unknown>>>, tr: Y.Transaction) => {
       const p = this.pending
       if (!p || tr.origin !== this.origin) return

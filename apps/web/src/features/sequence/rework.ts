@@ -18,10 +18,15 @@ import {
 } from '@plein/doc'
 import type { ArrangedClip } from '@plein/nodes'
 
+/** 本地可核对的位置：优先用导入/恢复后核实过的位置，否则用固定时的记录。 */
+export function localSegmentSelection(row: { segment?: VideoSegment }) {
+  return row.segment?.localSelection ?? row.segment?.selection
+}
+
 /** Resolve a known local selection, never an asset-name or historical-origin guess. */
 export function inspectReworkSource(doc: PleinDoc, row: ArrangedClip, canvasId: string | null) {
   if (!row.clip.assetId) return { problem: '这个片段尚未采用有效视频，请先生成并采用候选。' }
-  const selection = row.segment?.selection
+  const selection = localSegmentSelection(row)
   if (row.segment && !selection)
     return {
       problem: '这份固定素材没有可核对的候选选择记录，可使用“替换本实例固定素材”选择新素材。',
@@ -83,7 +88,7 @@ export function reworkSourcePin(
   source: CanvasElement,
   port: string,
 ): ReworkSourcePin | undefined {
-  const selection = row.segment?.selection
+  const selection = localSegmentSelection(row)
   const assetId = row.clip.assetId ?? row.segment?.asset?.assetId
   if (!assetId) return undefined
   if (selection) return { resultId: selection.resultId, runId: selection.runId, assetId }
@@ -104,7 +109,7 @@ export function currentReworkSource(
     ? sequenceInstancesOf(sequence).find((clip) => clip.clipInstanceId === clipInstanceId)
     : undefined
   if (!sequence || !raw) return { problem: '这段剪辑实例已不存在，请重新核对。' }
-  const selection = raw.segment?.selection
+  const selection = localSegmentSelection(raw)
   const node = doc.get(raw.segment ? (selection?.nodeId ?? '') : raw.source)
   const port = raw.segment ? (selection?.port ?? '') : raw.port
   const adopted = node && port ? currentResult(node, port) : undefined

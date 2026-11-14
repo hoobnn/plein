@@ -1,10 +1,14 @@
 import type { Engine } from '@plein/canvas-core'
 import {
+  fixedResultHolders,
   type HistoryEntry,
   type NewElement,
+  relatedOutputIds,
   removalChangesCurrent,
-  removeResults,
+  removeResultsWithReceipt,
   resultHistory,
+  staleLegacyResults,
+  undoResultRemoval,
 } from '@plein/doc'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { assetUrls } from '../api/client'
@@ -72,6 +76,17 @@ function HistoryPanel({ engine }: { engine: Engine }) {
   const version = useDocVersion(doc)
   // oxlint-disable react-hooks/exhaustive-deps -- version 变化即文档变化
   const all = useMemo(() => resultHistory(doc), [doc, version])
+  // oxlint-enable react-hooks/exhaustive-deps
+  // 旧版客户端迟到的写入被挡下的节点：结果没被覆盖，但要把冲突显式告诉用户。
+  // oxlint-disable react-hooks/exhaustive-deps -- version 变化即文档变化
+  const stale = useMemo(
+    () =>
+      staleLegacyResults(doc.elementMaps).map((conflict) => ({
+        ...conflict,
+        name: doc.get(conflict.elementId)?.name ?? '',
+      })),
+    [doc, version],
+  )
   // oxlint-enable react-hooks/exhaustive-deps
   const [type, setType] = useState<TypeFilter>('all')
   const [oldestFirst, setOldestFirst] = useState(false)
@@ -151,13 +166,65 @@ function HistoryPanel({ engine }: { engine: Engine }) {
     return count
   }
 
+  /**
+   * 这次删除里，正被固定剪辑用着的候选（含其关联输出）。
+   * 删除时还会按当前文档再算一次，确认期间新固定进来的也挡得住。
+   */
+  const fixedKept = (entries: HistoryEntry[]) => {
+    const canvasId = useCanvas.getState().canvasId
+    const kept = new Map<string, Set<string>>()
+    if (!canvasId) return kept
+    const elements = [...doc.elements()]
+    const byElement = new Map<string, Set<string>>()
+    for (const entry of entries) {
+      const ids = byElement.get(entry.elementId)
+      if (ids) ids.add(entry.result.id)
+      else byElement.set(entry.elementId, new Set([entry.result.id]))
+    }
+    for (const [elementId, ids] of byElement) {
+      const el = doc.get(elementId)
+      if (!el?.results?.length) continue
+      const holders = fixedResultHolders(elements, {
+        canvasId,
+        nodeId: elementId,
+        results: el.results,
+      })
+      for (const id of ids) {
+        const used = holders.get(id)
+        if (!used) continue
+        const set = kept.get(elementId) ?? new Set<string>()
+        set.add(id)
+        for (const related of relatedOutputIds(el.results, id))
+          if (ids.has(related)) set.add(related)
+        kept.set(elementId, set)
+      }
+    }
+    return kept
+  }
+
+  const keptCount = (kept: Map<string, Set<string>>) =>
+    [...kept.values()].reduce((n, set) => n + set.size, 0)
+
   const remove = async (entries: HistoryEntry[]) => {
     if (!entries.length || doc.readOnly) return
+    const canvasId = useCanvas.getState().canvasId
     const changed = changingNodes(entries)
-    if (changed > 0) {
+    const fixed = fixedKept(entries)
+    const keep = keptCount(fixed)
+    if (keep > 0 && keep === entries.length) {
+      useCanvas
+        .getState()
+        .notify('这些结果仍被固定剪辑使用（含关联输出），已保留；请先在固定片段里替换素材。')
+      return
+    }
+    if (changed > 0 || keep > 0) {
+      const message =
+        keep > 0
+          ? `${changed > 0 ? `其中 ${changed} 个节点当前使用的结果会改变。` : ''}${keep} 项仍被固定剪辑使用（含其关联输出），会保留；确定删除其余结果？`
+          : `其中 ${changed} 个节点当前使用的结果会改变（变为未采用或改用其他输出），确定删除？`
       const ok = await confirmDialog({
         title: '删除生成结果？',
-        message: `其中 ${changed} 个节点当前使用的结果会改变（变为未采用或改用其他输出），确定删除？`,
+        message,
         confirmLabel: '删除',
         danger: true,
       })
@@ -169,26 +236,35 @@ function HistoryPanel({ engine }: { engine: Engine }) {
       .filter((e) => doc.get(e.elementId)?.results?.some((r) => r.id === e.result.id))
       .map((e) => ({ elementId: e.elementId, resultId: e.result.id }))
     if (!items.length) return
-    const removed = removeResults(doc, items)
-    if (!removed) return
-    // 记下这次删除的撤销项；期间有新操作时不误撤栈顶的其他命令。
-    const undo = doc.undo
-    const item = undo.undoStack.at(-1)
-    const canvasId = useCanvas.getState().canvasId
-    useCanvas.getState().notify(`已删除 ${removed} 项，可撤销（⌘Z）`, {
+    const outcome = removeResultsWithReceipt(doc, items, { canvasId })
+    if (!outcome.removed) {
+      // 确认期间这些结果刚被固定剪辑引用：删除时按当前文档重查后全部保留。
+      // 不能静默返回 —— 用户刚确认过删除，要说明它们为什么还在，也不要给撤销按钮。
+      if (outcome.kept.length)
+        useCanvas
+          .getState()
+          .notify(
+            `${outcome.kept.length} 项结果在确认期间被固定剪辑使用（含关联输出），已保留；请先在固定片段里替换素材。`,
+          )
+      return
+    }
+    const { receipt, kept } = outcome
+    const keptNow = kept.length
+    const text = keptNow
+      ? `已删除 ${outcome.removed} 项，保留 ${keptNow} 项仍被固定剪辑使用，可撤销（⌘Z）`
+      : `已删除 ${outcome.removed} 项，可撤销（⌘Z）`
+    useCanvas.getState().notify(text, {
       label: '撤销',
       run: () => {
         const state = useCanvas.getState()
-        if (
-          doc.readOnly ||
-          state.engine !== engine ||
-          state.canvasId !== canvasId ||
-          undo.undoStack.at(-1) !== item
-        ) {
+        if (doc.readOnly || state.engine !== engine || state.canvasId !== canvasId) {
           state.notify('删除之后已有其他操作，请用 ⌘Z 逐步撤销')
           return
         }
-        undo.undo()
+        // 只撤销这一次删除：来源已失效或之后又有本地操作时明确拒绝，
+        // 不让 Yjs 跳过失效项去撤别的编辑。
+        const undone = undoResultRemoval(doc, receipt)
+        if (!undone.undone) state.notify(undone.reason ?? '这一步撤不回来了')
       },
     })
   }
@@ -337,6 +413,28 @@ function HistoryPanel({ engine }: { engine: Engine }) {
           />
         </div>
       </div>
+
+      {stale.length > 0 && (
+        <div
+          role="status"
+          className="mx-5 mb-3 rounded-lg bg-surface-2 px-3 py-2 text-xs text-ink-muted"
+        >
+          <p>{stale.length} 个节点的候选被旧版本客户端改过，已保留较新的结果；旧记录只作核对。</p>
+          <details className="mt-1">
+            <summary className="cursor-pointer select-none">查看涉及的节点</summary>
+            <ul className="mt-1 flex flex-col gap-1">
+              {stale.map((conflict) => (
+                <li key={conflict.elementId}>
+                  {conflict.name || '未命名节点'}：
+                  {conflict.cleared
+                    ? `旧版本客户端清空过结果，已保留当前 ${conflict.current.length} 项`
+                    : `保留 ${conflict.current.length} 项，旧记录 ${conflict.stale.length} 项未被采纳`}
+                </li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      )}
 
       <div className="ui-scrollbar min-h-0 flex-1 overflow-y-auto px-5 pb-5">
         {shown.length === 0 ? (

@@ -1,4 +1,10 @@
-import { createElement, isVideoSegment, type HistoryEntry, type PleinDoc } from '@plein/doc'
+import {
+  createElement,
+  isVideoSegment,
+  type HistoryEntry,
+  type PleinDoc,
+  setResults,
+} from '@plein/doc'
 import { openDoc } from '@plein/doc/testing'
 import type { Asset } from '@plein/protocol'
 import { afterEach, describe, expect, it } from 'vite-plus/test'
@@ -50,7 +56,7 @@ function fixture(extra: Record<string, unknown> = {}) {
     value: { type: 'video' as const, assetId: ASSET_ID, mime: 'video/mp4' },
     ...extra,
   }
-  doc.mutable(id)!.set('results', [result])
+  setResults(doc, id, [result])
   doc.flush()
   const entry: HistoryEntry = {
     elementId: id,
@@ -99,18 +105,18 @@ describe('历史视频放到画布保留来源', () => {
       '节点删除',
       (f: ReturnType<typeof fixture>) => f.doc.ydoc.transact(() => f.doc.elementMaps.delete(f.id)),
     ],
-    ['候选删除', (f: ReturnType<typeof fixture>) => f.doc.mutable(f.id)!.set('results', [])],
+    ['候选删除', (f: ReturnType<typeof fixture>) => setResults(f.doc, f.id, [])],
     [
       '候选换成另一次运行',
       (f: ReturnType<typeof fixture>) =>
-        f.doc.mutable(f.id)!.set('results', [{ ...f.result, runId: '另一运行' }]),
+        setResults(f.doc, f.id, [{ ...f.result, runId: '另一运行' }]),
     ],
     [
       '候选换成另一个文件',
       (f: ReturnType<typeof fixture>) =>
-        f.doc
-          .mutable(f.id)!
-          .set('results', [{ ...f.result, value: { ...f.result.value, assetId: 'b'.repeat(64) } }]),
+        setResults(f.doc, f.id, [
+          { ...f.result, value: { ...f.result.value, assetId: 'b'.repeat(64) } },
+        ]),
     ],
   ])('%s 时拒绝并说明原因', (_name, change) => {
     const f = fixture()
@@ -165,7 +171,7 @@ describe('历史视频放到画布保留来源', () => {
       w: 320,
       h: 180,
     })
-    doc.mutable(id)!.set('results', [
+    setResults(doc, id, [
       {
         id: '图',
         runId: '运行',

@@ -7,6 +7,7 @@ import {
   groupElements,
   exportElements,
   importElements,
+  setResults,
 } from '@plein/doc'
 import type { Engine } from '@plein/canvas-core'
 import { templateData, placeTemplate } from '../../canvas/groups'
@@ -217,7 +218,7 @@ describe('P09计划与数据转换', () => {
     const summary = createSummaryPlan(doc, catalog, 'canvas', [ref], 'mock:text', '归纳')
     expect(doc.get(summary)?.nodeType).toBe(AI_SUMMARY_TYPE)
     expect(doc.get(summary)?.params?.request).toHaveProperty('drafts', [ref])
-    doc.mutable(id!)!.set('results', [])
+    setResults(doc, id!, [])
     expect(() => createSummaryPlan(doc, catalog, 'canvas', [ref], 'mock:text', '')).toThrow(
       '已变化',
     )

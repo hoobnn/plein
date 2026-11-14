@@ -329,7 +329,7 @@ describe('节点运行接口', () => {
     })
   })
 
-  it('没有人工改进采用时，重新生成照常替换当前结果', async () => {
+  it('已有采用项时单节点重跑只进候选，不替用户更换当前结果', async () => {
     const { canvas, doc } = await newCanvas()
     mockSettings(server, { latencyMs: 0 })
     const id = addNode(doc, 'plein/image', { params: { prompt: '第一次生成' } })
@@ -337,12 +337,16 @@ describe('节点运行接口', () => {
     expect(await server.runs.wait(first)).toBe('succeeded')
     const adopted = doc.get(id)?.adopted
     expect(adopted).toBeTruthy()
+    const older = doc.get(id)?.results?.[0]?.id
     await until(() => !server.runs.isRunning(canvas.id, id))
 
     const second = server.runs.start(canvas.id, id, 'local')
     expect(await server.runs.wait(second)).toBe('succeeded')
-    expect(doc.get(id)?.adopted).not.toBe(adopted)
-    expect(doc.get(id)?.adopted).toBe(doc.get(id)?.results?.[0]?.id)
+    await until(() => (doc.get(id)?.results?.length ?? 0) > 1)
+    // 用户已经采用过的节点重跑：新结果只进候选，当前结果不变。
+    expect(doc.get(id)?.adopted).toBe(adopted)
+    expect(doc.get(id)?.results?.[0]?.id).not.toBe(older)
+    expect(doc.get(id)?.results?.[0]?.id).not.toBe(adopted)
   })
 
   it('旧任务重试不能在节点已有新成功任务后再次提交', async () => {

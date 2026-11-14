@@ -19,6 +19,7 @@ import {
   applyReworkCandidate,
   createReworkDraft,
   currentReworkSource,
+  inspectReworkSource,
   reworkSource,
 } from './rework'
 const A = 'a'.repeat(64),
@@ -386,5 +387,64 @@ describe('history video fixed origin survives reopen', () => {
       reopenedDoc.destroy()
       doc.destroy()
     }
+  })
+})
+
+describe('导入后的固定片段本地定位', () => {
+  it('优先用核实过的本地位置返工，历史 selection 仍保留原出处', () => {
+    const doc = openDoc()
+    const source = createElement(
+      doc,
+      node({
+        nodeType: 'plein/video',
+        ports: { inputs: [], outputs: [{ id: 'video', label: '视频', type: 'video' }] },
+        results: [
+          {
+            id: 'R',
+            runId: 'new-run',
+            port: 'video',
+            at: 1,
+            value: { type: 'video', assetId: A },
+          },
+        ],
+        adopted: 'R',
+      }),
+    )
+    const selection = {
+      canvasId: 'old-canvas',
+      nodeId: source,
+      port: 'video',
+      resultId: 'R',
+      runId: 'old-run',
+    }
+    const row = {
+      clipInstanceId: 'clip',
+      source: 'view',
+      port: 'video',
+      clip: { assetId: A },
+      segment: {
+        version: 1 as const,
+        segmentId: 'segment-1',
+        asset: { assetId: A, kind: 'video' as const },
+        duration: 4,
+        selection,
+        localSelection: { ...selection, canvasId: 'canvas', runId: 'new-run' },
+      },
+    } as unknown as ArrangedClip
+    const inspected = inspectReworkSource(doc, row, 'canvas')
+    expect('problem' in inspected).toBe(false)
+    if ('problem' in inspected) throw new Error(inspected.problem)
+    expect(inspected.source.id).toBe(source)
+    // 历史身份没被改写
+    expect(row.segment?.selection).toEqual(selection)
+    // 没有核实位置时仍按历史出处判断为其他画布
+    const legacy = {
+      ...row,
+      segment: { ...row.segment!, localSelection: undefined },
+    } as unknown as ArrangedClip
+    expect(inspectReworkSource(doc, legacy, 'canvas')).toMatchObject({
+      problem: expect.stringContaining('其他画布'),
+    })
+    doc.destroy()
   })
 })

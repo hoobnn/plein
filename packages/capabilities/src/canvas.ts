@@ -1,10 +1,10 @@
 import {
-  adoptResult,
+  adoptResultManually,
   deleteElements,
   mediaSize,
   removalChangesCurrent,
   removeEdges,
-  removeResults,
+  removeResultsWithReceipt,
   setParams,
   setParent,
   setText,
@@ -411,7 +411,8 @@ export const adopt = defineCapability({
       const el = need(doc, id)
       if (result_id !== null && !el.results?.some((r) => r.id === result_id))
         throw new CapabilityError(`节点没有结果 ${result_id}`)
-      adoptResult(doc, id, result_id)
+      // 明确的人工采用：走统一入口，独立一步撤销，并写下版本记号。
+      adoptResultManually(doc, id, result_id)
       return '已采用'
     }),
 })
@@ -420,7 +421,7 @@ export const deleteResults = defineCapability({
   name: 'delete_results',
   title: '删除历史结果',
   description:
-    '删除节点生成历史里的候选结果记录（与历史面板的删除一致）。只删画布里的记录，不删素材文件；删到节点当前采用的结果时，节点回到「尚未采用」，不会自动换成别的候选。可在本轮撤销。先用 get_element 看 results 里的 id；返回 removed 个数、current_changed（是否改变了节点当前输出）和没找到的 id。',
+    '删除节点生成历史里的候选结果记录（与历史面板的删除一致）。只删画布里的记录，不删素材文件；删到节点当前采用的结果时，节点回到「尚未采用」，不会自动换成别的候选。可在本轮撤销。正在被固定剪辑精确引用的候选（含其关联输出）会保留、不删除，需先在固定片段里替换素材。先用 get_element 看 results 里的 id；返回 removed 个数、current_changed（是否改变了节点当前输出）、kept_fixed（因固定引用而保留的候选与占用它的片段）和没找到的 id。',
   group: 'edit',
   where: 'doc',
   effect: 'destructive',
@@ -439,14 +440,37 @@ export const deleteResults = defineCapability({
         throw new CapabilityError(
           `节点 ${id} 没有这些结果：${missing.join('、')}，先用 get_element 查看 results`,
         )
-      const currentChanged = removalChangesCurrent(el, present)
-      const removed = removeResults(
+      const outcome = removeResultsWithReceipt(
         doc,
         [...present].map((resultId) => ({ elementId: id, resultId })),
+        { canvasId: ctx.canvasId },
       )
+      // current_changed 要按实际会删掉的集合算：受固定保护而保留下来的采用项
+      // 前后都还在，不能让 Agent / MCP 告诉用户「当前采用已改变」。
+      const keptIds = new Set(outcome.kept.map((k) => k.resultId))
+      const removedIds = new Set([...present].filter((id) => !keptIds.has(id)))
+      const currentChanged = removalChangesCurrent(el, removedIds)
+      if (!outcome.removed && outcome.kept.length)
+        throw new CapabilityError(
+          `这些结果仍被固定剪辑使用（${outcome.kept
+            .map((k) => k.holders.map((h) => h.segmentId).join('、'))
+            .join('；')}），已保留；请先在固定片段里替换素材`,
+        )
       return {
-        removed,
+        removed: outcome.removed,
         current_changed: currentChanged,
+        ...(outcome.kept.length
+          ? {
+              kept_fixed: outcome.kept.map((k) => ({
+                result_id: k.resultId,
+                held_by: k.holders.map((h) => ({
+                  element_id: h.holderId,
+                  segment_id: h.segmentId,
+                  ...(h.clipInstanceId ? { clip_instance_id: h.clipInstanceId } : {}),
+                })),
+              })),
+            }
+          : {}),
         ...(missing.length ? { not_found: missing } : {}),
       }
     }),

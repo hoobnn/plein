@@ -23,6 +23,12 @@ import type { BatchItemRow, JobRow, JobStore } from './store'
  *   只核对节点自身的参数与模型，以及上游的结果是不是本批次产生的（或启动时那个）
  */
 export interface JobExpect {
+  /**
+   * 受理时定下的「只进候选」策略：常规媒体重跑一个已经有采用结果的节点时为 true。
+   * 持久在任务上，取回、挂回、重新提交与重启都沿用受理时的判定，不被返回时的当前值改写。
+   * 旧任务没有这个字段：保持原来的自动采用。
+   */
+  candidateOnly?: boolean
   inputHash?: string
   planHash?: string
   deps?: BatchDependency[]

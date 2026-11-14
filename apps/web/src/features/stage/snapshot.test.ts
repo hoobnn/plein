@@ -1,5 +1,6 @@
 import {
   adoptResult,
+  adoptResultManually,
   createDoc,
   createElement,
   currentResult,
@@ -205,4 +206,25 @@ describe('3D 截图保存', () => {
     expect(currentResult(doc.get(id)!)?.id).toBe(shot.resultId)
     doc.destroy()
   })
+})
+
+it('上传期间 A→B→A：结果 id 相同但采用版本变了，迟到截图只作候选', async () => {
+  const { doc, id, scene, finish } = setup()
+  adoptResultManually(doc, id, 'choice')
+  adoptResultManually(doc, id, 'original')
+  const baseline = {
+    resultId: currentResult(doc.get(id)!, 'image')!.id,
+    revision: doc.get(id)!.adoptionRevision,
+    element: doc.mutable(id),
+  }
+  const run = saveSnapshot(doc, id, scene, new Blob(), baseline)
+  // 上传期间人工把采用改了又改回：结果 id 与受理时相同，采用版本不同
+  adoptResultManually(doc, id, 'choice')
+  adoptResultManually(doc, id, 'original')
+  expect(doc.get(id)!.adoptionRevision).not.toBe(baseline.revision)
+  finish()
+  const shot = await run
+  expect(shot.adopted).toBe(false)
+  expect(currentResult(doc.get(id)!, 'image')!.id).toBe('original')
+  expect(doc.get(id)!.results!.map((r) => r.id)).toContain(shot.resultId)
 })

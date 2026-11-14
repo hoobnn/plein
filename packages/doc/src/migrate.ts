@@ -6,9 +6,11 @@ import * as Y from 'yjs'
 import { CONTAINER_KINDS, type Edge } from './types'
 import { migrateStoryboardIdentity } from './migrate-storyboard'
 import { materializeSequenceV1 } from './domain/sequence-instances'
+import { LEGACY_RESULTS_KEY, prepareResults, RESULTS_KEY, RESULTS_RECORDED_KEY } from './results'
+import type { NodeResult } from './types'
 
 /** 当前文档 schema 版本 */
-export const SCHEMA_VERSION = 11
+export const SCHEMA_VERSION = 12
 
 export interface MigrateResult {
   version: number
@@ -31,7 +33,55 @@ const MIGRATIONS: Migration[] = [
   v8ToV9,
   v9ToV10,
   v10ToV11,
+  v11ToV12,
 ]
+
+/**
+ * v11 → v12：节点结果从「一个 JSON 数组」迁到「Y.Array，逐条插删」。
+ *
+ * 旧存法下任何一次写入都会整份替换结果数组：撤销一次删除会把系统刚加进来的
+ * 候选一起抹掉。逐条插删之后，删除 R → 系统加入 S → 撤销，只还原 R，S 仍在。
+ *
+ * 先把每条旧记录校验、快照好，再开始写：Yjs 事务不会因为中途抛错回滚，
+ * 一条坏记录不能毁掉整批有效结果。结构不完整的旧条目只跳过这一条。
+ *
+ * 结果数组改放新键 `resultsV2`：旧客户端离线期间写的还是旧键 `results`，
+ * 重新连上后两个键互不覆盖，刚生成的候选不会凭空消失。
+ *
+ * 迁移用 SYSTEM_ORIGIN 一次性完成，不进撤销栈；旧客户端按未来版本机制只读打开。
+ */
+function v11ToV12(ydoc: Y.Doc) {
+  const elements = ydoc.getMap<unknown>('elements')
+  // 第一阶段：只读，全部校验与快照
+  const prepared: Array<[Y.Map<unknown>, NodeResult[]]> = []
+  for (const value of elements.values()) {
+    if (!(value instanceof Y.Map)) continue
+    const results = value.get('results')
+    if (!Array.isArray(results)) continue
+    prepared.push([value, prepareResults(results)])
+  }
+  // 第二阶段：写入
+  for (const [element, results] of prepared) {
+    const array = new Y.Array<unknown>()
+    element.set(RESULTS_KEY, array)
+    if (results.length) array.insert(0, results)
+    element.set(RESULTS_RECORDED_KEY, true)
+    // 旧键搬完就删：旧键此后只在「旧端又写了一次」时重新出现，
+    // 那时它就是可核对的冲突证据，不再是普通的历史数据。
+    element.delete(LEGACY_RESULTS_KEY)
+  }
+  // 第三阶段：还没产生过候选的节点也预建空容器。
+  //
+  // 两个客户端各自给同一个节点加候选时，容器必须已经存在：否则两边各造一个
+  // Y.Array 争同一个键，输的那份候选会永久丢失。容器在这里一次性建好，
+  // 之后所有写入都落在同一个容器里。
+  for (const value of elements.values()) {
+    if (!(value instanceof Y.Map)) continue
+    if (value.get('kind') !== 'node') continue
+    if (value.get(RESULTS_KEY) instanceof Y.Array) continue
+    value.set(RESULTS_KEY, new Y.Array<unknown>())
+  }
+}
 
 function v10ToV11(ydoc: Y.Doc) {
   const elements = ydoc.getMap<unknown>('elements')

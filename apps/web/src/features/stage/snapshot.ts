@@ -30,8 +30,15 @@ export async function saveSnapshot(
   id: string,
   scene: StageScene,
   blob: Blob,
-  baseline: { resultId?: string; element?: ReturnType<PleinDoc['mutable']>; time?: number } = {
+  baseline: {
+    resultId?: string
+    /** 触发截图那一刻的采用版本；A→B→A 结果 id 不变但人工确实改过 */
+    revision?: string
+    element?: ReturnType<PleinDoc['mutable']>
+    time?: number
+  } = {
     resultId: doc.get(id) ? currentResult(doc.get(id)!, 'image')?.id : undefined,
+    revision: doc.get(id)?.adoptionRevision,
   },
 ) {
   if (
@@ -54,8 +61,12 @@ export async function saveSnapshot(
   const file = new File([blob], `构图-第${scene.rev}版.png`, { type: 'image/png' })
   const asset = await api.upload(file)
   writable()
-  // 上传不能抢走期间手动采用的结果；仍保留截图及其来源供之后选择。
-  const adopt = currentResult(doc.get(id)!, 'image')?.id === baseline.resultId
+  // 上传不能抢走期间手动采用的结果；结果 id 相同但采用版本变了（A→B→A）
+  // 也算人工改过，仍保留截图及其来源供之后选择。
+  const current = doc.get(id)
+  const adopt =
+    currentResult(current!, 'image')?.id === baseline.resultId &&
+    current?.adoptionRevision === baseline.revision
   const at = Date.now()
   const resultId = shortId('res')
   const entry: StageSnapshot = {

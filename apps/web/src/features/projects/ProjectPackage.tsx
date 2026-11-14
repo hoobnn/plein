@@ -135,7 +135,7 @@ export function ExportPackageDialog({ project, onClose }: { project: Project; on
       <div className="flex flex-col gap-1.5">
         <div className="ui-section-title">包含</div>
         <p className="ui-note">
-          全部画布、画布用到的素材、资产库条目、每个节点当前采用的结果和运行记录，以及全部命名检查点和检查点保留的素材。运行记录只作历史，导入后不会续查或重新提交。
+          全部画布、画布用到的素材、资产库条目、每个节点当前采用的结果、固定剪辑精确用到的候选和运行记录，以及全部命名检查点和检查点保留的素材。运行记录只作历史，导入后不会续查或重新提交。
         </p>
         <div className="ui-section-title mt-2">不包含</div>
         <p className="ui-note">

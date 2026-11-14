@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { adoptResult, currentResult, type CanvasElement, type NodeResult } from '@plein/doc'
+import { adoptResultManually, currentResult, type CanvasElement, type NodeResult } from '@plein/doc'
 import type { ShotRole } from '@plein/nodes'
 import type { PreparedInput } from '@plein/protocol'
 import { useQuery, type UseQueryResult } from '@tanstack/react-query'
@@ -197,7 +197,7 @@ export function CandidateInspection({
               const now = engine.doc.get(node.id)?.results?.find((r) => r.id === candidate.id)
               if (!writable() || !validNode() || JSON.stringify(now) !== JSON.stringify(candidate))
                 return setError('候选或目标已变化，未采用')
-              adoptResult(engine.doc, node.id, candidate.id)
+              adoptResultManually(engine.doc, node.id, candidate.id)
               setError('')
             }}
           >
