@@ -13,6 +13,7 @@ import { Icon } from '../../ui/icons'
 import { Select } from '../../ui/Select'
 import { describeRecovery } from '../runs/recovery'
 import { CreativeReviewForm, reviewLabels } from './CreativeReviewForm'
+import { InputDetails } from './InputDetails'
 import { shotsOf, type ShotSource } from './model'
 import { reviewNodesForShot } from './reviewModel'
 import { roles } from './shotWorkbench.utils'
@@ -384,40 +385,5 @@ function CandidateMedia({ result }: { result: NodeResult }) {
         ? value.text
         : JSON.stringify(value.type === 'json' ? value.value : value, null, 2)}
     </pre>
-  )
-}
-
-function InputDetails({ input }: { input: PreparedInput }) {
-  return (
-    <div className="space-y-1 text-xs">
-      <p>
-        {input.model?.title ?? input.model?.ref ?? '模型未设置或未记录'} · {input.status}
-      </p>
-      <p className="whitespace-pre-wrap break-words">{input.prompt ?? '提示词未记录'}</p>
-      <p>参考 {input.refs.length} 项 · 费用以执行清单为准</p>
-      <details>
-        <summary>生效参数、送入值与依据版本</summary>
-        <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-all">
-          {JSON.stringify(
-            {
-              v: input.v,
-              inputHash: input.inputHash,
-              params: input.params,
-              inputs: input.inputs,
-              refs: input.refs,
-            },
-            null,
-            2,
-          )}
-        </pre>
-      </details>
-      {[
-        ...new Map(
-          [...input.blocked, ...input.notices].map((n) => [JSON.stringify(n), n] as const),
-        ).entries(),
-      ].map(([key, n]) => (
-        <p key={key}>{n.message}</p>
-      ))}
-    </div>
   )
 }

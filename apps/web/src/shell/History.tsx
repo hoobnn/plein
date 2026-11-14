@@ -10,7 +10,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { assetUrls } from '../api/client'
 import { useBatchDownload } from './useBatchDownload'
 import { useDocVersion } from '../canvas/hooks'
-import { elementFor, placeImports, revealImports } from '../canvas/import'
+import { placeImports, revealImports } from '../canvas/import'
+import { historyMaterial } from '../canvas/historyMaterial'
 import { beginImport } from '../canvas/importProgress'
 import { importLocation, watchImportView } from '../canvas/importView'
 import { loadAssetMeta } from '../stores/assetMeta'
@@ -203,6 +204,7 @@ function HistoryPanel({ engine }: { engine: Engine }) {
     let view: ReturnType<typeof watchImportView> | undefined
     const notes: string[] = []
     let action: NoticeAction | undefined
+    const sourceCanvasId = useCanvas.getState().canvasId
     try {
       pending.current = true
       setBusy(true)
@@ -212,18 +214,39 @@ function HistoryPanel({ engine }: { engine: Engine }) {
       view = watchImportView(engine, active.signal)
       const viewport = engine.camera.viewRect
       let done = 0
-      const inputs = await Promise.all(
-        selected.map(async (e) => {
-          const asset = await loadAssetMeta(e.result.value.assetId)
+      const sources = await Promise.all(
+        selected.map(async (entry) => {
+          const asset = await loadAssetMeta(entry.result.value.assetId)
           active.progress(++done)
-          const input = elementFor(asset, e.result.value.compositionSource)
-          return input && { ...input, name: nameOf(e) }
+          return { entry, asset }
         }),
       )
       active.signal.throwIfAborted()
       if (doc.readOnly) throw new Error('画布已变为只读，恢复编辑权限后再试')
+      if (
+        useCanvas.getState().engine !== engine ||
+        useCanvas.getState().canvasId !== sourceCanvasId
+      )
+        throw new Error('已切换到其他画布，未放入素材')
+      // 元数据等待期间候选或来源可能已被删除、替换；整批落地前统一按当前文档再核对一次，
+      // 不能把已经不存在的结果写成真实 selection，也不能写到切换后的画布。
+      const items: Array<Omit<NewElement, 'x' | 'y'>> = []
+      const stale: string[] = []
+      for (const { entry, asset } of sources) {
+        const material = historyMaterial(doc, sourceCanvasId, entry, asset)
+        if ('problem' in material) stale.push(`${nameOf(entry)}：${material.problem}`)
+        else {
+          if (material.notice) notes.push(`${nameOf(entry)}：${material.notice}`)
+          items.push({ ...material.input, name: nameOf(entry) })
+        }
+      }
+      if (stale.length) {
+        const message = `${stale.length} 项来源已变化，没有放入：${stale.join('；')}`
+        notes.push(message)
+        if (mounted.current) setPlaceError(message)
+      }
+      if (!items.length) return
       // 以视口中央为中心排成网格，每行 ROW 个，一次写入（一步撤销）
-      const items = inputs.filter((i) => i !== null)
       const rows: Array<typeof items> = []
       for (let i = 0; i < items.length; i += ROW) rows.push(items.slice(i, i + ROW))
       const rowH = rows.map((r) => Math.max(...r.map((i) => i.h)))
