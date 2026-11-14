@@ -12,6 +12,9 @@ import {
   replaceResults,
   readResults,
   snapshotTypedDeliveries,
+  withVerifiedClipSelections,
+  withVerifiedLocalSelection,
+  isVideoSegment,
   type DeliveryRecord,
   type NodeRun,
 } from '@plein/doc'
@@ -148,6 +151,32 @@ export function remapDoc(data: Uint8Array, map: ReadonlyMap<string, string>): Ui
           let next = settledRun(run, RUNNING_NOTE)
           if (map.has(next.id)) next = { ...next, id: map.get(next.id)! }
           if (next !== run) m.set('run', next)
+        }
+      }
+      // 结果里的运行 id 已经换新，再核对固定片段的本地候选位置。
+      // 历史 origin / selection 与旧交付证据不动，只另存核实过的本地定位。
+      const lookup = (id: string) => {
+        const found = elements.get(id)
+        return found instanceof Y.Map ? found : undefined
+      }
+      for (const m of elements.values()) {
+        if (!(m instanceof Y.Map)) continue
+        const segment = m.get('videoSegment')
+        if (isVideoSegment(segment)) {
+          const verified = withVerifiedLocalSelection(segment, lookup, map)
+          if (verified !== segment) m.set('videoSegment', verified)
+        }
+        const params = m.get('params')
+        if (
+          params instanceof Y.Map &&
+          m.get('nodeType') === 'plein/sequence' &&
+          params.get('instanceVersion') === 2
+        ) {
+          const clips = params.get('clips')
+          if (Array.isArray(clips)) {
+            const verified = withVerifiedClipSelections(clips, lookup, map)
+            if (verified !== clips) params.set('clips', verified)
+          }
         }
       }
     })

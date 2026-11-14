@@ -11,6 +11,7 @@ import {
   getCreativeReview,
   recordCreativeReview,
   setParam,
+  setResults,
 } from '@plein/doc'
 import type {
   Canvas,
@@ -233,12 +234,14 @@ describe('命名检查点项目包迁移', () => {
       Y.applyUpdate(snapshot, unzipSync(bytes)[manifest.canvases[0]!.file.path]!)
       const packed = createDoc(snapshot)
       const result = packed.get(s.gen)!
-      expect(result.results ?? []).toEqual(held ? [] : [before.results![0]])
+      // 单节点重跑已有采用项时新候选只进历史，真正采用的仍是较早那次。
+      const adoptedNow = held ? undefined : currentResult(before)!
+      expect(result.results ?? []).toEqual(adoptedNow ? [adoptedNow] : [])
       const assets = manifest.assets.map((a) => a.id)
       for (const candidate of before.results!) {
         if ('assetId' in candidate.value)
           expect(assets.includes(candidate.value.assetId)).toBe(
-            !held && candidate.id === before.results![0]!.id,
+            !held && candidate.id === adoptedNow?.id,
           )
       }
       expect(s.doc.get(s.gen)!.results).toHaveLength(4)
@@ -246,9 +249,7 @@ describe('命名检查点项目包迁移', () => {
       const imported = await importInto(target.server, bytes)
       const restored = openDoc(target.server, imported.result.canvasId!)
       expect(restored.get(s.gen)?.results ?? []).toHaveLength(held ? 0 : 1)
-      expect(currentResult(restored.get(s.gen)!)?.id).toBe(
-        held ? undefined : before.results![0]!.id,
-      )
+      expect(currentResult(restored.get(s.gen)!)?.id).toBe(held ? undefined : adoptedNow?.id)
       if (held) expect(restored.get(s.gen)?.adopted).toBeNull()
       const all = await download(s.server, s.projectId, true)
       const allManifest = manifestOf(all)
@@ -257,7 +258,7 @@ describe('命名检查点项目包迁移', () => {
       expect(createDoc(allState).get(s.gen)?.results).toHaveLength(4)
     },
   )
-  it('v2默认完整保留检查点候选与独有素材，在新数据目录导入后可恢复且不续跑', async () => {
+  it('v3默认完整保留检查点候选与独有素材，在新数据目录导入后可恢复且不续跑', async () => {
     const s = await seed()
     s.server.db.$client.prepare('UPDATE jobs SET call_history=?').run(
       JSON.stringify([
@@ -279,11 +280,11 @@ describe('命名检查点项目包迁移', () => {
     // 当前画布不再引用最旧候选；检查点仍必须带它迁移。
     const node = s.doc.get(s.gen)!
     const keep = node.results![0]!
-    s.doc.mutable(s.gen)!.set('results', [keep])
+    setResults(s.doc, s.gen, [keep])
     s.doc.mutable(s.gen)!.set('adopted', keep.id)
     const bytes = await download(s.server, s.projectId)
     const manifest = manifestOf(bytes)
-    expect(manifest.formatVersion).toBe(2)
+    expect(manifest.formatVersion).toBe(3)
     expect(manifest.checkpoints).toHaveLength(1)
     const savedDoc = createDoc()
     Y.applyUpdate(savedDoc.ydoc, Buffer.from(saved.state, 'base64'))
@@ -367,9 +368,12 @@ describe('项目包导出', () => {
     const data = await download(s.server, s.projectId)
     const files = unzipSync(data)
     const m = manifestOf(data)
-    expect(m).toMatchObject({ format: 'plein-project', formatVersion: 1, candidates: 'current' })
-    const current = s.doc.get(s.gen)!.results![0]!.value as { assetId: string }
-    const older = s.doc.get(s.gen)!.results![1]!.value as { assetId: string }
+    expect(m).toMatchObject({ format: 'plein-project', formatVersion: 3, candidates: 'current' })
+    const chosen = currentResult(s.doc.get(s.gen)!)!
+    const current = chosen.value as { assetId: string }
+    const older = s.doc.get(s.gen)!.results!.find((r) => r.id !== chosen.id)!.value as {
+      assetId: string
+    }
     const ids = m.assets.map((a) => a.id)
     expect(ids).toEqual(expect.arrayContaining([s.photo.id, s.face.id, current.assetId]))
     expect(ids).not.toContain(older.assetId)
@@ -395,6 +399,274 @@ describe('项目包导出', () => {
     const all = manifestOf(await download(s.server, s.projectId, true))
     expect(all.candidates).toBe('all')
     expect(all.assets.map((a) => a.id)).toContain(older.assetId)
+  })
+
+  it('current 包带上固定剪辑精确依赖的候选；复制导入与检查点恢复后本地位置可核对返工', async () => {
+    const s = await seed()
+    const video = addNode(s.doc, 'plein/video', {
+      params: { model: 'plein/mock:video', prompt: '固定镜头', mode: 'text', duration: 2 },
+    })
+    addResults(
+      s.doc,
+      video,
+      [
+        {
+          id: 'picked',
+          runId: 'run-picked',
+          port: 'video',
+          at: 2,
+          value: { type: 'video', assetId: s.photo.id, mime: 'image/png' },
+        },
+        {
+          id: 'fixed',
+          runId: 'run-fixed',
+          port: 'video',
+          at: 1,
+          value: { type: 'video', assetId: s.face.id, mime: 'image/png' },
+        },
+      ],
+      { adopt: false },
+    )
+    adoptResult(s.doc, video, 'picked')
+    const holder = createElement(s.doc, {
+      kind: 'video',
+      assetId: s.face.id,
+      x: 0,
+      y: 600,
+      w: 320,
+      h: 180,
+    })
+    const origin = {
+      canvasId: 'origin-canvas',
+      nodeId: 'origin-node',
+      port: 'video',
+      resultId: 'origin-result',
+      runId: 'origin-run',
+    }
+    s.doc.mutable(holder)!.set('videoSegment', {
+      version: 1,
+      segmentId: 'segment-import',
+      asset: { assetId: s.face.id, kind: 'video' },
+      duration: 3,
+      selection: {
+        canvasId: s.canvasId,
+        nodeId: video,
+        port: 'video',
+        resultId: 'fixed',
+        runId: 'run-fixed',
+      },
+      origin,
+    })
+    s.server.rooms.get(s.canvasId).flush()
+    checkpointService(s.server).create('local', s.canvasId, {
+      name: '固定片段',
+      expectedSnapshot: Buffer.from(Y.encodeSnapshot(Y.snapshot(s.doc.ydoc))).toString('base64'),
+    })
+
+    const bytes = await download(s.server, s.projectId)
+    const manifest = manifestOf(bytes)
+    const snapshot = new Y.Doc()
+    Y.applyUpdate(snapshot, unzipSync(bytes)[manifest.canvases[0]!.file.path]!)
+    const packed = createDoc(snapshot)
+    // current 不只保留采用中的 picked，还保留固定片段依赖的 fixed
+    expect(
+      packed
+        .get(video)!
+        .results!.map((r) => r.id)
+        .sort(),
+    ).toEqual(['fixed', 'picked'])
+    packed.destroy()
+
+    const target = (await bootServer({ dataDir: tempDir() })).server
+    await importInto(target, bytes)
+    // 再导入一次作为副本：画布换新 id，历史 selection 与 origin 不动，本地位置重新核实
+    const copied = await importInto(target, bytes)
+    const copiedCanvas = createDoc(target.rooms.get(copied.result.canvasId!).doc, {
+      schedule: () => {},
+    })
+    const copiedHolder = copiedCanvas.get(holder)!
+    expect(copiedHolder.videoSegment!.selection!.canvasId).toBe(s.canvasId)
+    expect(copiedHolder.videoSegment!.origin).toEqual(origin)
+    expect(copiedHolder.videoSegment!.localSelection).toMatchObject({
+      canvasId: copied.result.canvasId,
+      nodeId: video,
+      port: 'video',
+      resultId: 'fixed',
+      runId: 'run-fixed',
+    })
+    // 交给返工的是本地节点上的真实候选，文件在目标安装里也能核对
+    const local = copiedHolder.videoSegment!.localSelection!
+    const source = copiedCanvas.get(local.nodeId)!
+    const fixedResult = source.results!.find((r) => r.id === local.resultId)!
+    expect(fixedResult.value).toMatchObject({ type: 'video', assetId: s.face.id })
+    await expect(target.assets.verifyOriginal('local', s.face.id)).resolves.toHaveProperty(
+      'id',
+      s.face.id,
+    )
+    copiedCanvas.destroy()
+
+    const restored = checkpointService(target).restore(
+      'local',
+      checkpointService(target).list('local', copied.result.projectId, { limit: 50 }).items[0]!.id,
+    )
+    const restoredCanvas = createDoc(target.rooms.get(restored.canvasId).doc, {
+      schedule: () => {},
+    })
+    const restoredHolder = restoredCanvas.get(holder)!
+    expect(restoredHolder.videoSegment!.selection!.canvasId).toBe(s.canvasId)
+    expect(restoredHolder.videoSegment!.localSelection).toMatchObject({
+      canvasId: restored.canvasId,
+      nodeId: video,
+      resultId: 'fixed',
+    })
+    restoredCanvas.destroy()
+    s.doc.destroy()
+  })
+
+  it('current 不因同候选 id 但运行不同的固定记录带上无关候选', async () => {
+    const s = await seed()
+    const video = addNode(s.doc, 'plein/video', {
+      params: { model: 'plein/mock:video', prompt: '负例', mode: 'text', duration: 2 },
+    })
+    addResults(
+      s.doc,
+      video,
+      [
+        {
+          id: 'new',
+          runId: 'run-new',
+          port: 'video',
+          at: 2,
+          value: { type: 'video', assetId: s.photo.id, mime: 'image/png' },
+        },
+        {
+          id: 'V',
+          runId: 'run-v',
+          port: 'video',
+          at: 1,
+          value: { type: 'video', assetId: s.face.id, mime: 'image/png' },
+        },
+      ],
+      { adopt: false },
+    )
+    adoptResult(s.doc, video, 'new')
+    const holder = createElement(s.doc, {
+      kind: 'video',
+      assetId: s.face.id,
+      x: 0,
+      y: 600,
+      w: 320,
+      h: 180,
+    })
+    // 只按 id/画布/节点能对上，运行对不上：不能算固定引用
+    s.doc.mutable(holder)!.set('videoSegment', {
+      version: 1,
+      segmentId: 'segment-mismatch',
+      asset: { assetId: s.face.id, kind: 'video' },
+      duration: 3,
+      selection: {
+        canvasId: s.canvasId,
+        nodeId: video,
+        port: 'video',
+        resultId: 'V',
+        runId: 'mismatch',
+      },
+    })
+    s.server.rooms.get(s.canvasId).flush()
+
+    const bytes = await download(s.server, s.projectId)
+    const snapshot = new Y.Doc()
+    Y.applyUpdate(snapshot, unzipSync(bytes)[manifestOf(bytes).canvases[0]!.file.path]!)
+    const packed = createDoc(snapshot)
+    expect(packed.get(video)!.results!.map((r) => r.id)).toEqual(['new'])
+
+    // 同一组里两个视频候选：尾帧配不上任何一条，current 不能把同端口另一条或尾帧带进来
+    const grouped = addNode(s.doc, 'plein/video', {
+      params: { model: 'plein/mock:video', prompt: '同组多视频', mode: 'text', duration: 2 },
+    })
+    addResults(
+      s.doc,
+      grouped,
+      [
+        {
+          id: 'selected',
+          runId: 'run-group',
+          outputGroup: 'g',
+          port: 'video',
+          at: 3,
+          value: { type: 'video', assetId: s.photo.id, mime: 'image/png' },
+        },
+        {
+          id: 'other',
+          runId: 'run-group',
+          outputGroup: 'g',
+          port: 'video',
+          at: 2,
+          value: { type: 'video', assetId: s.face.id, mime: 'image/png' },
+        },
+        {
+          id: 'tail',
+          runId: 'run-group',
+          outputGroup: 'g',
+          port: 'lastFrame',
+          at: 2,
+          value: { type: 'image', assetId: s.face.id, mime: 'image/png' },
+        },
+      ],
+      { adopt: false },
+    )
+    adoptResult(s.doc, grouped, 'selected')
+    const groupedHolder = createElement(s.doc, {
+      kind: 'video',
+      assetId: s.photo.id,
+      x: 0,
+      y: 900,
+      w: 320,
+      h: 180,
+    })
+    s.doc.mutable(groupedHolder)!.set('videoSegment', {
+      version: 1,
+      segmentId: 'segment-group',
+      asset: { assetId: s.photo.id, kind: 'video' },
+      duration: 3,
+      selection: {
+        canvasId: s.canvasId,
+        nodeId: grouped,
+        port: 'video',
+        resultId: 'selected',
+        runId: 'run-group',
+      },
+    })
+    s.server.rooms.get(s.canvasId).flush()
+    const groupedBytes = await download(s.server, s.projectId)
+    const groupedSnapshot = new Y.Doc()
+    Y.applyUpdate(
+      groupedSnapshot,
+      unzipSync(groupedBytes)[manifestOf(groupedBytes).canvases[0]!.file.path]!,
+    )
+    const packedGrouped = createDoc(groupedSnapshot)
+    expect(packedGrouped.get(grouped)!.results!.map((r) => r.id)).toEqual(['selected'])
+    packedGrouped.destroy()
+    packed.destroy()
+
+    const all = await download(s.server, s.projectId, true)
+    const allSnapshot = new Y.Doc()
+    Y.applyUpdate(allSnapshot, unzipSync(all)[manifestOf(all).canvases[0]!.file.path]!)
+    const packedAll = createDoc(allSnapshot)
+    expect(
+      packedAll
+        .get(video)!
+        .results!.map((r) => r.id)
+        .sort(),
+    ).toEqual(['V', 'new'])
+    expect(
+      packedAll
+        .get(grouped)!
+        .results!.map((r) => r.id)
+        .sort(),
+    ).toEqual(['other', 'selected', 'tail'])
+    packedAll.destroy()
+    s.doc.destroy()
   })
 
   it('文档里引用的素材找不到时记为缺失，运行中的任务导出为历史', async () => {
@@ -456,7 +728,9 @@ describe('项目包导入', () => {
     const s = await seed()
     const files = unzipSync(await download(s.server, s.projectId))
     const legacy = JSON.parse(strFromU8(files['manifest.json']!)) as Record<string, unknown>
-    expect(legacy.formatVersion).toBe(1)
+    // 模拟旧版本导出的 v1 包：新版导入器继续能读。
+    expect(legacy.formatVersion).toBe(3)
+    legacy.formatVersion = 1
     delete legacy.checkpoints
     files['manifest.json'] = strToU8(JSON.stringify(legacy))
     const data = zipSync(files)

@@ -14,7 +14,7 @@ import { CreateLibraryItem } from './library'
  */
 export const PROJECT_PACKAGE_FORMAT = 'plein-project'
 /** 当前写出、也是能读的最高格式版本；结构有不兼容变化时加一 */
-export const PROJECT_PACKAGE_VERSION = 2
+export const PROJECT_PACKAGE_VERSION = 3
 export const PROJECT_PACKAGE_EXT = '.plein'
 
 const sha256 = z.string().regex(/^[0-9a-f]{64}$/, '哈希不合法')
