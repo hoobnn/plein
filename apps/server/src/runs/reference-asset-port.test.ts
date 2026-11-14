@@ -428,8 +428,211 @@ it('可选参考被模型上限正常舍弃时保留可读名，不误报失效�
     ),
   ).toBe(true)
   expect(input.blocked.some((issue) => issue.message.includes('已删除、替换或未送入'))).toBe(false)
+  // 同一有效绑定只用 over_limit 解释一次，不再追加「请重新选择」。
+  const limitRef = input.promptReferences?.find((ref) => ref.name === '乙')
+  expect(limitRef?.reason).toBe('over_limit')
+  expect(limitRef?.message ?? '').not.toContain('重新选择')
+  const limitUnsent = (input.unsent ?? []).filter(
+    (item) => item.elementId === bound && item.reason === 'over_limit',
+  )
+  expect(limitUnsent).toHaveLength(1)
+  expect(limitUnsent[0]?.message ?? '').not.toContain('重新选择')
+  expect(
+    (input.unsent ?? []).some((item) => item.elementId === bound && item.reason === 'not_sent'),
+  ).toBe(false)
   const posted = await submitted(server, id, node, submit)
   expect(posted.references?.some((item) => item.assetId === asset('a'))).toBe(true)
   expect(posted.references?.some((item) => item.assetId === asset('b'))).toBe(false)
   void plain
+})
+
+it('错口 token 不能代替同一来源的合法限额豁免', async () => {
+  videoSpec.limits = { ...videoLimits, references: { max: 1 } }
+  const { server, id, doc } = await boot()
+  createElement(doc, {
+    id: 'plain-mixed',
+    kind: 'image',
+    name: '甲',
+    assetId: asset('a'),
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  const bound = createElement(doc, {
+    id: 'bound-mixed',
+    kind: 'image',
+    name: '乙',
+    assetId: asset('b'),
+    x: 0,
+    y: 200,
+    w: 100,
+    h: 100,
+  })
+  const node = target(doc, '@甲 与 @乙 以及 @伪口', {
+    [boundary('乙', bound)]: {
+      type: 'image',
+      assetId: asset('b'),
+      source: bound,
+      sourcePort: 'image',
+    },
+    [boundary('伪口', bound)]: {
+      type: 'image',
+      assetId: asset('b'),
+      source: bound,
+      sourcePort: 'lastFrame',
+    },
+  })
+  const submit = vi.spyOn(mockProvider, 'submit')
+  const input = await server.runs.preview(id, node, 'local')
+  expect(input.status).not.toBe('ready')
+  expect(input.blocked.some((issue) => issue.message.includes('伪口'))).toBe(true)
+  expect(submit).not.toHaveBeenCalled()
+})
+
+it('必需参考正常超限仍按原合同阻断', async () => {
+  videoSpec.limits = { ...videoLimits, references: { max: 1 } }
+  const { server, id, doc } = await boot()
+  const own = createElement(doc, {
+    id: 'own',
+    kind: 'image',
+    name: '甲',
+    assetId: asset('a'),
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  const bound = createElement(doc, {
+    id: 'required',
+    kind: 'image',
+    name: '乙',
+    assetId: asset('b'),
+    x: 0,
+    y: 200,
+    w: 100,
+    h: 100,
+  })
+  const node = target(doc, '@甲 与 @乙', {
+    requiredRefs: [bound],
+    [boundary('乙', bound)]: {
+      type: 'image',
+      assetId: asset('b'),
+      source: bound,
+      sourcePort: 'image',
+    },
+  })
+  connect(doc, [own, 'image'], [node, 'images'])
+  const submit = vi.spyOn(mockProvider, 'submit')
+  const input = await server.runs.preview(id, node, 'local')
+  expect(input.status).not.toBe('ready')
+  expect(
+    input.blocked.some(
+      (issue) => issue.message.includes('必需参考') && issue.message.includes('最多带'),
+    ),
+  ).toBe(true)
+  expect(submit).not.toHaveBeenCalled()
+})
+
+it('视觉对话选中普通图后新增同名素材，实际输入仍只送原图', async () => {
+  const { server, id, doc } = await boot()
+  const original = createElement(doc, {
+    id: 'zz',
+    kind: 'image',
+    name: '风',
+    assetId: asset('z'),
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  const chat = addNode(doc, 'plein/llm', {
+    params: {
+      model: 'plein/mock:agent-vision',
+      prompt: '@风 看看',
+      [boundary('风', original)]: {
+        type: 'image',
+        assetId: asset('z'),
+        source: original,
+        sourcePort: 'image',
+      },
+    },
+    x: 600,
+  })
+  const before = await server.runs.preview(id, chat, 'local')
+  expect(before.status).toBe('ready')
+  expect(before.inputs.images).toMatchObject([{ assetId: asset('z'), source: original }])
+
+  // 再上传/新建一张同名可引用图，不触碰正文与绑定。
+  createElement(doc, {
+    id: 'aa',
+    kind: 'image',
+    name: '风',
+    assetId: asset('a'),
+    x: 0,
+    y: 300,
+    w: 100,
+    h: 100,
+  })
+  const input = await server.runs.preview(id, chat, 'local')
+  expect(input.status).toBe('ready')
+  expect(input.inputs.images).toMatchObject([{ assetId: asset('z'), source: original }])
+  expect(input.inputs.images?.some((item) => item.assetId === asset('a'))).toBe(false)
+  // 正文仍可读，不把私有标记或平台编号写进普通对话。
+  expect(input.prompt).not.toMatch(/\uE000|\uE001|\uE004|\uE005/)
+})
+
+it('手输普通 @ 仍按名字送入唯一目标', async () => {
+  const { server, id, doc } = await boot()
+  const targetImage = createElement(doc, {
+    id: 'solo',
+    kind: 'image',
+    name: '风',
+    assetId: asset('s'),
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  const chat = addNode(doc, 'plein/llm', {
+    params: { model: 'plein/mock:agent-vision', prompt: '@风 看看' },
+    x: 600,
+  })
+  const input = await server.runs.preview(id, chat, 'local')
+  expect(input.status).toBe('ready')
+  expect(input.inputs.images).toMatchObject([{ assetId: asset('s'), source: targetImage }])
+})
+
+it('非编号能力的错型绑定明确未送入，可读名与私有标记不泄漏', async () => {
+  const { server, id, doc } = await boot()
+  const media = createElement(doc, {
+    id: 'wrong-type',
+    kind: 'image',
+    name: '风',
+    assetId: asset('w'),
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  const chat = addNode(doc, 'plein/llm', {
+    params: {
+      model: 'plein/mock:agent-vision',
+      prompt: '@风 看看',
+      system: '讲述 @风',
+      [boundary('风', media)]: {
+        type: 'video',
+        assetId: asset('w'),
+        source: media,
+        sourcePort: 'video',
+      },
+    },
+    x: 600,
+  })
+  const input = await server.runs.preview(id, chat, 'local')
+  expect(input.inputs.images ?? []).toEqual([])
+  expect(input.notices.some((notice) => notice.code === 'stale_binding')).toBe(true)
+  expect(input.prompt).toBe('@风 看看')
+  expect(input.params.system).toBe('讲述 @风')
+  expect(input.prompt).not.toMatch(/\uE000|\uE001|\uE004|\uE005/)
 })

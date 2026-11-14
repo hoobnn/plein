@@ -170,7 +170,7 @@ export function referencePreview({
 
   const promptReferences: InputPromptReference[] = []
   const unsent: InputUnsentReference[] = []
-  const unsentKeys = new Set<string>()
+  const unsentByKey = new Map<string, InputUnsentReference>()
   const addUnsent = (item: InputUnsentReference, identity = '') => {
     // 去重键不含 name（有 elementId 时）：不同路径对同一引用的取名格式可能不同
     // （如带不带 #序号），键里带 name 会让同一引用去重失效；同一张卡的不同视角 /
@@ -184,8 +184,14 @@ export function referencePreview({
       item.assetId ?? '',
       item.elementId ? identity : item.name,
     ])
-    if (unsentKeys.has(key)) return
-    unsentKeys.add(key)
+    const existing = unsentByKey.get(key)
+    if (existing) {
+      // 同一身份经不同路径（绑定 / 连线 / @）发现时合并来源，不重复列两行。
+      for (const origin of item.origins)
+        if (!existing.origins.includes(origin)) existing.origins.push(origin)
+      return
+    }
+    unsentByKey.set(key, item)
     unsent.push(item)
   }
   // unsupported 的文案按节点区分：非生成节点是「不送 @ 引用」，文生视频是「不用参考图」。
@@ -231,6 +237,32 @@ export function referencePreview({
         : undefined
     const assetId = supported && match && 'assetId' in match ? match.assetId : undefined
     const deleted = source ? !doc.has(source) : false
+    // 合法但被模型限额正常舍弃的独立素材：原因是 over_limit，不能再说「请重新选择」。
+    const element = source ? doc.get(source) : undefined
+    const naturalPort =
+      element?.kind === 'image' || element?.kind === 'video' || element?.kind === 'audio'
+        ? element.kind
+        : undefined
+    const limitDetail =
+      binding && naturalPort && element?.assetId
+        ? details.find(
+            (detail) =>
+              detail.elementId === source &&
+              detail.reason === 'over_limit' &&
+              (detail.media ?? 'image') === binding.type,
+          )
+        : undefined
+    const limitDropped =
+      !!limitDetail &&
+      !!binding &&
+      binding.type === naturalPort &&
+      (!binding.sourcePort || binding.sourcePort === naturalPort)
+    // 与 details 的 over_limit 条目合并时使用同一条实际被舍弃的资产。
+    const limitAsset = limitDetail
+      ? limitDetail.available.includes(binding?.assetId ?? '')
+        ? binding!.assetId
+        : limitDetail.available[0]
+      : undefined
     const reason: InputUnsentReason | undefined = !supported
       ? 'unsupported'
       : assetId
@@ -239,21 +271,25 @@ export function referencePreview({
           ? legacyIndex
             ? 'mention_broken'
             : 'stale_binding'
-          : deleted
-            ? 'stale_binding'
-            : 'not_sent'
+          : limitDropped
+            ? 'over_limit'
+            : deleted
+              ? 'stale_binding'
+              : 'not_sent'
     const message =
       reason === 'unsupported'
         ? reasonMessage(reason, token.name, undefined, kind, unsentScope)
-        : reason
-          ? !binding
-            ? legacyIndex
-              ? `引用 @${token.name} 尚未确认素材身份，请从参考素材重新选择`
-              : `残留引用 @${token.name} 没有可确认的素材身份，已忽略`
-            : deleted
-              ? `绑定 @${token.name} 指向已删除的元素，已忽略`
-              : `绑定 @${token.name} 的素材未送入，请重新选择`
-          : undefined
+        : reason === 'over_limit'
+          ? reasonMessage(reason, token.name, limitFor(kind), kind)
+          : reason
+            ? !binding
+              ? legacyIndex
+                ? `引用 @${token.name} 尚未确认素材身份，请从参考素材重新选择`
+                : `残留引用 @${token.name} 没有可确认的素材身份，已忽略`
+              : deleted
+                ? `绑定 @${token.name} 指向已删除的元素，已忽略`
+                : `绑定 @${token.name} 的素材未送入，请重新选择`
+            : undefined
     promptReferences.push({
       start: token.start,
       end: token.end,
@@ -267,14 +303,19 @@ export function referencePreview({
     if (reason && message)
       addUnsent(
         {
-          ...(binding?.assetId ? { assetId: binding.assetId } : {}),
+          ...(limitAsset
+            ? { assetId: limitAsset }
+            : binding?.assetId
+              ? { assetId: binding.assetId }
+              : {}),
           ...(source ? { elementId: source } : {}),
           name: token.name,
           reason,
           message,
           origins: ['binding'],
         },
-        bindingIdentity(binding),
+        // 与 details 的 over_limit 条目共用同一去重身份，只保留一条真正超限原因。
+        limitDropped ? (limitDetail?.pickIdentity ?? '') : bindingIdentity(binding),
       )
   }
 

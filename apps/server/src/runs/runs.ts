@@ -2235,7 +2235,6 @@ export class NodeRuns implements BatchHost {
     const continuation = continuationInputs(doc, el, def, collected)
     // 标记用户写下的编号，避免把资产卡展开后由宿主生成的编号当成旧画布引用。
     let referencePrompt = String(el.params?.prompt ?? '')
-    const referenceTokens = boundReferenceTokens(referencePrompt, el.params)
     const referenceMode =
       def.capability === 'image.generate' ||
       (def.capability === 'video.generate' && el.params?.mode === 'reference')
@@ -2248,27 +2247,6 @@ export class NodeRuns implements BatchHost {
       sourcePort?: string
       type?: ReferenceIdentity['type']
     }> = []
-    const maskStale = (text: string, params: Record<string, unknown>) => {
-      const bindings = referenceBindings(params)
-      const stale = boundReferenceTokens(text, params).flatMap((token) => {
-        const binding = bindings[token.name]
-        return binding?.source && !doc.has(binding.source) ? [{ token, binding }] : []
-      })
-      if (!stale.length) return text
-      let out = text
-      for (const { token, binding } of [...stale].reverse()) {
-        const index =
-          staleRefs.push({
-            name: token.name,
-            source: binding.source,
-            assetId: binding.assetId,
-            sourcePort: binding.sourcePort,
-            type: binding.type,
-          }) - 1
-        out = out.slice(0, token.start) + `\uE002${index}\uE003` + out.slice(token.end)
-      }
-      return out
-    }
     const connectedSources = new Set(
       [...doc.edges()].filter((edge) => edge.to[0] === el.id).map((edge) => edge.from[0]),
     )
@@ -2297,51 +2275,82 @@ export class NodeRuns implements BatchHost {
       if (binding.sourcePort && binding.sourcePort !== source.kind) return undefined
       return { name, elementId: source.id }
     }
-    if (referenceMode) {
-      const ownParams = el.params ?? {}
-      // 持久命中按全局标记序号登记，applyMentions 会与普通 @ 按位置合流。
-      for (const token of [...referenceTokens].reverse()) {
-        const hit = standaloneHit(token.name, ownParams)
-        const marked = mark(referencePrompt, token)
-        markers.set(marked.index, { name: token.name, params: ownParams })
-        if (hit) boundHits.set(marked.index, hit)
-        referencePrompt = marked.text
-      }
-      // 上游也在展开 @ 之前标记原始绑定；后面只还原这些位置，不扫描新生成的编号。
-      for (const item of continuation.inputs.prompt ?? []) {
-        if (item.type !== 'text') continue
-        // 上游文本引用来自它自己的元素：失效/跨画布保护绑定也记在那里。
-        const source =
-          'source' in item && typeof item.source === 'string' ? doc.get(item.source) : undefined
-        const params = source?.params ? { ...source.params, ...el.params } : (el.params ?? {})
-        const tokens = boundReferenceTokens(item.text, params)
-        if (!tokens.length) continue
-        for (const token of [...tokens].reverse()) {
+    /**
+     * 持久绑定 token 的占位：参考模式全部遮蔽后按输出口还原；普通文本/视觉能力只遮蔽
+     * 「按来源 id 已核验的未连线独立素材」，其余普通 @ 仍按原有名字语义。失效 token 单独记。
+     */
+    const invalidRefs: Array<{ name: string }> = []
+    const maskBound = (text: string, params: Record<string, unknown>) => {
+      if (!text.includes('@')) return text
+      let out = text
+      for (const token of [...boundReferenceTokens(text, params)].reverse()) {
+        const binding = referenceBindings(params)[token.name]
+        if (!referenceMode) {
+          if (!binding?.source) continue
+          const source = doc.get(binding.source)
+          if (!source) {
+            const index =
+              staleRefs.push({
+                name: token.name,
+                source: binding.source,
+                assetId: binding.assetId,
+                sourcePort: binding.sourcePort,
+                type: binding.type,
+              }) - 1
+            out = out.slice(0, token.start) + `\uE002${index}\uE003` + out.slice(token.end)
+            continue
+          }
+          const media =
+            source.kind === 'image' || source.kind === 'video' || source.kind === 'audio'
+          // 资产卡/节点按原有名字语义，不走独立素材身份。
+          if (!media) continue
           const hit = standaloneHit(token.name, params)
-          const marked = mark(item.text, token)
-          markers.set(marked.index, { name: token.name, params })
-          if (hit) boundHits.set(marked.index, hit)
-          item.text = marked.text
+          if (hit) {
+            const marked = mark(out, token)
+            markers.set(marked.index, { name: token.name, params })
+            boundHits.set(marked.index, hit)
+            out = marked.text
+            continue
+          }
+          const matches =
+            !!source.assetId &&
+            binding.type === source.kind &&
+            (!binding.sourcePort || binding.sourcePort === source.kind)
+          // 已连线且输出身份匹配：沿既有输入，不重复注入也不遮成失效。
+          if (connectedSources.has(source.id) && matches) continue
+          // 其余（错误类型/输出口、缺资产）明确未送入，保留可读 @ 名称。
+          const index = invalidRefs.push({ name: token.name }) - 1
+          out = out.slice(0, token.start) + `\uE004${index}\uE005` + out.slice(token.end)
+          continue
         }
+        const hit = standaloneHit(token.name, params)
+        const marked = mark(out, token)
+        markers.set(marked.index, { name: token.name, params })
+        if (hit) boundHits.set(marked.index, hit)
+        out = marked.text
       }
+      return out
     }
+    if (referenceMode) referencePrompt = maskBound(referencePrompt, el.params ?? {})
     const referenceParams: Record<string, unknown> = { ...el.params }
     if (referenceMode) referenceParams.prompt = referencePrompt
     else {
       // applyMentions 会消费所有顶层字符串参数（prompt / system / text…）：和它逐键对齐，
-      // 只遮外部失效 token，其余普通语义原样保留；没有 prompt 字段也不凭空补一个空值。
+      // 没有 prompt 字段也不凭空补一个空值。
       for (const [key, value] of Object.entries(el.params ?? {})) {
         if (typeof value !== 'string' || !value.includes('@')) continue
-        const masked = maskStale(value, el.params ?? {})
+        const masked = maskBound(value, el.params ?? {})
         if (masked !== value) referenceParams[key] = masked
       }
-      for (const item of continuation.inputs.prompt ?? []) {
-        if (item.type !== 'text') continue
-        const source =
-          'source' in item && typeof item.source === 'string' ? doc.get(item.source) : undefined
-        const params = source?.params ? { ...source.params, ...el.params } : (el.params ?? {})
-        item.text = maskStale(item.text, params)
-      }
+    }
+    // 上游也在展开 @ 之前标记原始绑定；后面只还原这些位置，不扫描新生成的编号。
+    for (const item of continuation.inputs.prompt ?? []) {
+      if (item.type !== 'text') continue
+      // 上游文本引用来自它自己的元素：失效/跨画布保护绑定也记在那里。
+      const source =
+        'source' in item && typeof item.source === 'string' ? doc.get(item.source) : undefined
+      const params = source?.params ? { ...source.params, ...el.params } : (el.params ?? {})
+      item.text = maskBound(item.text, params)
     }
     const referenceElement = { ...el, params: referenceParams }
     const { params, inputs, details, notices, blocked } = await applyMentions(
@@ -2370,6 +2379,39 @@ export class NodeRuns implements BatchHost {
       },
     )
     if (continuation.issue) blocked.push(continuation.issue)
+    if (!referenceMode && markers.size) {
+      // 非编号能力保持可读文本：持久身份只决定送哪张素材，不写入平台编号。
+      const restoreBound = (text: string) =>
+        text.replace(/\uE000(\d+)\uE001/g, (_match, index: string) => {
+          const marked = markers.get(Number(index))
+          return marked ? marked.name : ''
+        })
+      for (const [key, value] of Object.entries(params))
+        if (typeof value === 'string' && value.includes('\uE000')) params[key] = restoreBound(value)
+      for (const item of continuation.inputs.prompt ?? [])
+        if (item.type === 'text') item.text = restoreBound(item.text)
+      for (const item of inputs.prompt ?? [])
+        if (item.type === 'text') item.text = restoreBound(item.text)
+    }
+    if (!referenceMode && invalidRefs.length) {
+      const restoreInvalid = (text: string) =>
+        text.replace(
+          /\uE004(\d+)\uE005/g,
+          (_match, index: string) => `@${invalidRefs[Number(index)]?.name ?? ''}`,
+        )
+      for (const [key, value] of Object.entries(params))
+        if (typeof value === 'string' && value.includes('\uE004'))
+          params[key] = restoreInvalid(value)
+      for (const item of continuation.inputs.prompt ?? [])
+        if (item.type === 'text') item.text = restoreInvalid(item.text)
+      for (const item of inputs.prompt ?? [])
+        if (item.type === 'text') item.text = restoreInvalid(item.text)
+      for (const name of new Set(invalidRefs.map((ref) => ref.name)))
+        notices.push({
+          code: 'stale_binding',
+          message: `引用 @${name} 的类型或输出口与来源不符，本次没有送入；请重新选择素材`,
+        })
+    }
     const staleUnsents: Array<InputUnsentReference & { identity?: string }> = []
     if (!referenceMode && staleRefs.length) {
       const restoreStale = (text: string) =>
@@ -2451,7 +2493,17 @@ export class NodeRuns implements BatchHost {
           imageLabel: numbering.label,
           isStale,
           mediaSupported: (kind) => kind === 'image' || (limits?.referenceMedia?.[kind] ?? 0) > 0,
-          dropped: (binding) => !!binding.source && droppedByLimit.has(binding.source),
+          dropped: (binding) => {
+            if (!binding.source || !droppedByLimit.has(binding.source)) return false
+            const element = doc.get(binding.source)
+            if (!element?.assetId) return false
+            if (element.kind !== 'image' && element.kind !== 'video' && element.kind !== 'audio')
+              return false
+            if (binding.type !== element.kind) return false
+            // 只有这条 token 自己的有效普通素材身份才享受限额豁免，别的 token / 错口不能代领。
+            if (binding.sourcePort && binding.sourcePort !== element.kind) return false
+            return true
+          },
         })
       const report = (result: BoundReference, name: string) => {
         if (result.error) blocked.push({ code: 'prepare_failed', message: result.error })
