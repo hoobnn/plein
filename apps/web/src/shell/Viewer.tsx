@@ -18,6 +18,7 @@ import { Slider } from '../ui/Slider'
 import { AnimatePresence, useOverlayClosing } from '../ui/motion'
 import { CreativeReviewForm } from '../features/storyboard/CreativeReviewForm'
 import { useStale } from '../features/runs/stale'
+import { CandidateInputEvidence } from './CandidateInputEvidence'
 import { currentReviewCandidates, isCurrentReview, runReviewAction } from './reviewActions'
 
 /**
@@ -288,6 +289,15 @@ function Review({ viewer }: { viewer: View }) {
               </p>
             )}
           </div>
+        )}
+        {element && result && (
+          <CandidateInputEvidence
+            engine={engine}
+            doc={doc}
+            canvasId={canvasId}
+            viewer={viewer}
+            result={result}
+          />
         )}
         {kind === 'image' && (
           <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2 text-xs">

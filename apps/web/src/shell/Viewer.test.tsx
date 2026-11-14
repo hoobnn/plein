@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import type { Engine } from '@plein/canvas-core'
+import { referenceClipboard } from '@plein/capabilities'
 import {
   addResults,
   createElement,
@@ -8,9 +9,11 @@ import {
   type PleinDoc,
 } from '@plein/doc'
 import { openDoc } from '@plein/doc/testing'
+import type { JobInfo, PreparedInput } from '@plein/protocol'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { useCanvas } from '../stores/canvas'
-import { act, fireEvent, renderApp, screen } from '../testing/render'
+import { mockFetch } from '../testing/fetch'
+import { act, fireEvent, renderApp, screen, waitFor } from '../testing/render'
 import { Viewer } from './Viewer'
 import { shellFixture } from './testing'
 
@@ -152,7 +155,7 @@ it.each(['rename', 'clear-name'] as const)(
       f.doc.mutable(f.id)!.set('name', mode === 'rename' ? name : '')
       f.doc.flush()
     })
-    const actual = screen.getByRole('heading').textContent!
+    const actual = screen.getByRole('heading', { level: 2 }).textContent!
     expect(actual).toBe(mode === 'rename' ? name : '生成图片')
     expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe(`查看「${actual}」`)
     expect(screen.getByRole('button', { name: '重置图片视图' }).textContent).toBe('125%')
@@ -160,7 +163,7 @@ it.each(['rename', 'clear-name'] as const)(
       deleteElements(f.doc, [f.id])
       f.doc.flush()
     })
-    expect(screen.getByRole('heading').textContent).toBe(actual)
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe(actual)
     expect(screen.getByRole('status').textContent).toContain('来源节点已删除')
   },
 )
@@ -424,4 +427,214 @@ it('按钮 Enter 执行本意，预览区 Enter 才采用，组字 Enter 不采�
   screen.getByRole('button', { name: '关闭' }).focus()
   await f.user.keyboard('{Enter}')
   expect(useCanvas.getState().viewer).toBeNull()
+})
+
+function prepared(nodeId: string, model: string, prompt: string): PreparedInput {
+  return {
+    v: 1,
+    nodeId,
+    nodeType: 'plein/image',
+    preparedAt: 1,
+    status: 'ready',
+    inputHash: `hash-${model}`,
+    params: { prompt },
+    model: { ref: `mock/${model}`, provider: 'mock', title: model },
+    prompt,
+    inputs: {},
+    refs: [],
+    sent: [
+      { index: 1, token: '图1', assetId: 'a'.repeat(64), name: `${model}参考`, origins: ['edge'] },
+    ],
+    blocked: [],
+    notices: [],
+  }
+}
+
+function job(id: string, nodeId: string, input: PreparedInput): JobInfo {
+  return {
+    id,
+    nodeId,
+    nodeType: input.nodeType,
+    status: 'succeeded',
+    attempts: 1,
+    createdAt: 1,
+    input,
+  }
+}
+
+const historicalSection = () =>
+  screen.getByRole('heading', { name: '此候选生成时实际输入' }).parentElement!
+const currentSection = () =>
+  screen.getByRole('heading', { name: '当前节点实际输入' }).parentElement!
+
+it('普通候选展示生成时输入与实际参考，切候选后迟到响应不覆盖', async () => {
+  const f = setup('image', 2)
+  useCanvas.setState({ sync: 'connected' })
+  const pending = new Map<string, (response: Response) => void>()
+  mockFetch((request) => {
+    const path = new URL(request.url).pathname
+    const alias = path.match(/\/api\/canvases\/shell-test\/jobs\/([^/]+)$/)
+    if (alias)
+      return new Promise<Response>((resolve) => pending.set(decodeURIComponent(alias[1]!), resolve))
+    if (path === `/api/canvases/shell-test/nodes/${f.id}/input`)
+      return Response.json(prepared(f.id, '当前模型', '当前提示词'))
+    return undefined
+  })
+  await f.user.click(screen.getByText('此候选生成时输入与当前输入对照'))
+  await waitFor(() => expect(pending.has('run-0')).toBe(true))
+  await waitFor(() => expect(currentSection().textContent).toContain('当前提示词'))
+  await f.user.click(screen.getByRole('button', { name: '预览下一个候选' }))
+  await waitFor(() => expect(pending.has('run-1')).toBe(true))
+  await act(async () => {
+    pending.get('run-1')!(Response.json(job('run-1', f.id, prepared(f.id, '旧模型B', '旧提示词B'))))
+  })
+  await waitFor(() => expect(historicalSection().textContent).toContain('旧提示词B'))
+  expect(historicalSection().textContent).toContain('旧模型B')
+  expect(historicalSection().textContent).toContain('旧模型B参考')
+  expect(historicalSection().textContent).not.toContain('当前提示词')
+  // 候选 A 的响应此刻才回来，不能盖住正在查看的 B。
+  await act(async () => {
+    pending.get('run-0')!(Response.json(job('run-0', f.id, prepared(f.id, '旧模型A', '旧提示词A'))))
+  })
+  await waitFor(() => expect(historicalSection().textContent).toContain('旧提示词B'))
+  expect(historicalSection().textContent).not.toContain('旧提示词A')
+})
+
+it('没有历史生成记录时明确说明，不拿当前输入顶替', async () => {
+  const f = setup('image', 1)
+  act(() => {
+    f.doc.mutable(f.id)!.set('results', [{ ...f.results[0]!, runId: '' }])
+    f.doc.flush()
+  })
+  mockFetch((request) =>
+    request.url.endsWith(`/nodes/${f.id}/input`)
+      ? Response.json(prepared(f.id, '当前模型', '当前提示词'))
+      : undefined,
+  )
+  await f.user.click(screen.getByText('此候选生成时输入与当前输入对照'))
+  expect(historicalSection().textContent).toContain('未记录生成任务')
+  expect(historicalSection().textContent).not.toContain('当前提示词')
+  await waitFor(() => expect(currentSection().textContent).toContain('当前提示词'))
+})
+
+it('本地作业对不上时按候选原执行位置精确读取，读不到可重试', async () => {
+  const f = setup('image', 1)
+  const origin = {
+    canvasId: 'origin-canvas',
+    nodeId: 'origin-node',
+    port: 'images',
+    resultId: 'origin-result',
+    runId: 'origin-run',
+  }
+  act(() => {
+    f.doc.mutable(f.id)!.set('results', [{ ...f.results[0]!, generationOrigin: origin }])
+    f.doc.flush()
+  })
+  useCanvas.setState({ sync: 'connected' })
+  let originReads = 0
+  mockFetch((request) => {
+    const path = new URL(request.url).pathname
+    if (path === '/api/canvases/origin-canvas/jobs/origin-run') {
+      originReads++
+      return originReads === 1
+        ? new Response(null, { status: 404 })
+        : Response.json(
+            job('origin-run', 'origin-node', prepared('origin-node', '原模型', '原提示词')),
+          )
+    }
+    if (path === '/api/canvases/shell-test/jobs/run-0') return new Response(null, { status: 404 })
+    if (path === `/api/canvases/shell-test/nodes/${f.id}/input`)
+      return Response.json(prepared(f.id, '当前模型', '当前提示词'))
+    return undefined
+  })
+  await f.user.click(screen.getByText('此候选生成时输入与当前输入对照'))
+  await waitFor(() => expect(historicalSection().textContent).toContain('生成时的输入记录读不到'))
+  expect(historicalSection().textContent).not.toContain('当前提示词')
+  await waitFor(() => expect(currentSection().textContent).toContain('当前提示词'))
+  await f.user.click(screen.getByRole('button', { name: '重试读取' }))
+  await waitFor(() => expect(historicalSection().textContent).toContain('原提示词'))
+  expect(historicalSection().textContent).toContain('原模型')
+  expect(historicalSection().textContent).toContain('最初生成位置的记录')
+})
+
+it('生成记录存在但没有冻结输入时如实说明，不拿当前输入补填', async () => {
+  const f = setup('image', 1)
+  mockFetch((request) => {
+    const path = new URL(request.url).pathname
+    if (path === '/api/canvases/shell-test/jobs/run-0')
+      return Response.json({
+        ...job('run-0', f.id, prepared(f.id, '旧模型', '旧提示词')),
+        input: undefined,
+      })
+    if (path === `/api/canvases/shell-test/nodes/${f.id}/input`)
+      return Response.json(prepared(f.id, '当前模型', '当前提示词'))
+    return undefined
+  })
+  await f.user.click(screen.getByText('此候选生成时输入与当前输入对照'))
+  await waitFor(() => expect(historicalSection().textContent).toContain('这条生成记录没有冻结输入'))
+  expect(historicalSection().textContent).not.toContain('当前提示词')
+  await waitFor(() => expect(currentSection().textContent).toContain('当前提示词'))
+})
+
+it('同画布复制节点后按原执行节点核对输入，不额外请求', async () => {
+  const doc = openDoc()
+  reviewDocs.push(doc)
+  const original = createElement(doc, {
+    kind: 'node',
+    nodeType: 'plein/image',
+    name: '原节点',
+    x: 0,
+    y: 0,
+    w: 200,
+    h: 100,
+    ports: { inputs: [], outputs: [{ id: 'images', label: '图片', type: 'image' }] },
+  })
+  addResults(
+    doc,
+    original,
+    [
+      {
+        id: 'original-result',
+        at: 1,
+        runId: 'original-run',
+        port: 'images',
+        generationOrigin: {
+          canvasId: 'c',
+          nodeId: original,
+          port: 'images',
+          resultId: 'original-result',
+          runId: 'original-run',
+        },
+        value: { type: 'image', assetId: 'original-asset' },
+      },
+    ],
+    { adopt: true },
+  )
+  const [copied] = referenceClipboard.paste(doc, referenceClipboard.copy(doc, [original]), {
+    canvasId: 'c',
+  })
+  const copiedResult = doc.get(copied!)!.results![0]!
+  useCanvas.setState({
+    engine: { doc } as Engine,
+    canvasId: 'c',
+    viewer: { kind: 'result', name: '复制节点', nodeId: copied!, resultId: copiedResult.id },
+  })
+  let jobReads = 0
+  mockFetch((request) => {
+    const path = new URL(request.url).pathname
+    if (path === '/api/canvases/c/jobs/original-run') {
+      jobReads++
+      return Response.json(job('original-run', original, prepared(original, '原模型', '原提示词')))
+    }
+    if (path === `/api/canvases/c/nodes/${copied}/input`)
+      return Response.json(prepared(copied!, '当前模型', '当前提示词'))
+    return undefined
+  })
+  const { user } = renderApp(<Viewer />)
+  await user.click(screen.getByText('此候选生成时输入与当前输入对照'))
+  await waitFor(() => expect(historicalSection().textContent).toContain('原提示词'))
+  expect(historicalSection().textContent).toContain('最初生成位置的记录')
+  expect(historicalSection().textContent).not.toContain('没有与此候选匹配')
+  expect(jobReads).toBe(1)
+  await waitFor(() => expect(currentSection().textContent).toContain('当前提示词'))
 })

@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 import { deleteElements, updateElement } from '@plein/doc'
+import type { ArrangedClip } from '@plein/nodes'
 import { expect, it, vi } from 'vite-plus/test'
+import { inspectReworkSource } from '../features/sequence/rework'
 import * as importProgress from '../canvas/importProgress'
 import * as importView from '../canvas/importView'
 import { useCanvas } from '../stores/canvas'
@@ -485,4 +487,165 @@ it('历史采用旧尾帧后主视频同步采用，验收备注按端口独立�
       ['video-old', '主视频运动可用'],
     ]),
   )
+})
+
+function videoFixture(name: string, assetId: string) {
+  const f = shellFixture()
+  const id = f.add('video', name)
+  const origin = {
+    canvasId: '原画布',
+    nodeId: '原节点',
+    port: 'video',
+    resultId: `${name}-原候选`,
+    runId: `${name}-原运行`,
+  }
+  const result = {
+    id: `${name}-候选`,
+    runId: `${name}-运行`,
+    port: 'video',
+    at: 1,
+    generationOrigin: origin,
+    value: { type: 'video' as const, assetId, mime: 'video/mp4' },
+  }
+  act(() => {
+    f.doc.mutable(id)!.set('results', [result])
+    f.doc.flush()
+  })
+  useCanvas.setState({ history: true })
+  return { ...f, id, assetId, result, origin }
+}
+
+it('历史视频放到画布保留精确候选来源，重开后仍能核对返工', async () => {
+  const f = videoFixture('镜头视频', 'a'.repeat(64))
+  mockFetch((request) =>
+    request.url.endsWith('/meta')
+      ? Response.json({
+          ...mediaAsset(f.assetId, 'video'),
+          mime: 'video/mp4',
+          duration: 4.5,
+          width: 1920,
+          height: 1080,
+        })
+      : undefined,
+  )
+  const { user } = renderApp(
+    <>
+      <History />
+      <Viewer />
+    </>,
+  )
+  await user.click(screen.getByRole('checkbox', { name: '选择「镜头视频」' }))
+  await user.click(screen.getByRole('button', { name: '放到画布上' }))
+  await waitFor(() =>
+    expect([...f.doc.elements()].filter((el) => el.kind === 'video')).toHaveLength(1),
+  )
+  const placed = [...f.doc.elements()].find((el) => el.kind === 'video')!
+  expect(placed.assetId).toBe(f.assetId)
+  expect(placed.videoSegment).toMatchObject({
+    version: 1,
+    duration: 4.5,
+    asset: { assetId: f.assetId, kind: 'video', mime: 'video/mp4' },
+    selection: {
+      canvasId: 'shell-test',
+      nodeId: f.id,
+      port: 'video',
+      resultId: f.result.id,
+      runId: f.result.runId,
+    },
+    origin: f.origin,
+  })
+  expect([placed.w, placed.h]).toEqual([480, 270])
+  const inspected = inspectReworkSource(
+    f.doc,
+    {
+      clipInstanceId: 'clip',
+      source: placed.id,
+      port: 'video',
+      segment: placed.videoSegment,
+      clip: { assetId: f.assetId },
+    } as unknown as ArrangedClip,
+    'shell-test',
+  )
+  expect('problem' in inspected).toBe(false)
+  if ('problem' in inspected) throw new Error(inspected.problem)
+  expect(inspected.source.id).toBe(f.id)
+  expect(inspected.port).toBe('video')
+})
+
+it.each([
+  ['候选被删除', (f: ReturnType<typeof videoFixture>) => f.doc.mutable(f.id)!.set('results', [])],
+  [
+    '画布已切换',
+    (f: ReturnType<typeof videoFixture>) => {
+      void f
+      useCanvas.getState().setCanvasId('另一个画布')
+    },
+  ],
+] as const)('等待素材信息期间%s时不写入虚假来源', async (mode, change) => {
+  const f = videoFixture(
+    `会被改动的候选${mode}`,
+    mode === '候选被删除' ? 'b'.repeat(64) : 'c'.repeat(64),
+  )
+  let release!: (response: Response) => void
+  mockFetch((request) =>
+    request.url.endsWith('/meta')
+      ? new Promise<Response>((resolve) => {
+          release = resolve
+        })
+      : undefined,
+  )
+  const { user } = renderApp(
+    <>
+      <History />
+      <Viewer />
+    </>,
+  )
+  const name = `会被改动的候选${mode}`
+  await user.click(screen.getByRole('checkbox', { name: `选择「${name}」` }))
+  await user.click(screen.getByRole('button', { name: '放到画布上' }))
+  await waitFor(() => expect(release).toBeTruthy())
+  act(() => {
+    void change(f)
+  })
+  await act(async () => release(Response.json({ ...mediaAsset(f.assetId, 'video'), duration: 3 })))
+  await waitFor(() =>
+    expect(screen.getByRole('alert').textContent).toContain(
+      mode === '候选被删除' ? '来源已变化' : '已切换到其他画布',
+    ),
+  )
+  expect([...f.doc.elements()].filter((el) => el.kind === 'video')).toHaveLength(0)
+})
+
+it('旧视频候选没有 runId 时仍可作为普通素材放入，并说明返工来源缺失', async () => {
+  const f = videoFixture('旧候选视频', 'd'.repeat(64))
+  act(() => {
+    f.doc.mutable(f.id)!.set('results', [{ ...f.result, runId: '' }])
+    f.doc.flush()
+  })
+  mockFetch((request) =>
+    request.url.endsWith('/meta')
+      ? Response.json({
+          ...mediaAsset(f.assetId, 'video'),
+          mime: 'video/mp4',
+          duration: 4,
+          width: 1920,
+          height: 1080,
+        })
+      : undefined,
+  )
+  const { user } = renderApp(
+    <>
+      <History />
+      <Viewer />
+    </>,
+  )
+  await user.click(screen.getByRole('checkbox', { name: '选择「旧候选视频」' }))
+  await user.click(screen.getByRole('button', { name: '放到画布上' }))
+  await waitFor(() =>
+    expect([...f.doc.elements()].filter((el) => el.kind === 'video')).toHaveLength(1),
+  )
+  const placed = [...f.doc.elements()].find((el) => el.kind === 'video')!
+  expect(placed.assetId).toBe(f.assetId)
+  expect(placed.videoSegment).toBeUndefined()
+  expect(useCanvas.getState().notice).toContain('只能作为普通视频素材使用')
 })
