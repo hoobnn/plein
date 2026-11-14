@@ -6,6 +6,7 @@ import {
   connect,
   createElement,
   setParam,
+  updateElement,
   writeRun,
   type PleinDoc,
 } from '@plein/doc'
@@ -513,6 +514,46 @@ describe('等待预览期间的运行授权', () => {
       )
       await waitFor(() => expect(runs).toHaveLength(1))
       expect(runs[0]).toMatchObject({ expect: 'hash-2' })
+    })
+
+    it('跨画布失效绑定遮蔽同名素材：改同名图不会取消正在等的生成', async () => {
+      const { id, engine, doc } = setup()
+      // 目标画布上的同名图 + 指向外部画布的失效绑定（复制时没带过来）
+      const look = createElement(doc, {
+        kind: 'image',
+        name: '图',
+        assetId: 'c'.repeat(64),
+        x: 0,
+        y: 0,
+        w: 80,
+        h: 80,
+      })
+      setParam(doc, id, 'prompt', '看 @图')
+      setParam(doc, id, `referenceNameBinding:${encodeURIComponent('图')}:external-source`, {
+        type: 'image',
+        assetId: '',
+        source: 'external-source',
+      })
+      doc.flush()
+      const { runs, live } = servePreviews(id, doc)
+      renderPanel(id, engine)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(live()).toHaveLength(1)
+      // 首次预览还没回来：按钮可用，这次点击授权的是当前这一版输入
+      await act(async () => {
+        runButton().click()
+      })
+      // 同名图换了素材：这批绑定没有送出，服务端实际输入没变
+      act(() => {
+        updateElement(doc, look, { assetId: 'd'.repeat(64) })
+        doc.flush()
+      })
+      expect(live()).toHaveLength(1)
+      await act(async () => live()[0]!.resolve(readyInput(id, '看 @图', 'hash-1') as never))
+      await waitFor(() => expect(runs).toHaveLength(1))
+      expect(runs[0]).toMatchObject({ expect: 'hash-1' })
     })
 
     it('等待期间换用上游的另一个候选，原授权作废且不提交', async () => {

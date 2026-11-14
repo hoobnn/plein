@@ -347,6 +347,93 @@ it('@ 卡片还没有定妆结果时，失败状态与草稿仍会刷新预览',
   expect(f.key()).not.toBe(drafting)
 })
 
+it('跨画布失效绑定遮蔽同名素材：改同名图不刷新，改绑定或普通 @ 仍会', () => {
+  const doc = openDoc()
+  docs.push(doc)
+  const engine = { doc } as Engine
+  const look = createElement(doc, box({ name: '图', assetId: 'c'.repeat(64) }))
+  const binding = `referenceNameBinding:${encodeURIComponent('图')}:external-source`
+  const consumer = createElement(
+    doc,
+    node({
+      nodeType: 'plein/llm',
+      name: '看图说话',
+      params: {
+        prompt: '看 @图',
+        [binding]: { type: 'image', assetId: '', source: 'external-source' },
+      },
+    }),
+  )
+  const key = () => {
+    doc.flush()
+    return previewInputKey(engine, consumer)
+  }
+  const before = key()
+  // 目标画布上的同名图换了素材：服务端这批绑定根本没送出去，实际输入没变
+  updateElement(doc, look, { assetId: 'd'.repeat(64) })
+  expect(key()).toBe(before)
+  // 绑定本身变了仍是实际输入变化
+  setParam(doc, consumer, binding, { type: 'image', assetId: '', source: 'another-source' })
+  expect(key()).not.toBe(before)
+  // 去掉失效绑定后，@图 变成真正生效的普通引用
+  const unbound = createElement(
+    doc,
+    node({ nodeType: 'plein/llm', name: '没有绑定', params: { prompt: '看 @图' } }),
+  )
+  doc.flush()
+  const plain = previewInputKey(engine, unbound)
+  updateElement(doc, look, { assetId: 'e'.repeat(64) })
+  expect(previewInputKey(engine, unbound)).not.toBe(plain)
+})
+
+it('参考模式下绑定的本画布来源仍按消费结果追踪：草稿不刷新，换采用会', () => {
+  const f = fixture()
+  const bound = createElement(
+    f.doc,
+    node({
+      nodeType: 'plein/image',
+      name: '绑定的来源',
+      params: { prompt: '来源草稿', model: 'p/mock:image' },
+      ports: {
+        inputs: [],
+        outputs: [{ id: 'images', label: '图片', type: 'image' }],
+      },
+    }),
+  )
+  addResults(f.doc, bound, [
+    {
+      id: 'bound-a',
+      port: 'images',
+      runId: 'run-bound-a',
+      at: 1,
+      value: { type: 'image', assetId: 'n'.repeat(64) },
+    },
+    {
+      id: 'bound-b',
+      port: 'images',
+      runId: 'run-bound-b',
+      at: 2,
+      value: { type: 'image', assetId: 'o'.repeat(64) },
+    },
+  ])
+  const binding = `referenceNameBinding:${encodeURIComponent('定妆')}:${bound}`
+  setParam(f.doc, f.shot, 'prompt', '@定妆 推门')
+  setParam(f.doc, f.shot, binding, {
+    type: 'image',
+    assetId: 'n'.repeat(64),
+    source: bound,
+    sourcePort: 'images',
+  })
+  f.doc.flush()
+  const before = f.key()
+  // 来源已经出图：编辑它未运行的草稿不影响这次的实际输入
+  setParam(f.doc, bound, 'prompt', '来源草稿改了')
+  expect(f.key()).toBe(before)
+  // 换用来源的另一个候选：实际送入的素材变了
+  adoptResult(f.doc, bound, 'bound-b')
+  expect(f.key()).not.toBe(before)
+})
+
 it('只有被提示词命中的名字才参与摘要：无关目标改名不影响，重名会让预览刷新', () => {
   const f = fixture()
   const before = f.key()

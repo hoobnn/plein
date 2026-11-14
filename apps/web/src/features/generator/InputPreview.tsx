@@ -23,7 +23,13 @@ const SYNC_RETRY_LIMIT = 6
  * 读取时带上本机文档同步凭据；服务端还没收到本机改动时是「等同步」而不是「读取失败」，
  * 这份预览也不能用来提交。setData 用于提交时服务端发现输入变了、带回的新结果
  */
-export function useInputPreview(engine: Engine, canvasId: string | null, nodeId: string) {
+export function useInputPreview(
+  engine: Engine,
+  canvasId: string | null,
+  nodeId: string,
+  /** 这个节点是否按参考模式发送素材；缺省按核心节点类型判断 */
+  referenceMode?: boolean,
+) {
   const [data, setData] = useState<PreparedInput | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -33,7 +39,7 @@ export function useInputPreview(engine: Engine, canvasId: string | null, nodeId:
   // 取这份预览时的实际输入摘要；摘要又变了，这份预览就不是当前状态了。
   const dataKey = useRef('')
   // 与预览对应的输入摘要，文档每次变化后重算；无关变化不换代。
-  const [key, setKey] = useState(() => previewInputKey(engine, nodeId))
+  const [key, setKey] = useState(() => previewInputKey(engine, nodeId, { referenceMode }))
   // 记已发起读取的目标；未发请求就被取消的首次计时仍应立即重排（含 StrictMode）。
   const previewTarget = useRef<string | null>(null)
   const activeRequest = useRef<AbortController | null>(null)
@@ -43,12 +49,12 @@ export function useInputPreview(engine: Engine, canvasId: string | null, nodeId:
   const sync = useCanvas((s) => s.sync)
   useEffect(() => {
     const read = () => {
-      const next = previewInputKey(engine, nodeId)
+      const next = previewInputKey(engine, nodeId, { referenceMode })
       setKey((current) => (current === next ? current : next))
     }
     read()
     return engine.doc.subscribe(read)
-  }, [engine, nodeId])
+  }, [engine, nodeId, referenceMode])
   useEffect(() => {
     if (!canvasId) {
       previewTarget.current = null
@@ -134,13 +140,13 @@ export function useInputPreview(engine: Engine, canvasId: string | null, nodeId:
       // 提交的 409 回执比此前发出的预览请求新，尚在路上的响应不能覆盖它。
       requestId.current++
       activeRequest.current?.abort()
-      dataKey.current = previewInputKey(engine, nodeId)
+      dataKey.current = previewInputKey(engine, nodeId, { referenceMode })
       setData(next)
       setError(null)
       setSyncPending(false)
       setLoading(false)
     },
-    [engine, nodeId],
+    [engine, nodeId, referenceMode],
   )
   const shown = data?.nodeId === nodeId ? data : null
   // 输入摘要变过、或服务端还没收到本机改动时，这份预览都不再是当前输入：

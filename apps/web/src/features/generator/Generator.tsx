@@ -287,7 +287,11 @@ export function GeneratorPanel({
   const entry = nodeRegistration(node.type)?.editor?.panel
   // 生成前的实际输入：所有要跑的节点都要（插件节点可能没有 capability，
   // 但服务端照样能准备输入；不取预览，生成按钮就一直是禁用的）
-  const input = useInputPreview(engine, !pure ? canvasId : null, el.id)
+  // 参考模式：图片生成，或参考模式的多模态视频；引用绑定按它的语义遮蔽
+  const referenceMode =
+    node.capability === 'image.generate' ||
+    (node.capability === 'video.generate' && params.mode === 'reference')
+  const input = useInputPreview(engine, !pure ? canvasId : null, el.id, referenceMode)
   const imageReferences =
     !input.stale && !input.loading && !input.error && input.data
       ? (input.data.inputs.references?.filter((value) => value.type === 'image').length ?? 0)
@@ -567,7 +571,7 @@ export function GeneratorPanel({
     setIntent((current) =>
       current?.canvasId === intentNode.canvasId && current.nodeId === el.id
         ? current
-        : { ...intentNode, key: previewInputKey(engine, el.id) },
+        : { ...intentNode, key: previewInputKey(engine, el.id, { referenceMode }) },
     )
     setIntentNote('已记下这次生成，实际输入准备好后自动提交。')
   }
