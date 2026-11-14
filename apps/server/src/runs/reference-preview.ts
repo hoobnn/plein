@@ -47,6 +47,7 @@ export function referencePreview({
   details = [],
   referenceLimit,
   referenceMediaLimits,
+  staleUnsent,
 }: {
   doc: PleinDoc
   el: CanvasElement
@@ -57,6 +58,8 @@ export function referencePreview({
   details?: InputRef[]
   referenceLimit?: number
   referenceMediaLimits?: { video: number; audio: number }
+  /** 上游文本里未解析的外部/失效引用：面板要能看见它们没有送入。 */
+  staleUnsent?: InputUnsentReference[]
 }): ReferencePreview {
   if (
     def?.capability !== 'image.generate' &&
@@ -436,6 +439,9 @@ export function referencePreview({
       }
     }
   }
+
+  // 上游文本里的失效引用没有原文区间，也放进同一个「未送入」列表，方便重新绑定。
+  for (const item of staleUnsent ?? []) addUnsent(item)
 
   // 不再被正文或连线使用的绑定是残留数据；只报告，不参与编号或阻断。
   const usedNames = new Set(bound.map((token) => token.name))

@@ -143,6 +143,8 @@ export async function importFiles(
     list.push({ ...input, x, y: at.y - input.h / 2 } as NewElement)
     x += input.w + GAP
   }
+  // keepCapturing 也要等网络上传完成后再开步：上传期间用户改的正文不能和这批素材一起撤销。
+  if (options.keepCapturing) engine.doc.undo.stopCapturing()
   const created = placeImports(engine, list, { keepCapturing: options.keepCapturing })
   if (created.length && options.select !== false) engine.selection.set(created)
   return { created, skipped }

@@ -141,8 +141,6 @@ export function Inputs({
     const selectedFiles = port.multiple && !target?.edgeId ? files : files.slice(0, 1)
     const batch = beginImport(engine, selectedFiles.length)
     const notes: string[] = []
-    // 整批上传（落元素 + 接线/替换）合成一步撤销；导入内部不再分段。
-    engine.doc.undo.stopCapturing()
     try {
       const res = await importFiles(
         engine,
@@ -206,6 +204,7 @@ export function Inputs({
             : '素材导入失败',
       )
     } finally {
+      // 导入内部在网络返回后开步；这里收口，让落元素、接线/替换共用一步撤销。
       engine.doc.undo.stopCapturing()
       batch.finish(notes)
     }

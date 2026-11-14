@@ -4,6 +4,7 @@ import {
   modelParamsProblem,
   selectedImageOptions,
   boundReferenceTokens,
+  referenceBindings,
   referenceLabelStyle,
   referenceNumbering,
   type ReferenceIdentity,
@@ -73,6 +74,7 @@ import type {
   GroupRunStarted,
   GroupRunState,
   GroupRunSummary,
+  InputUnsentReference,
   InputValue,
   JobInfo,
   JobList,
@@ -2186,6 +2188,23 @@ export class NodeRuns implements BatchHost {
     const referenceMode =
       def.capability === 'image.generate' ||
       (def.capability === 'video.generate' && el.params?.mode === 'reference')
+    // 未解析来源（跨画布失效标记、元素已删除）的持久绑定：任何会消费 @ 的能力都不能把它
+    // 当成普通 @ 去解析目标画布的同名素材。先占位，准备完再恢复可读原名并说明未送入。
+    const staleOrder: string[] = []
+    const maskStale = (text: string, params: Record<string, unknown>) => {
+      const bindings = referenceBindings(params)
+      const tokens = boundReferenceTokens(text, params).filter((token) => {
+        const source = bindings[token.name]?.source
+        return !!source && !doc.has(source)
+      })
+      if (!tokens.length) return text
+      let out = text
+      for (const token of [...tokens].reverse()) {
+        const index = staleOrder.push(token.name) - 1
+        out = out.slice(0, token.start) + `\uE002${index}\uE003` + out.slice(token.end)
+      }
+      return out
+    }
     const upstreamReferences: Array<{
       item: Extract<PortValue, { type: 'text' }>
       tokens: ReturnType<typeof boundReferenceTokens>
@@ -2213,9 +2232,19 @@ export class NodeRuns implements BatchHost {
             item.text.slice(0, token.start) + `\uE000${index}\uE001` + item.text.slice(token.end)
       }
     }
+    if (!referenceMode) {
+      referencePrompt = maskStale(referencePrompt, el.params ?? {})
+      for (const item of continuation.inputs.prompt ?? []) {
+        if (item.type !== 'text') continue
+        const source =
+          'source' in item && typeof item.source === 'string' ? doc.get(item.source) : undefined
+        const params = source?.params ? { ...source.params, ...el.params } : (el.params ?? {})
+        item.text = maskStale(item.text, params)
+      }
+    }
     const referenceElement = referenceMode
       ? { ...el, params: { ...el.params, prompt: referencePrompt } }
-      : el
+      : { ...el, params: { ...el.params, prompt: referencePrompt } }
     const { params, inputs, details, notices, blocked } = await applyMentions(
       doc,
       referenceElement,
@@ -2241,6 +2270,30 @@ export class NodeRuns implements BatchHost {
       },
     )
     if (continuation.issue) blocked.push(continuation.issue)
+    const staleUnsents: InputUnsentReference[] = []
+    if (!referenceMode && staleOrder.length) {
+      const restoreStale = (text: string) =>
+        text.replace(
+          /\uE002(\d+)\uE003/g,
+          (_match, index: string) => `@${staleOrder[Number(index)] ?? ''}`,
+        )
+      params.prompt = restoreStale(String(params.prompt ?? ''))
+      for (const item of continuation.inputs.prompt ?? [])
+        if (item.type === 'text') item.text = restoreStale(item.text)
+      for (const item of inputs.prompt ?? [])
+        if (item.type === 'text') item.text = restoreStale(item.text)
+      const message = (name: string) =>
+        `引用 @${name} 的来源不在当前画布（复制时未带入或已删除），本次没有送入；请重新选择素材`
+      for (const name of new Set(staleOrder)) {
+        notices.push({ code: 'stale_binding', message: message(name) })
+        staleUnsents.push({
+          name,
+          reason: 'stale_binding',
+          message: message(name),
+          origins: ['binding'],
+        })
+      }
+    }
     if (referenceMode) {
       // 名称绑定、旧 @imageN 与 @ 引用共用同一份编号：编号顺序就是最终送入的顺序。
       const style = referenceLabelStyle(
@@ -2527,6 +2580,7 @@ export class NodeRuns implements BatchHost {
       details,
       referenceLimit: limits?.references?.max,
       referenceMediaLimits: limits?.referenceMedia ?? { video: 0, audio: 0 },
+      staleUnsent: staleUnsents,
     })
     return {
       def,
