@@ -16,6 +16,7 @@ import {
   createSubtitleTrack,
   subtitleTrackStale,
 } from '@plein/nodes'
+import { referenceBindings, resolveReferenceBindings } from '@plein/plugin-sdk'
 import { describe, expect, it } from 'vite-plus/test'
 import { referenceClipboard } from './clipboard'
 import { aiFixture } from '../../nodes/src/aiShotAnalysis.fixture'
@@ -313,5 +314,190 @@ describe('画布复制中的引用映射', () => {
     expect(inputEdges(doc, missingSource!, 'references')).toHaveLength(0)
     doc.destroy()
     target.destroy()
+  })
+
+  it('同画布复制重名角色和引用后，正文与名称绑定一起消歧且不留旧键', () => {
+    const doc = openDoc()
+    const card = createElement(doc, node({ id: 'card', name: '林夏', nodeType: 'plein/character' }))
+    const target = createElement(
+      doc,
+      node({
+        id: 'target',
+        params: {
+          prompt: '@林夏 站在窗边',
+          [`referenceNameBinding:${encodeURIComponent('林夏')}:card`]: {
+            type: 'image',
+            assetId: 'asset-a',
+            source: 'card',
+          },
+        },
+      }),
+    )
+    const pasted = referenceClipboard.paste(doc, referenceClipboard.copy(doc, ['card', 'target']))
+    const copyCard = pasted[0]!
+    const copy = doc.get(pasted[1]!)!
+    const original = doc.get(target)!
+    expect(original.params?.prompt).toBe('@林夏#1 站在窗边')
+    expect(copy.params?.prompt).toBe('@林夏#2 站在窗边')
+    // 旧绑定键被显式清掉：参数里只剩当前别名的一份
+    expect(
+      Object.keys(original.params ?? {}).filter((key) => key.startsWith('referenceNameBinding:')),
+    ).toEqual([`referenceNameBinding:${encodeURIComponent('林夏#1')}:card`])
+    expect(
+      Object.keys(copy.params ?? {}).filter((key) => key.startsWith('referenceNameBinding:')),
+    ).toEqual([`referenceNameBinding:${encodeURIComponent('林夏#2')}:${copyCard}`])
+    expect(referenceBindings(original.params)).toEqual({
+      '林夏#1': { type: 'image', assetId: 'asset-a', source: 'card' },
+    })
+    expect(referenceBindings(copy.params)).toEqual({
+      '林夏#2': { type: 'image', assetId: 'asset-a', source: copyCard },
+    })
+    // 两边各自解析到自己的来源，不会串到同名的另一张卡
+    expect(
+      resolveReferenceBindings(
+        String(original.params?.prompt),
+        [{ type: 'image', assetId: 'asset-a', source: card }],
+        original.params,
+      ),
+    ).toEqual({ prompt: '@image1 站在窗边' })
+    expect(
+      resolveReferenceBindings(
+        String(copy.params?.prompt),
+        [{ type: 'image', assetId: 'asset-a', source: copyCard }],
+        copy.params,
+      ),
+    ).toEqual({ prompt: '@image1 站在窗边' })
+    doc.destroy()
+  })
+
+  it('生成节点不在 @ 目标集合里，复制后正文仍按绑定身份消歧', () => {
+    const doc = openDoc()
+    const video = createElement(doc, node({ id: 'g', name: '镜头', nodeType: 'plein/video' }))
+    const target = createElement(
+      doc,
+      node({
+        id: 'target',
+        params: {
+          prompt: '@镜头 缓慢推进',
+          [`referenceNameBinding:${encodeURIComponent('镜头')}:g`]: {
+            type: 'video',
+            assetId: 'asset-v',
+            source: 'g',
+          },
+        },
+      }),
+    )
+    const pasted = referenceClipboard.paste(doc, referenceClipboard.copy(doc, ['g', 'target']))
+    const copyVideo = pasted[0]!
+    const copy = doc.get(pasted[1]!)!
+    const original = doc.get(target)!
+    // 同名 #序号按元素 id 排序：副本的新 id 排在原件前面。
+    expect(original.params?.prompt).toBe('@镜头#2 缓慢推进')
+    expect(copy.params?.prompt).toBe('@镜头#1 缓慢推进')
+    expect(referenceBindings(original.params)).toEqual({
+      '镜头#2': { type: 'video', assetId: 'asset-v', source: video },
+    })
+    expect(referenceBindings(copy.params)).toEqual({
+      '镜头#1': { type: 'video', assetId: 'asset-v', source: copyVideo },
+    })
+    expect(
+      resolveReferenceBindings(
+        String(copy.params?.prompt),
+        [{ type: 'video', assetId: 'asset-v', source: copyVideo }],
+        copy.params,
+      ),
+    ).toEqual({ prompt: '@video1 缓慢推进' })
+    doc.destroy()
+  })
+
+  it('扁平旧绑定与编号键里的来源随复制映射，外部来源不被认领', () => {
+    const doc = openDoc()
+    createElement(doc, {
+      id: 'a',
+      kind: 'image',
+      name: '素材.png',
+      assetId: 'assetA',
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 80,
+    })
+    const target = createElement(
+      doc,
+      node({
+        id: 'target',
+        params: {
+          prompt: '保持构图',
+          'referenceBinding:image1:a:assetA': {
+            type: 'image',
+            assetId: 'assetA',
+            source: 'a',
+          },
+          'image2:a:assetA': { type: 'image', assetId: 'assetA', source: 'a' },
+          'image3:external:assetB': {
+            type: 'image',
+            assetId: 'assetB',
+            source: 'external',
+          },
+        },
+      }),
+    )
+    const pasted = referenceClipboard.paste(doc, referenceClipboard.copy(doc, ['a', 'target']))
+    const copyImage = pasted[0]!
+    const params = doc.get(pasted[1]!)!.params!
+    expect(params).toMatchObject({
+      [`referenceBinding:image1:${copyImage}:assetA`]: {
+        type: 'image',
+        assetId: 'assetA',
+        source: copyImage,
+      },
+      [`image2:${copyImage}:assetA`]: { type: 'image', assetId: 'assetA', source: copyImage },
+    })
+    expect(params).not.toHaveProperty('referenceBinding:image1:a:assetA')
+    expect(params).not.toHaveProperty('image2:a:assetA')
+    // 未复制的外部来源保持原样
+    expect(params['image3:external:assetB']).toEqual({
+      type: 'image',
+      assetId: 'assetB',
+      source: 'external',
+    })
+    expect(doc.get(target)!.params?.['referenceBinding:image1:a:assetA']).toMatchObject({
+      source: 'a',
+    })
+    doc.destroy()
+  })
+
+  it('跨画布复制时名称绑定跟随副本，不认领目标画布的同名卡', () => {
+    const doc = openDoc()
+    createElement(doc, node({ id: 'card', name: '林夏', nodeType: 'plein/character' }))
+    const target = createElement(
+      doc,
+      node({
+        params: {
+          prompt: '@林夏 回头',
+          [`referenceNameBinding:${encodeURIComponent('林夏')}:card`]: {
+            type: 'image',
+            assetId: 'asset-a',
+            source: 'card',
+          },
+        },
+      }),
+    )
+    const data = JSON.parse(JSON.stringify(referenceClipboard.copy(doc, ['card', target])))
+    const destination = openDoc()
+    const sameName = createElement(
+      destination,
+      node({ id: 'local', name: '林夏', nodeType: 'plein/character' }),
+    )
+    const pasted = referenceClipboard.paste(destination, data)
+    const imported = destination.get(pasted[1]!)!
+    const binding = referenceBindings(imported.params)
+    expect(Object.keys(binding)).toEqual(['林夏#1'])
+    expect(binding['林夏#1']?.source).toBe(pasted[0])
+    expect(binding['林夏#1']?.source).not.toBe(sameName)
+    expect(imported.params?.prompt).toBe('@林夏#1 回头')
+    expect(resolved(destination, String(imported.params?.prompt))).toBe(pasted[0])
+    doc.destroy()
+    destination.destroy()
   })
 })

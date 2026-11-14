@@ -37,6 +37,23 @@ export function remapReferenceParams(
     if (changed) change('referenceImagePicks', Object.fromEntries(entries))
   }
 
+  // 旧画布的嵌套绑定表里，值上的 source 也是来源元素 id；复制/导入时一并映射。
+  const nested = params.referenceBindings
+  if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+    let changed = false
+    const entries = Object.entries(nested as Record<string, unknown>).map(([alias, value]) => {
+      if (!value || typeof value !== 'object' || Array.isArray(value))
+        return [alias, value] as const
+      const source = (value as ReferenceIdentity).source
+      if (typeof source !== 'string') return [alias, value] as const
+      const mapped = ids.get(source)
+      if (mapped === undefined || mapped === source) return [alias, value] as const
+      changed = true
+      return [alias, { ...value, source: mapped }] as const
+    })
+    if (changed) change('referenceBindings', Object.fromEntries(entries))
+  }
+
   for (const [key, value] of Object.entries(params)) {
     if (!key.startsWith('referenceNameBinding:')) continue
     const separator = key.lastIndexOf(':')
@@ -54,6 +71,40 @@ export function remapReferenceParams(
       value.source === source
         ? { ...value, source: mapped }
         : value
+  }
+
+  // 旧扁平绑定（referenceBinding:别名:来源[:资产]）与 SDK 仍接受的编号键
+  // （image1:来源:资产）把来源写在键名里，值上也有一份 source；两边都要映射，
+  // 未随复制纳入的外部来源保持原样。
+  const remapIdentity = (value: unknown) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+    const source = (value as ReferenceIdentity).source
+    if (typeof source !== 'string') return undefined
+    const mapped = ids.get(source)
+    return mapped === undefined || mapped === source ? undefined : { ...value, source: mapped }
+  }
+  const remapKey = (key: string) => {
+    const legacy = key.startsWith('referenceBinding:')
+    const parts = key.split(':')
+    // referenceBinding:别名:来源[:资产] 与 image1:来源:资产 的来源位置不同。
+    const at = legacy ? 2 : 1
+    if (!legacy && !/^(image|video|audio)[1-9]\d*$/.test(parts[0] ?? '')) return undefined
+    const source = parts[at]
+    if (!source) return undefined
+    const mapped = ids.get(source)
+    if (mapped === undefined || mapped === source) return undefined
+    parts[at] = mapped
+    return legacy ? `referenceBinding:${parts.slice(1).join(':')}` : parts.join(':')
+  }
+  for (const [key, value] of Object.entries(params)) {
+    if (key === 'referenceBindings' || key.startsWith('referenceNameBinding:')) continue
+    const identity = remapIdentity(value)
+    const remappedKey = remapKey(key)
+    if (!identity && !remappedKey) continue
+    if (next === params) next = { ...params }
+    // 新键已被占用时不并到同一名上，避免两个来源挤成一个别名。
+    if (remappedKey && remappedKey !== key && !(remappedKey in params)) delete next[key]
+    next[remappedKey && !(remappedKey in params) ? remappedKey : key] = identity ?? value
   }
   return next
 }
