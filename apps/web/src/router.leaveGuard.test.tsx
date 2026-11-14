@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { useEffect, useRef } from 'react'
 import { afterEach, expect, it } from 'vite-plus/test'
-import { navigate, setLeaveGuard, useRoute } from './router'
+import { navigate, registerLeaveGuard, setLeaveGuard, useRoute } from './router'
 import { act, renderApp, screen, waitFor } from './testing/render'
 import { confirmDialog } from './ui/Dialog'
 import { useLeaveGuard } from './shell/useLeaveGuard'
@@ -105,4 +105,36 @@ it('刷新与关闭页面时给出浏览器提示，没有未保存改动时不�
   const allowed = new Event('beforeunload', { cancelable: true })
   window.dispatchEvent(allowed)
   expect(allowed.defaultPrevented).toBe(false)
+})
+
+it('附加 guard 与文档 guard 共存，注销后文档 guard 仍单独生效', async () => {
+  visited = []
+  const { user } = renderApp(<Harness />, { route: { name: 'canvas', id: 'a' } })
+  await waitFor(() => expect(screen.getByTestId('route').textContent).toBe('canvas:a'))
+  dirtyGuard()
+  const unregister = registerLeaveGuard({
+    blocks: () => true,
+    confirm: () =>
+      confirmDialog({
+        title: '镜头草稿还没有保存',
+        confirmLabel: '丢弃草稿并离开',
+        cancelLabel: '留在工作台',
+        danger: true,
+      }),
+  })
+  try {
+    await act(async () => navigate({ name: 'home' }))
+    await user.click(await screen.findByRole('button', { name: '丢弃改动并离开' }))
+    await user.click(await screen.findByRole('button', { name: '留在工作台' }))
+    expect(screen.getByTestId('route').textContent).toBe('canvas:a')
+    expect(location.hash).toBe('#/c/a')
+
+    unregister()
+    await act(async () => navigate({ name: 'home' }))
+    await user.click(await screen.findByRole('button', { name: '丢弃改动并离开' }))
+    await waitFor(() => expect(screen.getByTestId('route').textContent).toBe('home'))
+    expect(location.hash).toBe('#/')
+  } finally {
+    unregister()
+  }
 })

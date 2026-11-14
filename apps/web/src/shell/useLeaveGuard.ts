@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { setLeaveGuard } from '../router'
+import { registerLeaveGuard, setLeaveGuard } from '../router'
 import { confirmDialog, dialogOpen } from '../ui/Dialog'
 
 /**
@@ -34,4 +34,27 @@ export function useLeaveGuard(active: boolean, canvasTitle?: string) {
       setLeaveGuard(null)
     }
   }, [active, canvasTitle])
+}
+
+/**
+ * 工作台草稿写不进本机时的路由保护：与文档 dirty guard 并存，不替换它。
+ * 只有真的存在未落盘草稿才登记；正常落盘或用户已经丢弃后自动注销。
+ */
+export function useDraftLeaveGuard(active: boolean, count: number) {
+  useEffect(() => {
+    if (!active) return
+    return registerLeaveGuard({
+      blocks: () => active,
+      confirm: async () => {
+        if (dialogOpen()) return false
+        return confirmDialog({
+          title: '镜头草稿还没有保存',
+          message: `有 ${count} 个镜头的草稿写不进本机。现在离开会丢失这些草稿；可以留在工作台继续编辑或复制内容。`,
+          confirmLabel: '丢弃草稿并离开',
+          cancelLabel: '留在工作台',
+          danger: true,
+        })
+      },
+    })
+  }, [active, count])
 }

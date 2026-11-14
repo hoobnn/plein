@@ -16,19 +16,35 @@ export interface LeaveGuard {
   confirm(next: Route): Promise<boolean>
 }
 let leaveGuard: LeaveGuard | null = null
+/** 额外离开保护（如未落盘的工作台草稿）；按登记顺序与文档 guard 一起询问。 */
+const registeredGuards = new Map<symbol, LeaveGuard>()
 /** 同一个目标只问一次；用户还在决定时重复点击不再叠对话框 */
 let reviewing: { hash: string; promise: Promise<boolean> } | null = null
 /** 用户已经确认过的目标地址：地址真正变过去时放行，不再问第二次 */
 let approvedHash: string | null = null
 
+function activeGuards(): LeaveGuard[] {
+  return leaveGuard ? [leaveGuard, ...registeredGuards.values()] : [...registeredGuards.values()]
+}
+
 export function setLeaveGuard(guard: LeaveGuard | null) {
   leaveGuard = guard
-  if (!guard) reviewing = null
+  if (!guard && !registeredGuards.size) reviewing = null
+}
+
+/** 登记一个不会替换文档 dirty guard 的附加离开保护；返回注销函数。 */
+export function registerLeaveGuard(guard: LeaveGuard) {
+  const token = Symbol('leave-guard')
+  registeredGuards.set(token, guard)
+  return () => {
+    registeredGuards.delete(token)
+    if (!registeredGuards.size && !leaveGuard) reviewing = null
+  }
 }
 
 /** 这次跳转会不会被离开保护拦下来；需要时应先自己收好动画再调用 navigate */
 export function leaveBlocked(next: Route) {
-  return !!leaveGuard?.blocks(next) && routeHash(next) !== currentHash
+  return activeGuards().some((guard) => guard.blocks(next)) && routeHash(next) !== currentHash
 }
 
 /** 地址变了就重新解析并通知；navigate 里同步调用，配合 flushSync 让页面切换能放进同一个 View Transition */
@@ -40,7 +56,7 @@ function sync() {
     apply(next)
     return
   }
-  if (leaveGuard?.blocks(next)) {
+  if (activeGuards().some((guard) => guard.blocks(next))) {
     // 历史后退已经改了地址：先恢复，页面不切，问过用户再决定
     const from = currentHash
     history.pushState(history.state, '', from)
@@ -76,7 +92,13 @@ export function useRoute() {
 function askLeave(next: Route) {
   const hash = routeHash(next)
   if (reviewing?.hash === hash) return reviewing.promise
-  const promise = leaveGuard!.confirm(next).finally(() => {
+  const promise = (async () => {
+    for (const guard of activeGuards()) {
+      if (!guard.blocks(next)) continue
+      if (!(await guard.confirm(next))) return false
+    }
+    return true
+  })().finally(() => {
     if (reviewing?.promise === promise) reviewing = null
   })
   reviewing = { hash, promise }
@@ -85,7 +107,7 @@ function askLeave(next: Route) {
 
 /** replace：替换当前历史记录（打开项目时跳到画布，返回键不该再落回跳转页）；force：文档已删除等必须离开的路径 */
 export function navigate(route: Route, opts: { replace?: boolean; force?: boolean } = {}) {
-  if (!opts.force && routeHash(route) !== currentHash && leaveGuard?.blocks(route)) {
+  if (!opts.force && routeHash(route) !== currentHash && leaveBlocked(route)) {
     void askLeave(route).then((go) => {
       if (go) navigateNow(route, opts)
     })

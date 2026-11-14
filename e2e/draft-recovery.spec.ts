@@ -372,3 +372,71 @@ test(
     expect(runRequests).toHaveLength(1)
   },
 )
+
+test(
+  '工作台草稿写不进本机时，浏览器 hash 返回先确认，留在工作台不丢内容',
+  { tag: '@core' },
+  async ({ page }) => {
+    await page.addInitScript(() => {
+      const original = Storage.prototype.setItem
+      Storage.prototype.setItem = function (key: string, value: string) {
+        if (String(key).startsWith('plein:workbench-draft:'))
+          throw new DOMException('quota', 'QuotaExceededError')
+        return original.call(this, key, value)
+      }
+    })
+    await newProject(page)
+    // 造一条真实的同文档历史：首页 → 当前画布，后退时才会触发 hashchange 而不是整页跳走。
+    await page.evaluate(() => {
+      const canvas = location.href
+      history.pushState(history.state, '', '#/')
+      history.pushState(history.state, '', canvas)
+    })
+    const board = await page.evaluate(() =>
+      window.__plein.addNode({
+        type: 'plein/storyboard',
+        name: '路由草稿分镜',
+        x: 200,
+        y: 150,
+        params: {
+          shots: [
+            {
+              id: 'route-one',
+              no: 1,
+              duration: 3,
+              description: '路由原始画面',
+              imagePrompt: '路由原始首帧',
+              motionPrompt: '路由原始运动',
+              lighting: '原始光影',
+              characters: [],
+              dialogue: [],
+            },
+          ],
+        },
+      }),
+    )
+    const workspace = await openWorkbench(page, board, 1)
+    const field = workspace.getByRole('textbox', { name: '工作台画面描述', exact: true })
+    await field.fill('返回也不该丢的草稿')
+    await expect(workspace.getByText(/暂未存到本机/)).toBeVisible()
+
+    // 真实浏览器后退：hash 已经变化，路由先恢复地址再询问
+    await page.goBack()
+    await expect(page.getByRole('dialog', { name: '镜头草稿还没有保存' })).toBeVisible()
+    await page.getByRole('button', { name: '留在工作台', exact: true }).click()
+    await expect(workspace).toBeVisible()
+    await expect(field).toHaveValue('返回也不该丢的草稿')
+    expect(page.url()).toMatch(/#\/c\//)
+
+    await page.goBack()
+    await expect(page.getByRole('dialog', { name: '镜头草稿还没有保存' })).toBeVisible()
+    await page.getByRole('button', { name: '丢弃草稿并离开', exact: true }).click()
+    await expect(page).toHaveURL(/#\/$/)
+    await expect(workspace).toBeHidden()
+    expect(
+      await page.evaluate(() =>
+        Object.keys(localStorage).some((key) => key.startsWith('plein:workbench-draft:')),
+      ),
+    ).toBe(false)
+  },
+)

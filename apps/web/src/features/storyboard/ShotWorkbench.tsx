@@ -25,6 +25,7 @@ import { Modal, ModalHeader } from '../../ui/Modal'
 import { Select } from '../../ui/Select'
 import { Icon } from '../../ui/icons'
 import { useStale } from '../runs/stale'
+import { useDraftLeaveGuard } from '../../shell/useLeaveGuard'
 import { BatchChecklist } from './BatchChecklist'
 import { reviewLabels } from './CreativeReviewForm'
 import type { ContinuityNoteView } from './ContinuityNoteForm'
@@ -151,6 +152,7 @@ function Workbench({
   const [pendingLeave, setPendingLeave] = useState<(() => void) | null>(null)
   // 本机存不下时刷新或关标签同样会丢草稿，浏览器离开前再提醒一次。
   const unsavedShots = failures.size
+  useDraftLeaveGuard(unsavedShots > 0, unsavedShots)
   useEffect(() => {
     if (!unsavedShots) return
     const warn = (event: BeforeUnloadEvent) => {
