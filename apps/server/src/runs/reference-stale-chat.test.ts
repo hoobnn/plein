@@ -95,3 +95,37 @@ it('视觉对话里有效的 Markdown @ 仍正常送入图片', async () => {
   expect(input.refs[0]?.sent).toEqual([asset('d')])
   expect(input.unsent ?? []).toEqual([])
 })
+
+it('视觉对话的 system 字段也屏蔽外部失效 @，不送同 id 素材', async () => {
+  const { server, id, consumer } = await fixture({ system: '讲述 @图', ...binding('图') }, false)
+  const input = await server.runs.preview(id, consumer, 'local')
+  expect(input.params.system).toBe('讲述 @图')
+  expect(input.inputs.images ?? []).toEqual([])
+  expect(input.refs).toEqual([])
+  expect(input.unsent?.some((item) => item.reason === 'stale_binding')).toBe(true)
+  expect(input.notices.some((notice) => notice.code === 'stale_binding')).toBe(true)
+})
+
+it('配音节点的 text 正文同样屏蔽外部失效 @', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  createElement(doc, {
+    id: 'shared',
+    kind: 'image',
+    name: '图',
+    assetId: asset('c'),
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  const consumer = addNode(doc, 'plein/speech', {
+    params: { text: '朗读 @图', ...binding('图') },
+    x: 600,
+  })
+  const input = await server.runs.preview(id, consumer, 'local')
+  expect(input.prompt).toBe('朗读 @图')
+  expect(input.unsent?.some((item) => item.reason === 'stale_binding')).toBe(true)
+  expect(input.notices.some((notice) => notice.code === 'stale_binding')).toBe(true)
+})

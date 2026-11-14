@@ -2232,8 +2232,16 @@ export class NodeRuns implements BatchHost {
             item.text.slice(0, token.start) + `\uE000${index}\uE001` + item.text.slice(token.end)
       }
     }
-    if (!referenceMode) {
-      referencePrompt = maskStale(referencePrompt, el.params ?? {})
+    const referenceParams: Record<string, unknown> = { ...el.params }
+    if (referenceMode) referenceParams.prompt = referencePrompt
+    else {
+      // applyMentions 会消费所有顶层字符串参数（prompt / system / text…）：和它逐键对齐，
+      // 只遮外部失效 token，其余普通语义原样保留；没有 prompt 字段也不凭空补一个空值。
+      for (const [key, value] of Object.entries(el.params ?? {})) {
+        if (typeof value !== 'string' || !value.includes('@')) continue
+        const masked = maskStale(value, el.params ?? {})
+        if (masked !== value) referenceParams[key] = masked
+      }
       for (const item of continuation.inputs.prompt ?? []) {
         if (item.type !== 'text') continue
         const source =
@@ -2242,9 +2250,7 @@ export class NodeRuns implements BatchHost {
         item.text = maskStale(item.text, params)
       }
     }
-    const referenceElement = referenceMode
-      ? { ...el, params: { ...el.params, prompt: referencePrompt } }
-      : { ...el, params: { ...el.params, prompt: referencePrompt } }
+    const referenceElement = { ...el, params: referenceParams }
     const { params, inputs, details, notices, blocked } = await applyMentions(
       doc,
       referenceElement,
@@ -2277,7 +2283,8 @@ export class NodeRuns implements BatchHost {
           /\uE002(\d+)\uE003/g,
           (_match, index: string) => `@${staleOrder[Number(index)] ?? ''}`,
         )
-      params.prompt = restoreStale(String(params.prompt ?? ''))
+      for (const [key, value] of Object.entries(params))
+        if (typeof value === 'string' && value.includes('\uE002')) params[key] = restoreStale(value)
       for (const item of continuation.inputs.prompt ?? [])
         if (item.type === 'text') item.text = restoreStale(item.text)
       for (const item of inputs.prompt ?? [])
