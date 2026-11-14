@@ -148,6 +148,26 @@ export async function waitEngine(page: Page) {
   await page.waitForFunction(() => !!window.__plein)
 }
 
+/**
+ * 等当前画布的本机改动真的确认安全：服务端把这版写进数据库，或本机缓存写进 IndexedDB。
+ *
+ * 「已同步」只说明同步连接通了，不等同于保存完成；离开保护（useLeaveGuard）用的正是这个
+ * 确认信号（见 syncBarrier 的 `dirty`，由服务端探测或缓存写入解除），所以离开前等它归零，
+ * 而不是手动清除标记或强制跳转。不在画布页（没有 `window.__plein`）时无需等待。
+ */
+export async function waitSaved(page: Page) {
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const plein = (window as { __plein?: { unsaved(): boolean } }).__plein
+          return plein ? plein.unsaved() : false
+        }),
+      { message: '离开画布前应等本机改动确认保存' },
+    )
+    .toBe(false)
+}
+
 /** 新建项目的可选行为 */
 interface NewProjectOptions {
   /**
@@ -166,12 +186,17 @@ interface NewProjectOptions {
  * 走接口建项目，不点首页的「新建项目」按钮：绝大多数用例要的是「有一张空画布可用」，
  * 不是首页那个按钮本身（测按钮的用例自己点）。接口建项目省掉首页渲染和
  * 「首页卡片放大成画布」的 View Transition，每条用例都能省下几百毫秒。
+ *
+ * 离开当前画布前先等本机改动确认保存：未确认的改动会被正确的离开保护拦下
+ * （SPA 内 `page.goto` 只换 hash，不会重新加载页面），夹具不能把这道保护当作失败。
  */
 export async function newProject(page: Page, options: NewProjectOptions = {}) {
   const project = await page.request.post('/api/projects', { data: {} })
   expect(project.status(), await project.text()).toBe(201)
   const { lastCanvasId } = (await project.json()) as { lastCanvasId: string | null }
   expect(lastCanvasId, '新建项目应同时建好第一张画布').toBeTruthy()
+  // 不管走不走首页，都要先离开当前画布：等它真的保存好再走
+  await waitSaved(page)
   if (options.visitHome) {
     // 首页拉一次项目列表，把列表缓存预热起来
     await page.goto('/')
