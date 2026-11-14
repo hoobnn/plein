@@ -4,6 +4,8 @@ export interface ReferenceIdentity {
   type: 'image' | 'video' | 'audio'
   assetId: string
   source?: string
+  /** 来源节点上具体取哪个输出口；旧绑定没有这个字段时按来源 + 类型唯一匹配。 */
+  sourcePort?: string
 }
 export type ReferenceBindings = Record<string, ReferenceIdentity>
 
@@ -97,7 +99,11 @@ export function remapReferenceParams(
     return legacy ? `referenceBinding:${parts.slice(1).join(':')}` : parts.join(':')
   }
   for (const [key, value] of Object.entries(params)) {
-    if (key === 'referenceBindings' || key.startsWith('referenceNameBinding:')) continue
+    // 只动声明为引用绑定的键；插件自定义参数（如 customModelConfig.source）里的同名字段
+    // 不是元素引用，不能按画布 id 重映射。
+    const bindingKey =
+      key.startsWith('referenceBinding:') || /^(image|video|audio)[1-9]\d*(?::|$)/.test(key)
+    if (!bindingKey) continue
     const identity = remapIdentity(value)
     const remappedKey = remapKey(key)
     if (!identity && !remappedKey) continue
@@ -168,6 +174,15 @@ export function sameReference(a: ReferenceIdentity, b: ReferenceIdentity) {
   return a.type === b.type && a.assetId === b.assetId && a.source === b.source
 }
 
+/**
+ * 绑定和某个实际输出是不是同一份素材。旧绑定没写输出口时只能按来源 + 类型认，
+ * 真正的歧义（同源同类型多个口）由调用方用候选数量判断，不能取第一个。
+ */
+export function sameOutput(binding: ReferenceIdentity, item: ReferenceIdentity) {
+  if (binding.type !== item.type || !binding.source || binding.source !== item.source) return false
+  return !binding.sourcePort || binding.sourcePort === item.sourcePort
+}
+
 export function referenceAliases<T extends ReferenceIdentity>(items: T[], value: unknown) {
   const bindings = Object.fromEntries(
     Object.entries(referenceBindings(value)).filter(([key]) =>
@@ -235,11 +250,16 @@ export function resolveReferenceBindings(
         key.startsWith(`referenceNameBinding:${encodeURIComponent(name)}:`),
       )
     const legacy = !named && /^(image|video|audio)[1-9]\d*$/.test(name)
-    const current = numbered.find((item) =>
-      legacy || !binding.source
-        ? sameReference(binding, item)
-        : binding.source === item.source && binding.type === item.type,
+    const candidates = numbered.filter((item) =>
+      legacy || !binding.source ? sameReference(binding, item) : sameOutput(binding, item),
     )
+    const current = binding.sourcePort
+      ? candidates.find((item) => item.sourcePort === binding.sourcePort)
+      : candidates.length === 1
+        ? candidates[0]
+        : undefined
+    if (!current && candidates.length > 1)
+      return { error: `引用 @${name} 对应多个输出，请从参考素材重新选择` }
     if (!current) return { error: `引用 @${name} 的素材已删除、替换或未送入，请重新选择` }
     text = text.slice(0, token.start) + format(current) + text.slice(token.end)
   }

@@ -467,6 +467,41 @@ describe('画布复制中的引用映射', () => {
     doc.destroy()
   })
 
+  it('粘贴无关节点不会把已有的同名冲突绑定解成一个来源', () => {
+    const doc = openDoc()
+    createElement(doc, node({ id: 'x', name: '蓝', nodeType: 'plein/character' }))
+    createElement(doc, node({ id: 'y', name: '红', nodeType: 'plein/character' }))
+    const key = (source: string) => `referenceNameBinding:${encodeURIComponent('蓝')}:${source}`
+    const target = createElement(
+      doc,
+      node({
+        id: 'target',
+        params: {
+          prompt: '@蓝',
+          [key('x')]: { type: 'image', assetId: 'asset-x', source: 'x' },
+          [key('y')]: { type: 'image', assetId: 'asset-y', source: 'y' },
+        },
+      }),
+    )
+    createElement(doc, node({ id: 'u', name: '无关', nodeType: 'plein/character' }))
+    expect(referenceBindings(doc.get(target)!.params)['蓝']).toEqual({
+      type: 'image',
+      assetId: '',
+      source: 'conflict',
+    })
+    referenceClipboard.paste(doc, referenceClipboard.copy(doc, ['u']))
+    const params = doc.get(target)!.params!
+    expect(params).toHaveProperty(key('x'))
+    expect(params).toHaveProperty(key('y'))
+    expect(referenceBindings(params)['蓝']).toEqual({
+      type: 'image',
+      assetId: '',
+      source: 'conflict',
+    })
+    expect(params.prompt).toBe('@蓝')
+    doc.destroy()
+  })
+
   it('跨画布复制时名称绑定跟随副本，不认领目标画布的同名卡', () => {
     const doc = openDoc()
     createElement(doc, node({ id: 'card', name: '林夏', nodeType: 'plein/character' }))

@@ -312,9 +312,9 @@ function syncBindingAliases(doc: PleinDoc) {
     )
       continue
     const patch: Record<string, unknown> = {}
-    // 先按旧别名汇总候选新别名：同一个旧别名指向两个来源时无法确定正文指的是哪一个，
-    // 保持原样，交给预览标歧义。
-    const proposed = new Map<string, Map<string, string>>()
+    // 先按旧别名汇总这个元素里现有的全部提案：同一个别名有多条提案（来源不同）就是
+    // 冲突态，粘贴、改名都不能把它私自解成一个来源，否则正文会悄悄指到另一份素材。
+    const proposals = new Map<string, Array<{ key: string; source: string; next?: string }>>()
     for (const key of Object.keys(el.params)) {
       if (!key.startsWith('referenceNameBinding:')) continue
       const body = key.slice('referenceNameBinding:'.length)
@@ -326,25 +326,23 @@ function syncBindingAliases(doc: PleinDoc) {
       } catch {
         continue
       }
-      const next = aliases.get(body.slice(separator + 1))
-      if (!next || next === alias) continue
-      const targets = proposed.get(alias) ?? new Map<string, string>()
-      targets.set(key, next)
-      proposed.set(alias, targets)
+      const source = body.slice(separator + 1)
+      const list = proposals.get(alias) ?? []
+      list.push({ key, source, next: aliases.get(source) })
+      proposals.set(alias, list)
     }
     const renames = new Map<string, string>()
-    for (const [alias, entries] of proposed) {
-      const names = new Set(entries.values())
-      if (names.size !== 1) continue
-      const next = [...names][0]!
-      renames.set(alias, next)
-      for (const key of entries.keys()) {
-        const body = key.slice('referenceNameBinding:'.length)
-        const separator = body.lastIndexOf(':')
-        patch[key] = undefined
-        patch[`referenceNameBinding:${encodeURIComponent(next)}:${body.slice(separator + 1)}`] =
-          el.params[key]
-      }
+    for (const [alias, entries] of proposals) {
+      if (entries.length !== 1) continue
+      const entry = entries[0]!
+      // 来源已被删除时保留原提案（并由预览标为失效/冲突），不要只搬走能算出的那一条。
+      if (!entry.next || entry.next === alias || !doc.has(entry.source)) continue
+      renames.set(alias, entry.next)
+      const body = entry.key.slice('referenceNameBinding:'.length)
+      const separator = body.lastIndexOf(':')
+      patch[entry.key] = undefined
+      patch[`referenceNameBinding:${encodeURIComponent(entry.next)}:${body.slice(separator + 1)}`] =
+        el.params[entry.key]
     }
     const nested = el.params.referenceBindings
     if (nested && typeof nested === 'object' && !Array.isArray(nested)) {

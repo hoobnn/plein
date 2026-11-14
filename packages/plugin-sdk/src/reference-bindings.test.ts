@@ -2,6 +2,7 @@ import { expect, it } from 'vite-plus/test'
 import {
   boundReferenceTokens,
   referenceAliases,
+  remapReferenceParams,
   resolveReferenceBindings,
 } from './reference-bindings'
 
@@ -50,4 +51,22 @@ it('同名不同来源的绑定不猜测，数字形式的真实文件名也能�
       'referenceNameBinding:image1:a': a,
     }),
   ).toEqual({ prompt: '@image1' })
+})
+
+it('复制映射只改声明为引用绑定的参数，插件自定义字段里的同名字段不动', () => {
+  const ids = new Map([['x', 'x-copy']])
+  const params = {
+    customModelConfig: { source: 'x' },
+    'referenceBinding:image1:x:assetA': { type: 'image', assetId: 'assetA', source: 'x' },
+    'image2:x:assetA': { type: 'image', assetId: 'assetA', source: 'x' },
+    'image3:external:assetB': { type: 'image', assetId: 'assetB', source: 'external' },
+    referenceBindings: { image1: { type: 'image', assetId: 'assetA', source: 'x' } },
+  }
+  expect(remapReferenceParams(params, ids)).toEqual({
+    customModelConfig: { source: 'x' },
+    'referenceBinding:image1:x-copy:assetA': { type: 'image', assetId: 'assetA', source: 'x-copy' },
+    'image2:x-copy:assetA': { type: 'image', assetId: 'assetA', source: 'x-copy' },
+    'image3:external:assetB': { type: 'image', assetId: 'assetB', source: 'external' },
+    referenceBindings: { image1: { type: 'image', assetId: 'assetA', source: 'x-copy' } },
+  })
 })
