@@ -194,3 +194,48 @@ it('开始响应晚回不重置用户已选择的历史清单', async () => {
   expect(screen.getByRole('combobox', { name: '拉片清单版本' }).textContent).toContain('清单 2')
   expect(doc.get(id)?.adopted).toBe('report-new')
 })
+
+it('输入预览先返回 sync_pending 时继续等待，追平后带着哈希开始处理', async () => {
+  const { doc, engine, id } = fixture()
+  let reads = 0
+  const runs: string[] = []
+  mockFetch(async (request) => {
+    const path = new URL(request.url).pathname
+    if (request.method === 'POST' && path === `/api/canvases/canvas/nodes/${id}/input`) {
+      reads++
+      if (reads === 1)
+        return Response.json(
+          { error: 'sync_pending', message: '本机改动还没有同步' },
+          { status: 409 },
+        )
+      return Response.json({
+        status: 'ready',
+        inputHash: 'frozen',
+        params: doc.get(id)?.params ?? {},
+        inputs: { video: [{ type: 'video', assetId: 'a'.repeat(64) }] },
+      })
+    }
+    if (request.method === 'POST' && path === `/api/canvases/canvas/nodes/${id}/run`) {
+      runs.push(await request.text())
+      return Response.json({ runId: 'new-run' }, { status: 202 })
+    }
+  })
+  const { user } = renderApp(<ShotAnalysisPanel engine={engine} id={id} onClose={vi.fn()} />)
+  await user.click(screen.getByRole('button', { name: '按这些切点处理' }))
+  await waitFor(() => expect(runs).toHaveLength(1))
+  expect(reads).toBe(2)
+  expect(JSON.parse(runs[0]!) as Record<string, unknown>).toMatchObject({ expect: 'frozen' })
+})
+
+it('StrictMode 重放 effect 后片段预览仍保有来源，卸载才释放', () => {
+  const { engine, id } = fixture()
+  const { unmount } = renderApp(<ShotAnalysisPanel engine={engine} id={id} onClose={vi.fn()} />, {
+    reactStrictMode: true,
+  })
+  const videos = [...screen.getByRole('dialog', { name: '本地拉片' }).querySelectorAll('video')]
+  expect(videos.length).toBeGreaterThan(0)
+  for (const video of videos)
+    expect(video.getAttribute('src')).toMatch(/^\/api\/assets\/[a-f0-9]{64}/)
+  unmount()
+  for (const video of videos) expect(video.hasAttribute('src')).toBe(false)
+})

@@ -6,8 +6,9 @@ import {
   shotAnalysisNode,
   shotAnalysisRanges,
 } from '@plein/nodes'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { api, assetUrls } from '../../api/client'
+import { readUnlessSyncPending } from '../../api/syncPending'
 import { useDocVersion } from '../../canvas/hooks'
 import { formatTimecode } from '../../canvas/media'
 import { useCanvas } from '../../stores/canvas'
@@ -86,7 +87,8 @@ export function ShotAnalysisPanel({
       let inputHash: string | undefined
       // Wait briefly for the document update to reach the server, then bind this request to it.
       for (let attempt = 0; attempt < 4; attempt++) {
-        const preview = await api.nodeInput(canvasId, id)
+        // 服务端还没追平本机文档（sync_pending）按「还没读到」处理，和下面的等待重试一并走
+        const preview = await readUnlessSyncPending(api.nodeInput(canvasId, id))
         const context = useCanvas.getState()
         if (
           !mounted.current ||
@@ -102,7 +104,7 @@ export function ShotAnalysisPanel({
         )
           throw new Error('画布或输入已变化，未开始拉片')
         if (
-          preview.status === 'ready' &&
+          preview?.status === 'ready' &&
           preview.inputHash &&
           JSON.stringify(shotAnalysisNode.params.parse(preview.params)) === expectedParams &&
           preview.inputs.video?.length === 1 &&
@@ -280,18 +282,7 @@ function Report({
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string>()
   const base = useRef(JSON.stringify(engine.doc.get(id)?.params))
-  const root = useRef<HTMLDivElement>(null)
   const cutsId = useId()
-  useEffect(() => {
-    const media = [...(root.current?.querySelectorAll('video') ?? [])]
-    return () => {
-      for (const video of media) {
-        video.pause()
-        video.removeAttribute('src')
-        video.load()
-      }
-    }
-  }, [])
   const disabled = readOnly || busy
   const selectedIds = manifest.scenes
     .filter((scene) => picked.has(scene.id))
@@ -337,7 +328,7 @@ function Report({
     }
   }
   return (
-    <div ref={root}>
+    <div>
       <div className="mb-4 rounded-xl border border-line p-4">
         <label className="mb-2 block text-sm" htmlFor={cutsId}>
           切点（秒数或时间码，逗号分隔；留空表示整段）
@@ -472,14 +463,9 @@ function Report({
                 ` · 实际帧 ${scene.frame.actualAt.toFixed(3)} 秒`}
             </div>
             {scene.clip && (
-              <video
-                className="aspect-video w-full bg-surface-2"
-                controls
-                muted
-                playsInline
-                preload="none"
+              <ClipVideo
                 src={assetUrls.original(scene.clip.assetId)}
-                aria-label={`镜头 ${index + 1} 片段`}
+                label={`镜头 ${index + 1} 片段`}
               />
             )}
           </section>
@@ -493,5 +479,31 @@ function Report({
         ))}
       </div>
     </div>
+  )
+}
+
+/** 片段预览：来源由 effect 写入并在卸载 / 换源时释放；StrictMode 重放 effect 后来源会回填。 */
+function ClipVideo({ src, label }: { src: string; label: string }) {
+  const video = useRef<HTMLVideoElement>(null)
+  useLayoutEffect(() => {
+    const element = video.current
+    if (!element) return
+    element.src = src
+    return () => {
+      element.pause()
+      element.removeAttribute('src')
+      element.load()
+    }
+  }, [src])
+  return (
+    <video
+      ref={video}
+      className="aspect-video w-full bg-surface-2"
+      controls
+      muted
+      playsInline
+      preload="none"
+      aria-label={label}
+    />
   )
 }
