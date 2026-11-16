@@ -714,6 +714,40 @@ it('被固定剪辑引用的候选不能从历史里删掉，混合批次只删�
   expect(f.doc.get(f.ids[1]!)!.results).toHaveLength(1)
 })
 
+it('只勾选配对尾帧时，固定视频的关联输出也被预检保留，不弹确认也不事后才提示', async () => {
+  const f = setup()
+  const pinned = {
+    id: 'pinned',
+    runId: 'run-pinned',
+    port: 'images',
+    outputGroup: 'g',
+    at: 5,
+    value: { type: 'video' as const, assetId: 'a'.repeat(64) },
+  }
+  const tail = {
+    id: 'tail',
+    runId: 'run-pinned',
+    port: 'lastFrame',
+    outputGroup: 'g',
+    at: 4,
+    value: { type: 'image' as const, assetId: 'b'.repeat(64) },
+  }
+  act(() => {
+    setResults(f.doc, f.ids[0]!, [pinned, tail])
+    f.doc.mutable(f.ids[0]!)!.set('adopted', null)
+    f.doc.flush()
+  })
+  fixCandidate(f, f.ids[0]!, pinned)
+  // 只看图片：列表里只剩尾帧
+  await f.user.click(screen.getByRole('button', { name: /^图片/ }))
+  await f.user.click(screen.getByRole('button', { name: '删除「甲」' }))
+  expect(screen.queryByRole('dialog', { name: '删除生成结果？' })).toBeNull()
+  expect(useCanvas.getState().notice).toBe(
+    '这些结果仍被固定剪辑使用（含关联输出），已保留；请先在固定片段里替换素材。',
+  )
+  expect(f.doc.get(f.ids[0]!)!.results).toHaveLength(2)
+})
+
 it('旧版本客户端迟到的写入显示为冲突证据，当前结果不被覆盖', () => {
   const f = setup()
   act(() => {

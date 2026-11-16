@@ -189,13 +189,15 @@ function HistoryPanel({ engine }: { engine: Engine }) {
         nodeId: elementId,
         results: el.results,
       })
+      // 与文档层删除保护同一方向：先从每个固定候选展开关联输出（视频 + 配对尾帧），
+      // 再与请求集合取交集。只勾选尾帧、固定的是配对视频时也要预检到。
+      const guarded = new Set<string>()
+      for (const fixedId of holders.keys())
+        for (const related of relatedOutputIds(el.results, fixedId)) guarded.add(related)
       for (const id of ids) {
-        const used = holders.get(id)
-        if (!used) continue
+        if (!guarded.has(id)) continue
         const set = kept.get(elementId) ?? new Set<string>()
         set.add(id)
-        for (const related of relatedOutputIds(el.results, id))
-          if (ids.has(related)) set.add(related)
         kept.set(elementId, set)
       }
     }
