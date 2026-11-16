@@ -15,6 +15,9 @@ updates:
     ignore:
       # 必须与 vite-plus 内置的 vitest 版本一致，随 vite-plus 升级手动对齐
       - dependency-name: "@vitest/coverage-v8"
+      # 1.65 下 reference-reorder 的受控时钟用例稳定失败（1.64.1 通过），待上游或用例跟进后再放开
+      - dependency-name: "@playwright/test"
+        versions: ["1.65.x"]
     groups:
       production-minor-patch:
         dependency-type: production
