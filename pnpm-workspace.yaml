@@ -30,7 +30,6 @@ minimumReleaseAgeExclude:
   - "@hyperframes/sdk@0.8.186"
   - "@hyperframes/studio-server@0.8.186"
   - "@hyperframes/player@0.8.186"
-  - react-resizable-panels@4.16.1
   - modelbay@0.5.0
 overrides:
   vite@*: "catalog:"

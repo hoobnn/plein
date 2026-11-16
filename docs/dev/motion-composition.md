@@ -44,7 +44,7 @@ pnpm dev
 
 ## 离线资源与许可
 
-`motionRuntimeAssets()` 从安装包依赖定位 GSAP 3.15.0 与 `@fontsource/noto-sans-sc` 5.3.1。项目物化 `vendor/gsap.min.js`、字体 CSS、400/700 两种字重的全部 WOFF2 子集及许可说明；当前锁定版本共有 202 个 WOFF2 子集。字体 CSS 保留完整 `unicode-range`，移除重复 WOFF fallback，与 stage 只复制 WOFF2 的规则一致。
+`motionRuntimeAssets()` 从安装包依赖定位 GSAP 3.15.1 与 `@fontsource/noto-sans-sc` 5.3.1。项目物化 `vendor/gsap.min.js`、字体 CSS、400/700 两种字重的全部 WOFF2 子集及许可说明；当前锁定版本共有 202 个 WOFF2 子集。字体 CSS 保留完整 `unicode-range`，移除重复 WOFF fallback，与 stage 只复制 WOFF2 的规则一致。
 
 源工程中的素材、脚本与字体使用本地相对路径。DOM 检查分别审查资源属性、CSS、script 执行上下文，拒绝外部 URL、绝对路径、目录越界和联网脚本；普通转义标题文字中的 `fetch(...)` 或 `url(...)` 不会按代码执行。此合同只接受受限模板与结构化覆盖，不是任意 HTML/JavaScript 的执行沙箱。
 
