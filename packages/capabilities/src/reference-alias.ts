@@ -43,11 +43,12 @@ interface AliasCandidate {
  * 元素本身用「名称 + 同名 #序号」；非默认输出口再加「·端口名」。
  * 两类别名可能撞车（例如节点「镜头」的尾帧、恰好还有一张名为「镜头·尾帧」的素材），
  * 撞车时按身份键稳定地补 #2/#3，保证两处引用可以同时存在、不会绑错。
+ * rename 用来预演改名后的别名表（尚未写入文档）。
  */
-export function referenceAliasMap(doc: PleinDoc) {
+export function referenceAliasMap(doc: PleinDoc, rename?: { id: string; name: string }) {
   const groups = new Map<string, Array<{ id: string; element: CanvasElement }>>()
   for (const el of doc.elements()) {
-    const name = el.name?.trim() || '参考素材'
+    const name = (el.id === rename?.id ? rename.name : el.name?.trim()) || '参考素材'
     const list = groups.get(name) ?? []
     list.push({ id: el.id, element: el })
     groups.set(name, list)
@@ -94,10 +95,11 @@ export function referenceAliasMap(doc: PleinDoc) {
 export function referenceAlias(
   doc: PleinDoc,
   identity: { source?: string; sourcePort?: string },
+  rename?: { id: string; name: string },
 ): string | undefined {
   const source = identity.source
   if (!source || !doc.has(source)) return undefined
-  const aliases = referenceAliasMap(doc)
+  const aliases = referenceAliasMap(doc, rename)
   const base = aliases.get(identityKey(source))
   // 默认输出口沿用元素自己的别名，不额外加后缀。
   if (!identity.sourcePort || defaultOutputPort(doc, source) === identity.sourcePort) return base

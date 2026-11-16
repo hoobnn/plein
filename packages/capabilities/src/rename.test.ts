@@ -342,3 +342,45 @@ it('视频与尾帧的名称绑定改名后保留端口后缀，互不覆盖', (
     新片段·尾帧: { type: 'image', sourcePort: 'lastFrame', source },
   })
 })
+
+it('改名后端口别名与已有同名素材撞车时沿用全局去重，不与它同名', () => {
+  const doc = fixture()
+  createElement(
+    doc,
+    node({ id: 'plain', kind: 'image', name: '新片段·尾帧', assetId: 'plain-asset' }),
+  )
+  const source = createElement(
+    doc,
+    node({
+      id: 'g',
+      name: '片段',
+      nodeType: 'plein/video',
+      ports: {
+        inputs: [],
+        outputs: [
+          { id: 'video', label: '视频', type: 'video' },
+          { id: 'lastFrame', label: '尾帧', type: 'image' },
+        ],
+      },
+    }),
+  )
+  const target = createElement(
+    doc,
+    node({
+      params: {
+        prompt: '@片段·尾帧 收尾',
+        [`referenceNameBinding:${encodeURIComponent('片段·尾帧')}:${source}`]: {
+          type: 'image',
+          assetId: 'frame',
+          source,
+          sourcePort: 'lastFrame',
+        },
+      },
+    }),
+  )
+  renameElement(doc, source, '新片段')
+  const params = doc.get(target)!.params!
+  // 与素材「新片段·尾帧」撞车：端口别名补 #2，两处引用可同时存在。
+  expect(params.prompt).toBe('@新片段·尾帧#2 收尾')
+  expect(Object.keys(referenceBindings(params))).toEqual(['新片段·尾帧#2'])
+})
