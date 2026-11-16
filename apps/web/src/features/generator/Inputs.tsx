@@ -125,6 +125,8 @@ export function Inputs({
   const [canvasAnchor, setCanvasAnchor] = useState<HTMLButtonElement | null>(null)
   const [canvasQuery, setCanvasQuery] = useState('')
   // 从参考瓦片、占位打开的单个角色选择器
+  /** 选图弹层挂在整排参考图上：选图会增删瓦片、换掉组长，挂在名字上会跟着跳或被关掉 */
+  const referenceRow = useRef<HTMLDivElement>(null)
   const [rolePicker, setRolePicker] = useState<{ anchor: HTMLElement; elementId: string } | null>(
     null,
   )
@@ -725,7 +727,7 @@ export function Inputs({
                 engine={engine}
                 nodeId={el.id}
                 data={prepared}
-                anchor={rolePicker.anchor}
+                anchor={referenceRow.current ?? rolePicker.anchor}
                 elementId={rolePicker.elementId}
                 onClose={() => setRolePicker(null)}
               />
@@ -743,11 +745,6 @@ export function Inputs({
             </div>
           )}
         </div>
-        {preparing && (
-          <p role="status" className="text-2xs text-ink-subtle">
-            {preparationError ? '输入确认失败，请在实际输入处重试' : '正在确认参考素材…'}
-          </p>
-        )}
         {node.capability === 'video.generate' &&
           (mode ?? node.defaults?.mode ?? 'text') === 'text' &&
           idleConnected > 0 && (
@@ -785,10 +782,17 @@ export function Inputs({
             <span>
               送入 {sentItems.length} 项{countsText ? `（${countsText}）` : ''}
             </span>
+            {/* 确认状态和计数放同一行：单独占一行会把下面的参考图挤下去再弹回，挂在瓦片上的选图弹层也跟着跳 */}
+            {preparing && (
+              <span role="status" className="truncate">
+                {preparationError ? '输入确认失败，请在实际输入处重试' : '正在确认参考素材…'}
+              </span>
+            )}
           </div>
           {/* 主行可排序的 edgeId：按送入顺序排列 */}
           <SortableContext items={sortableIds} strategy={horizontalListSortingStrategy}>
             <div
+              ref={referenceRow}
               data-testid="submitted-references"
               aria-label="实际送入的参考素材"
               aria-busy={preparing}
