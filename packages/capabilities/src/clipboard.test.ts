@@ -23,6 +23,7 @@ import {
 } from '@plein/plugin-sdk'
 import { describe, expect, it } from 'vite-plus/test'
 import { referenceClipboard } from './clipboard'
+import { expandedNodes } from './story/storyboard'
 import { aiFixture } from '../../nodes/src/aiShotAnalysis.fixture'
 
 const source = () => {
@@ -871,6 +872,68 @@ describe('画布复制中的引用映射', () => {
     expect(binding['林夏#1']?.source).not.toBe(sameName)
     expect(imported.params?.prompt).toBe('@林夏#1 回头')
     expect(resolved(destination, String(imported.params?.prompt))).toBe(pasted[0])
+    doc.destroy()
+    destination.destroy()
+  })
+
+  it('跨画布只复制展开节点、分镜表和资产未带入时，来源记录不指向目标画布同 id 元素', () => {
+    const doc = openDoc()
+    createElement(doc, node({ id: 'board', nodeType: 'plein/storyboard' }))
+    const shotNode = createElement(
+      doc,
+      node({
+        id: 'shot-node',
+        params: { source: { storyboard: 'board', shot: 's1', role: 'video' } },
+      }),
+    )
+    const sequence = createElement(
+      doc,
+      node({
+        id: 'seq',
+        params: { clips: [{ source: 'clip-src', start: 0 }] },
+      }),
+    )
+    const data = JSON.parse(
+      JSON.stringify(referenceClipboard.copy(doc, [shotNode, sequence], { canvasId: 'canvas-a' })),
+    )
+    const destination = openDoc()
+    // 目标画布恰好有同 id 的分镜表（检查点恢复出的画布与原画布 id 相同）。
+    createElement(destination, node({ id: 'board', nodeType: 'plein/storyboard' }))
+    const pasted = referenceClipboard.paste(destination, data, { canvasId: 'canvas-b' })
+    const imported = destination.get(pasted[0]!)!
+    const src = imported.params?.source as { storyboard: string; shot: string; detached?: boolean }
+    expect(src.storyboard).not.toBe('board')
+    expect(src.storyboard).toContain('plein-external/')
+    expect(src.shot).toBe('s1')
+    expect(src.detached).toBe(true)
+    // 目标分镜表不会把它当成自己的展开节点，批量运行也就不会重复付费生成。
+    expect(expandedNodes(destination, 'board').size).toBe(0)
+    const clips = destination.get(pasted[1]!)!.params?.clips as Array<{ source: string }>
+    expect(clips[0]!.source).toContain('plein-external/')
+    doc.destroy()
+    destination.destroy()
+  })
+
+  it('跨画布复制分镜表但不带资产时，镜头资产绑定不挂到目标画布同 id 素材', () => {
+    const doc = openDoc()
+    const board = createElement(
+      doc,
+      node({
+        id: 'board',
+        nodeType: 'plein/storyboard',
+        params: { shots: [{ id: 's1', assetBindings: { 林夏: { elementId: 'role-card' } } }] },
+      }),
+    )
+    const data = JSON.parse(
+      JSON.stringify(referenceClipboard.copy(doc, [board], { canvasId: 'canvas-a' })),
+    )
+    const destination = openDoc()
+    createElement(destination, node({ id: 'role-card', name: '别人', nodeType: 'plein/character' }))
+    const [imported] = referenceClipboard.paste(destination, data, { canvasId: 'canvas-b' })
+    const shots = destination.get(imported!)!.params?.shots as Array<{
+      assetBindings: Record<string, { elementId: string }>
+    }>
+    expect(shots[0]!.assetBindings['林夏']!.elementId).toContain('plein-external/')
     doc.destroy()
     destination.destroy()
   })

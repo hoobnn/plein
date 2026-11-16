@@ -481,6 +481,57 @@ function neutralizeCrossCanvas(
       }
     }
   }
+  // 分镜来源、剪辑片段来源与镜头资产绑定同样靠元素 id 认亲：检查点恢复出的画布与
+  // 原画布 id 相同，不能让它们挂到目标画布的同 id 分镜表 / 素材上。
+  // 展开节点的来源改成不可命中的分镜表，并沿用 detached 约定，不再跟随计划，也不参与批量运行。
+  if (!(el.nodeType === 'plein/sequence' && params.instanceVersion === 2)) {
+    const isolate = (value: unknown, key?: string): unknown => {
+      if (isVideoSegment(value)) return value
+      if (Array.isArray(value)) {
+        const next = value.map((item) => isolate(item, key))
+        return next.some((item, index) => item !== value[index]) ? next : value
+      }
+      if (typeof value === 'string')
+        return (key === 'elementId' || key === 'storyboard') && !internal(value)
+          ? sentinel(value)
+          : value
+      if (!value || typeof value !== 'object') return value
+      const entries = Object.entries(value).map(([k, v]) => [k, isolate(v, k)] as const)
+      if (entries.every(([k, v]) => v === (value as Record<string, unknown>)[k])) return value
+      return Object.fromEntries(entries)
+    }
+    const next: Record<string, unknown> = {}
+    for (const key of ['source', 'shots']) {
+      const value = patch[key] ?? params[key]
+      const isolated = isolate(value)
+      if (isolated === value) continue
+      next[key] =
+        key === 'source' && isolated && typeof isolated === 'object'
+          ? { ...isolated, detached: true }
+          : isolated
+    }
+    // 剪辑片段的 source / dialogue / sfx / more 都是元素 id。
+    if (Array.isArray(params.clips)) {
+      const ref = (v: unknown) => (typeof v === 'string' && !internal(v) ? sentinel(v) : v)
+      const original = params.clips as unknown[]
+      const clips = original.map((clip) => {
+        if (!clip || typeof clip !== 'object') return clip
+        const entries = Object.entries(clip).map(([k, v]) => [
+          k,
+          ['source', 'dialogue', 'sfx'].includes(k)
+            ? ref(v)
+            : k === 'more' && Array.isArray(v)
+              ? v.map(ref)
+              : v,
+        ])
+        return entries.every(([k, v]) => v === (clip as Record<string, unknown>)[k as string])
+          ? clip
+          : Object.fromEntries(entries)
+      })
+      if (clips.some((clip, index) => clip !== original[index])) next.clips = clips
+    }
+    Object.assign(patch, next)
+  }
   if (Object.keys(patch).length) setParams(doc, el.id, patch)
 }
 
