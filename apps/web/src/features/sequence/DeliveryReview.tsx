@@ -515,7 +515,9 @@ function DeliveryVideoAttempt({
   const [failed, setFailed] = useState(false)
   const [loading, setLoading] = useState(true)
   // 来源由布局 effect 统一管理：StrictMode 会保留同一 DOM 重放 effect，清理移除 src 后
-  // 必须在这里恢复，不能只依赖 JSX 只在挂载时写一次属性；换版本时先释放旧媒体再设新来源。
+  // 必须在这里恢复，不能只依赖 JSX 只在挂载时写一次属性。
+  // 换版本由外层 key={identity} 整体重挂载（identity 含 assetId，src 变化必伴随重挂载），
+  // 所以这里不会出现同一实例里 src 变化的情况；src 只是 effect 读到的值，依赖里列出以满足 lint。
   useLayoutEffect(() => {
     const element = video.current
     if (!element) return

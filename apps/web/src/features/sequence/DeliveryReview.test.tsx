@@ -362,11 +362,15 @@ it('StrictMode 初次挂载保留实际导出视频来源', () => {
   expect(f.video().getAttribute('src')).toMatch(/^\/api\/assets\/[a-f0-9]{64}$/)
 })
 
-it('切换交付版本时真实视频标签拿到新来源，不沿用旧资源', async () => {
+it('切换交付版本时按身份重挂载视频标签，拿到新来源且不沿用旧资源', async () => {
   const f = setup()
-  const first = f.video().getAttribute('src')!
+  const before = f.video()
+  const first = before.getAttribute('src')!
   expect(first).toMatch(/^\/api\/assets\/[a-f0-9]{64}$/)
   const other = first.includes('a'.repeat(64)) ? 'b' : 'a'
   await f.chooseVersion(other)
   expect(f.video().getAttribute('src')).toBe(`/api/assets/${other.repeat(64)}`)
+  // 重挂载：旧 DOM 节点已被释放，不是同一个标签换了 src
+  expect(f.video()).not.toBe(before)
+  expect(before.getAttribute('src')).toBeNull()
 })
