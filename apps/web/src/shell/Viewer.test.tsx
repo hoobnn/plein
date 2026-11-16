@@ -688,7 +688,10 @@ it('移动节点或任务进度不重取当前输入', async () => {
     writeRun(f.doc, f.id, { id: 'progress', status: 'running', at: 2 })
     f.doc.flush()
   })
-  await act(async () => {})
+  // 当前输入的重取有防抖：必须等过它再断言，否则恒为真
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 700))
+  })
   expect(reads).toBe(1)
 })
 
