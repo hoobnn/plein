@@ -1378,7 +1378,7 @@ export class NodeRuns implements BatchHost {
             !row.group_id &&
             !!node &&
             MEDIA_GENERATE_CAPABILITIES.has(
-              this.host.registry.latestNode(node.nodeType)?.def?.capability ?? '',
+              this.host.registry.latestNode(node.nodeType ?? '')?.def?.capability ?? '',
             ) &&
             currentResult(node) !== undefined,
         }

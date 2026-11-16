@@ -315,7 +315,11 @@ describe.skipIf(!available)('P11原执行出处与候选承载位置分离', () 
     f.server.runs.recoverJob(f.id, f.run, 'local', { action: 'resubmit' })
     expect(await f.server.runs.wait(f.run)).toBe('succeeded')
     await until(() => !f.server.runs.isRunning(f.id, f.source))
-    const fresh = currentResult(f.doc.get(f.source)!, 'video')!
+    // 重新提交后节点已有采用结果：新产物只进候选，不顶替当前采用
+    expect(currentResult(f.doc.get(f.source)!, 'video')!.id).toBe(f.result.id)
+    const fresh = f.doc
+      .get(f.source)!
+      .results!.find((item) => item.port === 'video' && item.id !== f.result.id)!
     expect(submit).toHaveBeenCalledTimes(1)
     expect(fresh.value).toEqual(f.result.value)
     expect(fresh.generationOrigin).toEqual({ ...oldOrigin, resultId: fresh.id })
