@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@plein/doc": "workspace:*",
-    "pixi.js": "^8.22.0",
+    "pixi.js": "^8.23.0",
     "rbush": "^4.0.1"
   },
   "devDependencies": {

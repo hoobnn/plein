@@ -47,7 +47,7 @@ overrides:
   # markdownlint 的数学扩展锁 katex ^0.16，原型污染可绕过 trust 限制，修复只在 0.18.2 以上
   "micromark-extension-math>katex": 0.19.1
 patchedDependencies:
-  pixi.js@8.22.0: patches/pixi.js@8.22.0.patch
+  pixi.js@8.23.0: patches/pixi.js@8.23.0.patch
 peerDependencyRules:
   allowAny:
     - vite

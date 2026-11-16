@@ -1,16 +1,15 @@
-diff --git a/lib/scene/graphics/shared/GraphicsContextSystem.js b/lib/scene/graphics/shared/GraphicsContextSystem.js
-index 8024247fd175367f12dbbdc95cc419215e5ea9ec..120c050cd1c2184e55a96bcae1459d38f92d11c4 100644
---- a/lib/scene/graphics/shared/GraphicsContextSystem.js
-+++ b/lib/scene/graphics/shared/GraphicsContextSystem.js
-@@ -1,6 +1,7 @@
+diff --git a/lib/scene/graphics/shared/AbstractGraphicsContextSystem.js b/lib/scene/graphics/shared/AbstractGraphicsContextSystem.js
+index a3fcbf3f98da4d4d5a76627b7955ef2d7a92cc69..10b005b00b18dcadf62b4df594fed492e9d02679 100644
+--- a/lib/scene/graphics/shared/AbstractGraphicsContextSystem.js
++++ b/lib/scene/graphics/shared/AbstractGraphicsContextSystem.js
+@@ -1,5 +1,6 @@
  'use strict';
  
- var Extensions = require('../../../extensions/Extensions.js');
 +var types = require('../../../rendering/renderers/types.js');
  var getTextureBatchBindGroup = require('../../../rendering/batcher/gpu/getTextureBatchBindGroup.js');
- var DefaultBatcher = require('../../../rendering/batcher/shared/DefaultBatcher.js');
  var InstructionSet = require('../../../rendering/renderers/shared/instructions/InstructionSet.js');
-@@ -148,14 +149,16 @@ const _GraphicsContextSystem = class _GraphicsContextSystem {
+ var GCManagedHash = require('../../../utils/data/GCManagedHash.js');
+@@ -124,14 +125,16 @@ class AbstractGraphicsContextSystem {
      const geometry = batcher.geometry;
      geometry.indexBuffer.setDataWithSize(batcher.indexBuffer, batcher.indexSize, true);
      geometry.buffers[0].setDataWithSize(batcher.attributeBuffer.float32View, batcher.attributeSize, true);
@@ -20,7 +19,7 @@ index 8024247fd175367f12dbbdc95cc419215e5ea9ec..120c050cd1c2184e55a96bcae1459d38
 -      batch.bindGroup = getTextureBatchBindGroup.getTextureBatchBindGroup(
 -        batch.textures.textures,
 -        batch.textures.count,
--        this._renderer.limits.maxBatchableTextures
+-        maxTextures
 -      );
 +    if (this._renderer.type === types.RendererType.WEBGPU) {
 +      const drawBatches = batcher.batches;
@@ -29,22 +28,22 @@ index 8024247fd175367f12dbbdc95cc419215e5ea9ec..120c050cd1c2184e55a96bcae1459d38
 +        batch.bindGroup = getTextureBatchBindGroup.getTextureBatchBindGroup(
 +          batch.textures.textures,
 +          batch.textures.count,
-+          this._renderer.limits.maxBatchableTextures
++          maxTextures
 +        );
 +      }
      }
      return graphicsData;
    }
-diff --git a/lib/scene/graphics/shared/GraphicsContextSystem.mjs b/lib/scene/graphics/shared/GraphicsContextSystem.mjs
-index dd30921dff76ecde55eb01c5f098b6f6c71d8e8d..2c10f7620fdcfe04565043e58bd33f336186319b 100644
---- a/lib/scene/graphics/shared/GraphicsContextSystem.mjs
-+++ b/lib/scene/graphics/shared/GraphicsContextSystem.mjs
+diff --git a/lib/scene/graphics/shared/AbstractGraphicsContextSystem.mjs b/lib/scene/graphics/shared/AbstractGraphicsContextSystem.mjs
+index f3463d9fb7894d7b910f1d8c6d7ab399563324a3..116221df7754efd89724b82f94881cf54307bc10 100644
+--- a/lib/scene/graphics/shared/AbstractGraphicsContextSystem.mjs
++++ b/lib/scene/graphics/shared/AbstractGraphicsContextSystem.mjs
 @@ -1,3 +1,4 @@
 +import { RendererType } from '../../../rendering/renderers/types.mjs';
- import { ExtensionType } from '../../../extensions/Extensions.mjs';
  import { getTextureBatchBindGroup } from '../../../rendering/batcher/gpu/getTextureBatchBindGroup.mjs';
- import { DefaultBatcher } from '../../../rendering/batcher/shared/DefaultBatcher.mjs';
-@@ -146,14 +147,16 @@ const _GraphicsContextSystem = class _GraphicsContextSystem {
+ import { InstructionSet } from '../../../rendering/renderers/shared/instructions/InstructionSet.mjs';
+ import { GCManagedHash } from '../../../utils/data/GCManagedHash.mjs';
+@@ -122,14 +123,16 @@ class AbstractGraphicsContextSystem {
      const geometry = batcher.geometry;
      geometry.indexBuffer.setDataWithSize(batcher.indexBuffer, batcher.indexSize, true);
      geometry.buffers[0].setDataWithSize(batcher.attributeBuffer.float32View, batcher.attributeSize, true);
@@ -54,7 +53,7 @@ index dd30921dff76ecde55eb01c5f098b6f6c71d8e8d..2c10f7620fdcfe04565043e58bd33f33
 -      batch.bindGroup = getTextureBatchBindGroup(
 -        batch.textures.textures,
 -        batch.textures.count,
--        this._renderer.limits.maxBatchableTextures
+-        maxTextures
 -      );
 +    if (this._renderer.type === RendererType.WEBGPU) {
 +      const drawBatches = batcher.batches;
@@ -63,7 +62,7 @@ index dd30921dff76ecde55eb01c5f098b6f6c71d8e8d..2c10f7620fdcfe04565043e58bd33f33
 +        batch.bindGroup = getTextureBatchBindGroup(
 +          batch.textures.textures,
 +          batch.textures.count,
-+          this._renderer.limits.maxBatchableTextures
++          maxTextures
 +        );
 +      }
      }

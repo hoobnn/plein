@@ -219,7 +219,7 @@ overrides:
   micromark-extension-math>katex: 0.19.1
 
 patchedDependencies:
-  pixi.js@8.22.0: dde46599357b4045b58d7012ce3bcdf71cbf91b88b2034ed5fbaae8c94bb6d52
+  pixi.js@8.23.0: 7d1a054a871c22cfba7940b85201ec0bebb57100263f7a61a23c3e586817795a
 
 importers:
 
@@ -552,8 +552,8 @@ importers:
         specifier: workspace:*
         version: link:../doc
       pixi.js:
-        specifier: ^8.22.0
-        version: 8.22.0(patch_hash=dde46599357b4045b58d7012ce3bcdf71cbf91b88b2034ed5fbaae8c94bb6d52)
+        specifier: ^8.23.0
+        version: 8.23.0(patch_hash=7d1a054a871c22cfba7940b85201ec0bebb57100263f7a61a23c3e586817795a)
       rbush:
         specifier: ^4.0.1
         version: 4.0.1
@@ -1946,9 +1946,6 @@ packages:
     resolution: {integrity: sha512-ODOov0sGMJMf3jPonOkgGqPknTsu+DdQ7kD++gz8aI+aFMOMHFbWAA2taqXXVTdP+OTOQR/znGvSpmkeI0WTYQ==}
     engines: {node: '>=14.18.0'}
 
-  '@pixi/colord@2.9.6':
-    resolution: {integrity: sha512-nezytU2pw587fQstUu1AsJZDVEynjskwOL+kibwcdxsMBFqPsFFNA7xl0ii/gXuDi6M0xj3mfRJj8pBSc2jCfA==}
-
   '@playwright/test@1.65.1':
     resolution: {integrity: sha512-y+NCIRm2LvY4slUVWvGh1nujJ8RF/hEisIsq2mtUPgdQC4L701bq5hZGMhrpeXjACvwvO9tj5dJqhvM6TP9lbw==}
     engines: {node: '>=20'}
@@ -2927,6 +2924,9 @@ packages:
 
   color-name@1.1.4:
     resolution: {integrity: sha512-dOy+3AuW3a2wNbZHIuMZpTcgjGuLU/uBL/ubcZF9OXbDo8ff4O8yVp5Bf0efS8uEoYo5q4Fx7dY9OgQGXgAsQA==}
+
+  colord@2.13.0:
+    resolution: {integrity: sha512-2g8RPH6UvoD1ZXYmccAuo0zfMw4mxqzXbeToeVoMSm6na0QEDXggahcZdlTFnFdahlV3I158ipRb2AIvCcwiAQ==}
 
   combined-stream@1.0.8:
     resolution: {integrity: sha512-FQN4MRfuJeHf7cBbBMJFXhKSDq+2kAArBlmRBvcvFE5BB1HZKXtSFASDhdlz9zOYwxh8lDdnvmMOe/+5cdoEdg==}
@@ -4232,8 +4232,8 @@ packages:
     resolution: {integrity: sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA==}
     engines: {node: '>=12'}
 
-  pixi.js@8.22.0:
-    resolution: {integrity: sha512-QbTANHMZ751MIjLiLSUSM8a7LNMWwMIf0KbRCqlW+SPS9hNLfSVS+cl1O2SEp9g1K/wyLzj/OJHv+1TUfiPr/w==}
+  pixi.js@8.23.0:
+    resolution: {integrity: sha512-RkWSwo+mAR0d7MKnJ20IjKkWGPdFh1C0adBRYYLa+SGdxTfbrr6RnQyZZRwjBaG/bDAIQqgBcTBbiNsN6iKFVQ==}
 
   pkijs@3.4.1:
     resolution: {integrity: sha512-Oo/NZcSWccq8KyoG7gLE9fnltgHns+pNCjCAp/WmjsUySi+sX7y4z4Xqu4fVb42CDHzRPl33fjzT15V1wvcyhA==}
@@ -6063,8 +6063,6 @@ snapshots:
       tslib: 2.8.1
       webcrypto-core: 1.9.2
 
-  '@pixi/colord@2.9.6': {}
-
   '@playwright/test@1.65.1':
     dependencies:
       playwright: 1.65.1
@@ -6875,6 +6873,8 @@ snapshots:
       color-name: 1.1.4
 
   color-name@1.1.4: {}
+
+  colord@2.13.0: {}
 
   combined-stream@1.0.8:
     dependencies:
@@ -8236,12 +8236,12 @@ snapshots:
 
   picomatch@4.0.7: {}
 
-  pixi.js@8.22.0(patch_hash=dde46599357b4045b58d7012ce3bcdf71cbf91b88b2034ed5fbaae8c94bb6d52):
+  pixi.js@8.23.0(patch_hash=7d1a054a871c22cfba7940b85201ec0bebb57100263f7a61a23c3e586817795a):
     dependencies:
-      '@pixi/colord': 2.9.6
       '@types/earcut': 3.0.0
       '@webgpu/types': 0.1.74
       '@xmldom/xmldom': 0.8.15
+      colord: 2.13.0
       earcut: 3.2.4
       eventemitter3: 5.0.4
       gifuct-js: 2.1.2
