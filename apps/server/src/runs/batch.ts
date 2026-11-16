@@ -25,7 +25,8 @@ import type { BatchItemRow, JobRow, JobStore } from './store'
 export interface JobExpect {
   /**
    * 受理时定下的「只进候选」策略：常规媒体重跑一个已经有采用结果的节点时为 true。
-   * 持久在任务上，取回、挂回、重新提交与重启都沿用受理时的判定，不被返回时的当前值改写。
+   * 持久在任务上，取回、挂回与重启都沿用受理时的判定，不被返回时的当前值改写；
+   * 核查后重新提交是新的受理时点，会和采用基线一起按当时的采用重算。
    * 旧任务没有这个字段：保持原来的自动采用。
    */
   candidateOnly?: boolean

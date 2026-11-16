@@ -1366,12 +1366,30 @@ export class NodeRuns implements BatchHost {
     }
     // 只有「核查后重新提交」是新的受理时点：refetch / attach 都只是把同一次作业取回来，
     // 不能据此覆盖运行期间用户改过的采用选择；沿用原受理时冻结的采用凭据。
+    // 采用基线和「只进候选」策略是同一次受理的两半，重新提交时一起按当前采用重算：
+    // 只刷基线的话，核查期间手工采用的候选会被新结果静默替换。
     if (opt.action === 'resubmit') {
-      const acceptance = this.rooms.withDoc(canvasId, (doc) => {
+      const accepted = this.rooms.withDoc(canvasId, (doc) => {
         const node = doc.get(row.node_id)
-        return adoptionSnapshot(doc, node, node ? (currentResult(node)?.id ?? null) : null)
+        return {
+          adoption: adoptionSnapshot(doc, node, node ? (currentResult(node)?.id ?? null) : null),
+          candidateOnly:
+            !row.group_id &&
+            !!node &&
+            MEDIA_GENERATE_CAPABILITIES.has(
+              this.host.registry.latestNode(node.nodeType)?.def?.capability ?? '',
+            ) &&
+            currentResult(node) !== undefined,
+        }
       })
-      if (acceptance !== undefined) this.store.update(jobId, { adoption: acceptance })
+      if (accepted !== undefined) {
+        const { candidateOnly: _previous, ...rest } = parseExpect(row.expect) ?? {}
+        const expect: JobExpect = accepted.candidateOnly ? { ...rest, candidateOnly: true } : rest
+        this.store.update(jobId, {
+          adoption: accepted.adoption,
+          expect: Object.keys(expect).length ? JSON.stringify(expect) : null,
+        })
+      }
     }
     this.resume(row, stored, opt.action !== 'refetch')
     return this.jobInfo(this.store.get(jobId)!)
@@ -1904,8 +1922,8 @@ export class NodeRuns implements BatchHost {
     group: GroupRow | undefined,
     expect: JobExpect | undefined,
   ): boolean {
-    // 恢复、挂回、重新提交同一个作业只是把同一次执行接着做完，不是用户又点了一次生成：
-    // 只看受理时持久化的策略，不看 quiet，也不读返回时的当前采用。
+    // 恢复、挂回同一个作业只是把同一次执行接着做完，不是用户又点了一次生成：
+    // 只看受理时持久化的策略（核查后重新提交会重新受理并重算），不看 quiet，也不读返回时的当前采用。
     // 旧任务没有这个字段：保持原来的自动采用。
     if (group) return false
     if (!MEDIA_GENERATE_CAPABILITIES.has(def?.capability ?? '')) return false

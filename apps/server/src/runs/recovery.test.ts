@@ -545,6 +545,41 @@ describe('远端成功、本地获取失败', () => {
     expect(lost.submit).toHaveBeenCalledTimes(1)
   })
 
+  it('核查后重新提交：未采用时受理的任务，期间手工采用的候选不被新结果替换', async () => {
+    withoutLookup()
+    const { server } = await boot()
+    mock(server, { latencyMs: 0 })
+    const lost = loseSubmitResponse()
+    const { id, doc } = await canvas(server)
+    const node = addNode(doc, 'plein/image', { params: { prompt: '重提不覆盖采用', count: 1 } })
+    const run = server.runs.start(id, node, 'local')
+    expect(await server.runs.wait(run)).toBe('failed')
+    await until(() => !server.runs.isRunning(id, node))
+    // 受理时节点没有采用结果；等待核查期间用户手工采用了一个已有候选
+    addResults(
+      doc,
+      node,
+      [
+        {
+          id: 'resubmit-x',
+          port: 'images',
+          runId: 'run-x',
+          at: 1,
+          value: { type: 'image', assetId: 'a'.repeat(64) },
+        },
+      ],
+      { adopt: false },
+    )
+    adoptResult(doc, node, 'resubmit-x')
+
+    expect((await recover(server, id, run, { action: 'resubmit' })).status).toBe(200)
+    await until(() => status(server, run) === 'succeeded')
+    expect(lost.submit).toHaveBeenCalledTimes(2)
+    expect(doc.get(node)?.adopted).toBe('resubmit-x')
+    expect(doc.get(node)?.results).toHaveLength(2)
+    expect(job(server, id, run).recovery).toMatchObject({ state: 'stored', held: 'candidate_only' })
+  })
+
   it('重启后取回同一作业仍沿用原受理凭据', async () => {
     const first = await bootServer()
     mock(first.server, { latencyMs: 0 })
