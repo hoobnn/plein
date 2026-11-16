@@ -1,4 +1,4 @@
-import { addResults, connect, createElement, setText } from '@plein/doc'
+import { addResults, adoptResult, connect, createElement, setText } from '@plein/doc'
 import { openDoc } from '@plein/doc/testing'
 import { expect, it } from 'vite-plus/test'
 import { mentionEdges } from './mentions'
@@ -44,6 +44,26 @@ it('上游 Markdown 与当前文本结果里的 @ 引用也算消费节点的依
   expect(mentionEdges(doc)).toEqual([edge(role, image)])
 
   // 已采用的上游文本结果同样参与解析；历史未采用的候选不算。
+  const adoptedRole = createElement(doc, {
+    kind: 'node',
+    id: 'adopted-role',
+    nodeType: 'plein/character',
+    name: '陈野',
+    x: 0,
+    y: 300,
+    w: 100,
+    h: 100,
+  })
+  createElement(doc, {
+    kind: 'node',
+    id: 'history-role',
+    nodeType: 'plein/character',
+    name: '周明',
+    x: 0,
+    y: 320,
+    w: 100,
+    h: 100,
+  })
   const textNode = createElement(doc, {
     kind: 'node',
     id: 'text-node',
@@ -64,18 +84,20 @@ it('上游 Markdown 与当前文本结果里的 @ 引用也算消费节点的依
       runId: 'run-old',
       at: 1,
       port: 'text',
-      value: { type: 'text', text: '旧稿 @林夏' },
+      value: { type: 'text', text: '旧稿 @周明' },
     },
     {
       id: 'current',
       runId: 'run-current',
       at: 2,
       port: 'text',
-      value: { type: 'text', text: '现在的稿子' },
+      value: { type: 'text', text: '现在的稿子 @陈野' },
     },
   ])
+  adoptResult(doc, textNode, 'current')
   connect(doc, [textNode, 'text'], [image, 'prompt'])
-  expect(mentionEdges(doc)).toEqual([edge(role, image)])
+  // 只有被采用的 current 里的 @陈野 建立依赖；未采用的 old 里的 @周明 不算。
+  expect(mentionEdges(doc)).toEqual([edge(role, image), edge(adoptedRole, image)])
 
   // 纯文本节点没有采用结果时按它就地计算的正文建立依赖。
   const inline = createElement(doc, {
@@ -94,6 +116,10 @@ it('上游 Markdown 与当前文本结果里的 @ 引用也算消费节点的依
   })
   connect(doc, [inline, 'text'], [image, 'prompt'])
   // 纯文本节点自己的正文也引用角色，它本身也要排在角色卡片之后。
-  expect(mentionEdges(doc)).toEqual([edge(role, image), edge(role, inline)])
+  expect(mentionEdges(doc)).toEqual([
+    edge(role, image),
+    edge(adoptedRole, image),
+    edge(role, inline),
+  ])
   doc.destroy()
 })
