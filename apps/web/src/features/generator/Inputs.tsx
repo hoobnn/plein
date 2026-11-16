@@ -47,11 +47,11 @@ type InputPort = NodeInfo['inputs'][number]
 /** 上传的素材放在节点左侧多远（世界坐标） */
 const UPLOAD_OFFSET = 420
 
-/** 来源角标：一张图可能同时来自连线、@ 引用、角色选择与续镜。 */
+/** 来源说明（写进瓦片 title 与管理菜单）：一张图可能同时来自连线、@ 引用、角色选择与续镜。 */
 const ORIGIN_LABEL: Record<InputReferenceOrigin, string> = {
   edge: '连线',
-  mention: '@',
-  role: '角色',
+  mention: '@ 引用',
+  role: '角色图',
   continuation: '续镜',
   binding: '绑定',
 }
@@ -449,9 +449,48 @@ export function Inputs({
     )
     .join(' · ')
 
+  /**
+   * 瓦片说明优先用正文里指向这张图的引用原文（去掉开头的 @），用户在正文看到「@叶舒」，
+   * 瓦片下就是同样的「叶舒」。引用的编号是同类媒体内的序号，所以视频 / 音频按同类顺序号去查。
+   */
+  const mentionNames = new Map<string, string>()
+  for (const ref of prepared?.promptReferences ?? []) {
+    if (ref.reason) continue
+    const text = ref.text.replace(/^@/, '')
+    if (!text) continue
+    for (const index of ref.indices) {
+      const key = `${ref.kind ?? 'image'}:${index}`
+      if (!mentionNames.has(key)) mentionNames.set(key, text)
+    }
+  }
+  const kindSeen = { image: 0, video: 0, audio: 0 }
+  const captions = sentItems.map((item) => {
+    const kind = item.kind ?? 'image'
+    const ordinal = kind === 'image' ? item.index : ++kindSeen[kind]
+    return mentionNames.get(`${kind}:${ordinal}`) ?? item.name
+  })
+  /** 相邻、同一来源且说明相同的瓦片算一组：组长写一次名字，宽度横跨整组。 */
+  const groupSizes = sentItems.map((item, i) => {
+    const prev = sentItems[i - 1]
+    if (
+      i > 0 &&
+      item.elementId &&
+      prev?.elementId === item.elementId &&
+      captions[i - 1] === captions[i]
+    )
+      return 0
+    let size = 1
+    while (
+      sentItems[i + size]?.elementId === item.elementId &&
+      captions[i + size] === captions[i] &&
+      item.elementId
+    )
+      size++
+    return size
+  })
   const tiles: React.ReactNode[] = []
   const sortableIds: string[] = []
-  for (const item of sentItems) {
+  for (const [position, item] of sentItems.entries()) {
     const found = item.origins.includes('edge') ? findUpstream(item) : undefined
     const port = found?.port
     const up = found?.u
@@ -460,6 +499,8 @@ export function Inputs({
       <ReferenceTile
         key={`${item.assetId}:${item.index}`}
         item={item}
+        caption={captions[position]!}
+        group={groupSizes[position]!}
         up={up}
         index={item.index}
         draggable={!!port?.multiple}
@@ -947,11 +988,13 @@ function preview(v: ResultValue | undefined) {
 }
 
 /**
- * 一张送入模型的参考素材：编号徽标与最终提示词一致，
- * 名称和来源（连线 / @ / 角色 / 续镜）都写在图下面。
+ * 一张送入模型的参考素材：编号徽标与最终提示词一致，图下面写名称；
+ * 来源（连线 / @ 引用 / 角色图 / 续镜）放在 title 与管理菜单里，不占瓦片位置。
  */
 function ReferenceTile({
   item,
+  caption,
+  group,
   up,
   index,
   draggable,
@@ -969,6 +1012,10 @@ function ReferenceTile({
   onReference,
 }: {
   item: InputSentReference
+  /** 图下面显示的名称：优先是正文里的引用原文 */
+  caption: string
+  /** 0 = 同组的后续成员（不写名称）；1 = 单张；n > 1 = 组长，名称横跨 n 张 */
+  group: number
   /** 连线来的素材才有；只靠 @ 送入的没有连线，只能显示与定位 */
   up?: Upstream
   index: number
@@ -1012,7 +1059,10 @@ function ReferenceTile({
   const name = item.name
   // 首尾帧按用途显示，不显示平台参考编号（这时提示词不编号）。
   const badge = item.role ? FRAME_ROLE_LABEL[item.role] : item.token
-  const origin = item.origins.map((o) => ORIGIN_LABEL[o]).filter(Boolean)
+  const origin = item.origins
+    .map((o) => ORIGIN_LABEL[o])
+    .filter(Boolean)
+    .join('、')
   const previewLabel = up
     ? v
       ? `预览「${name}」`
@@ -1028,15 +1078,17 @@ function ReferenceTile({
       role="group"
       aria-label={`参考 ${index}：${name}`}
       data-asset-id={item.assetId}
-      title={`${badge} · ${name}`}
+      title={[badge, caption, origin && `来自 ${origin}`].filter(Boolean).join(' · ')}
       style={{
         transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
         transition,
         zIndex: isDragging ? 1 : undefined,
       }}
-      className="relative flex w-22 flex-none flex-col items-start gap-0.5 text-xs text-ink-subtle"
+      className={`group/tile relative flex flex-none flex-col items-start gap-0.5 text-xs text-ink-subtle ${
+        group === 1 ? 'w-22' : 'w-12'
+      }`}
     >
-      <div className="relative w-full">
+      <div className="relative size-12 shrink-0">
         <button
           type="button"
           ref={setActivatorNodeRef}
@@ -1075,36 +1127,37 @@ function ReferenceTile({
             aria-label={`管理参考 ${index}`}
             aria-expanded={!!anchor}
             title={`管理参考 ${index}：${name}`}
-            className="absolute top-0.5 right-0 flex size-5 items-center justify-center rounded-md bg-surface/95 text-sm text-ink shadow-1"
+            className="absolute bottom-0.5 left-0.5 z-20 flex size-5 items-center justify-center rounded-md bg-surface/95 text-sm text-ink opacity-0 shadow-1 group-focus-within/tile:opacity-100 group-hover/tile:opacity-100 aria-expanded:opacity-100"
           >
             ⋯
           </button>
         )}
       </div>
-      {onReference ? (
-        <button
-          type="button"
-          onClick={onReference}
-          aria-label={`@${name}`}
-          title={`在提示词末尾插入 @${name}`}
-          className="w-full truncate text-left hover:text-accent"
-        >
-          {name}
-        </button>
-      ) : (
-        <span className="w-full truncate" title={name}>
-          {name}
-        </span>
-      )}
-      {origin.length > 0 && (
-        <span className="flex w-full flex-wrap gap-1">
-          {origin.map((label) => (
-            <span key={label} className="rounded bg-surface-2 px-1 text-xs text-ink-subtle">
-              {label}
-            </span>
-          ))}
-        </span>
-      )}
+      {group !== 0 &&
+        (onReference ? (
+          <button
+            type="button"
+            onClick={onReference}
+            aria-label={`@${name}`}
+            title={`在提示词末尾插入 @${name}`}
+            style={
+              group > 1 ? { width: `calc(${group} * 3rem + ${group - 1} * 0.5rem)` } : undefined
+            }
+            className="w-full truncate text-left hover:text-accent"
+          >
+            {caption}
+          </button>
+        ) : (
+          <span
+            className="w-full truncate"
+            title={caption}
+            style={
+              group > 1 ? { width: `calc(${group} * 3rem + ${group - 1} * 0.5rem)` } : undefined
+            }
+          >
+            {caption}
+          </span>
+        ))}
       <AnimatePresence>
         {anchor && (
           <Popover
@@ -1116,6 +1169,7 @@ function ReferenceTile({
             <p className="truncate px-2 py-1 text-xs text-ink-subtle" title={name}>
               {name}
             </p>
+            {origin && <p className="px-2 pb-1 text-2xs text-ink-subtle">来自：{origin}</p>}
             {draggable && onMove && (
               <>
                 <button

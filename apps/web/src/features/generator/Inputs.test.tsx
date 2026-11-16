@@ -28,6 +28,7 @@ describe('多模态参考名称', () => {
       refs?: (sources: string[], assets: string[]) => PreparedInput['refs']
       sent?: (sources: string[], assets: string[]) => PreparedInput['sent']
       unsent?: (sources: string[], assets: string[]) => PreparedInput['unsent']
+      promptReferences?: (sources: string[], assets: string[]) => PreparedInput['promptReferences']
       params?: Record<string, unknown>
       requirable?: boolean
       capability?: string
@@ -115,6 +116,9 @@ describe('多模态参考名称', () => {
         refs: options.refs?.(sources, assets) ?? [],
         ...(options.sent ? { sent: options.sent(sources, assets) } : {}),
         ...(options.unsent ? { unsent: options.unsent(sources, assets) } : {}),
+        ...(options.promptReferences
+          ? { promptReferences: options.promptReferences(sources, assets) }
+          : {}),
       } as unknown as PreparedInput
       return <Inputs engine={engine} el={doc.get(id)!} node={node} ups={ups} prepared={prepared} />
     }
@@ -423,7 +427,7 @@ describe('多模态参考名称', () => {
     expect(groups.map((group) => group.getAttribute('data-asset-id'))).toEqual(['asset2', 'asset3'])
     for (const [index, name] of ['素材2', '素材3'].entries()) {
       expect(within(groups[index]!).getByText(name)).toBeTruthy()
-      expect(within(groups[index]!).getByText('@')).toBeTruthy()
+      expect(groups[index]!.title).toContain('来自 @ 引用')
       expect(within(groups[index]!).queryByText('连线')).toBeNull()
     }
     await f.user.click(screen.getByRole('button', { name: '预览「素材2」' }))
@@ -438,6 +442,50 @@ describe('多模态参考名称', () => {
       kind: 'audio',
       name: '素材3',
     })
+  })
+
+  it('瓦片名称取正文引用原文，同一来源连续多张只写一次', () => {
+    setup({
+      sent: (sources, assets) => [
+        {
+          index: 1,
+          token: '图片1',
+          assetId: assets[0]!,
+          elementId: sources[0]!,
+          name: '素材0',
+          origins: ['mention'],
+        },
+        {
+          index: 2,
+          token: '图片2',
+          assetId: 'asset-b',
+          elementId: sources[0]!,
+          name: '素材0',
+          origins: ['mention'],
+        },
+        {
+          index: 3,
+          token: '图片3',
+          assetId: assets[1]!,
+          elementId: sources[1]!,
+          name: '素材1',
+          origins: ['mention'],
+        },
+      ],
+      promptReferences: (sources) => [
+        { start: 0, end: 3, text: '@叶舒', name: '素材0', elementId: sources[0]!, indices: [1, 2] },
+      ],
+    })
+    const groups = within(screen.getByLabelText('实际送入的参考素材')).getAllByRole('group')
+    // 正文写的是「@叶舒」，瓦片就写「叶舒」，不是素材原名
+    expect(within(groups[0]!).getByText('叶舒')).toBeTruthy()
+    expect(within(groups[0]!).queryByText('素材0')).toBeNull()
+    // 同组第二张不重复名称，也不占完整瓦片宽度
+    expect(within(groups[1]!).queryByText('叶舒')).toBeNull()
+    expect(groups[1]!.className).toContain('w-12')
+    // 正文没引用到的图回退素材名
+    expect(within(groups[2]!).getByText('素材1')).toBeTruthy()
+    expect(groups[2]!.className).toContain('w-22')
   })
 
   it('未送入的连线条目保留预览、替换、排序与断开入口', async () => {

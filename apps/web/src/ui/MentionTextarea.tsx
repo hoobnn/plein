@@ -8,14 +8,6 @@ import {
 } from 'react'
 import { mentionParts, type MentionReferences } from '../canvas/mentionText'
 
-/** 文件名去掉常见扩展名，只影响显示，不改原文与引用位置。 */
-function referenceDisplayName(name: string) {
-  return name.replace(
-    /\.(?:png|jpe?g|webp|gif|avif|bmp|tiff?|mp4|m4v|mov|webm|mkv|avi|wav|mp3|m4a|aac|flac|ogg)$/i,
-    '',
-  )
-}
-
 /** 保留原生 textarea 的输入、选择、IME 与复制行为，镜像层显示正文和引用颜色。 */
 export function MentionTextarea({
   ref,
@@ -37,19 +29,6 @@ export function MentionTextarea({
   const layer = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   useImperativeHandle(ref, () => input.current!)
-  /**
-   * 引用跨行时，绝对定位容器的 100% 宽度会变成 0；按原文第一行的实际宽度显式设置，
-   * 让徽标后的名称至少在第一行余量里显示并按需省略。只改叠加层，不影响 textarea 排版。
-   */
-  const fitTags = useCallback(() => {
-    const body = content.current
-    if (!body) return
-    for (const tags of body.querySelectorAll<HTMLElement>('.plein-mention-tags')) {
-      const raw = tags.parentElement?.querySelector<HTMLElement>('.plein-mention-raw')
-      const first = raw?.getClientRects()[0]
-      tags.style.width = first ? `${first.width}px` : ''
-    }
-  }, [])
   const sync = useCallback(() => {
     const ta = input.current
     const box = layer.current
@@ -74,10 +53,8 @@ export function MentionTextarea({
     box.style.left = `${ta.offsetLeft + ta.clientLeft}px`
     box.style.top = `${ta.offsetTop + ta.clientTop}px`
     body.style.transform = `translate(${-ta.scrollLeft}px, ${-ta.scrollTop}px)`
-    fitTags()
-  }, [fitTags])
+  }, [])
   useLayoutEffect(sync)
-  useLayoutEffect(fitTags)
   useLayoutEffect(() => {
     const observer = new ResizeObserver(sync)
     if (input.current) observer.observe(input.current)
@@ -104,11 +81,7 @@ export function MentionTextarea({
         onPointerMove={(event) => {
           onPointerMove?.(event)
           const hit = [...(layer.current?.querySelectorAll('mark') ?? [])].find((mark) =>
-            // 短名字的编号徽标会伸出原文占位宽度，悬停徽标本身也要能读到名称。
-            [
-              ...mark.getClientRects(),
-              ...(mark.querySelector('.plein-mention-badge')?.getClientRects() ?? []),
-            ].some(
+            [...mark.getClientRects()].some(
               (r) =>
                 event.clientX >= r.left &&
                 event.clientX <= r.right &&
@@ -144,26 +117,7 @@ export function MentionTextarea({
                 data-title={part.badge?.title}
                 title={part.badge?.title ?? part.warning}
               >
-                {part.badge ? (
-                  <>
-                    {/* 原文保留占位宽度，徽标与名称叠在上面，正文不会跟着挪位 */}
-                    <span className="plein-mention-raw">{part.text}</span>
-                    <span className="plein-mention-tags">
-                      <span className="plein-mention-badge">
-                        {part.badge.labels.length > 1
-                          ? `${part.badge.labels[0]}+${part.badge.labels.length - 1}`
-                          : part.badge.labels[0]}
-                      </span>
-                      {part.badge.name && (
-                        <span className="plein-mention-name">
-                          {referenceDisplayName(part.badge.name)}
-                        </span>
-                      )}
-                    </span>
-                  </>
-                ) : (
-                  part.text
-                )}
+                {part.text}
               </mark>
             ) : (
               part.text

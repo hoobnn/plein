@@ -206,7 +206,7 @@ it.each([
     video: '@视频1',
     audio: '@音频1',
   },
-])('编辑器按媒体类型显示 $provider 的视频与音频徽标', (item) => {
+])('编辑器按媒体类型显示 $provider 的视频与音频编号提示', (item) => {
   mockResizeObserver()
   const doc = openDoc()
   docs.push(doc)
@@ -268,9 +268,13 @@ it.each([
       onPreset={() => {}}
     />,
   )
-  expect(
-    [...document.querySelectorAll('.plein-mention-badge')].map((badge) => badge.textContent),
-  ).toEqual([item.video, item.audio])
+  // 正文只显示原文，编号写进悬停提示
+  const marks = [...document.querySelectorAll('[data-testid="mention-highlights"] mark')]
+  expect(marks.map((mark) => mark.textContent)).toEqual(['@舞.mp4', '@歌.mp3'])
+  expect(marks.map((mark) => mark.getAttribute('data-title'))).toEqual([
+    `舞.mp4 → ${item.video}`,
+    `歌.mp3 → ${item.audio}`,
+  ])
 })
 
 it('两个离线协作者分配同一别名后合并并重开，冲突引用被阻断', () => {

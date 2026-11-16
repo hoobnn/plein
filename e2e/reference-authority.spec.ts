@@ -19,7 +19,7 @@ import {
  */
 
 let dir = ''
-/** 足够长、会跨行的参考文件名：编辑器里徽标后的名称要在第一行余量内截断显示。 */
+/** 足够长、会跨行的参考文件名：编辑器里原样显示，换行与 textarea 一致。 */
 const longName = `wrap-${'reference-name-'.repeat(14)}.png`
 
 test.beforeAll(() => {
@@ -83,18 +83,20 @@ test('只靠 @ 送入的参考图在顶部可见，编号与最终提示词一�
   // 这个节点没有连线，素材完全来自 @。
   expect(await edgesInto(page, target.id)).toHaveLength(0)
 
-  // 编号和管理按钮分开放：管理按钮不能盖住「图1」。
+  // 编号在缩略图左上角（长编号会伸出缩略图），管理按钮在左下角：两者不互相遮盖，也不压住拖动区域。
   const tokenBox = await tile.locator('[data-token]').first().boundingBox()
   const manageBox = await tile.getByRole('button', { name: '管理参考 1' }).boundingBox()
-  expect(manageBox!.x).toBeGreaterThanOrEqual(tokenBox!.x + tokenBox!.width)
+  expect(manageBox!.y).toBeGreaterThanOrEqual(tokenBox!.y + tokenBox!.height)
+  // 来源写在瓦片 title 里，不再占一排标签。
+  await expect(tile).toHaveAttribute('title', /来自 @ 引用/)
 
   // 编号与最终提示词里的编号必须是同一个。
   const token = await tile.locator('[data-token]').first().getAttribute('data-token')
   expect(token).toBe('图1')
-  // 徽标后按原文占位宽度补淡色名称；名称固定省略，不再留下看起来像断句的大段空白。
-  const editorName = page.getByTestId('mention-highlights').locator('.plein-mention-name').first()
-  await expect(editorName).toHaveText('a')
-  expect(await editorName.evaluate((el) => getComputedStyle(el).textOverflow)).toBe('ellipsis')
+  // 正文只显示用户写的原文，编号放进悬停提示。
+  const editorMark = page.getByTestId('mention-highlights').locator('mark').first()
+  await expect(editorMark).toHaveText('@a.png')
+  await expect(editorMark).toHaveAttribute('data-title', /a\.png → 图1/)
   await page
     .getByTestId('generator')
     .getByRole('button', { name: /实际输入/ })
@@ -109,7 +111,7 @@ test('只靠 @ 送入的参考图在顶部可见，编号与最终提示词一�
   await expect(page.getByTestId('input-preview').getByRole('figure')).toHaveCount(0)
 })
 
-test('短名称 @ 的编号徽标完整可读，悬停能读到名称', { tag: '@core' }, async ({ page }) => {
+test('短名称 @ 在正文里保持原文，悬停能读到编号', { tag: '@core' }, async ({ page }) => {
   await newProject(page)
   await addNode(page, '角色')
   const card = await byName(page, '角色')
@@ -118,7 +120,7 @@ test('短名称 @ 的编号徽标完整可读，悬停能读到名称', { tag: '
   const image = (await elements(page)).find((el) => el.kind === 'image')!
   expect(image).toBeTruthy()
 
-  // 把图片改成只有一个字的名称：原文「@叶」的占位比编号徽标窄，徽标不能被裁掉数字。
+  // 把图片改成只有一个字的名称：正文只显示原文「@叶」，编号靠悬停提示读到。
   await clickElement(page, image.id)
   await page.keyboard.press('F2')
   const rename = page.getByRole('dialog', { name: '重命名节点' })
@@ -145,17 +147,17 @@ test('短名称 @ 的编号徽标完整可读，悬停能读到名称', { tag: '
 
   await page.getByTestId('generator').getByRole('button', { name: '放大编辑提示词' }).click()
   const dialog = page.getByRole('dialog', { name: '编辑提示词' })
-  const badge = dialog.locator('.plein-mention-badge').first()
-  await expect(badge).toHaveText('图1')
-  // 徽标没有被原文占位宽度裁切：内容宽度不超过可见宽度。
-  expect(await badge.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
-  const badgeBox = (await badge.boundingBox())!
-  await page.mouse.move(badgeBox.x + badgeBox.width / 2, badgeBox.y + badgeBox.height / 2)
-  // 名称放在实际接收鼠标事件的 textarea 上，悬停徽标即可看到。
-  await expect(dialog.getByRole('textbox', { name: '提示词' })).toHaveAttribute('title', /叶 · 图1/)
+  const mark = dialog.getByTestId('mention-highlights').locator('mark').first()
+  await expect(mark).toHaveText('@叶')
+  // 等服务端编号回来再悬停，否则读到的是「正在确认」提示。
+  await expect(mark).toHaveAttribute('data-title', /叶 → 图1/)
+  const markBox = (await mark.boundingBox())!
+  await page.mouse.move(markBox.x + markBox.width / 2, markBox.y + markBox.height / 2)
+  // 提示放在实际接收鼠标事件的 textarea 上，悬停引用即可看到。
+  await expect(dialog.getByRole('textbox', { name: '提示词' })).toHaveAttribute('title', /叶 → 图1/)
 })
 
-test('跨行的长引用在第一行显示截断的名称', { tag: '@core' }, async ({ page }) => {
+test('跨行的长引用只显示原文，不改变换行与选区', { tag: '@core' }, async ({ page }) => {
   await newProject(page)
   await addNode(page, '角色')
   const card = await byName(page, '角色')
@@ -173,27 +175,10 @@ test('跨行的长引用在第一行显示截断的名称', { tag: '@core' }, as
   expect(await prompt.inputValue()).toContain(longName)
 
   const mark = page.getByTestId('mention-highlights').locator('mark').first()
-  const name = mark.locator('.plein-mention-name')
-  await expect(name).toBeVisible()
-  // 跨行引用的第一行仍有可见名称；名称比可用宽度长时用省略号。
-  const metrics = await name.evaluate((el) => {
-    const rect = el.getBoundingClientRect()
-    return {
-      width: rect.width,
-      clientWidth: el.clientWidth,
-      scrollWidth: el.scrollWidth,
-      text: el.textContent,
-    }
-  })
-  expect(metrics.width).toBeGreaterThan(0)
-  expect(metrics.text).not.toContain('.png')
-  expect(metrics.scrollWidth).toBeGreaterThan(metrics.clientWidth)
+  // 镜像层直接显示原文，不叠名称或徽标，换行与 textarea 一致。
+  await expect(mark).toHaveText(`@${longName}`)
   expect(await mark.evaluate((el) => el.getClientRects().length)).toBeGreaterThan(1)
-  // 徽标与名称的叠加层绝对定位，不参与正文排版，光标和选区位置不会跟着挪。
-  expect(
-    await mark.locator('.plein-mention-tags').evaluate((el) => getComputedStyle(el).position),
-  ).toBe('absolute')
-  // 叠加层不改 textarea 的值和选区。
+  // 镜像层不改 textarea 的值和选区。
   await prompt.evaluate((el) => (el as HTMLTextAreaElement).setSelectionRange(2, 5))
   expect(
     await prompt.evaluate((el) => {

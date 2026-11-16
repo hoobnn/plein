@@ -29,7 +29,6 @@ export interface MentionNumber {
 export interface MentionBadge {
   labels: string[]
   title: string
-  name?: string
 }
 
 /** 面板里要画成标记的一处引用区间。 */
@@ -88,8 +87,8 @@ export function mentionParts(
             n.labels.length && !n.reason
               ? {
                   labels: n.labels,
-                  title: [n.name, n.labels.join('、')].filter(Boolean).join(' · '),
-                  ...(n.name ? { name: n.name } : {}),
+                  // 完整写出每个编号，不用「+N」，悬停就能读到这处引用指向哪几张图
+                  title: n.name ? `${n.name} → ${n.labels.join('、')}` : n.labels.join('、'),
                 }
               : undefined,
         }))
