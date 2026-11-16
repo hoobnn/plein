@@ -113,9 +113,12 @@ describe('运行前解析 @ 引用', () => {
     expect(r.inputs.references?.map((v) => ('assetId' in v ? v.assetId : ''))).toEqual([
       'c'.repeat(64),
       doc.get(photo)!.assetId,
-      'b'.repeat(64),
     ])
-    expect(r.params.prompt).toBe('林夏（图2、图3）带着铁盒，参考图2')
+    // 自动只带角色卡的第一张图，第二张可选但不算被舍弃
+    expect(r.details[0]).toMatchObject({ available: [doc.get(photo)!.assetId, 'b'.repeat(64)] })
+    expect(r.details[0]?.sent).toEqual([doc.get(photo)!.assetId])
+    expect(r.details[0]?.reason).toBeUndefined()
+    expect(r.params.prompt).toBe('林夏（图2）带着铁盒，参考图2')
     expect(r.params.prompt).not.toContain('参考对应')
   })
 
@@ -570,12 +573,25 @@ describe('角色档案：@林夏/少年/校服', () => {
     setParams(doc, hero, { profile })
     const n = node(doc, 'plein/image', { prompt: '@林夏/少年/校服站在天台' })
     const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))
-    expect(r.params.prompt).toBe('林夏（少年·校服）（图1、图2、图3）站在天台')
+    expect(r.params.prompt).toBe('林夏（少年·校服）（图1、图2）站在天台')
+    // 自动只带档案项命中的图；基础图仍可选，但不送也不算被舍弃
     expect(r.inputs.references?.map((v) => ('assetId' in v ? v.assetId : ''))).toEqual([
       '1'.repeat(64),
       '2'.repeat(64),
-      doc.get(photo)!.assetId,
     ])
+    expect(r.details[0]).toMatchObject({
+      available: ['1'.repeat(64), '2'.repeat(64), doc.get(photo)!.assetId],
+      sent: ['1'.repeat(64), '2'.repeat(64)],
+    })
+    expect(r.details[0]?.reason).toBeUndefined()
+  })
+
+  it('图片节点：档案项没有命中图时退回卡片第一张', async () => {
+    const { doc, photo, hero } = setup()
+    setParams(doc, hero, { profile: { ...profile, expressions: [look('e1', '开心')] } })
+    const n = node(doc, 'plein/image', { prompt: '@林夏/开心站在天台' })
+    const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))
+    expect(r.details[0]?.sent).toEqual([doc.get(photo)!.assetId])
   })
 
   it('配音：状态次音色优先于时期主音色', async () => {

@@ -77,7 +77,7 @@ it('服饰移动后旧名引用使用新的时期图片和音色，预览、平�
     return (await res.json()) as PreparedInput
   }
   const before = await preview(image)
-  expect(before.inputs.references?.map((v) => v.assetId)).toEqual([assets[0], assets[2], assets[3]])
+  expect(before.inputs.references?.map((v) => v.assetId)).toEqual([assets[0], assets[2]])
   expect((await preview(speech)).voice?.voiceId).toBe('mock-female')
   expect(seen).toEqual([])
   setParams(doc, hero, {
@@ -104,8 +104,7 @@ it('服饰移动后旧名引用使用新的时期图片和音色，预览、平�
     expect(input.status).toBe('ready')
     expect(input.prompt).toContain('林夏（成年·校服）')
     expect(input.prompt).not.toContain('少年')
-    if (port)
-      expect(input.inputs[port]?.map((v) => v.assetId)).toEqual([assets[1], assets[2], assets[3]])
+    if (port) expect(input.inputs[port]?.map((v) => v.assetId)).toEqual([assets[1], assets[2]])
     else expect(input.voice?.voiceId).toBe('mock-male')
     const res = await request(server, `/api/canvases/${id}/nodes/${node}/run`, {
       method: 'POST',
@@ -122,7 +121,7 @@ it('服饰移动后旧名引用使用新的时期图片和音色，预览、平�
       references?: AssetRef[]
     }
     if (port) {
-      expect(sent.references?.map((ref) => ref.assetId)).toEqual([assets[1], assets[2], assets[3]])
+      expect(sent.references?.map((ref) => ref.assetId)).toEqual([assets[1], assets[2]])
       expect(sent.prompt).toBe(input.prompt)
     } else {
       expect(sent.voice).toBe('mock-male')

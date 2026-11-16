@@ -2522,6 +2522,8 @@ describe('参考素材说明段（同一组输入在各平台的最终提示词�
         model,
         mode: 'reference',
         prompt: '@林夏 走上 @天台，镜头沿用 @推近',
+        // 角色自动只带第一张；这里要验证「同一角色多张图」的说明写法，所以显式选两张
+        referenceImagePicks: { [hero]: [asset('a'), asset('b')] },
         ...extra,
       },
     })

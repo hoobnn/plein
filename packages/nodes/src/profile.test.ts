@@ -4,6 +4,7 @@ import {
   type CharacterProfile,
   matchProfile,
   nameProblem,
+  autoImages,
   pickImages,
   pickLabel,
   pickNotes,
@@ -127,6 +128,16 @@ describe('角色档案', () => {
     expect(
       pickVoice(matchProfile('/青年', profile).pick, { provider: '', voiceId: 'base' }).voiceId,
     ).toBe('base')
+  })
+
+  it('自动模式：没写档案项只带第一张，写了只带命中的图，没命中退回第一张', () => {
+    const base = [img('9'), img('1'), img('7')]
+    expect(autoImages({}, base)).toEqual([img('9')])
+    expect(autoImages({}, [])).toEqual([])
+    const { pick } = matchProfile('/少年/校服/开心', profile)
+    // 命中的图按 时期 → 服饰 → 表情 排，不再补基础图
+    expect(autoImages(pick, base)).toEqual([img('1'), img('2'), img('4'), img('5')])
+    expect(autoImages({ period: { ...pick.period!, images: [] } }, base)).toEqual([img('9')])
   })
 
   it('改名保留旧名，重名不让用', () => {

@@ -8,6 +8,7 @@ import {
   addNode,
   byName,
   centerOf,
+  clickElement,
   revealGenerator,
   edgesInto,
   elements,
@@ -100,11 +101,20 @@ test('角色卡上传参考图，@ 引用后换参考图，镜头图标为过期
     JSON.stringify(await (await page.request.get(`/api/canvases/${canvas}/stale`)).json())
   expect(await stale()).not.toContain(node.id)
 
-  // 给角色卡再加一张参考图：引用它的镜头图随之过期
+  // 给角色卡再加一张参考图：自动只带第一张，没送进去的图不影响已有结果
   await page.keyboard.press('Escape')
   const p = await centerOf(page, card.id)
   await page.mouse.click(p.x, p.y)
   await uploadReference(page, card.id, join(dir, 'side.png'), 2)
+  await page.waitForTimeout(1000)
+  expect(await stale()).not.toContain(node.id)
+
+  // 在角色参考里把新图也勾上：送入的参考图变了，引用它的镜头图随之过期
+  await page.keyboard.press('Escape')
+  await clickElement(page, node.id)
+  await revealGenerator(page)
+  await page.getByRole('button', { name: '角色参考图', exact: true }).click()
+  await page.getByRole('option', { name: '选择角色第2张参考图' }).click()
   await expect.poll(stale).toContain(node.id)
 })
 

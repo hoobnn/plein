@@ -5,6 +5,7 @@ import {
   createElement,
   deleteElements,
   type PleinDoc,
+  setParams,
   updateElement,
   writeRun,
 } from '@plein/doc'
@@ -287,7 +288,47 @@ describe('明确选择角色参考图', () => {
     expect(sent(missing.inputs.references)).toEqual([])
     expect(missing.blocked[0]?.message).toContain('不会自动换成其他图片')
     expect(missing.details[0]?.reason).toBe('selection_missing')
-    expect(sent((await run(undefined)).inputs.references)).toEqual([asset('a'), asset('e')])
+    // 自动只带第一张；第二张仍可选，但没送不算被舍弃
+    const auto = await run(undefined)
+    expect(sent(auto.inputs.references)).toEqual([asset('a')])
+    expect(auto.details[0]).toMatchObject({
+      available: [asset('a'), asset('e')],
+      sent: [asset('a')],
+    })
+    expect(auto.details[0]?.reason).toBeUndefined()
+    doc.destroy()
+  })
+
+  it('同一角色多处引用共用一份选择：只在某处可选里的图不阻断另一处', async () => {
+    const { doc, hero } = scene()
+    setParams(doc, hero, {
+      profile: {
+        periods: [],
+        expressions: [
+          { id: 'x1', name: '开心', aliases: [], description: '', images: [asset('f')] },
+        ],
+      },
+    })
+    const n = shot(doc, 'plein/image', {
+      prompt: '@林夏 和 @林夏/开心',
+      referenceImagePicks: { [hero]: [asset('f')] },
+    })
+    const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc), 5)
+    // 开心那处可选里有 f，送 f；普通那处可选里没有 f，这一处不送，但不阻断
+    expect(r.blocked).toEqual([])
+    expect(sent(r.inputs.references)).toEqual([asset('f')])
+    const plain = r.details.find((d) => d.name === '林夏')!
+    expect(plain.sent).toEqual([])
+    expect(plain.reason).toBeUndefined()
+    expect(r.details.find((d) => d.name !== '林夏')!.sent).toEqual([asset('f')])
+    // 图在角色卡里哪儿都不存在才阻断
+    const gone = shot(doc, 'plein/image', {
+      prompt: '@林夏 和 @林夏/开心',
+      referenceImagePicks: { [hero]: [asset('9')] },
+    })
+    const bad = await applyMentions(doc, doc.get(gone)!, imageNode, {}, collect(doc), 5)
+    expect(bad.blocked).toHaveLength(2)
+    expect(bad.details.every((d) => d.reason === 'selection_missing')).toBe(true)
     doc.destroy()
   })
 })

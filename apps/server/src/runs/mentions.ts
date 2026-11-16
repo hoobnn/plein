@@ -7,10 +7,12 @@ import {
   mentionName,
   mentionProblem,
   pickEmpty,
+  autoImages,
   pickImages,
   pickLabel,
   type ProfilePick,
   pickVoice,
+  profileImages,
   profileOf,
   sceneViewsOf,
   type SceneView,
@@ -314,6 +316,10 @@ export async function applyMentions(
   const imageDetails: InputRef[] = []
   const mediaDetails: InputRef[] = []
   const detailByHit = new Map<string, InputRef>()
+  /** 每处图片引用本来打算送的图：自动模式只算自动挑中的，不把没打算送的图记成被舍弃 */
+  const intended = new Map<InputRef, string[]>()
+  /** 选中的图在角色卡里已经找不到的引用 */
+  const selectionMissing = new Set<InputRef>()
   const voices: Array<{ name: string; voice: VoiceRef }> = []
   /** 参考图来自生成失败的上游（记下是哪个节点，供提示定位）：和「还没生成或没连」分开提示 */
   const failedRefs = new Map<string, Array<{ id: string; name: string }>>()
@@ -394,7 +400,7 @@ export async function applyMentions(
         ).filter((assetId): assetId is string => assetId !== null)
       : []
     const invalidViewIds = new Set(invalidViewImages)
-    // 写了档案项：命中项的图排前面，再补卡片的参考图，每个角色截到上限
+    // 可选的图（选择器列出的全部）：写了档案项时命中项的图排前面，再补卡片的参考图，每个角色截到上限
     const candidates = h.sceneView
       ? h.sceneView.images
           .filter((assetId) => !invalidViewIds.has(assetId))
@@ -439,15 +445,32 @@ export async function applyMentions(
       ? [...new Set(asked.filter((v): v is string => typeof v === 'string'))]
       : undefined
     const available = imageIds(candidates)
-    if (selected?.some((id) => !available.includes(id)))
+    // 同一角色在节点里可以多处引用（@叶舒 和 @叶舒/校服），选择按角色共用一份：
+    // 只要图还在这张卡里就不阻断，某一处引用的可选图里没有它只是这一处不送。
+    const cardImages = new Set([
+      ...imageIds(base),
+      ...(target.nodeType === 'plein/character'
+        ? profileImages(profileOf(target.params?.profile))
+        : []),
+    ])
+    const missing = selected?.some((id) => !cardImages.has(id)) ?? false
+    if (missing)
       blocked.push({
         code: 'prepare_failed',
         elementId: target.id,
         message: `「${label(h)}」选定的参考图已不可用，请重新选择；不会自动换成其他图片`,
       })
+    // 自动模式只带真正需要的：角色卡不写档案项只带第一张（定妆图），写了档案项带命中的图；
+    // 场景、道具等其他卡不变，仍送全部可选图
+    const auto =
+      target.nodeType === 'plein/character' && !h.sceneView
+        ? autoImages(h.pick, imageIds(base)).flatMap((id) =>
+            candidates.filter((v) => v.type === 'image' && v.assetId === id),
+          )
+        : candidates
     const images =
       selected === undefined
-        ? candidates
+        ? auto
         : selected.flatMap((id) => candidates.filter((v) => v.type === 'image' && v.assetId === id))
     const rank = RANK.indexOf(target.nodeType ?? '')
     groups.push({ rank: rank < 0 ? RANK.length : rank, priority, images })
@@ -460,6 +483,9 @@ export async function applyMentions(
       ...detail(target, label(h), priority, available, hitIdentity(h)),
       ...(selected !== undefined ? { selected } : {}),
     }
+    // 这处引用本来打算送的图（自动挑的，或手动选中且在这处可选里的）：没送满才算被舍弃
+    intended.set(current, imageIds(images))
+    if (missing) selectionMissing.add(current)
     details.push(current)
     imageDetails.push(current)
     detailByHit.set(hitKey(h), current)
@@ -513,7 +539,7 @@ export async function applyMentions(
           ? `「${d.name}」是必需参考，当前模式不送${media}，请切到「多模态参考」或取消必需`
           : `「${d.name}」是必需参考，这个节点不收${media}`,
       })
-    else if (d.selected?.length === 0 || d.available.length === 0)
+    else if (intended.get(d)?.length === 0 || d.available.length === 0)
       blocked.push(
         failedRefs.has(d.elementId)
           ? {
@@ -533,11 +559,11 @@ export async function applyMentions(
   const refs = send ? pickRefs(own, groups, refList, imageDetails, maxRefs, notices, blocked) : []
   for (const [i, d] of imageDetails.entries()) {
     d.sent = send ? refList[i]!.assetIds : []
-    if (d.selected?.some((id) => !d.available.includes(id))) d.reason = 'selection_missing'
+    if (selectionMissing.has(d)) d.reason = 'selection_missing'
     else if (d.available.length === 0)
       d.reason = failedRefs.has(d.elementId) ? 'failed' : 'no_image'
     else if (!send) d.reason = 'unsupported'
-    else if (d.sent.length < (d.selected ?? d.available).length) d.reason = 'over_limit'
+    else if (d.sent.length < (intended.get(d) ?? d.available).length) d.reason = 'over_limit'
   }
   // 可选参考的上游失败不阻断运行，但同样要在提示里定位到失败的上游节点；
   // 必需参考的失败已经在 blocked（required_failed）里说明，不重复一条提示。

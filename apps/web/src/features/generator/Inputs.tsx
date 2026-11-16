@@ -27,7 +27,7 @@ import {
 import { filterReferenceCandidates, referenceCandidates } from './referenceCandidates'
 import { referenceMedia, submittedMedia } from './submittedMedia'
 import { bindReferenceName, referenceName, replaceReferenceName } from './referenceNames'
-import { RoleReferencePicker } from './RoleReferencePicker'
+import { RoleReferencePicker, RoleReferencePopover, useRoleViews } from './RoleReferencePicker'
 import { VIDEO_MODE_LABELS } from '@plein/nodes'
 import { useRef, useState } from 'react'
 import { assetUrls } from '../../api/client'
@@ -124,6 +124,11 @@ export function Inputs({
   const [addAnchor, setAddAnchor] = useState<HTMLButtonElement | null>(null)
   const [canvasAnchor, setCanvasAnchor] = useState<HTMLButtonElement | null>(null)
   const [canvasQuery, setCanvasQuery] = useState('')
+  // 从参考瓦片、占位打开的单个角色选择器
+  const [rolePicker, setRolePicker] = useState<{ anchor: HTMLElement; elementId: string } | null>(
+    null,
+  )
+  const roles = useRoleViews(engine, el.id, prepared)
   const media = node.inputs.filter((p) => p.type !== 'text')
   const texts = node.inputs.filter((p) => p.type === 'text').flatMap((p) => ups.get(p.id) ?? [])
   const locate = (u: Upstream) => {
@@ -488,6 +493,14 @@ export function Inputs({
       size++
     return size
   })
+  /** 瓦片名字后的「送入数/可选数」：只在没带全或手动选过时显示 */
+  const roleTile = (role: (typeof roles)[number]) => ({
+    name: role.name,
+    count:
+      role.available.length > role.sent.length || role.picks !== undefined
+        ? `${role.sent.length}/${role.available.length}`
+        : undefined,
+  })
   const tiles: React.ReactNode[] = []
   const sortableIds: string[] = []
   for (const [position, item] of sentItems.entries()) {
@@ -495,6 +508,11 @@ export function Inputs({
     const port = found?.port
     const up = found?.u
     if (up && port) sortableIds.push(up.edgeId)
+    // 角色的图：名字变成打开这个角色选择器的入口。靠送入的 assetId 找角色，不看连线来源
+    const role =
+      item.origins.includes('role') && (item.kind ?? 'image') === 'image'
+        ? roles.find((r) => r.sent.includes(item.assetId))
+        : undefined
     tiles.push(
       <ReferenceTile
         key={`${item.assetId}:${item.index}`}
@@ -540,10 +558,27 @@ export function Inputs({
             ? () => insertReference(identityOf(up)!)
             : undefined
         }
+        role={role ? roleTile(role) : undefined}
+        onPickRole={
+          role ? (anchor) => setRolePicker({ anchor, elementId: role.elementId }) : undefined
+        }
       />,
     )
   }
 
+  // 有图可选但一张都没送的角色（仅文字，或被舍弃）；节点不收参考图、角色没图时没有可选的，不列
+  const sentRoleIds = new Set(
+    tiles.length ? roles.filter((r) => r.sent.length).map((r) => r.elementId) : [],
+  )
+  const textOnlyRoles = roles.filter(
+    (r) =>
+      r.available.length > 0 &&
+      r.sent.length === 0 &&
+      !sentRoleIds.has(r.elementId) &&
+      !(prepared?.refs ?? []).some(
+        (ref) => ref.elementId === r.elementId && ref.reason === 'unsupported',
+      ),
+  )
   const candidates = filterReferenceCandidates(referenceCandidates(engine, el, media), canvasQuery)
   const hasTiles = tiles.length > 0
   const hasAdds = media.some((port) => port.multiple || !(ups.get(port.id) ?? []).length)
@@ -684,6 +719,18 @@ export function Inputs({
             </>
           )}
           <RoleReferencePicker engine={engine} nodeId={el.id} data={prepared} />
+          <AnimatePresence>
+            {rolePicker && (
+              <RoleReferencePopover
+                engine={engine}
+                nodeId={el.id}
+                data={prepared}
+                anchor={rolePicker.anchor}
+                elementId={rolePicker.elementId}
+                onClose={() => setRolePicker(null)}
+              />
+            )}
+          </AnimatePresence>
           {toolbar}
           {trailing && (
             // 结果操作可能排到面板外：让它能换行，别把最后一个按钮裁掉
@@ -748,7 +795,24 @@ export function Inputs({
               className="ui-scrollbar flex items-start gap-2 overflow-x-auto pt-1 pb-0.5"
             >
               {tiles}
-              {!tiles.length && (
+              {/* 被 @ 了却一张图都没送：没有瓦片可点，留一个占位入口去选图 */}
+              {textOnlyRoles.map((role) => (
+                <button
+                  key={role.elementId}
+                  type="button"
+                  aria-label={`${role.name} · ${role.picks ? '仅文字' : '未送图'}，选择参考图`}
+                  title={`选择「${role.name}」要带的参考图`}
+                  onClick={(e) =>
+                    setRolePicker({ anchor: e.currentTarget, elementId: role.elementId })
+                  }
+                  className="flex h-12 max-w-40 flex-none items-center rounded-md border border-dashed border-line px-2 text-xs text-ink-subtle hover:border-accent hover:text-accent"
+                >
+                  <span className="truncate">
+                    {role.name} · {role.picks ? '仅文字' : '未送图'}
+                  </span>
+                </button>
+              ))}
+              {!tiles.length && !textOnlyRoles.length && (
                 <p className="py-2 text-2xs text-ink-subtle">还没有送入模型的参考素材</p>
               )}
             </div>
@@ -1010,6 +1074,8 @@ function ReferenceTile({
   required,
   onToggleRequired,
   onReference,
+  role,
+  onPickRole,
 }: {
   item: InputSentReference
   /** 图下面显示的名称：优先是正文里的引用原文 */
@@ -1032,6 +1098,9 @@ function ReferenceTile({
   required: boolean
   onToggleRequired?(): void
   onReference?(): void
+  /** 这张图来自角色：名字改成打开该角色选择器的入口，count 是「送入数/可选数」 */
+  role?: { name: string; count?: string }
+  onPickRole?(anchor: HTMLElement): void
 }) {
   // 不透传 attributes：键盘排序走 Alt+方向键与管理菜单，不走 dnd-kit 的 Enter/Space（避免劫持预览）
   const { listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
@@ -1120,7 +1189,7 @@ function ReferenceTile({
         >
           {badge}
         </span>
-        {(onRemove || onReplace || onLocate || (canRequire && onToggleRequired)) && (
+        {(onRemove || onReplace || onLocate || onPickRole || (canRequire && onToggleRequired)) && (
           <button
             type="button"
             onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
@@ -1134,7 +1203,20 @@ function ReferenceTile({
         )}
       </div>
       {group !== 0 &&
-        (onReference ? (
+        (onPickRole && role ? (
+          <button
+            type="button"
+            onClick={(e) => onPickRole(e.currentTarget)}
+            title={`选择「${role.name}」要带的参考图`}
+            style={
+              group > 1 ? { width: `calc(${group} * 3rem + ${group - 1} * 0.5rem)` } : undefined
+            }
+            className="w-full truncate text-left hover:text-accent"
+          >
+            {caption}
+            {role.count && <span className="ml-1 tabular-nums">{role.count}</span>}
+          </button>
+        ) : onReference ? (
           <button
             type="button"
             onClick={onReference}
@@ -1212,6 +1294,20 @@ function ReferenceTile({
               >
                 <Icon name="upload" size={14} />
                 上传替换
+              </button>
+            )}
+            {onPickRole && role && (
+              <button
+                type="button"
+                className="ui-menu-item"
+                onClick={() => {
+                  const target = anchor
+                  setAnchor(null)
+                  if (target) onPickRole(target)
+                }}
+              >
+                <Icon name="image" size={14} />
+                选择{role.name}的参考图…
               </button>
             )}
             {onToggleRequired && (

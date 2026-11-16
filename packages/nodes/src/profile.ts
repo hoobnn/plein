@@ -270,6 +270,20 @@ export function pickImages(p: ProfilePick, base: readonly string[], limit = PICK
   return [...new Set(ordered)].slice(0, limit)
 }
 
+/**
+ * 自动模式送进模型的参考图：只带真正需要的，不把角色卡的图全塞进去。
+ * 没写档案项只带卡片第一张（全身定妆图）；写了档案项只带命中的图（时期前两张、服饰前两张、
+ * 表情一张，时期排最前：年龄和脸型最难靠文字纠正），一张都没命中时退回卡片第一张。
+ */
+export function autoImages(p: ProfilePick, base: readonly string[]) {
+  const hit = [
+    ...(p.period?.images.slice(0, 2) ?? []),
+    ...(p.outfit?.images.slice(0, 2) ?? []),
+    ...(p.expression?.images.slice(0, 1) ?? []),
+  ]
+  return hit.length ? [...new Set(hit)] : base.slice(0, 1)
+}
+
 /** 配音用的音色：状态次音色 → 时期主音色 → 基础音色 */
 export function pickVoice(p: ProfilePick, base: VoiceRef): VoiceRef {
   if (p.voiceState && hasVoice(p.voiceState.voice)) return p.voiceState.voice
