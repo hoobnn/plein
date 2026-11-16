@@ -136,3 +136,21 @@ function mediaIndex(media: ReferenceMedia[], value: ReferenceMedia) {
   }
   return count
 }
+
+/**
+ * 上游文本引用的绑定参数：上游自己的绑定叠上下游节点自己的绑定。
+ * 同名引用以下游为准，上游同名的绑定先剔掉；两边各留一条同名绑定会被
+ * referenceBindings 判成冲突，整个引用当失效丢弃。
+ */
+export function mergeBindingParams(
+  upstream: Record<string, unknown>,
+  own: Record<string, unknown> = {},
+): Record<string, unknown> {
+  const ownNames = new Set(Object.keys(referenceBindings(own)))
+  if (ownNames.size === 0) return { ...upstream, ...own }
+  const kept = Object.entries(upstream).filter(([key, value]) => {
+    // 只看这一个键解出的名字：不是绑定键时解不出任何名字，原样保留。
+    return !Object.keys(referenceBindings({ [key]: value })).some((name) => ownNames.has(name))
+  })
+  return { ...Object.fromEntries(kept), ...own }
+}

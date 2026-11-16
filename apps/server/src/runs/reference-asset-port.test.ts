@@ -387,6 +387,61 @@ it('正文与上游 Markdown 各带一个绑定时，两段标记互不串用身
   expect(input.prompt).not.toContain('@乙')
 })
 
+it('上游文本与下游节点对同名引用各绑一个来源：下游自己的绑定优先，不判冲突丢弃', async () => {
+  const { server, id, doc } = await boot()
+  const first = createElement(doc, {
+    id: 'same-first',
+    kind: 'image',
+    name: '甲',
+    assetId: asset('a'),
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  const second = createElement(doc, {
+    id: 'same-second',
+    kind: 'image',
+    name: '甲',
+    assetId: asset('b'),
+    x: 0,
+    y: 200,
+    w: 100,
+    h: 100,
+  })
+  const markdown = createElement(doc, {
+    kind: 'markdown',
+    id: 'same-md',
+    text: '@甲',
+    params: {
+      [boundary('甲', first)]: {
+        type: 'image',
+        assetId: asset('a'),
+        source: first,
+        sourcePort: 'image',
+      },
+    },
+    x: 0,
+    y: 400,
+    w: 200,
+    h: 100,
+  })
+  const node = target(doc, '', {
+    [boundary('甲', second)]: {
+      type: 'image',
+      assetId: asset('b'),
+      source: second,
+      sourcePort: 'image',
+    },
+  })
+  connect(doc, [second, 'image'], [node, 'images'])
+  connect(doc, [markdown, 'text'], [node, 'prompt'])
+  const input = await server.runs.preview(id, node, 'local')
+  expect(input.status).toBe('ready')
+  expect(input.inputs.images?.map((item) => item.assetId)).toEqual([asset('b')])
+  expect(input.prompt).not.toContain('@甲')
+})
+
 it('可选参考被模型上限正常舍弃时保留可读名，不误报失效、也不禁用生成', async () => {
   videoSpec.limits = { ...videoLimits, references: { max: 1 } }
   const { server, id, doc } = await boot()

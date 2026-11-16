@@ -104,6 +104,7 @@ import {
   type BoundReference,
   type ReferenceImage,
   type ReferenceMedia,
+  mergeBindingParams,
   resolveBoundReference,
 } from './reference-tokens'
 import { executionEdges, runGraph, sequenceEdgeAllowed, toPortValue, toResultValue } from './graph'
@@ -2373,7 +2374,9 @@ export class NodeRuns implements BatchHost {
       // 上游文本引用来自它自己的元素：失效/跨画布保护绑定也记在那里。
       const source =
         'source' in item && typeof item.source === 'string' ? doc.get(item.source) : undefined
-      const params = source?.params ? { ...source.params, ...el.params } : (el.params ?? {})
+      const params = source?.params
+        ? mergeBindingParams(source.params, el.params)
+        : (el.params ?? {})
       item.text = maskBound(item.text, params)
     }
     const referenceElement = { ...el, params: referenceParams }

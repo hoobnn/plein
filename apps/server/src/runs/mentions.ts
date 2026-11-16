@@ -31,6 +31,7 @@ import type { InputIssue, InputRef, InputRefKind } from '@plein/protocol'
 
 import { NodeRunError } from '../plugins/provider-protocol'
 import { type BriefFamily, bindingSuffix, bindingText, briefFamily } from './reference-brief'
+import { mergeBindingParams } from './reference-tokens'
 import { speechProviderTitle } from '../executors/audio'
 
 type Inputs = Record<string, PortValue[]>
@@ -116,7 +117,7 @@ export function mentionEdges(doc: PleinDoc) {
     for (const edge of inputEdges(doc, el.id, 'prompt')) {
       const src = doc.get(edge.from[0])
       if (!src) continue
-      const params = src.params ? { ...src.params, ...el.params } : (el.params ?? {})
+      const params = src.params ? mergeBindingParams(src.params, el.params) : (el.params ?? {})
       if (src.kind === 'markdown') add(src.text, el.id, params)
       else if (src.kind === 'node') {
         const result = currentResult(src, edge.from[1])
