@@ -1,6 +1,6 @@
 # 动态合成
 
-Plein 的内置 `plein/motion` 节点使用本机合成渲染 SDK 渲染 HTML 动态合成，输出 MP4，并保存对应的源工程 ZIP、来源清单和原素材依赖。当前固定使用 `@hyperframes/producer`、`@hyperframes/sdk`、`@hyperframes/player` 0.8.218；渲染参数是 30 fps、`standard`、MP4、`strict`，单个 worker 内 `workers: 1`。
+Plein 的内置 `plein/motion` 节点使用本机合成渲染 SDK 渲染 HTML 动态合成，输出 MP4，并保存对应的源工程 ZIP、来源清单和原素材依赖。当前固定使用 `@hyperframes/producer`、`@hyperframes/sdk`、`@hyperframes/player` 0.9.52；渲染参数是 30 fps、`standard`、MP4、`strict`，单个 worker 内 `workers: 1`。
 
 模板与参数合同见 [motion.ts](../../packages/nodes/src/motion.ts)，执行与物化见 [render.ts](../../apps/server/src/motion/render.ts)。
 

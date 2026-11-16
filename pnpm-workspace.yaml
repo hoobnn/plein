@@ -20,16 +20,7 @@ catalog:
   # 跨包共用的依赖固定单版本：yjs 多实例会破坏 instanceof 判断，zod 供协议与能力层共用
   yjs: ^13.6.33
   zod: 4.6.7
-# 动态合成依赖的 hyperframes 包还没满最小发布年龄，先按确切版本放行
 minimumReleaseAgeExclude:
-  - "@hyperframes/core@0.8.186"
-  - "@hyperframes/engine@0.8.186"
-  - "@hyperframes/lint@0.8.186"
-  - "@hyperframes/parsers@0.8.186"
-  - "@hyperframes/producer@0.8.186"
-  - "@hyperframes/sdk@0.8.186"
-  - "@hyperframes/studio-server@0.8.186"
-  - "@hyperframes/player@0.8.186"
   - modelbay@0.5.1
 overrides:
   vite@*: "catalog:"
@@ -42,8 +33,6 @@ overrides:
   "@ai-sdk/provider-utils>undici": 7.30.1
   "@electron/get>undici": 7.30.1
   "node-gyp>undici": 6.29.1
-  # HyperFrames engine 固定的 undici 7.25.0 带 high 漏洞，7.30.1 已修复
-  "@hyperframes/engine>undici": 7.30.1
   # 与 engine 已解析的 puppeteer-core 对齐，移除旧 chromium-bidi 引入的易受攻击 zod 3
   "@hyperframes/engine>puppeteer": 25.16.0
   "@hyperframes/producer>puppeteer": 25.16.0

@@ -209,7 +209,6 @@ overrides:
   '@ai-sdk/provider-utils>undici': 7.30.1
   '@electron/get>undici': 7.30.1
   node-gyp>undici: 6.29.1
-  '@hyperframes/engine>undici': 7.30.1
   '@hyperframes/engine>puppeteer': 25.16.0
   '@hyperframes/producer>puppeteer': 25.16.0
   '@esbuild-kit/core-utils>esbuild': 0.25.12
@@ -290,14 +289,14 @@ importers:
         specifier: ^2.1.8
         version: 2.1.8(hono@4.13.18)
       '@hyperframes/player':
-        specifier: 0.8.218
-        version: 0.8.218(@types/node@26.6.6)
+        specifier: 0.9.52
+        version: 0.9.52(@types/node@26.6.6)
       '@hyperframes/producer':
-        specifier: 0.8.218
-        version: 0.8.218(@types/node@26.6.6)
+        specifier: 0.9.52
+        version: 0.9.52(@types/node@26.6.6)
       '@hyperframes/sdk':
-        specifier: 0.8.218
-        version: 0.8.218(@types/node@26.6.6)
+        specifier: 0.9.52
+        version: 0.9.52(@types/node@26.6.6)
       '@plein/canonical':
         specifier: workspace:*
         version: link:../../packages/canonical
@@ -420,11 +419,11 @@ importers:
         specifier: 10.0.0
         version: 10.0.0(@dnd-kit/core@6.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react@19.3.1)
       '@hyperframes/player':
-        specifier: 0.8.218
-        version: 0.8.218(@types/node@26.6.6)
+        specifier: 0.9.52
+        version: 0.9.52(@types/node@26.6.6)
       '@hyperframes/sdk':
-        specifier: 0.8.218
-        version: 0.8.218(@types/node@26.6.6)
+        specifier: 0.9.52
+        version: 0.9.52(@types/node@26.6.6)
       '@plein/canvas-core':
         specifier: workspace:*
         version: link:../../packages/canvas-core
@@ -1392,31 +1391,31 @@ packages:
     peerDependencies:
       hono: ^4 || ^5.0.0-0
 
-  '@hyperframes/core@0.8.218':
-    resolution: {integrity: sha512-qgDMWOkHYLWpFCi+xaVm6Y1wXetB99GJEIL1YGekEUo3zKCt4f5LDzFHjpUrQsFNK2QMSDvLOIYyRao4xwqI/g==}
+  '@hyperframes/core@0.9.52':
+    resolution: {integrity: sha512-ix9grmGh1Kra76vN08vT3h3Xcyuw9dRWQbGZZW05jNKRWGv2QRvfO/3qe9CTCktF+R3FXcYwWedRZNGrHxNclg==}
 
-  '@hyperframes/engine@0.8.218':
-    resolution: {integrity: sha512-uV59MpXpRXah5Bk3eWY9P1ugI4i435lJhzxSTEFY0/0ipO9A1gxY8mwxsNFO/IjuLapO+zp0E9dPj7N8PNbdQg==}
+  '@hyperframes/engine@0.9.52':
+    resolution: {integrity: sha512-OSKykKTgmHFVM1HbcfyzCP+mHTMEQewwTfntqBAyMcE2s0NXTB5BcdC//FW9/+r3fuqCuIRxex8a3A1NYAIvQg==}
     engines: {node: '>=22'}
 
-  '@hyperframes/lint@0.8.218':
-    resolution: {integrity: sha512-XFbTOe2LoEaIt3cUPCrjLpcUeQGUSUj3XMDo8Eysu150NipHrI4DhT7RdwCtRLdWQ4RKnfOtUfd9QVj2UvXgBA==}
+  '@hyperframes/lint@0.9.52':
+    resolution: {integrity: sha512-c5I3hXHxDjUxJ1JH28sgSXFmGnGpeA/S10YLqSj9lq7yOI1Tcdy1ApIhdOw9ck7VMpK1eRRNr45fitNC2cJzzw==}
 
-  '@hyperframes/parsers@0.8.218':
-    resolution: {integrity: sha512-H8nZdt2Za+y/sS6BtBA6MLb3ntcnWD7Atirf3knmMaKSydzZyF0WQPr7jjeCwiDShb5dR0a4uKcLWuu2RIQULQ==}
+  '@hyperframes/parsers@0.9.52':
+    resolution: {integrity: sha512-sTME208mkTxFygMj/12Pent0+aKB5ywd23nNLVU8cAkfjtb6MAPQrrPqjY2XuJkw+7zuayjGDAa/liWUuy3ZWw==}
 
-  '@hyperframes/player@0.8.218':
-    resolution: {integrity: sha512-5v7Wd/U3g+R3DsbwmEa2acJYK3trlb+lm3E+a0LDEN8HSVpFKCFKwKqKtUd+O0FkgXXTeobN0QT8/TPYiai9IQ==}
+  '@hyperframes/player@0.9.52':
+    resolution: {integrity: sha512-6lB5GqSTEuvRjzjwLuQKuSDVyCLGe8IwsmpjQYC2NwWyfDUIDO+7NEMEkXjwy7XAeT1iraH4c7qHNbcAjXVTFg==}
 
-  '@hyperframes/producer@0.8.218':
-    resolution: {integrity: sha512-DBaXOvVd5JdygYnv2zJNyL+Tp+3jDWXr1WqgvorQOxEkmXSVRN7b1pqZwKP1iUNUYOL7HMKPDULSQQtR3GNUiw==}
+  '@hyperframes/producer@0.9.52':
+    resolution: {integrity: sha512-J9Xj38SvYzwcBMhsEDXde4Hb5C+EzqW6PJnwQE07DKa/TlFfQcyE3gSEAqlIErtua+WASrlNlZU0+XbkEzPLYg==}
     engines: {node: '>=22'}
 
-  '@hyperframes/sdk@0.8.218':
-    resolution: {integrity: sha512-IW75kQAdRAt4LLMG4+CaT3KZ4z6Plyuu8PQOvWZ4/A6KBugzoYtrnoAY/wOyVLnBrJEW0Bh9IDNwT3V87miNEw==}
+  '@hyperframes/sdk@0.9.52':
+    resolution: {integrity: sha512-WW15eBvlXE0nVosaQElMXnKiymCyQcw4DGfN6bVzl4JqPLX0mfO96Z8qRTyjWczscmn4aKPjTOOb78tdaAh/LA==}
 
-  '@hyperframes/studio-server@0.8.218':
-    resolution: {integrity: sha512-Dyn35GYnEkDSWNGEa7NY80F9c3Tdjmj/a1wpDFHSOMsD6ygEpS8GGYv3fguHZui/WLIeMtXV2Okz/z+IEtFy9w==}
+  '@hyperframes/studio-server@0.9.52':
+    resolution: {integrity: sha512-gjoqsbJYJCp4LmRt+HbotpEZghg4RhqFU7FTytQnM8vLxr3P7TSVweTFbH+HyA8DPGsixfIN4GkO71Se5BgpEw==}
 
   '@img/colour@1.1.0':
     resolution: {integrity: sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ==}
@@ -3580,6 +3579,10 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
+  ignore@5.3.2:
+    resolution: {integrity: sha512-hsBTNUqQTDwkWtcdYI2i06Y/nUBEsNEDJKjWdigLvegy8kDuJAS8uRlpkkcQpyEXL0Z/pjDy5HBmMjRCJ2gq+g==}
+    engines: {node: '>= 4'}
+
   ignore@7.0.14:
     resolution: {integrity: sha512-wCBiZ77u1tuWde6G/nfOtLaCTYcFDU5yCzARzK10y+rLhzYoL7a7yEemcopcc2Mzow7gZOIjnV2ym1NYmdiJOQ==}
     engines: {node: '>= 4'}
@@ -5605,12 +5608,12 @@ snapshots:
     dependencies:
       hono: 4.13.18
 
-  '@hyperframes/core@0.8.218(@types/node@26.6.6)':
+  '@hyperframes/core@0.9.52(@types/node@26.6.6)':
     dependencies:
       '@chenglou/pretext': 0.0.5
-      '@hyperframes/lint': 0.8.218
-      '@hyperframes/parsers': 0.8.218
-      '@hyperframes/studio-server': 0.8.218(@types/node@26.6.6)
+      '@hyperframes/lint': 0.9.52
+      '@hyperframes/parsers': 0.9.52
+      '@hyperframes/studio-server': 0.9.52(@types/node@26.6.6)
       acorn: 8.19.0
       linkedom: 0.18.15
       postcss: 8.5.33
@@ -5621,11 +5624,11 @@ snapshots:
       - '@types/node'
       - canvas
 
-  '@hyperframes/engine@0.8.218(@types/node@26.6.6)':
+  '@hyperframes/engine@0.9.52(@types/node@26.6.6)':
     dependencies:
       '@hono/node-server': 2.1.8(hono@4.13.18)
-      '@hyperframes/core': 0.8.218(@types/node@26.6.6)
-      '@hyperframes/parsers': 0.8.218
+      '@hyperframes/core': 0.9.52(@types/node@26.6.6)
+      '@hyperframes/parsers': 0.9.52
       hono: 4.13.18
       linkedom: 0.18.15
       puppeteer: 25.16.0
@@ -5639,19 +5642,20 @@ snapshots:
       - utf-8-validate
       - yauzl
 
-  '@hyperframes/lint@0.8.218':
+  '@hyperframes/lint@0.9.52':
     dependencies:
-      '@hyperframes/parsers': 0.8.218
+      '@hyperframes/parsers': 0.9.52
       acorn: 8.19.0
       acorn-walk: 8.3.5
       htmlparser2: 10.1.0
+      ignore: 5.3.2
       linkedom: 0.18.15
       postcss: 8.5.33
       postcss-selector-parser: 7.1.7
     transitivePeerDependencies:
       - canvas
 
-  '@hyperframes/parsers@0.8.218':
+  '@hyperframes/parsers@0.9.52':
     dependencies:
       '@babel/parser': 7.29.9
       acorn: 8.19.0
@@ -5663,21 +5667,21 @@ snapshots:
     transitivePeerDependencies:
       - canvas
 
-  '@hyperframes/player@0.8.218(@types/node@26.6.6)':
+  '@hyperframes/player@0.9.52(@types/node@26.6.6)':
     dependencies:
-      '@hyperframes/core': 0.8.218(@types/node@26.6.6)
+      '@hyperframes/core': 0.9.52(@types/node@26.6.6)
     transitivePeerDependencies:
       - '@types/node'
       - canvas
 
-  '@hyperframes/producer@0.8.218(@types/node@26.6.6)':
+  '@hyperframes/producer@0.9.52(@types/node@26.6.6)':
     dependencies:
       '@hono/node-server': 2.1.8(hono@4.13.18)
-      '@hyperframes/core': 0.8.218(@types/node@26.6.6)
-      '@hyperframes/engine': 0.8.218(@types/node@26.6.6)
-      '@hyperframes/lint': 0.8.218
-      '@hyperframes/parsers': 0.8.218
-      '@hyperframes/studio-server': 0.8.218(@types/node@26.6.6)
+      '@hyperframes/core': 0.9.52(@types/node@26.6.6)
+      '@hyperframes/engine': 0.9.52(@types/node@26.6.6)
+      '@hyperframes/lint': 0.9.52
+      '@hyperframes/parsers': 0.9.52
+      '@hyperframes/studio-server': 0.9.52(@types/node@26.6.6)
       hono: 4.13.18
       linkedom: 0.18.15
       postcss: 8.5.33
@@ -5691,19 +5695,19 @@ snapshots:
       - utf-8-validate
       - yauzl
 
-  '@hyperframes/sdk@0.8.218(@types/node@26.6.6)':
+  '@hyperframes/sdk@0.9.52(@types/node@26.6.6)':
     dependencies:
-      '@hyperframes/core': 0.8.218(@types/node@26.6.6)
-      '@hyperframes/parsers': 0.8.218
+      '@hyperframes/core': 0.9.52(@types/node@26.6.6)
+      '@hyperframes/parsers': 0.9.52
       linkedom: 0.18.15
     transitivePeerDependencies:
       - '@types/node'
       - canvas
 
-  '@hyperframes/studio-server@0.8.218(@types/node@26.6.6)':
+  '@hyperframes/studio-server@0.9.52(@types/node@26.6.6)':
     dependencies:
-      '@hyperframes/core': 0.8.218(@types/node@26.6.6)
-      '@hyperframes/parsers': 0.8.218
+      '@hyperframes/core': 0.9.52(@types/node@26.6.6)
+      '@hyperframes/parsers': 0.9.52
       hono: 4.13.18
       linkedom: 0.18.15
       postcss: 8.5.33
@@ -7536,6 +7540,8 @@ snapshots:
       - supports-color
 
   husky@9.1.7: {}
+
+  ignore@5.3.2: {}
 
   ignore@7.0.14: {}
 

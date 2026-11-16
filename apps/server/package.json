@@ -17,9 +17,9 @@
   "dependencies": {
     "@fontsource/noto-sans-sc": "5.3.1",
     "@hono/node-server": "^2.1.8",
-    "@hyperframes/player": "0.8.218",
-    "@hyperframes/producer": "0.8.218",
-    "@hyperframes/sdk": "0.8.218",
+    "@hyperframes/player": "0.9.52",
+    "@hyperframes/producer": "0.9.52",
+    "@hyperframes/sdk": "0.9.52",
     "@plein/canonical": "workspace:*",
     "@plein/capabilities": "workspace:*",
     "@plein/doc": "workspace:*",
