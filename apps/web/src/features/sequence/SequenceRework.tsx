@@ -202,20 +202,22 @@ export function SequenceRework({
     setSession(saved)
     setRemembered(saved)
     // 内存会话可能因 quota 一直没写进本机；只有存储里确实还是这份会话才算可刷新续接。
+    // 存储里有一条记录但内容不同，说明存储可用、只是内容较旧（调用方已按 savedAt 取了较新的一份），
+    // 不能报成「本机存储不可用」；此时用这份较新的会话重写，保证刷新后续接的就是当前这份。
     const stored =
       canvasId && row.clipInstanceId
         ? readReworkSession(canvasId, sequenceId, row.clipInstanceId)
         : undefined
-    setSessionPersisted(
+    const same =
       !!stored &&
-        stored.draftId === saved.draftId &&
-        stored.candidateId === saved.candidateId &&
-        stored.sound === saved.sound &&
-        stored.sourceResultId === saved.sourceResultId &&
-        stored.sourceRunId === saved.sourceRunId &&
-        stored.sourceAssetId === saved.sourceAssetId &&
-        stored.expected === saved.expected,
-    )
+      stored.draftId === saved.draftId &&
+      stored.candidateId === saved.candidateId &&
+      stored.sound === saved.sound &&
+      stored.sourceResultId === saved.sourceResultId &&
+      stored.sourceRunId === saved.sourceRunId &&
+      stored.sourceAssetId === saved.sourceAssetId &&
+      stored.expected === saved.expected
+    setSessionPersisted(same || (!!stored && writeReworkSession(saved)))
     setDraftId(saved.draftId)
     setPort(saved.port)
     setExpected(saved.expected)
@@ -257,11 +259,18 @@ export function SequenceRework({
       return
     }
     if (resume) {
-      const saved =
-        (session && session.clipInstanceId === row.clipInstanceId ? session : undefined) ??
-        (canvasId && row.clipInstanceId
+      const inMemory =
+        session && session.clipInstanceId === row.clipInstanceId ? session : undefined
+      const inStorage =
+        canvasId && row.clipInstanceId
           ? readReworkSession(canvasId, sequenceId, row.clipInstanceId)
-          : undefined)
+          : undefined
+      // 本机存储里是另一份会话（多半是别的标签页刚写的）时取较新的一份续接：
+      // 内存里的更新就由它接管，存储里的更新就跟着它走，不拿旧的盖掉新的。
+      const saved =
+        inMemory && inStorage && inStorage.savedAt > inMemory.savedAt
+          ? inStorage
+          : (inMemory ?? inStorage)
       if (saved) {
         const savedDraft = engine.doc.get(saved.draftId)
         if (savedDraft && savedDraft.kind === 'node' && !savedDraft.locked) {

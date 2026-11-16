@@ -23,7 +23,7 @@ import { act, renderApp, resetStoreAfterEach, screen, waitFor, within } from '..
 import { useRunRequests } from '../runs/runRequests'
 import { useStale } from '../runs/stale'
 import { SequenceRework } from './SequenceRework'
-import { readReworkSession } from './reworkSessions'
+import { readReworkSession, writeReworkSession } from './reworkSessions'
 
 resetStoreAfterEach(useCatalog)
 resetStoreAfterEach(useRunRequests)
@@ -300,6 +300,47 @@ it('剪辑实例已变化时保留旧草稿并要先核对，确认后才替换'
       expect(submissions).toHaveLength(0)
     } finally {
       second.unmount()
+    }
+  } finally {
+    doc.destroy()
+  }
+})
+
+it('本机存储里是另一份会话时不误报存储不可用，且取较新的一份不覆盖', async () => {
+  const { doc, sequenceId, Harness } = fixture()
+  try {
+    const view = renderApp(<Harness />)
+    try {
+      await view.user.click(screen.getByRole('button', { name: '修改并生成候选' }))
+      await view.user.click(
+        within(screen.getByRole('dialog', { name: '剪辑片段返工' })).getByRole('button', {
+          name: '关闭',
+        }),
+      )
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: '剪辑片段返工' })).toBeNull())
+      const mine = readReworkSession('rework-canvas', sequenceId, 'target')!
+      const reopen = async () => {
+        await view.user.click(screen.getByRole('button', { name: '继续上次返工草稿' }))
+        const modal = screen.getByRole('dialog', { name: '剪辑片段返工' })
+        expect(within(modal).queryByText(/本机存储不可用/)).toBeNull()
+        await view.user.click(within(modal).getByRole('button', { name: '关闭' }))
+        await waitFor(() =>
+          expect(screen.queryByRole('dialog', { name: '剪辑片段返工' })).toBeNull(),
+        )
+      }
+      // 另一个标签页写了更新的一份：续接跟着它走，存储里的记录不被盖掉
+      const theirs = { ...mine, sound: 'mix' as const, savedAt: mine.savedAt + 5000 }
+      writeReworkSession(theirs)
+      await reopen()
+      expect(readReworkSession('rework-canvas', sequenceId, 'target')).toEqual(theirs)
+      // 存储里是更旧的一份：不误报，并用当前这份重写，刷新后续接的是它
+      const older = { ...theirs, sound: 'native' as const, savedAt: mine.savedAt - 5000 }
+      writeReworkSession(older)
+      await reopen()
+      const stored = readReworkSession('rework-canvas', sequenceId, 'target')!
+      expect(stored.savedAt).toBeGreaterThan(older.savedAt)
+    } finally {
+      view.unmount()
     }
   } finally {
     doc.destroy()
