@@ -368,6 +368,32 @@ it('有效参数里的嵌套选项可展开查看，只显示实际用的模型�
   expect(screen.queryByText('[object Object]')).toBeNull()
 })
 
+it('引用绑定的内部键不渲染成有效参数', async () => {
+  const { engine, doc, id } = fixture()
+  const { user } = renderApp(
+    <InputPreview
+      engine={engine}
+      el={doc.get(id)!}
+      node={definition}
+      data={prepared(id, {
+        params: {
+          mode: 'image',
+          [`referenceNameBinding:${encodeURIComponent('风格')}:source-1`]: { source: 'source-1' },
+          'referenceBinding:风格:source-1': { source: 'source-1' },
+          referenceBindings: { 风格: { source: 'source-1' } },
+        },
+      })}
+      loading={false}
+      error={null}
+      onRetry={() => {}}
+    />,
+  )
+  await user.click(screen.getByRole('button', { name: /实际输入/ }))
+  expect(screen.getByText(/生成模式/)).toBeTruthy()
+  expect(screen.queryByText(/referenceNameBinding/)).toBeNull()
+  expect(screen.queryByText(/referenceBinding/)).toBeNull()
+})
+
 it('折叠时展示字符数，说明收在字符右侧的可聚焦标记中', async () => {
   const { engine, doc, id } = fixture()
   const { user } = renderApp(

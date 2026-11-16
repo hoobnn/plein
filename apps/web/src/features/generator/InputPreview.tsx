@@ -119,8 +119,13 @@ export function useInputPreview(
     }
   }, [canvasId, nodeId, key, rev])
   // 同步恢复后重取当前预览：旧预览在同步确认前都不算新鲜。
+  // 只在连接「变成」connected 时重读；连接一直正常、只是服务端没追平时交给上面的退避重试，
+  // 不能因为 syncPending 刚变 true 就立刻重读，把退避打断。
+  const lastSync = useRef(sync)
   useEffect(() => {
-    if (syncPending && sync === 'connected') {
+    const was = lastSync.current
+    lastSync.current = sync
+    if (syncPending && sync === 'connected' && was !== 'connected') {
       syncAttempts.current = 0
       setRev((r) => r + 1)
     }
@@ -181,6 +186,16 @@ function readableValue(value: unknown): string {
       .map(([k, v]) => `${k} ${v}`)
       .join('；')
   return String(value)
+}
+
+/** 引用绑定（referenceNameBinding:* 等）是内部身份记录，不是用户可调的生成参数。 */
+function isReferenceBindingKey(key: string) {
+  return (
+    key === 'referenceBindings' ||
+    key.startsWith('referenceNameBinding:') ||
+    key.startsWith('referenceBinding:') ||
+    /^(image|video|audio)[1-9]\d*(?::|$)/.test(key)
+  )
 }
 
 /** 只展开一层键值：再多就把可读性也丢了 */
@@ -315,11 +330,12 @@ export function InputPreview({
     ) : null
   const fields = new Map(fieldsOf(node))
   const params = Object.entries(data.params).filter(
-    ([k, v]) => k !== 'model' && v !== '' && v !== undefined && !isRecord(v),
+    ([k, v]) =>
+      k !== 'model' && !isReferenceBindingKey(k) && v !== '' && v !== undefined && !isRecord(v),
   )
   // 选项、模型参数这类嵌套值不能藏起来，也不能显示成 [object Object]
   const nested = Object.entries(data.params)
-    .filter(([k, v]) => k !== 'model' && isRecord(v))
+    .filter(([k, v]) => k !== 'model' && !isReferenceBindingKey(k) && isRecord(v))
     .map(([k, v]) => {
       const record = v as Record<string, unknown>
       // 模型选项按平台分层（每个模型一份）：只展开实际用的那个

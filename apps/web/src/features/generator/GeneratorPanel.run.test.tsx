@@ -663,14 +663,22 @@ it('连接一直正常但服务端两次未追平时，自动退避重读，追�
   expect(screen.getAllByText(/本机改动还没有同步到服务端/).length).toBeGreaterThan(0)
   expect((runButton() as HTMLButtonElement).disabled).toBe(true)
 
-  // 第一次 409 后 300ms 重读，第二次后 600ms 再重读
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(400)
-  })
+  // 每 100ms 一步地推进：React 的状态更新要等 act 结束才提交，大步推进会把退避后的重排拖后。
+  const tick = async (ms: number) => {
+    for (let spent = 0; spent < ms; spent += 100)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(100)
+      })
+  }
+  // 第一次 409 后退避 300ms，再过 400ms 防抖才重读；409 刚出现时不能立刻重读（会打断退避）
+  await tick(600)
+  expect(inputs).toBe(1)
+  await tick(200)
   expect(inputs).toBe(2)
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(700)
-  })
+  // 第二次 409 后退避 600ms + 防抖 400ms
+  await tick(800)
+  expect(inputs).toBe(2)
+  await tick(300)
   expect(inputs).toBe(3)
   await waitFor(() => expect((runButton() as HTMLButtonElement).disabled).toBe(false))
   // 追平后直接显示新输入，不需要点「重新读取」，也没有替用户提交
