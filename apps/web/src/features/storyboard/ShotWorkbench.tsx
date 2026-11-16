@@ -15,6 +15,7 @@ import { hasVoice, voiceOf, type ShotRole, type VoiceRef } from '@plein/nodes'
 import { useQuery } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, assetUrls } from '../../api/client'
+import { retryWhileSyncPending, syncPendingRetryDelay } from '../../api/syncPending'
 import { useDocVersion } from '../../canvas/hooks'
 import { mentionTargets, upstreams } from '../../canvas/nodes'
 import { useCanvas } from '../../stores/canvas'
@@ -239,7 +240,9 @@ function Workbench({
   const assetInput = useQuery({
     queryKey: ['shot-asset-input', canvasId, boardId, shotId, statusNode?.id, version],
     enabled: !!statusNode && active(),
-    retry: false,
+    // 本机改动还没追平服务端（sync_pending）时稍后重试，追平后自然恢复
+    retry: retryWhileSyncPending,
+    retryDelay: syncPendingRetryDelay,
     gcTime: 0,
     queryFn: async () => {
       const value = await api.nodeInput(canvasId, statusNode!.id)

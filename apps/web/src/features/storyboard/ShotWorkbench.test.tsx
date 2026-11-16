@@ -400,6 +400,37 @@ it('旧 JobInfo 与 nodeInput 晚回不串入已切换镜头', async () => {
   expect(doc.get('board')?.params?.shots).toEqual(rows())
 })
 
+it('当前输入先返回 sync_pending 时稍后重试，追平后恢复显示而不是常驻失败', async () => {
+  fixture(true)
+  const seen = new Map<string, number>()
+  mockFetch((request) => {
+    const path = new URL(request.url).pathname
+    const input = path.match(/^\/api\/canvases\/canvas\/nodes\/([^/]+)\/input$/)
+    if (request.method === 'POST' && input) {
+      // 每个节点首次读取后的 300ms 内都是「服务端还没追平本机改动」
+      const first = seen.get(path) ?? Date.now()
+      seen.set(path, first)
+      if (Date.now() - first < 300) {
+        return Response.json(
+          { error: 'sync_pending', message: '本机改动还没有同步' },
+          { status: 409 },
+        )
+      }
+      return Response.json(prepared(input[1]!, '追平后的当前输入'))
+    }
+    if (request.method === 'POST' && path === '/api/canvases/canvas/jobs/latest')
+      return Response.json({ jobs: [] })
+    if (request.method === 'GET' && path === '/api/canvases/canvas/jobs/run-one')
+      return new Response(null, { status: 404 })
+    return undefined
+  })
+  renderApp(<ShotWorkbench />)
+  const current = await screen.findByRole('heading', { name: '当前节点实际输入' })
+  await waitFor(() => expect(current.parentElement?.textContent).toContain('追平后的当前输入'))
+  expect(current.parentElement?.textContent).not.toContain('暂不可读取')
+  expect(seen.size).toBeGreaterThan(0)
+})
+
 function workbenchReads(doc: PleinDoc, reads: string[]) {
   mockFetch((request) => {
     const path = new URL(request.url).pathname
@@ -477,6 +508,14 @@ it('保存为可用记录当前候选，本镜下游影响定位真实序列并�
   expect(useCanvas.getState().sequence).toBe(sequence)
   expect(useCanvas.getState().shotWorkbench).toBeNull()
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '镜头工作台' })).toBeNull())
+})
+
+it('StrictMode 重放 effect 后候选视频仍保有来源', async () => {
+  const { doc } = fixture(true)
+  workbenchReads(doc, [])
+  renderApp(<ShotWorkbench />, { reactStrictMode: true })
+  const video = (await screen.findByLabelText('工作台候选视频')) as HTMLVideoElement
+  expect(video.getAttribute('src')).toBe(`/api/assets/${'a'.repeat(64)}`)
 })
 
 it('历史预览不自动采用，切候选和关闭回收媒体，重开立即读取新输入', async () => {

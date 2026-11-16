@@ -121,6 +121,33 @@ it.each(['output', 'readonly'] as const)(
   },
 )
 
+it('固定输入先返回 sync_pending 时继续等待，追平后才带哈希执行', async () => {
+  const f = setup()
+  let reads = 0
+  const runs: string[] = []
+  mockFetch(async (request) => {
+    const path = new URL(request.url).pathname
+    if (request.method === 'POST' && path.endsWith('/input')) {
+      reads++
+      if (reads === 1)
+        return Response.json(
+          { error: 'sync_pending', message: '本机改动还没有同步' },
+          { status: 409 },
+        )
+      return Response.json({ status: 'ready', inputHash: 'hash', params: { request: f.request } })
+    }
+    if (request.method === 'POST' && path.endsWith('/run')) {
+      runs.push(await request.text())
+      return Response.json({ runId: 'run-1' }, { status: 202 })
+    }
+  })
+  await f.user.click(screen.getByRole('button', { name: '执行免费本地技术检查' }))
+  await waitFor(() => expect(runs).toHaveLength(1))
+  expect(reads).toBe(2)
+  expect(JSON.parse(runs[0]!) as Record<string, unknown>).toMatchObject({ expect: 'hash' })
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
 it.each([
   ['passed', '通过'],
   ['issues', '问题'],

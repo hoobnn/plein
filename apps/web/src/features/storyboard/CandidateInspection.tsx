@@ -3,8 +3,9 @@ import { adoptResultManually, currentResult, type CanvasElement, type NodeResult
 import type { ShotRole } from '@plein/nodes'
 import type { PreparedInput } from '@plein/protocol'
 import { useQuery, type UseQueryResult } from '@tanstack/react-query'
-import { useEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { api, assetUrls } from '../../api/client'
+import { retryWhileSyncPending, syncPendingRetryDelay } from '../../api/syncPending'
 import { useDocVersion } from '../../canvas/hooks'
 import { upstreams } from '../../canvas/nodes'
 import { useCanvas } from '../../stores/canvas'
@@ -111,7 +112,9 @@ export function CandidateInspection({
   const ownInput = useQuery({
     queryKey: ['workbench-input', canvasId, boardId, shotId, node.id, readEpoch, version],
     enabled: validNode() && !sharedInput,
-    retry: false,
+    // 本机改动还没追平服务端（sync_pending）时稍后重试，追平后自然恢复
+    retry: retryWhileSyncPending,
+    retryDelay: syncPendingRetryDelay,
     gcTime: 0,
     queryFn: async () => {
       const input = await api.nodeInput(canvasId, node.id)
@@ -331,17 +334,20 @@ export function CandidateInspection({
 
 function CandidateMedia({ result }: { result: NodeResult }) {
   const media = useRef<HTMLMediaElement>(null)
-  useEffect(() => {
-    const element = media.current
-    return () => {
-      if (element) {
-        element.pause()
-        element.removeAttribute('src')
-        element.load()
-      }
-    }
-  }, [])
   const value = result.value
+  const mediaSrc =
+    value.type === 'video' || value.type === 'audio' ? assetUrls.original(value.assetId) : undefined
+  useLayoutEffect(() => {
+    const element = media.current
+    if (!element || !mediaSrc) return
+    // 来源由这里写而不只靠 JSX：StrictMode 会保留 DOM 并重放 effect，清理删掉的 src 要能回填。
+    element.src = mediaSrc
+    return () => {
+      element.pause()
+      element.removeAttribute('src')
+      element.load()
+    }
+  }, [mediaSrc])
   if (value.type === 'image')
     return (
       <img
@@ -362,7 +368,6 @@ function CandidateMedia({ result }: { result: NodeResult }) {
         playsInline
         preload="metadata"
         className="plein-shot-preview-media"
-        src={assetUrls.original(value.assetId)}
         aria-label="工作台候选视频"
       />
     )
@@ -375,7 +380,6 @@ function CandidateMedia({ result }: { result: NodeResult }) {
         }}
         controls
         preload="metadata"
-        src={assetUrls.original(value.assetId)}
         aria-label="工作台候选声音"
       />
     )

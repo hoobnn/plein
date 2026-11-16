@@ -3,6 +3,7 @@ import type { DeliveryRecord, CanvasElement } from '@plein/doc'
 import { deliveryCheckNode, DELIVERY_CHECK_TYPE, type DeliveryCheckRequest } from '@plein/nodes'
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api/client'
+import { readUnlessSyncPending } from '../../api/syncPending'
 import { useCanvas } from '../../stores/canvas'
 import { useSession } from '../../stores/session'
 import { Select } from '../../ui/Select'
@@ -113,11 +114,12 @@ export function DeliveryCheck({
       const id = createDeliveryCheck(engine.doc, captured)
       let inputHash: string | undefined
       for (let attempt = 0; attempt < 4; attempt++) {
-        const preview = await api.nodeInput(canvasId!, id)
+        // 服务端还没追平本机文档（sync_pending）按「还没读到」处理，和下面的等待重试一并走
+        const preview = await readUnlessSyncPending(api.nodeInput(canvasId!, id))
         readCurrent(captured)
         if (attemptEpoch !== epoch.current) throw new Error('检查视图已变化，未执行迟到请求')
         if (
-          preview.status === 'ready' &&
+          preview?.status === 'ready' &&
           preview.inputHash &&
           JSON.stringify(deliveryCheckNode.params.parse(preview.params)) ===
             JSON.stringify(deliveryCheckNode.params.parse({ request: captured }))
