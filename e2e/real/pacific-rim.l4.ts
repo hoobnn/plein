@@ -238,10 +238,7 @@ async function prepareBoard(page: Page, id: string) {
   await clickElement(page, id)
   const prompt = page.getByRole('textbox', { name: '提示词' })
   await prompt.fill((await prompt.inputValue()).replace(/拆成 \d+ 个镜头/, `拆成 ${SHOTS} 个镜头`))
-  await page
-    .getByRole('button', { name: /参数/ })
-    .first()
-    .click()
+  await page.getByRole('button', { name: /参数/ }).first().click()
   await page.getByText('更多参数').click()
   await page.getByLabel('镜头数').fill(String(SHOTS))
   await page.keyboard.press('Escape')
