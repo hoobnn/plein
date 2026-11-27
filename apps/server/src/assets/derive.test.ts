@@ -1,7 +1,8 @@
-import { execFileSync } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { promisify } from 'node:util'
 import { API, type Asset } from '@plein/protocol'
 import { strFromU8, unzipSync } from 'fflate'
 import { Hono } from 'hono'
@@ -18,6 +19,7 @@ import { AssetStore } from './store'
 
 const OWNER = 'local'
 const ffmpegAvailable = await hasFfmpeg()
+const execFileAsync = promisify(execFile)
 
 // ── 测试素材：都在临时目录里现生成，不往仓库里放二进制 ──
 
@@ -96,6 +98,34 @@ async function pixel(file: string, x: number, y: number) {
     .raw()
     .toBuffer({ resolveWithObject: true })
   return [...data.slice(0, 3)]
+}
+
+async function firstVideoFrame(file: string) {
+  const { stdout } = await execFileAsync(
+    ffmpegBin(),
+    [
+      '-v',
+      'error',
+      // 这里只读一帧，解码、摆正和 PNG 编码无需各自开多线程。
+      '-filter_threads',
+      '1',
+      '-threads:v',
+      '1',
+      '-i',
+      file,
+      '-frames:v',
+      '1',
+      '-f',
+      'image2pipe',
+      '-c:v',
+      'png',
+      '-threads:v',
+      '1',
+      '-',
+    ],
+    { encoding: 'buffer' },
+  )
+  return sharp(stdout)
 }
 
 /** 颜色断言留一点余量：jpeg 源摆正后再裁是二次编码，纯色也会差一两个值 */
@@ -525,20 +555,8 @@ describe.skipIf(!ffmpegAvailable)('视频像素裁剪', () => {
     })
     const file = store.originalPath(made.assets[0]!.id)
     expect(await probeMedia(file)).toMatchObject({ width: 8, height: 8, hasAudio: false })
-    const frame = execFileSync(ffmpegBin(), [
-      '-v',
-      'error',
-      '-i',
-      file,
-      '-frames:v',
-      '1',
-      '-f',
-      'image2pipe',
-      '-c:v',
-      'png',
-      '-',
-    ])
-    const pixels = await sharp(frame).raw().toBuffer()
+    const frame = await firstVideoFrame(file)
+    const pixels = await frame.raw().toBuffer()
     const at = (x: number, y: number) => pixels[(y * 8 + x) * 3]!
     expect(at(0, 4)).toBeGreaterThan(220)
     expect(at(4, 0)).toBeGreaterThan(220)
@@ -549,14 +567,19 @@ describe.skipIf(!ffmpegAvailable)('视频像素裁剪', () => {
   it.each([90, 270])('旋转 %i° 的视频按摆正后坐标裁剪，输出不再带旋转', async (angle) => {
     const dir = tempDir('plein-crop-rotate-')
     const file = join(dir, 'rotated.mp4')
-    execFileSync(ffmpegBin(), [
+    // 像素断言只用首帧。裁剪能否保留整段时长和音轨由同组用例验证。
+    await execFileAsync(ffmpegBin(), [
       '-v',
       'error',
       '-display_rotation:v:0',
       String(angle),
       '-i',
       store.originalPath(video.id),
-      '-c',
+      '-map',
+      '0:v:0',
+      '-frames:v',
+      '1',
+      '-c:v',
       'copy',
       file,
     ])
@@ -568,34 +591,26 @@ describe.skipIf(!ffmpegAvailable)('视频像素裁剪', () => {
     const rect = { left: 11, top: 21, width: 100, height: 200 }
     const made = await deriveAsset(store, OWNER, { op: 'crop', assetId: source.id, ...rect })
     const out = store.originalPath(made.assets[0]!.id)
-    expect(await probeMedia(out)).toMatchObject({ width: 100, height: 200 })
-    const frame = (path: string) =>
-      execFileSync(ffmpegBin(), [
+    const [reference, actual, { stdout }] = await Promise.all([
+      firstVideoFrame(file).then((frame) => frame.extract(rect).raw().toBuffer()),
+      firstVideoFrame(out).then((frame) => frame.raw().toBuffer()),
+      execFileAsync('ffprobe', [
         '-v',
         'error',
-        '-i',
-        path,
-        '-frames:v',
-        '1',
-        '-f',
-        'image2pipe',
-        '-c:v',
-        'png',
-        '-',
-      ])
-    const reference = await sharp(frame(file)).extract(rect).raw().toBuffer()
-    const actual = await sharp(frame(out)).raw().toBuffer()
+        '-select_streams',
+        'v:0',
+        '-show_streams',
+        '-of',
+        'json',
+        out,
+      ]),
+    ])
     expect(actual.length).toBe(reference.length)
     const error = actual.reduce((sum, v, i) => sum + Math.abs(v - reference[i]!), 0) / actual.length
     expect(error).toBeLessThan(12)
-    const probe = JSON.parse(
-      execFileSync('ffprobe', ['-v', 'error', '-show_streams', '-of', 'json', out], {
-        encoding: 'utf8',
-      }),
-    )
-    expect(
-      probe.streams[0].side_data_list?.some((d: { rotation?: number }) => d.rotation),
-    ).toBeFalsy()
+    const stream = JSON.parse(stdout).streams[0]
+    expect(stream).toMatchObject({ width: 100, height: 200 })
+    expect(stream.side_data_list?.some((d: { rotation?: number }) => d.rotation)).toBeFalsy()
   })
 })
 
