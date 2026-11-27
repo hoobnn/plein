@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import { MotionError } from './process'
 
-export const HYPERFRAMES_VERSION = '0.9.71'
+export const HYPERFRAMES_VERSION = '0.9.97'
 export const GSAP_VERSION = '3.15.1'
 export const FONT_VERSION = '5.3.1'
 export interface MotionRuntimeAssets {

@@ -15,35 +15,31 @@ allowBuilds:
   puppeteer: false
 # Vite+：vite 由 vite-plus-core 提供，插件和 vitest 依赖的 vite 都指向这一份
 catalog:
-  vite: npm:@voidzero-dev/vite-plus-core@8.3.8000
-  vite-plus: 1.7.0
+  vite: npm:@voidzero-dev/vite-plus-core@8.3.8001
+  vite-plus: 1.8.0
   # 跨包共用的依赖固定单版本：yjs 多实例会破坏 instanceof 判断，zod 供协议与能力层共用
   yjs: ^13.6.33
   zod: 4.6.7
-minimumReleaseAgeExclude:
-  - modelbay@0.5.1
 overrides:
   vite@*: "catalog:"
   # @volcengine/tos-sdk 把 axios 锁在 ^0.21.1，0.21.4 带 10 项 high 漏洞；0.x 分支的修复版为 >=0.32.0
-  axios: 0.34.0
-  # markdownlint 固定旧版 re2js；2.8.7 修复 lookbehind 匹配的 high 漏洞
-  re2js: 2.8.7
-  # undici 的 high 漏洞修复版：7.x 为 7.30.1、6.x 为 6.29.1；三处调用方的版本区间都容纳得了修复版
+  axios: 0.35.0
+  # undici 7.30.2 修复 7.30.1 的安全问题，node-gyp 使用 6.x 的修复版本
   # modelbay 依赖 @ai-sdk/openai，经它引入 @ai-sdk/provider-utils
-  "@ai-sdk/provider-utils>undici": 7.30.1
-  "@electron/get>undici": 7.30.1
+  "@ai-sdk/provider-utils>undici": 7.30.2
+  "@electron/get>undici": 7.30.2
+  "@hyperframes/engine>undici": 7.30.2
   "node-gyp>undici": 6.29.1
-  # 与 engine 已解析的 puppeteer-core 对齐，移除旧 chromium-bidi 引入的易受攻击 zod 3
-  "@hyperframes/engine>puppeteer": 25.16.0
-  "@hyperframes/producer>puppeteer": 25.16.0
+  # 与 engine 解析的 puppeteer-core 对齐，移除旧 chromium-bidi 引入的易受攻击 zod 3
+  "@hyperframes/engine>puppeteer": 25.19.0
+  "@hyperframes/producer>puppeteer": 25.19.0
   # drizzle-kit 经已弃用的 @esbuild-kit/core-utils 锁 esbuild ~0.18（开发服务器可被任意网站读取），对齐 drizzle-kit 自带的 0.25
   "@esbuild-kit/core-utils>esbuild": 0.25.12
   # electron-builder 的 ajv 带 fast-uri 3.1.8（URI 欺骗等 4 项），3.1.9 修复
   "fast-uri@<3.1.9": 3.1.9
-  # electron-builder 与 markdownlint-cli 锁 minimatch ~10，globparts 放大导致 DoS，修复只在 11.0.1 以上
-  "app-builder-lib>minimatch": 11.0.3
-  "@electron/universal>minimatch": 11.0.3
-  "markdownlint-cli>minimatch": 11.0.3
+  # electron-builder 锁 minimatch ~10，globparts 放大导致 DoS，修复只在 11.0.1 以上
+  "app-builder-lib>minimatch": 11.0.9
+  "@electron/universal>minimatch": 11.0.9
   # markdownlint 的数学扩展锁 katex ^0.16，原型污染可绕过 trust 限制，修复只在 0.18.2 以上
   "micromark-extension-math>katex": 0.19.1
 patchedDependencies:

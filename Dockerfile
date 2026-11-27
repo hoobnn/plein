@@ -3,11 +3,13 @@
 
 FROM node:26-slim AS build
 # Node 25 起不再自带 corepack，pnpm 版本与 package.json 的 packageManager 保持一致
-RUN npm install -g pnpm@12.11.2
+RUN npm install -g pnpm@12.23.0
 WORKDIR /src
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY patches/ patches/
 COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
+COPY packages/canonical/package.json packages/canonical/
 COPY packages/doc/package.json packages/doc/
 COPY packages/canvas-core/package.json packages/canvas-core/
 COPY packages/capabilities/package.json packages/capabilities/
@@ -22,7 +24,7 @@ COPY . .
 RUN pnpm --filter @plein/web build && pnpm --filter @plein/server build
 # 只带服务端的生产依赖；工作区包已打进 dist
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    pnpm --filter @plein/server deploy --prod --legacy /out \
+    pnpm --filter @plein/server deploy --prod /out \
     && cp -r apps/web/dist /out/web
 
 FROM node:26-slim

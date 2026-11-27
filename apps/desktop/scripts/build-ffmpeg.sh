@@ -5,23 +5,23 @@
 # - 字体走 macOS 的 CoreText，不需要 fontconfig。
 #
 # 用法：apps/desktop/scripts/build-ffmpeg.sh [输出目录]
-# 默认输出到 apps/desktop/stage/ffmpeg；中间文件在 FFMPEG_WORK（默认 apps/desktop/.ffmpeg-build），可缓存。
+# 默认输出到 apps/desktop/stage/ffmpeg；中间文件按版本组合缓存在 FFMPEG_WORK（默认 apps/desktop/.ffmpeg-build）。
 # 依赖：Xcode 命令行工具、pkg-config、meson、ninja（brew install pkg-config meson ninja）。
 # 在 Linux 上也能跑（用于检查脚本；字体走 fontconfig，没有 VideoToolbox）。
 set -euo pipefail
 
-FFMPEG_VERSION=7.1.1
-FREETYPE_VERSION=2.13.3
-FRIBIDI_VERSION=1.0.16
-HARFBUZZ_VERSION=11.2.1
-LIBASS_VERSION=0.17.3
-LIBVPX_VERSION=1.16.0
+FFMPEG_VERSION=9.1
+FREETYPE_VERSION=2.15.0
+FRIBIDI_VERSION=1.0.18
+HARFBUZZ_VERSION=15.2.0
+LIBASS_VERSION=0.17.5
+LIBVPX_VERSION=1.17.0
 # Official webmproject archive, pinned bytes (not a moving branch).
-LIBVPX_SHA256=7a479a3c66b9f5d5542a4c6a1b7d3768a983b1e5c14c60a9396edc9b649e015c
+LIBVPX_SHA256=1020f184046187baa2985dbde38e0691f49c44088bca7a1842b0236c6081dc0a
 
 here=$(cd "$(dirname "$0")/.." && pwd)
 out=${1:-$here/stage/ffmpeg}
-work=${FFMPEG_WORK:-$here/.ffmpeg-build}
+work=${FFMPEG_WORK:-$here/.ffmpeg-build}/ffmpeg-$FFMPEG_VERSION-$FREETYPE_VERSION-$FRIBIDI_VERSION-$HARFBUZZ_VERSION-$LIBASS_VERSION-$LIBVPX_VERSION
 prefix=$work/prefix
 jobs=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
 os=$(uname -s)

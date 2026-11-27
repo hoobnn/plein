@@ -346,8 +346,10 @@ void test('调用方退出时监护进程自己收尾并回收目录', async () 
   const { backend } = writeBackend(scratch)
   const dataDir = join(scratch, 'worker-data')
   const port = await freePort()
-  // 监护进程盯的是调用方 PID；这里用一个马上退出的子进程当调用方
-  const caller = spawn(process.execPath, ['-e', 'process.exit(0)'], { stdio: 'ignore' })
+  // 调用方保持存活，等后端启动后再退出，确保测到运行中的自动收尾。
+  const caller = spawn(process.execPath, ['-e', "process.once('message', () => process.exit(0))"], {
+    stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+  })
   const trace = join(scratch, 'events.jsonl')
   const child = spawn(process.execPath, [join(root, 'e2e', 'worker-server.ts'), '--serve'], {
     cwd: root,
@@ -368,12 +370,14 @@ void test('调用方退出时监护进程自己收尾并回收目录', async () 
   })
   try {
     await until(() => events(trace).some((entry) => entry.event === 'started'), '后端没起来')
+    await stop(caller)
     await until(() => !existsSync(dataDir), '自动目录仍存在')
     await assert.rejects(
       fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(1000) }),
     )
   } finally {
-    child.kill('SIGKILL')
+    await stop(caller)
+    await stop(child)
     rmSync(scratch, { recursive: true, force: true })
   }
 })

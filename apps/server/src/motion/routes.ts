@@ -21,8 +21,8 @@ const SourceManifest = z.object({
   templateVersion: z.literal(MOTION_TEMPLATE_VERSION),
   engine: z.object({
     name: z.literal('hyperframes'),
-    // Restore validated template parameters, including projects archived before the runtime upgrade.
-    version: z.enum(['0.8.186', HYPERFRAMES_VERSION]),
+    // Restore template parameters archived by Plein without executing their original renderer.
+    version: z.enum(['0.8.186', '0.8.218', '0.9.52', '0.9.71', HYPERFRAMES_VERSION]),
   }),
   params: MotionParams,
   inputs: z.record(z.string(), z.object({ assetId, mime: z.string() })).default({}),

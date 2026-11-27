@@ -79,7 +79,7 @@ describe('动态合成预览API与冻结源恢复', () => {
     }
   })
 
-  it.each(['0.8.186', HYPERFRAMES_VERSION])(
+  it.each(['0.8.186', '0.8.218', '0.9.52', '0.9.71', HYPERFRAMES_VERSION])(
     '恢复 %s 候选冻结参数和旧输入为独立节点；原件物理缺失时明确拒绝',
     async (version) => {
       const { server } = await bootServer()

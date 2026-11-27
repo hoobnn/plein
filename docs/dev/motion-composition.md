@@ -1,6 +1,6 @@
 # 动态合成
 
-Plein 的内置 `plein/motion` 节点使用本机合成渲染 SDK 渲染 HTML 动态合成，输出 MP4，并保存对应的源工程 ZIP、来源清单和原素材依赖。当前固定使用 `@hyperframes/producer`、`@hyperframes/sdk`、`@hyperframes/player` 0.9.71；渲染参数是 30 fps、`standard`、MP4、`strict`，单个 worker 内 `workers: 1`。
+Plein 的内置 `plein/motion` 节点使用本机合成渲染 SDK 渲染 HTML 动态合成，输出 MP4，并保存对应的源工程 ZIP、来源清单和原素材依赖。当前固定使用 `@hyperframes/producer`、`@hyperframes/sdk`、`@hyperframes/player` 0.9.97；渲染参数是 30 fps、`standard`、MP4、`strict`，单个 worker 内 `workers: 1`。
 
 模板与参数合同见 [motion.ts](../../packages/nodes/src/motion.ts)，执行与物化见 [render.ts](../../apps/server/src/motion/render.ts)。
 
@@ -103,13 +103,13 @@ node apps/desktop/scripts/stage-server.mjs
 
 每次输出保存 `plein.motion-source.v1` manifest、完整参数与 overrides、输入绑定和 SHA-256、`dependencyAssetIds`、文件清单、渲染身份及依赖版本锁。源 ZIP 中的 HTML 是 SDK stamp 后实际参与渲染的版本。
 
-恢复接口只从当前拥有者可访问的 manifest 和原素材重建新节点，不执行 ZIP 内的任意 HTML。它强制校验当前渲染 SDK 版本和 `templateVersion === MOTION_TEMPLATE_VERSION`；缺少版本字段或版本不匹配的旧源会拒绝恢复，保留原资产而不静默改写。
+恢复接口从当前拥有者可访问的 manifest 和原素材重建新节点。它校验 `templateVersion === MOTION_TEMPLATE_VERSION`，并支持同一模板版本下 Plein 使用过的渲染 SDK 版本。缺少版本字段或版本不受支持时会拒绝恢复，原资产保留。
 
 维护时遵守以下版本规则：
 
 1. 修改模板视觉、默认值或时间合同，提升 [motion.ts](../../packages/nodes/src/motion.ts) 的 `MOTION_TEMPLATE_VERSION`，并同步相关 fixtures 和兼容性测试。
 2. 改变渲染适配器语义，提升 [identity.ts](../../apps/server/src/motion/identity.ts) 的 `adapter` 版本。身份同时包含模板版本、引擎/资源版本及媒体工具、Chrome 指纹，用于使旧缓存失效。
-3. 更新渲染 SDK、GSAP 或字体时，同步依赖、运行时常量和 `hyperframes.lock.json` 的生成字段，再运行下面的真实验收。适配器版本升级本身不提供旧源迁移。
+3. 更新渲染 SDK、GSAP 或字体时，同步依赖、运行时常量和 `hyperframes.lock.json` 的生成字段。模板参数兼容时，在恢复接口保留已支持的 SDK 版本，再运行下面的真实验收。
 
 ## 可复现验收
 
@@ -153,7 +153,7 @@ node_modules/.bin/markdownlint docs/dev/motion-composition.md
 
 ## 动画字幕与透明叠加轨
 
-动态合成的 `output` 支持 `mp4` 和 `transparent-webm`。透明格式固定为 VP9 alpha、30fps、无音轨；随包 FFmpeg 使用锁定的 libvpx 1.16.0。源 ZIP 保留输出格式，旧版没有该字段的工程仍按 MP4 处理。前端使用原生视频解码保留透明通道，服务端对带 alpha 的 VP9 明确选择 `libvpx-vp9` 解码器。
+动态合成的 `output` 支持 `mp4` 和 `transparent-webm`。透明格式固定为 VP9 alpha、30fps、无音轨；随包 FFmpeg 使用锁定的 libvpx 1.17.0。源 ZIP 保留输出格式，旧版没有该字段的工程仍按 MP4 处理。前端使用原生视频解码保留透明通道，服务端对带 alpha 的 VP9 明确选择 `libvpx-vp9` 解码器。
 
 序列新增 `overlays` 视频端口和独立叠加轨。每层支持来源、全片时间或镜头锚定、入点、时长、速度、位置、尺寸、不透明度、显示开关和前后层序。位置和尺寸归一化为画幅比例；内容拉伸到指定矩形，超出画幅裁切。数组后面的层绘制在上面，区间为 `[start,end)`。镜头锚定随镜头重排移动，并在镜头结束处截断；叠加层速度独立于背景镜头速度。叠加视频的声音不加入混音。
 

@@ -22,8 +22,8 @@
   },
   "devDependencies": {
     "@plein/protocol": "workspace:*",
-    "@types/node": "^26.6.6",
-    "electron": "^45.4.1",
+    "@types/node": "^26.6.11",
+    "electron": "^45.5.0",
     "electron-builder": "^26.18.0",
     "electron-updater": "^6.8.11",
     "tsx": "^4.23.15",

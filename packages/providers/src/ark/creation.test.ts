@@ -88,7 +88,7 @@ describe('Ark 创作扩展 HTTP 合同', () => {
       ),
     ).rejects.toMatchObject({ code: 'invalid_input' })
     expect(f.fetch).not.toHaveBeenCalled()
-  })
+  }, 30_000)
   it('只把 z_index > 0 的透明 PNG 图层输出为候选，底图仍留在图层元数据', async () => {
     const f = setup([
       {

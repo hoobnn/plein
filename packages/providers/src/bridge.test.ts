@@ -51,6 +51,8 @@ describe('adapterToProvider：模型选项与元信息', () => {
   it('模型 id 用渠道内 ID，按声明顺序', () => {
     const ids = adapterModels(createOpenAIAdapter(openaiModels), 'openai').map((m) => m.id)
     expect(ids).toEqual([
+      'gpt-6.2-astra',
+      'gpt-6.2-sol',
       'gpt-6.1-sol',
       'gpt-6-astra',
       'gpt-6.1-terra',

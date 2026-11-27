@@ -93,7 +93,7 @@ test(
 
     expect(await tileNames(page)).toEqual(['参考 1：a.png', '参考 2：b.png', '参考 3：c.png'])
 
-    // 把第 2 块（b）拖到第 1 块（a）上：插入到它前面。返回落点坐标
+    // 把第 2 块（b）拖到第 1 块（a）上：插入到它前面。
     const drag = async (from: number, to: number) => {
       const tiles = page.getByTestId('generator').getByRole('group')
       const fromBox = await tiles.nth(from).boundingBox()
@@ -103,13 +103,12 @@ test(
       await page.mouse.down()
       await page.mouse.move(point.x, point.y, { steps: 8 })
       await page.mouse.up()
-      return point
     }
     await drag(1, 0)
     await expect
       .poll(() => tileNames(page))
       .toEqual(['参考 1：b.png', '参考 2：a.png', '参考 3：c.png'])
-    // 落点点击抑制在测试末尾用受控时钟验证；此处先重选节点继续
+    // 拖拽后的点击抑制在测试末尾用受控时钟验证；此处先重选节点继续
     await clickElement(page, card.id)
     await revealGenerator(page)
 
@@ -132,20 +131,20 @@ test(
       .poll(() => tileNames(page))
       .toEqual(['参考 1：a.png', '参考 2：b.png', '参考 3：c.png'])
 
-    // 拖拽放下后的落点点击抑制：用受控时钟代替「必须赶在 50ms 内点击」的真实时序——
-    // 时钟暂停后窗口只在 clock 推进时关闭，不受调度延迟影响。
+    // 拖拽放下后会抑制点击 50ms。暂停时钟让两次点击的时间不受调度延迟影响。
     // 放在本段末尾：安装后 Motion / 画布的 rAF 被接管，之后不再有其他交互。
     await page.clock.install()
     // 跳到未来固定时刻并暂停：目标留 400ms 裕量，避免与 install 后已走过的时钟相比“回到过去”
     await page.clock.pauseAt(Date.now() + 400)
-    const finalDrop = await drag(0, 1)
-    const viewer = page.getByRole('dialog', { name: /查看「/ })
-    // 窗口内（时钟未推进）：落点点击不开预览
-    await page.mouse.click(finalDrop.x, finalDrop.y)
+    await drag(0, 1)
+    const generator = page.getByTestId('generator')
+    const preview = generator.getByRole('button', { name: '预览「a.png」', exact: true })
+    const viewer = page.getByRole('dialog', { name: '查看「a.png」', exact: true })
+    // 按钮会随换序动画移动；两次点击都定位到它当时的位置。
+    await preview.click()
     await expect(viewer).toHaveCount(0)
-    // 推进越过 50ms 窗口（顺带让挂起的动画帧走完）：点击正常打开预览
     await page.clock.runFor(200)
-    await page.mouse.click(finalDrop.x, finalDrop.y)
+    await preview.click()
     await expect(viewer).toBeVisible()
   },
 )
