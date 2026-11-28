@@ -6,6 +6,7 @@ import {
   type CreativeReviewStatus,
 } from '@plein/doc'
 import type { Shot, ShotRole } from '@plein/nodes'
+import type { JobInfo } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { api, assetUrls } from '../../api/client'
@@ -16,7 +17,9 @@ import { describeFailure, openProviderSettings } from '../../canvas/runStatus'
 import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
 import { Select } from '../../ui/Select'
-import { runNode } from '../runs/run'
+import { cancelNode, runNode } from '../runs/run'
+import { cancelRequestKey, useCancelRequests } from '../runs/cancelRequests'
+import { runRequestKey, useRunRequests } from '../runs/runRequests'
 import { describeRecovery } from '../runs/recovery'
 import { RecoveryBlock } from '../runs/Tasks'
 import { expandedNodes, type ShotSource } from './model'
@@ -54,6 +57,7 @@ export function StoryboardReview({
   const [pair, setPair] = useState<{ before: string; after: string }>()
   const rows = useRef(new Map<string, HTMLTableRowElement>())
   const groups = expandedNodes(engine, boardId)
+  const shotIndex = new Map(shots.map((shot, index) => [shot.id, index]))
   const shown =
     filter === 'all'
       ? shots
@@ -66,17 +70,18 @@ export function StoryboardReview({
   const afterVideo = after && videoOf(after.id)
   const pending = nextPendingShot(shots, groups, focused)
   useEffect(() => {
-    if (focused) rows.current.get(focused)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    if (focused) rows.current.get(focused)?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [focused, filter])
   const nodeIds = [...groups.values()].flat().map((node) => node.id)
   const jobs = useQuery({
     queryKey: [...queryKeys.canvasJobs(canvasId ?? ''), 'nodes', [...nodeIds].sort()],
     queryFn: () => api.canvasNodeJobs(canvasId!, nodeIds),
-    enabled: !!canvasId,
+    enabled: !!canvasId && nodeIds.length > 0,
     refetchInterval: (q) =>
       q.state.data?.jobs.some((j) => j.status === 'running' || j.status === 'queued') ? 1000 : 5000,
   })
   const canGenerate = !jobs.isPending && !jobs.isError
+  const latestJobs = new Map(jobs.data?.jobs.map((job) => [job.nodeId, job]))
   const locate = (id: string) => {
     engine.selection.set([id])
     engine.zoomToFit([id])
@@ -125,10 +130,28 @@ export function StoryboardReview({
             shots.filter((shot) => shotReviewStatus(groups.get(shot.id) ?? [], shot) === 'usable')
               .length
           }{' '}
-          / {shots.length} 镜 · 生成成功与采用不代表人工验收
+          / {shots.length} 镜
         </span>
+        {canvasId && nodeIds.length > 0 && jobs.isPending && (
+          <span role="status" className="text-ink-muted">
+            正在读取镜头任务…
+          </span>
+        )}
+        {jobs.isError && (
+          <div role="alert" className="flex items-center gap-2 text-danger">
+            镜头任务读取失败
+            <button
+              type="button"
+              className="ui-btn ui-btn-secondary ui-btn-xs"
+              disabled={jobs.isFetching}
+              onClick={() => void jobs.refetch()}
+            >
+              {jobs.isFetching ? '正在重试…' : '重试'}
+            </button>
+          </div>
+        )}
       </div>
-      <div className="ui-scrollbar min-h-0 overflow-auto">
+      <div className="storyboard-review-scroll ui-scrollbar min-h-0 overflow-auto">
         <table className="w-full min-w-240 text-left text-sm" aria-label="逐镜审核">
           <thead className="sticky top-0 z-10 bg-surface-2 text-xs text-ink-muted">
             <tr>
@@ -144,7 +167,7 @@ export function StoryboardReview({
           <tbody>
             {shown.map((shot) => {
               const nodes = reviewNodesForShot(shot, groups.get(shot.id) ?? [])
-              const previous = shots[shots.findIndex((s) => s.id === shot.id) - 1]
+              const previous = shots[shotIndex.get(shot.id)! - 1]
               const previousVideo = previous && videoOf(previous.id)
               const thisVideo = videoOf(shot.id)
               const canCompare =
@@ -243,7 +266,7 @@ export function StoryboardReview({
                           .map((node) => {
                             const r = currentResult(node)
                             const v = r?.value
-                            const job = jobs.data?.jobs.find((j) => j.nodeId === node.id)
+                            const job = latestJobs.get(node.id)
                             const recovery = job && describeRecovery(job)
                             const failure =
                               !recovery && node.run?.status === 'failed'
@@ -276,7 +299,7 @@ export function StoryboardReview({
                                     className="ui-btn ui-btn-secondary"
                                     onClick={() => preview(node)}
                                   >
-                                    试听配音
+                                    {role === 'sfx' ? '试听音效' : '试听配音'}
                                   </button>
                                 ) : (
                                   <span className="text-xs text-ink-subtle">尚无采用结果</span>
@@ -289,9 +312,11 @@ export function StoryboardReview({
                                       ? '排队中'
                                       : node.run?.status === 'failed'
                                         ? '失败'
-                                        : r
-                                          ? '当前采用'
-                                          : '未完成'}
+                                        : node.run?.status === 'canceled' && !r
+                                          ? '已取消'
+                                          : r
+                                            ? '当前采用'
+                                            : '未完成'}
                                 </p>
                                 {failure && (
                                   <div role="alert" className="text-xs text-danger">
@@ -323,37 +348,15 @@ export function StoryboardReview({
                                   >
                                     定位
                                   </button>
-                                  {!recovery && (
-                                    <button
-                                      type="button"
-                                      className="ui-btn ui-btn-secondary ui-btn-xs"
-                                      disabled={
-                                        !canGenerate ||
-                                        node.run?.status === 'running' ||
-                                        node.run?.status === 'queued'
-                                      }
-                                      onClick={() => void runNode(node.id)}
-                                    >
-                                      {r
-                                        ? '生成新候选'
-                                        : node.run?.status === 'failed'
-                                          ? '重试此项'
-                                          : '生成此项'}
-                                    </button>
+                                  {!recovery && canvasId && !engine.doc.readOnly && (
+                                    <ShotRunButton
+                                      canvasId={canvasId}
+                                      node={node}
+                                      latest={job}
+                                      ready={canGenerate}
+                                    />
                                   )}
                                 </div>
-                                {jobs.isPending && (
-                                  <p className="text-xs text-ink-muted">正在读取原任务…</p>
-                                )}
-                                {jobs.isError && (
-                                  <button
-                                    type="button"
-                                    className="ui-btn ui-btn-secondary ui-btn-xs"
-                                    onClick={() => void jobs.refetch()}
-                                  >
-                                    任务读取失败，重试
-                                  </button>
-                                )}
                                 {job && recovery && (
                                   <RecoveryBlock
                                     key={job.id}
@@ -390,5 +393,88 @@ export function StoryboardReview({
         />
       )}
     </>
+  )
+}
+
+function ShotRunButton({
+  canvasId,
+  node,
+  latest,
+  ready,
+}: {
+  canvasId: string
+  node: CanvasElement
+  latest?: JobInfo
+  ready: boolean
+}) {
+  // 请求受理、文档同步、任务轮询可能以任意顺序抵达，期间保留这次操作的身份。
+  const [submission, setSubmission] = useState<{
+    previousRun?: string
+    previousJob?: string
+    id?: string
+  }>()
+  const local = submission?.previousRun === node.run?.id ? submission : undefined
+  const observed =
+    latest && (!node.run || (latest.id !== node.run.id && latest.createdAt > node.run.at))
+      ? latest
+      : node.run
+  const run = local?.id
+    ? latest && (latest.id === local.id || latest.id !== local.previousJob)
+      ? latest
+      : { id: local.id, status: 'queued' }
+    : observed
+  const activeId = run?.status === 'running' || run?.status === 'queued' ? run.id : undefined
+  const submitting = useRunRequests((s) => s.pending.has(runRequestKey(canvasId, node.id)))
+  const canceling = useCancelRequests((s) =>
+    s.pending.has(cancelRequestKey(canvasId, node.id, activeId)),
+  )
+  if (activeId)
+    return (
+      <button
+        key={`cancel:${activeId}`}
+        type="button"
+        className="ui-btn ui-btn-secondary ui-btn-xs"
+        disabled={canceling}
+        onClick={() => {
+          if (useCanvas.getState().canvasId === canvasId) void cancelNode(node.id, activeId)
+        }}
+      >
+        {canceling ? '正在取消…' : '取消生成'}
+      </button>
+    )
+  const submit = async () => {
+    const state = useCanvas.getState()
+    const current = state.engine?.doc.get(node.id)
+    if (
+      state.canvasId !== canvasId ||
+      state.engine?.doc.readOnly ||
+      !current ||
+      current.run?.id !== node.run?.id ||
+      current.run?.status === 'running' ||
+      current.run?.status === 'queued'
+    )
+      return
+    const previous = { previousRun: current.run?.id, previousJob: latest?.id }
+    setSubmission(previous)
+    const id = await runNode(node.id)
+    setSubmission(id ? { ...previous, id } : undefined)
+  }
+  const waiting = submitting || (!!local && !local.id)
+  return (
+    <button
+      key={`generate:${run?.id ?? ''}`}
+      type="button"
+      className="ui-btn ui-btn-secondary ui-btn-xs"
+      disabled={!ready || waiting}
+      onClick={() => void submit()}
+    >
+      {waiting
+        ? '正在提交…'
+        : currentResult(node)
+          ? '生成新候选'
+          : node.run?.status === 'failed'
+            ? '重试此项'
+            : '生成此项'}
+    </button>
   )
 }

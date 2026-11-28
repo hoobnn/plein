@@ -12,6 +12,7 @@ import {
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -83,10 +84,17 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
   const [failedMore, setFailedMore] = useState<'retry' | 'restart' | null>(null)
   const request = useRef<AbortController | null>(null)
   const list = useRef<HTMLDivElement>(null)
+  const backButton = useRef<HTMLButtonElement>(null)
   const returnTo = useRef<string | null>(null)
   useLayoutEffect(() => {
+    if (selected) {
+      // 窄屏详情取代了列表，键盘焦点也随之进入；双栏时留在选中的卡片。
+      if (backButton.current?.getClientRects().length)
+        backButton.current.focus({ preventScroll: true })
+      return
+    }
     const id = returnTo.current
-    if (selected || !id) return
+    if (!id) return
     returnTo.current = null
     list.current
       ?.querySelector<HTMLButtonElement>(`[data-media-asset="${CSS.escape(id)}"]`)
@@ -113,13 +121,25 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
   const [placing, setPlacing] = useState(false)
   const placement = useRef<AbortController | null>(null)
   const entry = useMediaLibrary((state) => state.open)
-  const sourcePicker = useCompositionSourcePicker(
-    entry,
-    !readOnly && !!engine && !!canvasId,
-    engine,
-  )
-  useEffect(() => () => placement.current?.abort(), [engine, canvasId])
   const searching = searchQuery.trim() !== debounced
+  const detail = !searching && !queryTooLong ? selected : null
+  const assetId = detail?.id
+  const placementScope = useMemo(
+    () => ({ entry, engine, canvasId, assetId }),
+    [entry, engine, canvasId, assetId],
+  )
+  const sourcePicker = useCompositionSourcePicker(
+    placementScope,
+    !readOnly && !!engine && !!canvasId,
+  )
+  useLayoutEffect(() => {
+    setPlaceError('')
+    setPlacing(false)
+    return () => {
+      placement.current?.abort()
+      placement.current = null
+    }
+  }, [placementScope])
   const visibleItems = searching || queryTooLong ? [] : page.items
   useEffect(() => () => request.current?.abort(), [])
   useEffect(() => {
@@ -249,11 +269,7 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
   return (
     <>
       <Modal label="素材" onClose={close} isolateKeys size="lg" tall>
-        <ModalHeader
-          title="素材"
-          onClose={close}
-          meta={<span className="ui-tag">跨画布与项目复用</span>}
-        >
+        <ModalHeader title="素材" onClose={close}>
           <button
             type="button"
             className="ui-btn ui-btn-secondary"
@@ -346,7 +362,7 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
         <div className="flex min-h-0 flex-1">
           <div
             ref={list}
-            className={`ui-scrollbar min-w-0 flex-1 overflow-y-auto p-5 ${selected && !queryTooLong ? 'hidden compact:block' : ''}`}
+            className={`ui-scrollbar min-w-0 flex-1 overflow-y-auto p-5 ${detail ? 'hidden compact:block' : ''}`}
             aria-busy={busy || searching}
           >
             {!visibleItems.length ? (
@@ -380,7 +396,7 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
                     data-media-asset={asset.id}
                     aria-label={`查看素材 ${asset.name}`}
                     aria-pressed={selected?.id === asset.id}
-                    onClick={() => setSelected(asset)}
+                    onClick={() => setSelected(selected?.id === asset.id ? null : asset)}
                     className={`overflow-hidden rounded-xl border bg-surface-2 text-left transition-colors ${selected?.id === asset.id ? 'border-accent' : 'border-line hover:border-ink-subtle hover:bg-surface-3 hover:shadow-2'}`}
                   >
                     <div className="flex aspect-video items-center justify-center overflow-hidden bg-canvas">
@@ -419,13 +435,14 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
               </button>
             )}
           </div>
-          {selected && !queryTooLong && (
+          {detail && (
             <div className="ui-scrollbar w-full min-w-0 flex-none overflow-y-auto border-line p-4 compact:w-80 compact:border-l">
               <button
+                ref={backButton}
                 type="button"
                 className="ui-btn ui-btn-secondary mb-3 compact:hidden"
                 onClick={() => {
-                  returnTo.current = selected.id
+                  returnTo.current = detail.id
                   setSelected(null)
                 }}
               >
@@ -433,10 +450,10 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
                 返回素材列表
               </button>
               <MediaDetail
-                key={selected.id}
-                asset={selected}
-                onPreview={() => setPreview(selected)}
-                onPlace={() => void place(selected)}
+                key={detail.id}
+                asset={detail}
+                onPreview={() => setPreview(detail)}
+                onPlace={() => void place(detail)}
                 placeError={placeError}
                 placeDisabledReason={
                   !engine || !canvasId

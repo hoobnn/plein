@@ -4,6 +4,7 @@ import {
   Children,
   useCallback,
   type PointerEvent as ReactPointerEvent,
+  type RefObject,
   useEffect,
   useLayoutEffect,
   useId,
@@ -56,7 +57,7 @@ const PAD = 24
 /** 修剪后至少留这么长 */
 const MIN_LEN = 0.2
 /** 刻度间隔候选（秒）：取让相邻刻度至少隔 72px 的最小一档 */
-const STEPS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300]
+const STEPS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800]
 const ZOOM_MAX = 40
 /** 长时间线放大后仍能查看秒内细节。 */
 const DETAIL_PPS = 160
@@ -209,7 +210,8 @@ export function Timeline({
   const pps = fit * zoom
   const width = LABEL + PAD * 2 + Math.max(total, 1) * pps
   const x = (t: number) => PAD + t * pps
-  const step = STEPS.find((s) => s * pps >= 72) ?? STEPS.at(-1)!
+  const minStep = 72 / pps
+  const step = STEPS.find((s) => s >= minStep) ?? Math.ceil(minStep / 3600) * 3600
 
   // 播放头直接改 DOM；播放和主动定位时按边界跟随，避免点选刻度后整屏跳动。
   const ppsRef = useRef(pps)
@@ -303,9 +305,6 @@ export function Timeline({
     }
   }
 
-  const ticks = []
-  for (let t = 0; t <= Math.max(total, 1) + 1e-6; t += step) ticks.push(t)
-
   return (
     <section
       ref={timeline}
@@ -382,11 +381,13 @@ export function Timeline({
               }
               onPointerDown={scrub}
             >
-              {ticks.map((t) => (
-                <span key={t} className="seq-tick" style={{ left: x(t) }}>
-                  {clock(t).replace(/\.0$/, '')}
-                </span>
-              ))}
+              <RulerTicks
+                scroller={scroller}
+                viewport={viewport}
+                pps={pps}
+                step={step}
+                total={total}
+              />
             </div>
           </div>
 
@@ -548,6 +549,44 @@ export function Timeline({
       </div>
     </section>
   )
+}
+
+/** 一次只排当前及相邻屏的标签，长片放大到秒内也无需创建整片的刻度。 */
+function RulerTicks({
+  scroller,
+  viewport,
+  pps,
+  step,
+  total,
+}: {
+  scroller: RefObject<HTMLDivElement | null>
+  viewport: number
+  pps: number
+  step: number
+  total: number
+}) {
+  const perPage = Math.max(1, Math.ceil(viewport / (step * pps)))
+  const pageWidth = perPage * step * pps
+  const [page, setPage] = useState(0)
+  useLayoutEffect(() => {
+    const el = scroller.current
+    if (!el) return
+    const update = () => setPage(Math.max(0, Math.floor(el.scrollLeft / pageWidth)))
+    update()
+    el.addEventListener('scroll', update, { passive: true })
+    return () => el.removeEventListener('scroll', update)
+  }, [scroller, pageWidth])
+  const end = Math.min(Math.floor((Math.max(total, 1) + 1e-6) / step), (page + 2) * perPage)
+  const ticks = []
+  for (let index = Math.max(0, (page - 1) * perPage); index <= end; index++) {
+    const time = index * step
+    ticks.push(
+      <span key={index} className="seq-tick" style={{ left: PAD + time * pps }}>
+        {clock(time).replace(/\.0$/, '')}
+      </span>,
+    )
+  }
+  return ticks
 }
 
 function Track({

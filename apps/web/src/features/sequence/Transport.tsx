@@ -61,8 +61,13 @@ export function Transport({
 function TimeReadout({ playhead, total }: { playhead: Playhead; total: number }) {
   const ref = useRef<HTMLSpanElement>(null)
   useEffect(() => {
+    let displayed = ''
     const update = () => {
-      if (ref.current) ref.current.textContent = clock(playhead.t)
+      const time = clock(playhead.t)
+      if (ref.current && time !== displayed) {
+        ref.current.textContent = time
+        displayed = time
+      }
     }
     update()
     return playhead.subscribe(update)

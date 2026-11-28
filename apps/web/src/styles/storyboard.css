@@ -238,3 +238,11 @@
     display: none;
   }
 }
+.storyboard-review-scroll {
+  scroll-padding-top: var(--h-xl);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .storyboard-review-scroll {
+    scroll-behavior: smooth;
+  }
+}

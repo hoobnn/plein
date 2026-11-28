@@ -73,6 +73,26 @@ function drag(target: Element, from = 400, to = 450) {
   fireEvent.pointerMove(window, { pointerId: 1, clientX: to })
 }
 
+it('长片放大后只排附近刻度，滚到片尾仍能读到终点', () => {
+  const f = setup({ total: 7200 })
+  Object.defineProperty(f.scroller, 'clientWidth', { configurable: true, value: 390 })
+  act(() => f.observer.resize(f.scroller, 390, 200))
+  const fitTicks = [...f.container.querySelectorAll<HTMLElement>('.seq-tick')]
+  expect(fitTicks.map((el) => el.textContent)).toEqual(['0:00', '60:00', '120:00'])
+  expect(
+    parseFloat(fitTicks[1]!.style.left) - parseFloat(fitTicks[0]!.style.left),
+  ).toBeGreaterThanOrEqual(72)
+  const slider = screen.getByRole<HTMLInputElement>('slider', { name: '缩放' })
+  fireEvent.change(slider, { target: { value: slider.max } })
+  const width = parseFloat(f.container.querySelector<HTMLElement>('.seq-content')!.style.width)
+  expect(width).toBeGreaterThan(1_000_000)
+  f.scroller.scrollLeft = width - f.scroller.clientWidth
+  fireEvent.scroll(f.scroller)
+  const ticks = [...f.container.querySelectorAll('.seq-tick')]
+  expect(ticks.length).toBeLessThan(60)
+  expect(ticks.at(-1)?.textContent).toBe('120:00')
+})
+
 it.each([false, true])('键盘选择与定位镜头只改变播放头，只读=%s', async (readOnly) => {
   const f = setup({ readOnly })
   await f.user.tab()

@@ -395,6 +395,39 @@ describe('素材面板的只读与无画布状态', () => {
     expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
     expect(screen.queryByRole('button', { name: '重新读取素材' })).toBeNull()
   })
+
+  it('换看下一份素材会取消旧的放入操作，再点当前卡片收起详情', async () => {
+    let oldRequest: Request | undefined
+    let finish!: (response: Response) => void
+    const { user } = await openPanel({
+      canvas: true,
+      page: {
+        items: [asset({ id: 'a1', name: '一号.png' }), asset({ id: 'a2', name: '二号.png' })],
+        nextCursor: null,
+      },
+      handler: (request) => {
+        if (new URL(request.url).pathname === '/api/motion/asset/a1/sources') {
+          oldRequest = request
+          return new Promise<Response>((resolve) => {
+            finish = resolve
+          })
+        }
+      },
+    })
+    await user.click(card('一号.png'))
+    await user.click(screen.getByRole('button', { name: '放入当前画布' }))
+    expect(await screen.findByText('正在读取素材源工程…')).toBeTruthy()
+    await user.click(card('二号.png'))
+    await waitFor(() => expect(oldRequest?.signal.aborted).toBe(true))
+    finish(json({ sources: [] }))
+    expect(screen.getByRole('button', { name: '放入当前画布' }).hasAttribute('disabled')).toBe(
+      false,
+    )
+    expect(Array.from(useCanvas.getState().engine!.doc.elements())).toHaveLength(0)
+    await user.click(card('二号.png'))
+    expect(screen.queryByRole('heading', { name: '二号.png' })).toBeNull()
+    expect(card('二号.png').getAttribute('aria-pressed')).toBe('false')
+  })
 })
 
 describe('素材面板的存储', () => {

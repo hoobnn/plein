@@ -503,9 +503,6 @@
   border-radius: var(--radius-md);
   background: #000;
   box-shadow: var(--shadow-2);
-  transition:
-    width var(--dur-move) var(--ease-spring),
-    aspect-ratio var(--dur-move) var(--ease-spring);
 }
 .seq-stage[data-portrait] {
   width: min(100cqw, 100cqh * 9 / 16);
@@ -549,11 +546,11 @@
     background-color var(--dur-fast) var(--ease-standard),
     scale var(--dur-base) var(--ease-spring);
 }
-.seq-play:hover {
+.seq-play:hover:not(:disabled) {
   background: var(--primary-hover);
   scale: 1.06;
 }
-.seq-play:active {
+.seq-play:active:not(:disabled) {
   scale: 0.94;
 }
 .seq-play:disabled {

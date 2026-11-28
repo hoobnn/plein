@@ -1,6 +1,7 @@
 import { Menu } from '@base-ui/react/menu'
 import { AnimatePresence } from '../ui/motion'
 import { useEffect, useState } from 'react'
+import { useCanvas } from '../stores/canvas'
 import { useSession } from '../stores/session'
 import { ExternalCanvasDialog } from '../features/external-canvas/ExternalCanvasDialog'
 import { ExternalWatcher } from '../features/external-canvas/ExternalWatch'
@@ -12,6 +13,31 @@ import { Icon } from '../ui/icons'
 import { minWidth } from '../ui/layout'
 import { ThemeToggle, THEME_OPTIONS } from '../ui/ThemeToggle'
 import { useDialogMenu } from '../ui/useDialogMenu'
+
+/** 手机工作流的底部视图工具条已收起，菜单直接调用相同的引擎命令。 */
+function PhoneViewActions() {
+  const engine = useCanvas((s) => (s.mode === 'flow' ? s.engine : null))
+  const canUndo = useCanvas((s) => s.canUndo)
+  const canRedo = useCanvas((s) => s.canRedo)
+  if (!engine) return null
+  return (
+    <>
+      <Menu.Item disabled={!canUndo} onClick={() => engine.undo()} className="ui-menu-item">
+        <Icon name="undo" />
+        撤销
+      </Menu.Item>
+      <Menu.Item disabled={!canRedo} onClick={() => engine.redo()} className="ui-menu-item">
+        <Icon name="redo" />
+        重做
+      </Menu.Item>
+      <Menu.Item onClick={() => engine.zoomToFit()} className="ui-menu-item">
+        <Icon name="fit" />
+        适应画布
+      </Menu.Item>
+      <Menu.Separator className="ui-sep" />
+    </>
+  )
+}
 
 export function EditorActions({
   remote,
@@ -26,14 +52,21 @@ export function EditorActions({
 }) {
   const menu = useDialogMenu()
   const { close } = menu
+  const [phone, setPhone] = useState(() => !window.matchMedia(minWidth('sm')).matches)
   useEffect(() => {
     const wide = window.matchMedia(minWidth('xl'))
+    const viewToolbar = window.matchMedia(minWidth('sm'))
     const changed = () => {
+      setPhone(!viewToolbar.matches)
       if (wide.matches) close()
     }
     changed()
     wide.addEventListener('change', changed)
-    return () => wide.removeEventListener('change', changed)
+    viewToolbar.addEventListener('change', changed)
+    return () => {
+      wide.removeEventListener('change', changed)
+      viewToolbar.removeEventListener('change', changed)
+    }
   }, [close])
   const pref = useTheme((s) => s.pref)
   const setPref = useTheme((s) => s.setPref)
@@ -158,7 +191,11 @@ export function EditorActions({
               collisionPadding={8}
               className="z-70"
             >
-              <Menu.Popup aria-label="画布工具" className="ui-menu w-56 outline-none">
+              <Menu.Popup
+                aria-label="画布工具"
+                className="ui-menu ui-scrollbar max-h-(--available-height) w-56 overflow-y-auto outline-none"
+              >
+                {phone && <PhoneViewActions />}
                 {actions.map((action) => (
                   <Menu.Item
                     key={action.label}
