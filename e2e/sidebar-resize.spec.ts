@@ -82,7 +82,10 @@ test(
     await page.mouse.down()
     await page.mouse.move(restoredX + 16, y, { steps: 2 })
     await page.mouse.up()
-    expect(await width()).toBe(preferred + 16)
+    expect(await width()).toBeCloseTo(preferred + 16, 3)
+    await expect
+      .poll(() => page.evaluate(() => localStorage.getItem('plein:sidebar-width')))
+      .toBe(String(preferred + 16))
     await handle.dblclick()
     await expect.poll(width).toBe(before)
     expect(await page.evaluate(() => localStorage.getItem('plein:sidebar-width'))).toBe(
