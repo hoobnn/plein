@@ -11,6 +11,7 @@
 | [智能体与 MCP](guide/agent.md)                       | 小满的三种用法：内置智能体、本机 CLI、对外 MCP         |
 | [创作、审片与复用](guide/creation-review.md)         | 参考顺序、提示词建议、候选对比、逐镜审核、素材与检查点 |
 | [进阶参考：从样片到交付](guide/creation-workflow.md) | 持续引导、节奏样片、创作验收、批量清单、连续性与交付   |
+| [即梦画布同步](guide/external-canvases.md)           | 全能画布与短剧项目的节点映射、素材与冲突处理           |
 | [角色档案](guide/characters.md)                      | 角色的分类图片、基础设定、音色与档案                   |
 | [本机数据维护](guide/data-maintenance.md)            | 立即备份、应用内恢复、自动备份、空间统计与素材回收     |
 
