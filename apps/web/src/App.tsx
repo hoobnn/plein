@@ -15,6 +15,7 @@ import { useWelcomeReopen } from './features/onboarding/reopen'
 import { useRoute } from './router'
 import { useSession } from './stores/session'
 import { Mascot } from './ui/Mascot'
+import { LoadingPanel } from './ui/LoadingPanel'
 import { useMediaLibrary } from './features/media-library/store'
 import { useCheckpoints } from './features/checkpoints/store'
 import { EditorLoader as Editor } from './pages/EditorLoader'
@@ -149,12 +150,21 @@ export function App() {
           </button>
         ) : null}
       </Suspense>
-      <Suspense fallback={null}>{ready && welcomeOpen && <WelcomeReopenHost />}</Suspense>
-      <Suspense fallback={null}>{ready && libraryOpen && <LibraryPanel />}</Suspense>
-      <Suspense fallback={null}>{ready && mediaOpen && <MediaLibraryPanel />}</Suspense>
-      <Suspense fallback={null}>{ready && checkpointsOpen && <CheckpointsPanel />}</Suspense>
+      <Suspense fallback={<LoadingPanel label="正在打开新手引导…" />}>
+        {ready && welcomeOpen && <WelcomeReopenHost />}
+      </Suspense>
+      <Suspense fallback={<LoadingPanel label="正在打开资产库…" />}>
+        {ready && libraryOpen && <LibraryPanel />}
+      </Suspense>
+      <Suspense fallback={<LoadingPanel label="正在打开素材…" />}>
+        {ready && mediaOpen && <MediaLibraryPanel />}
+      </Suspense>
+      <Suspense fallback={<LoadingPanel label="正在打开检查点…" />}>
+        {ready && checkpointsOpen && <CheckpointsPanel />}
+      </Suspense>
       <DeferredPanel
         active={settingsOpen}
+        panel={{ name: '设置', onClose: () => setSettings(false) }}
         load={() => import('./features/settings/SettingsHost').then((m) => m.SettingsHost)}
         props={{
           open: settingsOpen,

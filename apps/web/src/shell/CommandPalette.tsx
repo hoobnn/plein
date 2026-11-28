@@ -1,4 +1,5 @@
 import { CapabilityError } from '@plein/capabilities'
+import { isEditableTarget } from '@plein/canvas-core'
 import type { PluginCapabilityInfo } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -50,8 +51,19 @@ export function CommandPalette({ canvasId }: { canvasId: string | null }) {
   const [open, setOpen] = useState(false)
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return
+      if (e.defaultPrevented || e.isComposing || e.keyCode === 229 || e.repeat) return
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') {
+        if (
+          document.querySelector(
+            '[data-plein-pending-panel], :is([role="dialog"], [role="alertdialog"]):not(.plein-palette):not([data-plein-exiting])',
+          )
+        )
+          return
+        if (
+          isEditableTarget(e.target) &&
+          !(e.target instanceof Element && e.target.closest('.plein-palette'))
+        )
+          return
         e.preventDefault()
         setOpen((v) => !v)
       }
@@ -230,6 +242,7 @@ function Palette({ canvasId, onClose }: { canvasId: string | null; onClose(): vo
           autoFocus
           className="h-13 min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-ink-subtle"
           placeholder={canvasId ? '搜索命令，或直接告诉小满要做什么…' : '搜索命令…'}
+          aria-label="搜索命令"
           value={query}
           onChange={(e) => {
             setQuery(e.target.value)

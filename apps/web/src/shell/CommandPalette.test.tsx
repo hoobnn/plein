@@ -5,6 +5,7 @@ import { afterEach, expect, it } from 'vite-plus/test'
 import { useCanvas } from '../stores/canvas'
 import { fireEvent, renderApp, screen, waitFor } from '../testing/render'
 import { CommandPalette } from './CommandPalette'
+import { LoadingPanel } from '../ui/LoadingPanel'
 
 const docs: ReturnType<typeof createDoc>[] = []
 afterEach(() => docs.splice(0).forEach((doc) => doc.destroy()))
@@ -64,4 +65,33 @@ it('焦点离开输入后 Escape 仍关闭，重新打开重置导航并聚焦',
   const active = input.getAttribute('aria-activedescendant')
   await user.keyboard('{ArrowDown}')
   expect(input.getAttribute('aria-activedescendant')).not.toBe(active)
+})
+
+it('输入和其他弹窗保留自己的快捷键，长按不重复切换面板', async () => {
+  const { user } = setup()
+  const loading = renderApp(<LoadingPanel label="正在打开设置…" />)
+  expect(fireEvent.keyDown(document.body, { key: 'k', metaKey: true })).toBe(true)
+  expect(screen.queryByRole('dialog', { name: '命令面板' })).toBeNull()
+  loading.unmount()
+  const view = renderApp(
+    <div role="dialog" aria-label="其他面板">
+      <input aria-label="编辑名称" />
+      <button type="button">保存</button>
+    </div>,
+  )
+  for (const target of [
+    screen.getByRole('textbox'),
+    screen.getByRole('button', { name: '保存' }),
+  ]) {
+    target.focus()
+    expect(fireEvent.keyDown(target, { key: 'k', ctrlKey: true })).toBe(true)
+    expect(screen.queryByRole('dialog', { name: '命令面板' })).toBeNull()
+  }
+  view.unmount()
+  await user.keyboard('{Control>}k{/Control}')
+  const input = screen.getByRole('combobox', { name: '搜索命令' })
+  fireEvent.keyDown(input, { key: 'k', ctrlKey: true, repeat: true })
+  expect(screen.getByRole('dialog', { name: '命令面板' })).toBeTruthy()
+  await user.keyboard('{Control>}k{/Control}')
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 })

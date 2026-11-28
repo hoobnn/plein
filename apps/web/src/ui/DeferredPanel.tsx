@@ -1,4 +1,5 @@
 import { Component, type ComponentType, type ReactNode, useEffect, useRef, useState } from 'react'
+import { LoadingPanel } from './LoadingPanel'
 
 class DeferredErrorBoundary extends Component<
   { children: ReactNode; onError(): void },
@@ -25,11 +26,13 @@ export function DeferredPanel<P extends object>({
   load,
   props,
   fallback = null,
+  panel,
 }: {
   active: boolean
   load: () => Promise<ComponentType<P>>
   props: P
   fallback?: ReactNode
+  panel?: { name: string; onClose(): void }
 }) {
   const [opened, setOpened] = useState(active)
   const [attempt, setAttempt] = useState(0)
@@ -38,8 +41,9 @@ export function DeferredPanel<P extends object>({
   const loadRef = useRef(load)
   loadRef.current = load
   if (active && !opened) setOpened(true)
+  const requested = panel ? active : opened
   useEffect(() => {
-    if (!opened || Loaded || failed) return
+    if (!requested || Loaded || failed) return
     let live = true
     loadRef.current().then(
       (component) => {
@@ -52,7 +56,7 @@ export function DeferredPanel<P extends object>({
     return () => {
       live = false
     }
-  }, [opened, Loaded, failed, attempt])
+  }, [requested, Loaded, failed, attempt])
   useEffect(() => {
     if (active || !failed) return
     setOpened(false)
@@ -60,6 +64,21 @@ export function DeferredPanel<P extends object>({
     setFailed(false)
     setAttempt((current) => current + 1)
   }, [active, failed])
+  const retry = () => {
+    setLoaded(null)
+    setFailed(false)
+    setAttempt((current) => current + 1)
+  }
+  if (panel && (!Loaded || failed)) {
+    if (!active) return null
+    return (
+      <LoadingPanel
+        label={failed ? `${panel.name}加载失败` : `正在打开${panel.name}…`}
+        onClose={panel.onClose}
+        onRetry={failed ? retry : undefined}
+      />
+    )
+  }
   if (!active && !opened) return null
   if (failed)
     return (
@@ -70,15 +89,7 @@ export function DeferredPanel<P extends object>({
           className="ui-menu fixed right-4 bottom-4 z-60 flex items-center gap-3 p-3 text-sm shadow-3"
         >
           <span>浮层加载失败</span>
-          <button
-            type="button"
-            className="ui-btn ui-btn-secondary ui-btn-sm"
-            onClick={() => {
-              setLoaded(null)
-              setFailed(false)
-              setAttempt((current) => current + 1)
-            }}
-          >
+          <button type="button" className="ui-btn ui-btn-secondary ui-btn-sm" onClick={retry}>
             重试
           </button>
         </div>

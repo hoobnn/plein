@@ -69,7 +69,7 @@ interface CanvasStore extends EngineState {
   } | null
   /** 快捷键面板 */
   shortcuts: boolean
-  /** 刚完成的整理：底部弹“保留 / 还原” */
+  /** 刚完成的整理，可从底部提示还原。 */
   arranged: ArrangeResult | null
   /** 生成历史面板 */
   history: boolean
@@ -258,6 +258,20 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
       )
   },
 }))
+
+/** 序列初次载入时取消也回到打开它的分镜表。 */
+export function closeSequenceEditor(engine: Engine | null, id: string | null) {
+  const state = useCanvas.getState()
+  if (state.engine !== engine || state.sequence !== id) return
+  const target = state.sequenceReturn
+  state.openSequence(null)
+  if (
+    target?.sequenceId === id &&
+    target.canvasId === state.canvasId &&
+    engine?.doc.get(target.boardId)?.nodeType === 'plein/storyboard'
+  )
+    state.openStoryboard(target.boardId)
+}
 
 const MODE_ORDER: Array<CanvasStore['mode']> = ['flow', 'board']
 

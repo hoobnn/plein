@@ -1,7 +1,6 @@
 import { useShallow } from 'zustand/react/shallow'
-import { useCanvas } from '../stores/canvas'
+import { closeSequenceEditor, useCanvas } from '../stores/canvas'
 import { DeferredPanel } from '../ui/DeferredPanel'
-import { LoadingPanel } from '../ui/LoadingPanel'
 
 export function EditorPanels() {
   const { storyboard, scenePrep, shotWorkbench, sequence } = useCanvas(
@@ -20,25 +19,31 @@ export function EditorPanels() {
           import('../features/storyboard/StoryboardEditor').then((m) => m.StoryboardEditor)
         }
         props={{}}
-        fallback={storyboard ? <LoadingPanel label="正在打开分镜表…" /> : null}
+        panel={{ name: '分镜表', onClose: () => useCanvas.getState().openStoryboard(null) }}
       />
       <DeferredPanel
         active={scenePrep}
         load={() => import('../features/scene-prep/ScenePrep').then((m) => m.ScenePrep)}
         props={{}}
-        fallback={scenePrep ? <LoadingPanel label="正在打开场景准备…" /> : null}
+        panel={{ name: '场景准备', onClose: () => useCanvas.getState().openScenePrep(null) }}
       />
       <DeferredPanel
         active={shotWorkbench}
         load={() => import('../features/storyboard/ShotWorkbench').then((m) => m.ShotWorkbench)}
         props={{}}
-        fallback={shotWorkbench ? <LoadingPanel label="正在打开镜头工作台…" /> : null}
+        panel={{ name: '镜头工作台', onClose: () => useCanvas.getState().openShotWorkbench(null) }}
       />
       <DeferredPanel
         active={sequence}
         load={() => import('../features/sequence/SequenceEditor').then((m) => m.SequenceEditor)}
         props={{}}
-        fallback={sequence ? <LoadingPanel label="正在打开序列…" /> : null}
+        panel={{
+          name: '序列',
+          onClose: () => {
+            const { engine, sequence: id } = useCanvas.getState()
+            closeSequenceEditor(engine, id)
+          },
+        }}
       />
     </>
   )

@@ -1,12 +1,13 @@
 // @vitest-environment happy-dom
 import { LOCAL_PRINCIPAL, type Project } from '@plein/protocol'
-import { expect, it } from 'vite-plus/test'
+import { expect, it, vi } from 'vite-plus/test'
 import { queryClient, queryKeys } from '../api/query'
 import { useCanvas } from '../stores/canvas'
 import { useSession } from '../stores/session'
 import { mockFetch } from '../testing/fetch'
 import { act, fireEvent, renderApp, screen, waitFor, within } from '../testing/render'
 import { Home } from './Home'
+import * as viewTransitions from '../ui/viewTransition'
 
 const project = (over: Partial<Project> = {}): Project => ({
   id: 'p-1',
@@ -159,6 +160,51 @@ it('离开首页后迟到的创建成功只提示，不接管导航', async () =
   await waitFor(() =>
     expect(queryClient.getQueryData<Project[]>(queryKeys.projects)?.[0]?.id).toBe('p-2'),
   )
+})
+
+it.each(['项目搜索', '独立助手'])(
+  '创建期间转向%s，完成后保留输入和焦点并恢复创建入口',
+  async (target) => {
+    let release!: (response: Response) => void
+    const pending = new Promise<Response>((resolve) => {
+      release = resolve
+    })
+    const f = await setup([project()], () => ({ 'POST /api/projects': () => pending }))
+    if (target === '独立助手') renderApp(<input aria-label="助手输入" />)
+    const search =
+      target === '独立助手'
+        ? screen.getByRole<HTMLInputElement>('textbox', { name: '助手输入' })
+        : await screen.findByRole<HTMLInputElement>('searchbox', { name: '搜索项目' })
+    const start = screen.getByRole('button', { name: /文本生成/ })
+    await f.user.click(start)
+    expect(start.getAttribute('aria-busy')).toBe('true')
+    await f.user.type(search, '雨后')
+    await act(async () =>
+      release(Response.json(project({ id: 'p-2', title: '新项目', lastCanvasId: 'c2' }))),
+    )
+    await waitFor(() => expect(useCanvas.getState().notice).toBe('已创建项目「新项目」'))
+    expect(location.hash).not.toBe('#/c/c2')
+    expect(document.activeElement).toBe(search)
+    expect(search.value).toBe('雨后')
+    expect(disabled(start)).toBe(false)
+  },
+)
+
+it('跳转被后续转场取代，创建入口依然可用', async () => {
+  const transition = vi.spyOn(viewTransitions, 'zoomView').mockImplementation(() => {})
+  try {
+    const f = await setup([project()], () => ({
+      'POST /api/projects': () => Response.json(project({ id: 'p-2', lastCanvasId: 'c2' })),
+    }))
+    const start = screen.getByRole('button', { name: /文本生成/ })
+    await f.user.click(start)
+    await waitFor(() => expect(transition).toHaveBeenCalledOnce())
+    expect(disabled(start)).toBe(false)
+    await f.user.click(start)
+    await waitFor(() => expect(callsOf(f.fetch, 'POST', '/api/projects')).toBe(2))
+  } finally {
+    transition.mockRestore()
+  }
 })
 
 it('离开首页后创建失败仍说明原因，重新进入后可再次创建', async () => {
@@ -528,6 +574,12 @@ it('多画布项目只在选择时读清单，按画布名筛选后能直接打�
   expect(within(dialog).getByText('没有匹配的画布')).toBeTruthy()
   await f.user.click(within(dialog).getByRole('button', { name: '清除画布搜索' }))
   expect(document.activeElement).toBe(search)
+  await f.user.type(search, '无结果')
+  fireEvent.keyDown(search, { key: 'Escape', isComposing: true })
+  expect((search as HTMLInputElement).value).toBe('无结果')
+  await f.user.keyboard('{Escape}')
+  expect((search as HTMLInputElement).value).toBe('')
+  expect(within(dialog).getAllByRole('link')).toHaveLength(2)
   await f.user.type(search, ' storyboard ')
   expect(within(dialog).getAllByRole('link')).toHaveLength(1)
   await f.user.click(within(dialog).getByRole('link', { name: /第一集 Storyboard/ }))

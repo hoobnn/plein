@@ -20,7 +20,11 @@ function setup() {
     doc: { subscribe, readOnly: false },
     camera: { insets: { left: 0 }, onInsetsChange: subscribe },
   } as unknown as Engine
-  const arranged = { stale: vi.fn(() => false), revert: vi.fn() } as unknown as ArrangeResult
+  const arranged = {
+    count: 3,
+    stale: vi.fn(() => false),
+    revert: vi.fn(),
+  } as unknown as ArrangeResult
   useCanvas.setState({ engine, arranged })
   const view = renderApp(<ArrangeToast />)
   const refresh = () =>
@@ -54,9 +58,10 @@ it('后续编辑或撤销导致过期后清除提示，恢复旧栈顶也不复�
   expect(f.arranged.revert).not.toHaveBeenCalled()
 })
 
-it('键盘保留关闭提示但不触发还原', async () => {
+it('键盘关闭结果提示但不触发还原', async () => {
   const f = setup()
-  act(() => screen.getByRole('button', { name: '保留' }).focus())
+  expect(screen.getByRole('status').textContent).toContain('已整理 3 个元素')
+  act(() => screen.getByRole('button', { name: '关闭整理提示' }).focus())
   await f.user.keyboard('{Enter}')
   expect(useCanvas.getState().arranged).toBeNull()
   expect(f.arranged.revert).not.toHaveBeenCalled()

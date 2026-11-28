@@ -4,13 +4,14 @@ import { useEffect, useState } from 'react'
 import { useEngineVersion, useFollow } from '../canvas/hooks'
 import { canvasBottomSpace } from '../canvas/floatingPanel'
 import { useCanvas } from '../stores/canvas'
+import { Icon } from '../ui/icons'
 import { AnimatePresence, popUpVariants, useOverlayMotion } from '../ui/motion'
 
 /** 整理后多久自动收起（视为保留） */
 const AUTO_HIDE_MS = 10_000
 
 /**
- * 整理画布后在底部询问是否保留：还原即撤销这一步。
+ * 整理完成后报告结果并提供还原入口。
  * 撤销、重做或之后又有修改时，这一步已不在栈顶，提示自动收起。
  */
 export function ArrangeToast() {
@@ -91,7 +92,7 @@ function Bar({
     >
       {/* 与带操作的提示条共用 40 高、28 按钮、12 间距；文字折行时自然增高 */}
       <span className="min-w-0">
-        {readOnly ? '当前只读，暂时无法还原' : '是否保留此次整理结果？'}
+        {readOnly ? '当前只读，暂时无法还原' : `已整理 ${arranged.count} 个元素`}
       </span>
       <div className="flex items-center gap-1">
         <button
@@ -105,8 +106,14 @@ function Bar({
         >
           还原
         </button>
-        <button type="button" className="ui-btn ui-btn-primary ui-btn-sm" onClick={onDone}>
-          保留
+        <button
+          type="button"
+          aria-label="关闭整理提示"
+          title="关闭整理提示"
+          className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
+          onClick={onDone}
+        >
+          <Icon name="x" size={14} />
         </button>
       </div>
     </m.div>

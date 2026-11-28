@@ -74,13 +74,26 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
   const [retryError, setRetryError] = useState<Error | null>(null)
   const [query, setQuery] = useState('')
   const [pickerId, setPickerId] = useState<string | null>(null)
-  const [creating, setCreating] = useState(false)
+  const [creating, setCreating] = useState<string | null>(null)
   const createPending = useRef(false)
+  const openAfterCreate = useRef<{ from: Element } | null>(null)
   const active = useRef(true)
   useEffect(() => {
     active.current = true
+    // 助手、设置等可以挂在首页之外；新任务接管焦点后不再自动进入刚建的项目。
+    const keepCurrentTask = (event: Event) => {
+      if (!openAfterCreate.current || !(event.target instanceof Element)) return
+      const control = event.target.closest(
+        'button, a, input, textarea, select, [contenteditable="true"], [role="button"]',
+      )
+      if (control && control !== openAfterCreate.current.from) openAfterCreate.current = null
+    }
+    document.addEventListener('focusin', keepCurrentTask, true)
+    document.addEventListener('click', keepCurrentTask, true)
     return () => {
       active.current = false
+      document.removeEventListener('focusin', keepCurrentTask, true)
+      document.removeEventListener('click', keepCurrentTask, true)
     }
   }, [])
   useEffect(
@@ -108,11 +121,17 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
     }
   }
 
-  const create = async (from: Element, start?: string) => {
+  const create = async (from: Element, source: string, start?: string) => {
     if (createPending.current) return
     createPending.current = true
+    const intent = { from }
+    openAfterCreate.current = intent
     setError(null)
-    setCreating(true)
+    setCreating(source)
+    const shouldOpen = () =>
+      active.current &&
+      openAfterCreate.current === intent &&
+      !document.querySelector('[role="dialog"]:not([data-plein-exiting])')
     try {
       const p = await api.createProject(startProjectTitle(start))
       if (!p.lastCanvasId) throw new Error('项目建好了，但没有画布')
@@ -123,15 +142,18 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
         ...(prev ?? []).filter((item) => item.id !== p.id),
       ])
       void invalidateProjects()
-      if (!active.current) {
-        useCanvas.getState().notify(`已创建项目「${p.title}」`)
+      const reportCreated = () =>
+        useCanvas.getState().notify(`已创建项目「${p.title}」`, undefined, 'app')
+      if (!shouldOpen()) {
+        reportCreated()
         return
       }
       const id = p.lastCanvasId
       zoomView(
         'enter',
         () => {
-          if (active.current) navigate({ name: 'canvas', id })
+          if (shouldOpen()) navigate({ name: 'canvas', id })
+          else reportCreated()
         },
         {
           from,
@@ -139,11 +161,13 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
         },
       )
     } catch (err) {
+      if (shouldOpen()) setError(`创建项目失败：${(err as Error).message}`)
+      else
+        useCanvas.getState().notify(`创建项目未获确认：${(err as Error).message}`, undefined, 'app')
+    } finally {
+      // 转场可能被下一次操作取代，其回调未必执行；请求结束时就释放创建入口。
       createPending.current = false
-      if (active.current) {
-        setError((err as Error).message)
-        setCreating(false)
-      } else useCanvas.getState().notify(`创建项目未获确认：${(err as Error).message}`)
+      if (active.current) setCreating(null)
     }
   }
   const rename = async (p: Project, title: string) => {
@@ -166,7 +190,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
     try {
       await signOut()
     } catch (err) {
-      if (active.current) setError((err as Error).message)
+      if (active.current) setError(`退出登录失败：${(err as Error).message}`)
       else useCanvas.getState().notify(`退出登录失败：${(err as Error).message}`)
     }
   }
@@ -249,7 +273,6 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
                 <span className="home-project-count">{projects.length}</span>
               )}
             </h1>
-            <p className="home-subtitle">从一个想法，到一部作品。</p>
           </div>
           <div className="home-heading-actions">
             <button
@@ -275,11 +298,16 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
             />
             <button
               type="button"
-              onClick={(e) => void create(e.currentTarget)}
-              disabled={creating}
+              onClick={(e) => void create(e.currentTarget, 'header')}
+              disabled={!!creating}
+              aria-busy={creating === 'header'}
               className="ui-btn ui-btn-primary ui-btn-lg max-sm:flex-1"
             >
-              <Icon name="plus" />
+              {creating === 'header' ? (
+                <span className="ui-spinner size-4" />
+              ) : (
+                <Icon name="plus" />
+              )}
               新建项目
             </button>
           </div>
@@ -288,20 +316,24 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
         <section aria-label="快速开始" className="home-start">
           <div className="home-section-heading">
             <h2 className="home-section-title">快速开始</h2>
-            <span className="home-section-hint">选择一种创作方式</span>
           </div>
           <div className="home-quick-grid">
             {QUICK_START.map((q) => (
               <button
                 key={q.type}
                 type="button"
-                disabled={creating}
-                onClick={(e) => void create(e.currentTarget, q.type)}
+                disabled={!!creating}
+                aria-busy={creating === q.type}
+                onClick={(e) => void create(e.currentTarget, q.type, q.type)}
                 title={q.detail}
                 className="home-quick group"
               >
                 <span className="home-quick-icon">
-                  <Icon name={q.icon} size={20} />
+                  {creating === q.type ? (
+                    <span className="ui-spinner size-5" />
+                  ) : (
+                    <Icon name={q.icon} size={20} />
+                  )}
                 </span>
                 <span className="min-w-0 text-left">
                   <span className="block text-sm font-medium text-ink">{q.title}</span>
@@ -313,14 +345,13 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
         </section>
 
         {creating && (
-          <p role="status" className="flex items-center gap-2 text-sm text-ink-muted">
-            <span className="ui-spinner size-4" />
+          <p role="status" className="sr-only">
             正在创建项目…
           </p>
         )}
         {error && (
           <p ref={reveal} role="alert" className="text-sm text-danger">
-            操作失败：{error}
+            {error}
           </p>
         )}
         {listError && (
@@ -369,12 +400,17 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
                 <li>
                   <button
                     type="button"
-                    onClick={(e) => void create(e.currentTarget)}
-                    disabled={creating}
+                    onClick={(e) => void create(e.currentTarget, 'card')}
+                    disabled={!!creating}
+                    aria-busy={creating === 'card'}
                     className="home-new"
                   >
                     <span className="home-new-icon">
-                      <Icon name="plus" size={20} />
+                      {creating === 'card' ? (
+                        <span className="ui-spinner size-5" />
+                      ) : (
+                        <Icon name="plus" size={20} />
+                      )}
                     </span>
                     <span className="text-base font-medium text-ink">新建项目</span>
                     <span className="text-xs text-ink-subtle">
@@ -394,7 +430,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
         active={!!pickerProject}
         load={() => import('./HomeCanvasPicker').then((m) => m.HomeCanvasPicker)}
         props={{ project: pickerProject, onClose: () => setPickerId(null) }}
-        fallback={pickerProject ? <p role="status">正在打开画布列表…</p> : null}
+        panel={{ name: '画布列表', onClose: () => setPickerId(null) }}
       />
       <DeferredPanel
         active
@@ -422,7 +458,13 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
             if (r.canvasId) navigate({ name: 'canvas', id: r.canvasId })
           },
         }}
-        fallback={exporting || importing ? <p role="status">正在打开项目包…</p> : null}
+        panel={{
+          name: '项目包',
+          onClose: () => {
+            setExporting(null)
+            setImporting(null)
+          },
+        }}
       />
     </div>
   )

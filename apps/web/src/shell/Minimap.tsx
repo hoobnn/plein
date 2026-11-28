@@ -1,5 +1,7 @@
 import type { Engine } from '@plein/canvas-core'
+import { m } from 'motion/react'
 import { useEffect, useRef } from 'react'
+import { fadeVariants, useOverlayMotion } from '../ui/motion'
 
 const W = 180
 const H = 116
@@ -23,8 +25,11 @@ function tokens() {
  */
 export function Minimap({ engine }: { engine: Engine }) {
   const ref = useRef<HTMLCanvasElement>(null)
+  const motion = useOverlayMotion(fadeVariants)
   /** 小地图坐标 -> 世界坐标的映射，交互时用 */
   const map = useRef({ x: 0, y: 0, k: 1 })
+  const drag = useRef<{ id: number; left: number; top: number } | null>(null)
+  const redraw = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     const canvas = ref.current
@@ -85,10 +90,16 @@ export function Minimap({ engine }: { engine: Engine }) {
       const y0 = Math.min(view.y, content?.y ?? view.y)
       const x1 = Math.max(view.x + view.w, content ? content.x + content.w : view.x + view.w)
       const y1 = Math.max(view.y + view.h, content ? content.y + content.h : view.y + view.h)
-      const k = Math.min((W - PAD * 2) / (x1 - x0), (H - PAD * 2) / (y1 - y0))
-      const ox = PAD + (W - PAD * 2 - (x1 - x0) * k) / 2 - x0 * k
-      const oy = PAD + (H - PAD * 2 - (y1 - y0) * k) / 2 - y0 * k
-      map.current = { x: ox, y: oy, k }
+      // 拖动期间保持底图坐标不变，避免视口越过内容边缘时拖动目标从指针下方滑走。
+      if (!drag.current) {
+        const k = Math.min((W - PAD * 2) / (x1 - x0), (H - PAD * 2) / (y1 - y0))
+        map.current = {
+          x: PAD + (W - PAD * 2 - (x1 - x0) * k) / 2 - x0 * k,
+          y: PAD + (H - PAD * 2 - (y1 - y0) * k) / 2 - y0 * k,
+          k,
+        }
+      }
+      const { x: ox, y: oy, k } = map.current
       const key = `${ox},${oy},${k}`
       if (key !== layerKey) {
         layerKey = key
@@ -111,6 +122,7 @@ export function Minimap({ engine }: { engine: Engine }) {
     const schedule = () => {
       if (!frame) frame = requestAnimationFrame(draw)
     }
+    redraw.current = schedule
     /** 元素或配色变了：元素层作废 */
     const invalidate = () => {
       layerKey = ''
@@ -131,31 +143,43 @@ export function Minimap({ engine }: { engine: Engine }) {
       offCamera()
       offDoc()
       theme.disconnect()
+      drag.current = null
+      redraw.current = null
       if (frame) cancelAnimationFrame(frame)
     }
   }, [engine])
 
   const jump = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const r = e.currentTarget.getBoundingClientRect()
+    const r = drag.current
+    if (!r || r.id !== e.pointerId) return
     const m = map.current
     engine.camera.centerOn((e.clientX - r.left - m.x) / m.k, (e.clientY - r.top - m.y) / m.k)
   }
 
   return (
-    <div className="ui-float pointer-events-auto overflow-hidden rounded-lg p-1">
+    <m.div
+      {...motion}
+      className="ui-float ui-motion pointer-events-auto overflow-hidden rounded-lg p-1"
+    >
       <canvas
         ref={ref}
         aria-label="小地图：点击或拖动移动视口"
         style={{ width: W, height: H }}
-        className="block cursor-pointer rounded-md bg-canvas"
+        className="block touch-none cursor-pointer rounded-md bg-canvas"
         onPointerDown={(e) => {
+          if (!e.isPrimary || e.button !== 0) return
+          const { left, top } = e.currentTarget.getBoundingClientRect()
+          drag.current = { id: e.pointerId, left, top }
           e.currentTarget.setPointerCapture(e.pointerId)
           jump(e)
         }}
-        onPointerMove={(e) => {
-          if (e.buttons & 1) jump(e)
+        onPointerMove={jump}
+        onLostPointerCapture={(e) => {
+          if (drag.current?.id !== e.pointerId) return
+          drag.current = null
+          redraw.current?.()
         }}
       />
-    </div>
+    </m.div>
   )
 }

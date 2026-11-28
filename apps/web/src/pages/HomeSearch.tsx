@@ -25,6 +25,18 @@ export function HomeSearch({
         autoCorrect="off"
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (
+            event.key !== 'Escape' ||
+            !value ||
+            event.nativeEvent.isComposing ||
+            event.keyCode === 229
+          )
+            return
+          event.preventDefault()
+          event.stopPropagation()
+          onChange('')
+        }}
       />
       {value && (
         <button

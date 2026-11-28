@@ -45,7 +45,7 @@ import { findNode, upstreams, validate } from '../../canvas/nodes'
 import { cancelNode, runNode } from '../runs/run'
 import { cancelRequestKey, useCancelRequests } from '../runs/cancelRequests'
 import { loadAssetMeta, useAssetMetas } from '../../stores/assetMeta'
-import { useCanvas } from '../../stores/canvas'
+import { closeSequenceEditor, useCanvas } from '../../stores/canvas'
 import { useSession } from '../../stores/session'
 import { useCatalog } from '../../stores/catalog'
 import { Icon } from '../../ui/icons'
@@ -192,18 +192,7 @@ export function SequenceEditor() {
   const engine = useCanvas((s) => s.engine)
   const id = useCanvas((s) => s.sequence)
   const returnTarget = useCanvas((s) => s.sequenceReturn)
-  const close = () => {
-    const state = useCanvas.getState()
-    if (state.engine !== engine || state.sequence !== id) return
-    const target = state.sequenceReturn
-    state.openSequence(null)
-    if (
-      target?.sequenceId === id &&
-      target.canvasId === state.canvasId &&
-      engine?.doc.get(target.boardId)?.nodeType === 'plein/storyboard'
-    )
-      state.openStoryboard(target.boardId)
-  }
+  const close = () => closeSequenceEditor(engine, id)
   return (
     <AnimatePresence>
       {engine && id && engine.doc.get(id) && (

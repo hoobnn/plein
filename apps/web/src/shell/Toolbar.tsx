@@ -318,13 +318,14 @@ export function ViewControls() {
   const zoom = useCanvas((s) => s.zoom)
   const canUndo = useCanvas((s) => s.canUndo)
   const canRedo = useCanvas((s) => s.canRedo)
+  const readOnly = useCanvas((s) => !!s.engine?.doc.readOnly)
   const edgesHidden = useCanvas((s) => s.edgesHidden)
   const [minimap, setMinimap] = useState(false)
   const [legend, setLegend] = useState<HTMLElement | null>(null)
   if (!engine) return null
   return (
     <div className="pointer-events-none flex flex-col items-start gap-2">
-      {minimap && <Minimap engine={engine} />}
+      <AnimatePresence>{minimap && <Minimap engine={engine} />}</AnimatePresence>
       <div className="ui-bar pointer-events-auto">
         <Button
           label="撤销"
@@ -345,7 +346,8 @@ export function ViewControls() {
         <Divider />
         <Button
           label="整理画布"
-          hint={shortcut('alt+shift+f')}
+          disabled={readOnly}
+          hint={readOnly ? '画布只读' : shortcut('alt+shift+f')}
           onClick={() => {
             if (!engine.arrange()) useCanvas.getState().notify('画布已经很整齐了')
           }}
