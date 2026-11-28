@@ -7,6 +7,7 @@ import { dirname, join, resolve } from 'node:path'
 import { test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
+import { lockReleaseData } from './server-lifecycle.ts'
 import { startWorkerServer } from './worker-server.ts'
 
 /**
@@ -137,7 +138,7 @@ async function startGuarded({
 async function stop(child, signal = 'SIGTERM') {
   if (child.exitCode !== null || child.signalCode !== null) return
   const exited = new Promise((done) => child.once('exit', done))
-  child.send?.({ stop: signal })
+  if (child.connected) child.send?.({ stop: signal }, () => {})
   await exited
 }
 
@@ -316,6 +317,66 @@ void test('并行 worker 使用系统端口，停止一方不影响另一方，�
   } finally {
     for (const handle of handles) await handle.stop()
     rmSync(scratch, { recursive: true, force: true })
+  }
+})
+
+void test('L4 崩溃重启保留数据与全程独占，已占用的端口不接管', async () => {
+  const data = mkdtempSync(join(tmpdir(), 'plein-release-lifecycle-'))
+  const imported = join(data, 'imported')
+  mkdirSync(imported)
+  const { backend } = writeBackend(data)
+  const start = (dir, port = 0) =>
+    startWorkerServer({
+      port,
+      dataDir: dir,
+      persistentData: true,
+      logFile: join(dir, 'server.log'),
+      serverCommand: `${quote(process.execPath)} ${quote(backend)}`,
+      webDist: '',
+      extraEnv: { E2E_CONTRACT_TRACE: join(dir, 'events.jsonl') },
+    })
+  const lease = lockReleaseData(data, 'run')
+  const otherRun = () =>
+    execFileSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        "import { lockReleaseData } from './e2e/server-lifecycle.ts'; lockReleaseData(process.argv[1], 'run').close()",
+        data,
+      ],
+      { cwd: root, stdio: 'pipe' },
+    )
+  const handles = []
+  try {
+    const first = await start(data)
+    handles.push(first)
+    await assert.rejects(start(data), /提前退出/)
+    // 另一调用方的导入服务不能误认已经监听的主服务。
+    await assert.rejects(start(imported, first.server.port), /提前退出/)
+    const copy = await start(imported)
+    handles.push(copy)
+    assert.notEqual(first.server.port, copy.server.port)
+    await first.crash()
+    assert.equal(
+      events(join(data, 'events.jsonl')).some((event) => event.event === 'stopping'),
+      false,
+    )
+    assert.equal(readFileSync(join(data, 'server-open'), 'utf8'), 'open')
+    assert.throws(otherRun, /无法独占 L4 数据目录/)
+    const restarted = await start(data, first.server.port)
+    handles.push(restarted)
+    assert.equal((await fetch(`${copy.server.baseURL}/api/health`)).status, 200)
+    assert.equal((await fetch(`${restarted.server.baseURL}/api/health`)).status, 200)
+    assert.match(readFileSync(join(data, 'server.log'), 'utf8'), /plein 已启动/)
+  } finally {
+    try {
+      for (const handle of handles) await handle.stop()
+      lease.close()
+      otherRun()
+    } finally {
+      rmSync(data, { recursive: true, force: true })
+    }
   }
 })
 

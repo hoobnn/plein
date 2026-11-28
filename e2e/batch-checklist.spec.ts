@@ -1,5 +1,10 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { expect, test, type Page, type WebSocketRoute } from './fixtures'
 import { clickElement, clickStoryboardAction, newProject } from './canvas'
+import { checkReleaseSubmissions, startReleaseBatch, waitReleaseGroup } from './real/release-batch'
 
 /** 一个分镜节点并展开成节点，作为批量清单的输入。 */
 async function fixture(page: Page) {
@@ -42,6 +47,60 @@ async function fixture(page: Page) {
   await expect(initial).toBeHidden()
   return { board, open }
 }
+
+test('发布验收遇到未核实的旧任务会停下，已有分镜图会复用', async ({ page }) => {
+  const f = await fixture(page)
+  const dialog = await f.open()
+  const dir = mkdtempSync(join(tmpdir(), 'plein-release-check-'))
+  const file = join(dir, 'check.db')
+  const db = new DatabaseSync(file)
+  try {
+    db.exec(`CREATE TABLE jobs (id TEXT, canvas_id TEXT, status TEXT, recovery TEXT, calls TEXT);
+      INSERT INTO jobs VALUES ('lost', 'film', 'failed', NULL, '{"main":{"state":"unknown"}}')`)
+    const check = () => checkReleaseSubmissions(file, 'film')
+    let commits = 0
+    page.on('request', (r) => {
+      if (r.url().endsWith('/storyboard-batch/commit')) commits++
+    })
+    await expect(startReleaseBatch(dialog, f.board, 'image', check)).rejects.toThrow(
+      /submit_unknown：lost.*核对远端任务 ID/,
+    )
+    expect(commits).toBe(0)
+    db.exec(`UPDATE jobs SET status='succeeded', recovery='{"state":"adopted"}', calls='{}'`)
+    const batch = await startReleaseBatch(dialog, f.board, 'image', check)
+    expect(batch?.total).toBe(2)
+    await waitReleaseGroup(page, batch!.groupId, check, 30_000)
+    expect(await startReleaseBatch(dialog, f.board, 'image', check)).toBeNull()
+    expect(commits).toBe(1)
+  } finally {
+    db.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('发布验收的确认响应中断后不再提交，同一批次仍可查到', async ({ page }) => {
+  const f = await fixture(page)
+  const dialog = await f.open()
+  let commits = 0
+  let group = ''
+  await page.route('**/storyboard-batch/commit', async (route) => {
+    commits++
+    const result = await route.fetch()
+    expect(result.status()).toBe(202)
+    group = (await result.json()).groupId
+    await route.abort('connectionreset')
+  })
+  const check = () =>
+    checkReleaseSubmissions(
+      join(process.env.PLEIN_E2E_DATA!, 'plein.db'),
+      /#\/c\/([^/?]+)/.exec(page.url())![1]!,
+    )
+  await expect(startReleaseBatch(dialog, f.board, 'image', check)).rejects.toThrow(
+    '批量确认结果未知',
+  )
+  await waitReleaseGroup(page, group, check, 30_000)
+  expect(commits).toBe(1)
+})
 
 test(
   '清单断线重连后必须重新预检，断线前的迟到响应不能恢复提交',

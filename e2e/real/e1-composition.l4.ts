@@ -1,11 +1,12 @@
-import { type ChildProcess, spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { closeSync, mkdirSync, mkdtempSync, openSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
 import { clickElement, elements, newProject, zoomTo } from '../canvas'
+import { lockReleaseData } from '../server-lifecycle'
 import { B_PREFIX, E1_SHOTS } from './e1-shots'
+import { startReleaseServer } from './release-server'
 
 /**
  * E1 静态 3D 构图对照实验（docs/plan/e1-3d-composition.md）：真实平台、真实计费。
@@ -18,7 +19,6 @@ import { B_PREFIX, E1_SHOTS } from './e1-shots'
 const DRY = process.env.E1_DRY === '1'
 const DATA = DRY ? mkdtempSync(join(tmpdir(), 'plein-e1-')) : process.env.PLEIN_L4_DATA
 const PORT = Number(process.env.PLEIN_L4_PORT)
-const ROOT = join(import.meta.dirname, '../..')
 const MODEL = process.env.E1_IMAGE_MODEL ?? 'volc/ark:doubao-seedream-5-0-pro-260628'
 const SAMPLES = 3
 const OUT =
@@ -26,38 +26,22 @@ const OUT =
 
 test.skip(!DATA, '需要 PLEIN_L4_DATA：配好火山方舟密钥的数据目录（会产生真实费用），或 E1_DRY=1')
 
-let server: ChildProcess | null = null
+let server: Awaited<ReturnType<typeof startReleaseServer>> | undefined
+let runLease: ReturnType<typeof lockReleaseData> | undefined
 
-async function startServer() {
-  mkdirSync(join(DATA!, 'logs'), { recursive: true })
-  const log = openSync(join(DATA!, 'logs', 'e1-server.log'), 'a')
-  server = spawn(join(ROOT, 'apps/server/node_modules/.bin/tsx'), ['src/main.ts'], {
-    cwd: join(ROOT, 'apps/server'),
-    detached: true,
-    stdio: ['ignore', log, log],
-    env: {
-      ...process.env,
-      PLEIN_PORT: String(PORT),
-      PLEIN_DATA_DIR: DATA!,
-      PLEIN_WEB_DIST: join(ROOT, 'apps/web/dist-e2e'),
-      PLEIN_AGENT: '0',
-    },
-  })
-  closeSync(log)
-  const deadline = Date.now() + 60_000
-  while (Date.now() < deadline) {
-    const ok = await fetch(`http://127.0.0.1:${PORT}/api/health`).then(
-      (r) => r.ok,
-      () => false,
-    )
-    if (ok) return
-    await new Promise((r) => setTimeout(r, 500))
+test.beforeAll(async () => {
+  if (DATA) {
+    runLease = lockReleaseData(DATA, 'run')
+    server = await startReleaseServer(DATA, PORT, 'e1-server.log')
   }
-  throw new Error(`服务端没有起来，看 ${DATA}/logs/e1-server.log`)
-}
+})
 
-test.afterAll(() => {
-  if (server?.pid) process.kill(-server.pid, 'SIGTERM')
+test.afterAll(async () => {
+  try {
+    await server?.stop()
+  } finally {
+    runLease?.close()
+  }
 })
 
 const addNode = (
@@ -134,7 +118,6 @@ async function runOnce(
 
 test('E1：3D 构图参考图对照实验', async ({ page }) => {
   test.setTimeout(120 * 60_000)
-  await startServer()
   // 试跑用的空数据目录没有配平台，会弹欢迎引导
   if (DRY) await page.addInitScript(() => localStorage.setItem('plein.welcome', '1'))
   mkdirSync(join(OUT, 'snapshots'), { recursive: true })

@@ -5,12 +5,25 @@
  */
 import { execFileSync, fork, spawn } from 'node:child_process'
 import { mkdir, rm } from 'node:fs/promises'
-import { isAbsolute } from 'node:path'
+import { isAbsolute, join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 
-type StopSignal = 'SIGINT' | 'SIGTERM'
+type StopSignal = 'SIGINT' | 'SIGTERM' | 'SIGKILL'
 const GRACE_MS = 5000
+
+/** 独立 SQLite 锁随持有进程退出自动释放。保留锁文件，让并发调用始终争用同一 inode。 */
+export function lockReleaseData(dir: string, scope: 'run' | 'server') {
+  const db = new DatabaseSync(join(dir, `.plein-l4-${scope}.sqlite`))
+  try {
+    db.exec('PRAGMA busy_timeout=0; BEGIN EXCLUSIVE')
+    return db
+  } catch (error) {
+    db.close()
+    throw new Error(`无法独占 L4 数据目录（${scope}）：${dir}`, { cause: error })
+  }
+}
 
 function groupExists(pid: number) {
   try {
@@ -65,7 +78,7 @@ export async function ownServer() {
   process.on('disconnect', () => requestStop('SIGTERM'))
   process.on('message', (message) => {
     const signal = (message as { stop?: unknown } | null)?.stop
-    if (signal === 'SIGINT' || signal === 'SIGTERM') requestStop(signal)
+    if (signal === 'SIGINT' || signal === 'SIGTERM' || signal === 'SIGKILL') requestStop(signal)
   })
   const dataDir = process.env.PLEIN_DATA_DIR
   const ownedData = process.env.PLEIN_E2E_OWN_DATA
@@ -81,6 +94,7 @@ export async function ownServer() {
   }, 100)
   parentWatch.unref()
   let created = false
+  let releaseLease: DatabaseSync | undefined
   let safeToRemove = true
   try {
     if (!dataDir || !command || !Number.isSafeInteger(runnerPid) || runnerPid <= 0)
@@ -91,6 +105,9 @@ export async function ownServer() {
       // 独占创建失败绝不认领，尤其不能删除已存在的目录。
       await mkdir(dataDir, { mode: 0o700 })
       created = true
+    } else if (process.env.PLEIN_E2E_LOCK_RELEASE_DATA === '1') {
+      // 调用方异常退出时，监护进程仍持锁直到旧后端整组退出。
+      releaseLease = lockReleaseData(dataDir, 'server')
     }
     if (stop.signal.aborted) return 0
     const child = spawn(command, {
@@ -136,6 +153,7 @@ export async function ownServer() {
     return code
   } finally {
     clearInterval(parentWatch)
+    releaseLease?.close()
     if (created && safeToRemove)
       await rm(dataDir!, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
   }

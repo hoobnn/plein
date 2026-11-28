@@ -1,6 +1,6 @@
-import { type ChildProcess, execFileSync, spawn } from 'node:child_process'
-import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { DatabaseSync } from 'node:sqlite'
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
 import {
@@ -14,11 +14,16 @@ import {
   edgesInto,
   elements,
   newProject,
+  showStoryboardCards,
   waitEngine,
   waitIdle,
   waitNode,
   zoomTo,
 } from '../canvas'
+import { lockReleaseData } from '../server-lifecycle'
+import { startReleaseServer } from './release-server'
+import { openLibraryPanel } from '../library-ui'
+import { checkReleaseSubmissions, startReleaseBatch, waitReleaseGroup } from './release-batch'
 
 /**
  * L4：真实平台把同人故事《环太平洋：彼岸》做成一部 6 镜头竖屏短剧，从模板到导出带字幕的 MP4。
@@ -64,7 +69,12 @@ const IDEA = `# 创意 / 梗概
 
 test.skip(!DATA, '需要 PLEIN_L4_DATA：配好平台密钥的数据目录（会产生真实费用）')
 
-let server: ChildProcess | null = null
+let server: Awaited<ReturnType<typeof startReleaseServer>> | undefined
+let runLease: DatabaseSync | undefined
+
+test.beforeAll(() => {
+  if (DATA) runLease = lockReleaseData(DATA, 'run')
+})
 
 /**
  * 序列导出要烧字幕，需要带 libass 的 ffmpeg；Homebrew 默认的没有。
@@ -77,89 +87,46 @@ function ffmpegEnv(): Record<string, string> {
   return { PLEIN_FFMPEG_PATH: join(dir, 'ffmpeg'), PLEIN_FFPROBE_PATH: join(dir, 'ffprobe') }
 }
 
-/** 在 dir 上起一个服务端，等它能响应；日志写到 dir/logs/l4-server.log */
-async function spawnServer(dir: string, port: number, env: Record<string, string> = {}) {
-  mkdirSync(join(dir, 'logs'), { recursive: true })
-  const log = openSync(join(dir, 'logs', 'l4-server.log'), 'a')
-  const proc = spawn(join(ROOT, 'apps/server/node_modules/.bin/tsx'), ['src/main.ts'], {
-    cwd: join(ROOT, 'apps/server'),
-    // 单独的进程组：强杀时连 tsx 起的 node 一起杀掉
-    detached: true,
-    stdio: ['ignore', log, log],
-    env: {
-      ...process.env,
-      PLEIN_PORT: String(port),
-      PLEIN_DATA_DIR: dir,
-      PLEIN_WEB_DIST: join(ROOT, 'apps/web/dist-e2e'),
-      PLEIN_AGENT: '0',
-      ...ffmpegEnv(),
-      ...env,
-    },
-  })
-  closeSync(log)
-  const deadline = Date.now() + 60_000
-  while (Date.now() < deadline) {
-    const ok = await fetch(`http://127.0.0.1:${port}/api/health`).then(
-      (r) => r.ok,
-      () => false,
-    )
-    if (ok) return proc
-    await new Promise((r) => setTimeout(r, 500))
-  }
-  throw new Error(`服务端没有起来，看 ${dir}/logs/l4-server.log`)
-}
-
 async function startServer() {
-  server = await spawnServer(DATA!, PORT)
+  server = await startReleaseServer(DATA!, PORT, 'l4-server.log', ffmpegEnv())
 }
 
-/** 模拟崩溃：不给服务端保存和收尾的机会 */
-function killServer() {
-  if (server?.pid) process.kill(-server.pid, 'SIGKILL')
-  server = null
+test.afterAll(async () => {
+  try {
+    await server?.stop()
+  } finally {
+    runLease?.close()
+  }
+})
+
+/** 只取这一批视频的远端 ID 及提交次数，用同一份事务快照核对崩溃恢复。 */
+function videoJobs(group: string) {
+  const db = new DatabaseSync(join(DATA!, 'plein.db'), { readOnly: true })
+  try {
+    return db
+      .prepare(`
+      SELECT j.id, j.status,
+        (SELECT json_group_array(json_extract(value, '$.remoteId')) FROM json_each(j.calls)
+         WHERE json_extract(value, '$.remoteId') IS NOT NULL) AS remote_ids,
+        EXISTS (SELECT 1 FROM json_each(j.calls) WHERE json_extract(value, '$.state') = 'submitting') AS submitting,
+        (SELECT count(*) FROM json_each(j.call_history)
+         WHERE json_extract(value, '$.kind') = 'submit_started') AS submits
+      FROM jobs j WHERE j.group_id = ? AND j.node_type = 'plein/video' ORDER BY j.id
+    `)
+      .all(group) as Array<{
+      id: string
+      status: string
+      remote_ids: string
+      submitting: number
+      submits: number
+    }>
+  } finally {
+    db.close()
+  }
 }
 
-test.afterAll(() => killServer())
-
-/** 数据库里某块画布正在跑的任务和它们记下的远端调用 */
-function activeJobs(canvas: string) {
-  const out = execFileSync(
-    'sqlite3',
-    [
-      '-json',
-      join(DATA!, 'plein.db'),
-      `SELECT id, node_id, status, attempts, calls FROM jobs WHERE canvas_id = '${canvas}' AND status IN ('queued', 'running')`,
-    ],
-    { encoding: 'utf8' },
-  )
-  return (out.trim() ? JSON.parse(out) : []) as Array<{
-    id: string
-    node_id: string
-    status: string
-    attempts: number
-    calls: string
-  }>
-}
-
-function jobCalls(ids: string[]) {
-  const out = execFileSync(
-    'sqlite3',
-    [
-      '-json',
-      join(DATA!, 'plein.db'),
-      `SELECT id, status, attempts, calls FROM jobs WHERE id IN (${ids.map((i) => `'${i}'`).join(',')})`,
-    ],
-    { encoding: 'utf8' },
-  )
-  return JSON.parse(out) as Array<{ id: string; status: string; attempts: number; calls: string }>
-}
-
-/** 调用记录里的远端任务 ID：提交后（pending）和完成后（done）都带着；没提交的调用没有 */
-const remoteIds = (calls: string) =>
-  Object.values(JSON.parse(calls) as Record<string, { remoteId?: string }>)
-    .map((r) => r.remoteId)
-    .filter((id): id is string => !!id)
-    .sort()
+const checkSubmissions = (canvas: string) =>
+  checkReleaseSubmissions(join(DATA!, 'plein.db'), canvas)
 
 const note = (type: string, description: string) => {
   test.info().annotations.push({ type, description })
@@ -224,20 +191,22 @@ function failures(page: Page) {
 }
 
 async function openBoard(page: Page, id: string) {
-  await deselect(page)
-  await zoomTo(page, [id])
+  const dialog = page.getByRole('dialog', { name: '分镜表', exact: true })
+  if (await dialog.isVisible()) return dialog
+  await clickElement(page, id)
   const p = await centerOf(page, id)
   await page.mouse.dblclick(p.x, p.y)
-  const dialog = page.getByRole('dialog')
   await expect(dialog).toBeVisible()
   return dialog
 }
 
 /** 镜头数改成 SHOTS（参数和提示词里的数字一起改），再运行到分镜：上游是剧本和角色场景抽取 */
-async function prepareBoard(page: Page, id: string) {
+async function prepareBoard(page: Page, canvas: string, id: string) {
   await clickElement(page, id)
   const prompt = page.getByRole('textbox', { name: '提示词' })
-  await prompt.fill((await prompt.inputValue()).replace(/拆成 \d+ 个镜头/, `拆成 ${SHOTS} 个镜头`))
+  const text = await prompt.inputValue()
+  expect(text).toMatch(/拆成(?:约)? \d+ 个镜头/)
+  await prompt.fill(text.replace(/拆成(?:约)? \d+ 个镜头/, `拆成 ${SHOTS} 个镜头`))
   await page.getByRole('button', { name: /参数/ }).first().click()
   await page.getByText('更多参数').click()
   await page.getByLabel('镜头数').fill(String(SHOTS))
@@ -245,22 +214,49 @@ async function prepareBoard(page: Page, id: string) {
 
   // 分镜的上游是剧本和角色场景抽取（设定清单连进分镜，镜头按卡片名字写出场的角色、场景、道具）
   // 三次对话串行，平台慢时每次要三四分钟
-  await contextMenu(page, id, '运行到此处')
-  await waitNode(page, id, 30 * 60_000)
+  const [response] = await Promise.all([
+    page.waitForResponse('**/run-flow'),
+    contextMenu(page, id, '运行到此处'),
+  ])
+  expect(response.status()).toBe(202)
+  await waitReleaseGroup(
+    page,
+    (await response.json()).groupId,
+    () => checkSubmissions(canvas),
+    30 * 60_000,
+  )
+  await waitNode(page, id)
 }
 
-test.describe.configure({ mode: 'serial' })
+test.describe.configure({ mode: 'serial', retries: 0 })
 
-/** 数据目录里「环太平洋：彼岸」项目最近的画布 */
-function latestFilmCanvas() {
-  return execFileSync(
-    'sqlite3',
-    [
-      join(DATA!, 'plein.db'),
-      `SELECT c.id FROM canvases c JOIN projects p ON p.id = c.project_id WHERE p.title = '${TITLE}' ORDER BY c.created_at DESC LIMIT 1`,
-    ],
-    { encoding: 'utf8' },
-  ).trim()
+/** 最近的同名样例排在最前。新命令也要先核对旧样例里未解决的提交。 */
+function sampleCanvases() {
+  const db = new DatabaseSync(join(DATA!, 'plein.db'), { readOnly: true })
+  try {
+    return db
+      .prepare(`
+      SELECT c.id, EXISTS(SELECT 1 FROM job_groups g WHERE g.canvas_id=c.id AND g.status='running') AS active
+      FROM canvases c JOIN projects p ON p.id=c.project_id
+      WHERE p.title=? ORDER BY c.created_at DESC
+    `)
+      .all(TITLE) as Array<{ id: string; active: number }>
+  } finally {
+    db.close()
+  }
+}
+
+function checkSample(sample: { id: string; active: number }) {
+  checkSubmissions(sample.id)
+  if (sample.active) throw new Error(`画布 ${sample.id} 的原批次仍在运行，请在任务面板核对原批次。`)
+  return sample.id
+}
+
+function selectSample(id: string) {
+  const rows = sampleCanvases()
+  const sample = id ? rows.find((row) => row.id === id) : rows[0]
+  if (!sample) throw new Error(`找不到验收样例画布 ${id || TITLE}`)
+  return checkSample(sample)
 }
 
 /** 第一个用例出片的画布；单独跑后两个用例时用 PLEIN_L4_CANVAS 指定，不给就取「环太平洋：彼岸」最近的画布 */
@@ -268,15 +264,10 @@ let filmCanvas = process.env.PLEIN_L4_CANVAS ?? ''
 /** 接着跑一块已经铺好模板、出过设定卡并展开镜头的画布（前一次在出图之后断了），省掉前面的对话和出图 */
 const RESUME = process.env.PLEIN_L4_RESUME ?? ''
 
-/** 把画布所在项目改名 */
-async function renameProject(page: Page, canvas: string, title: string) {
-  const project = execFileSync(
-    'sqlite3',
-    [join(DATA!, 'plein.db'), `SELECT project_id FROM canvases WHERE id = '${canvas}'`],
-    { encoding: 'utf8' },
-  ).trim()
-  const r = await page.request.patch(`/api/projects/${project}`, { data: { title } })
-  expect(r.status()).toBe(200)
+async function projectOf(page: Page, canvas: string) {
+  const response = await page.request.get(`/api/canvases/${encodeURIComponent(canvas)}`)
+  expect(response.status()).toBe(200)
+  return (await response.json()).projectId as string
 }
 
 /** 把模板的「创意 / 梗概」整段换成这部故事 */
@@ -299,16 +290,22 @@ test('真实平台：《环太平洋：彼岸》6 镜头短剧从模板到字幕
   await startServer()
   test.info().annotations.push({ type: '数据目录', description: DATA! })
   if (RESUME) {
+    selectSample(RESUME)
     await page.goto(`/#/c/${RESUME}`)
     await waitEngine(page)
   } else {
+    for (const prior of sampleCanvases()) checkSample(prior)
     await newProject(page)
     await addNode(page, '短剧')
     await expect(page.locator('.ui-toast')).toContainText('短剧模板已铺出')
   }
   const canvas = page.url().split('#/c/')[1]!.split(/[/?]/)[0]!
   if (!RESUME) {
-    await renameProject(page, canvas, TITLE)
+    const project = await projectOf(page, canvas)
+    const rename = await page.request.patch(`/api/projects/${encodeURIComponent(project)}`, {
+      data: { title: TITLE },
+    })
+    expect(rename.status()).toBe(200)
     await writeIdea(page)
   }
   filmCanvas = canvas
@@ -322,7 +319,12 @@ test('真实平台：《环太平洋：彼岸》6 镜头短剧从模板到字幕
 
   // 镜头数改成 6：参数和提示词里的数字一起改
   const board = await byName(page, BOARD)
-  if (!RESUME) await prepareBoard(page, board.id)
+  const check = () => checkSubmissions(canvas)
+  check()
+  if (!RESUME) await prepareBoard(page, canvas, board.id)
+  expect(
+    await page.evaluate((id) => window.__plein.engine.doc.get(id)?.params?.shots, board.id),
+  ).toHaveLength(SHOTS)
 
   const cast = await byName(page, '角色与场景抽取')
   expect(cast.status).toBe('succeeded')
@@ -414,23 +416,10 @@ test('真实平台：《环太平洋：彼岸》6 镜头短剧从模板到字幕
   expect(mentioned('plein/prop').length).toBeGreaterThan(0)
 
   dialog = await openBoard(page, board.id)
-  await dialog.getByRole('button', { name: '批量出分镜图' }).click()
-  await expect(page.locator('.ui-toast')).toContainText('已开始生成')
-  await waitIdle(page, 20 * 60_000)
-  // 平台审核偶尔拦下生成出来的图（不是提示词的问题，重出一次多半能过）；同步出图排队太久时
-  // 连接也可能断在半路、记为提交结果未知（百炼没有按客户端标识查任务的接口，只能人工确认后重出）。
-  // 像用户那样再点一次批量，出过的沿用，只补失败和因此跳过的
-  const retryable = new Set(['content_policy', 'submit_unknown'])
-  const rejected = await failures(page)
-  if (rejected.length && rejected.every((f) => retryable.has(f.code))) {
-    note('重出', rejected.map((f) => `${f.name}：${f.code}`).join('；'))
-    dialog = await openBoard(page, board.id)
-    await dialog.getByRole('button', { name: '批量出分镜图' }).click()
-    await expect(page.locator('.ui-toast')).toContainText('已开始生成')
-    await waitIdle(page, 20 * 60_000)
-  }
-  // 重出一次还被审核拦下的只能是参考图（比如印着姓名的快递单）：@ 引用是软依赖，
-  // 镜头不等它、只带文字设定照常出；其余节点一个都不许失败
+  const images = await startReleaseBatch(dialog, board.id, 'image', check)
+  if (images) await waitReleaseGroup(page, images.groupId, check, 20 * 60_000)
+  await waitIdle(page)
+  // 审核拦下的参考图是软依赖，保留原因并核验镜头图；验收不会再次付费补出。
   const isRef = (name: string) => / · (定妆图|场景图|道具图)$/.test(name)
   const still = await failures(page)
   if (still.length) note('审核未过', still.map((f) => `${f.name}：${f.error}`).join('；'))
@@ -451,19 +440,11 @@ test('真实平台：《环太平洋：彼岸》6 镜头短剧从模板到字幕
       .filter((e) => e.nodeType === 'plein/image' && !!e.params?.source)
       .map((e) => ({ name: e.name, results: e.results?.length ?? 0 })),
   )
-  expect(shots.length).toBeGreaterThan(0)
+  expect(shots).toHaveLength(SHOTS)
   expect(shots.filter((e) => e.results === 0).map((e) => e.name)).toEqual([])
 
-  // 视频平台只在生成视频期间启用（当初为绕开自动选模型；改成默认模型后已不必要，暂时保留）。
-  // 镜头视频显式指定模型和分辨率
-  const vendor = VIDEO_MODEL ? VIDEO_MODEL.split(':')[0]! : ''
-  const toggleVideoVendor = async (enabled: boolean) => {
-    if (!vendor) return
-    const r = await page.request.put(`/api/providers/${vendor}/config`, { data: { enabled } })
-    expect(r.status()).toBe(200)
-  }
+  // 采用数据目录已启用的平台，不改动供配音、配乐等阶段共用的配置。
   if (VIDEO_MODEL) {
-    await toggleVideoVendor(true)
     await page.evaluate(
       ({ model, resolution }) => {
         const doc = window.__plein.engine.doc
@@ -480,64 +461,64 @@ test('真实平台：《环太平洋：彼岸》6 镜头短剧从模板到字幕
   }
 
   dialog = await openBoard(page, board.id)
-  await clickStoryboardAction(dialog, '批量生成视频')
-  await expect(page.locator('.ui-toast')).toContainText('已开始生成')
-
-  // 等至少一个视频已经提交到平台（调用记录里有远端任务），再强杀服务端
+  const videos = await startReleaseBatch(dialog, board.id, 'video', check)
+  if (!videos)
+    throw new Error('视频均已复用，本次没有可验证的在途远端任务。请核对原批次的恢复记录。')
+  let before: ReturnType<typeof videoJobs> = []
   await expect
-    .poll(() => activeJobs(canvas).filter((j) => remoteIds(j.calls).length > 0).length, {
-      timeout: 10 * 60_000,
-      intervals: [2_000],
-    })
+    .poll(
+      () => {
+        check()
+        const group = videoJobs(videos.groupId)
+        if (group.some((j) => j.status === 'canceled' || j.status === 'failed'))
+          throw new Error('视频批次已有失败或取消的任务，已停止崩溃演练')
+        if (group.length < videos.total) return 0
+        if (group.every((j) => j.status === 'succeeded'))
+          throw new Error('本批视频已全部完成，没有可核验的在途远端任务')
+        if (group.some((j) => j.submitting || j.remote_ids === '[]')) return 0
+        before = group.filter((j) => j.status === 'running' && j.remote_ids !== '[]')
+        return before.length
+      },
+      { timeout: 40 * 60_000, intervals: [100, 300, 1_000] },
+    )
     .toBeGreaterThan(0)
-  const before = activeJobs(canvas)
-  note(
-    '重启前',
-    `${before.length} 个任务在跑，${before.filter((j) => remoteIds(j.calls).length > 0).length} 个已提交到平台`,
-  )
-  killServer()
+  note('重启前', `${before.length} 个在途视频已记下远端任务 ID`)
+  await server!.crash()
   await startServer()
   await page.reload()
   await waitEngine(page)
-
-  await waitIdle(page, 40 * 60_000)
-  const after = jobCalls(before.map((j) => j.id))
-  for (const b of before.filter((j) => remoteIds(j.calls).length > 0)) {
-    const a = after.find((x) => x.id === b.id)!
-    // 重启前已提交的远端任务，完成后记录里还是同一个 ID：续查原任务，没有再提交一次（不重复计费）
-    expect(remoteIds(a.calls), `任务 ${b.id} 的远端任务`).toEqual(remoteIds(b.calls))
+  await waitReleaseGroup(page, videos.groupId, check, 40 * 60_000)
+  const after = videoJobs(videos.groupId)
+  for (const b of before) {
+    const a = after.find((j) => j.id === b.id)
+    expect(a, `按原任务续查 ${b.id}`).toMatchObject({
+      remote_ids: b.remote_ids,
+      submits: b.submits,
+    })
   }
-  note(
-    '续跑',
-    before
-      .filter((b) => remoteIds(b.calls).length)
-      .map((b) => `${b.id} → ${remoteIds(b.calls).join('、')}`)
-      .join('；'),
-  )
-  note('重启后', after.map((a) => `${a.id}:${a.status}（第 ${a.attempts} 次）`).join('，'))
-  await toggleVideoVendor(false)
+  // 每个已批准的视频都已受理，既能检验续查，也不会在其他镜头提交时切断连接。
+  expect(after).toHaveLength(videos.total)
+  for (const j of after) expect(j).toMatchObject({ status: 'succeeded', submits: 1 })
+  await expect.poll(async () => (await shotNodes(page)).filter((s) => s.video).length).toBe(SHOTS)
+  const allShots = await shotNodes(page)
+  for (const s of allShots) await waitNode(page, s.video!)
+  note('续跑', after.map((j) => `${j.id} → ${j.remote_ids}`).join('；'))
 
   dialog = await openBoard(page, board.id)
-  await clickStoryboardAction(dialog, '批量配音')
-  await waitIdle(page, 20 * 60_000)
+  const speech = await startReleaseBatch(dialog, board.id, 'speech', check)
+  if (speech) await waitReleaseGroup(page, speech.groupId, check, 20 * 60_000)
+  for (const id of allShots.flatMap((s) => s.speech)) await waitNode(page, id)
+  await waitIdle(page)
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
 
   const all = await elements(page)
   const failed = all.filter((e) => e.status === 'failed' && !blocked.has(e.name ?? ''))
   expect(failed.map((e) => e.name)).toEqual([])
 
   const music = await byName(page, '配乐')
-  await zoomTo(page, [music.id])
-  await contextMenu(page, music.id, '运行到此处')
-  await waitNode(page, music.id, 10 * 60_000)
-
+  if (!music.results) await runReleaseNode(page, canvas, music.id, check, 10 * 60_000)
   const seq = await byName(page, '序列')
-  await zoomTo(page, [seq.id])
-  await contextMenu(page, seq.id, '运行到此处')
-  await waitNode(page, seq.id, 20 * 60_000)
-  const out = (await page.evaluate((id) => {
-    const el = window.__plein.engine.doc.get(id)!
-    return el.results!.at(-1)!.value
-  }, seq.id)) as { assetId: string; mime: string }
+  const out = await runReleaseNode(page, canvas, seq.id, check, 20 * 60_000)
   expect(out.mime).toBe('video/mp4')
   const meta = (await (await page.request.get(`/api/assets/${out.assetId}/meta`)).json()) as {
     width: number
@@ -546,14 +527,11 @@ test('真实平台：《环太平洋：彼岸》6 镜头短剧从模板到字幕
   }
   note('成片', `${out.assetId}：${meta.width}×${meta.height}，${meta.duration.toFixed(1)} 秒`)
   expect([meta.width, meta.height]).toEqual([1080, 1920])
-
-  // 等这次运行的完成提示弹过：它晚一步到，会盖掉后面的提示
-  await expect(page.locator('.ui-toast')).toContainText('运行到「序列」')
 })
 
 test('资产库：出片画布上的角色、场景、道具存进资产库，在新项目里取用', async ({ page }) => {
   if (!server) await startServer()
-  if (!filmCanvas) filmCanvas = latestFilmCanvas()
+  filmCanvas = selectSample(filmCanvas)
   note('画布', filmCanvas)
   await page.goto(`/#/c/${filmCanvas}`)
   await waitEngine(page)
@@ -614,7 +592,6 @@ test('资产库：出片画布上的角色、场景、道具存进资产库，�
 
   // 换一个项目，从资产库把角色、场景、道具各取一张放到画布：卡片带着设定、参考图和音色
   await newProject(page)
-  const panel = page.getByRole('dialog', { name: '资产库' })
   // 角色取一个配了音色的，核对音色跟着过来
   const picks = ['character', 'scene', 'prop'].map((k) =>
     saved.find((c) => itemOf(c.name)?.kind === k && (k !== 'character' || c.voiceId))!,
@@ -622,12 +599,15 @@ test('资产库：出片画布上的角色、场景、道具存进资产库，�
   // 添加到画布后面板会收起，每取一项重新打开
   for (const c of picks) {
     await deselect(page)
-    await page.getByRole('button', { name: '资产库' }).click()
+    const panel = await openLibraryPanel(page)
     await panel
       .getByRole('group', { name: '资产类别' })
       .getByRole('button', { name: KIND_TITLE[c.nodeType]!, exact: true })
       .click()
-    await panel.getByRole('button', { name: '全部', exact: true }).click()
+    await panel
+      .getByRole('group', { name: '范围', exact: true })
+      .getByRole('button', { name: '全部', exact: true })
+      .click()
     const row = panel.getByRole('listitem').filter({ hasText: c.name })
     await row.first().hover()
     await row.first().getByRole('button', { name: '添加到画布' }).click()
@@ -694,8 +674,45 @@ function adoption(page: Page) {
   )
 }
 
-/** page.evaluate 里读当前结果用（类型只在编译期） */
-type RawResultEl = { adopted?: string; results?: Array<{ id: string; value: unknown }> }
+/** 同一节点可能已有成功记录，必须等本次 runId 入库、同步，再读其实际产物。 */
+async function runReleaseNode(
+  page: Page,
+  canvas: string,
+  id: string,
+  check: () => void,
+  timeout: number,
+) {
+  check()
+  const base = new URL(`/api/canvases/${encodeURIComponent(canvas)}/`, page.url())
+  const response = await page.request.post(
+    new URL(`nodes/${encodeURIComponent(id)}/run`, base).href,
+    { data: {} },
+  )
+  expect(response.status()).toBe(202)
+  const { runId } = (await response.json()) as { runId: string }
+  await expect
+    .poll(
+      async () => {
+        check()
+        const job = await page.request.get(new URL(`jobs/${encodeURIComponent(runId)}`, base).href)
+        expect(job.status()).toBe(200)
+        const { status } = (await job.json()) as Job
+        if (status === 'failed' || status === 'canceled')
+          throw new Error(`任务 ${runId} 已${status}`)
+        return status
+      },
+      { timeout, intervals: [250, 1_000, 2_000] },
+    )
+    .toBe('succeeded')
+  const result = () =>
+    page.evaluate(
+      ({ id, runId }) =>
+        window.__plein.engine.doc.get(id)?.results?.find((r) => r.runId === runId)?.value,
+      { id, runId },
+    )
+  await expect.poll(result).toBeTruthy()
+  return (await result()) as { assetId: string; mime: string }
+}
 
 interface Job {
   id: string
@@ -703,16 +720,19 @@ interface Job {
   nodeType: string
   status: string
   createdAt: number
+  submissionHistory?: Array<{ kind: string }>
   input?: { inputHash?: string; refs: Array<{ name: string; sent: string[] }> }
 }
 
 test('0.2：实际输入、查看影响返工、项目包迁移、修改方案', async ({ page }) => {
   if (!server) await startServer()
-  if (!filmCanvas) filmCanvas = latestFilmCanvas()
+  filmCanvas = selectSample(filmCanvas)
   const canvas = filmCanvas
   note('画布', canvas)
   await page.goto(`/#/c/${canvas}`)
   await waitEngine(page)
+  const check = () => checkSubmissions(canvas)
+  check()
   const board = await byName(page, BOARD)
   const shots = await shotNodes(page)
   expect(shots).toHaveLength(SHOTS)
@@ -743,7 +763,8 @@ test('0.2：实际输入、查看影响返工、项目包迁移、修改方案',
   // W2：改第三镜头的台词和分镜图提示词，从分镜表进「查看影响」，按推荐默认只重做受影响的
   const before = await adoption(page)
   const t2 = Date.now()
-  let dialog = await openBoard(page, board.id)
+  const dialog = await openBoard(page, board.id)
+  await showStoryboardCards(dialog)
   const line = dialog.getByLabel('台词').nth(2)
   await line.fill(`${await line.inputValue()}……先把记录核对清楚。`)
   const shotPrompt = dialog.getByLabel('分镜图提示词').nth(2)
@@ -759,54 +780,55 @@ test('0.2：实际输入、查看影响返工、项目包迁移、修改方案',
   await page.keyboard.press('Escape')
   await expect(diff).toBeHidden()
   await expect(impact.getByText('分镜表有没同步的改动')).toBeHidden()
-  // 面板在文档变化后停 0.8 秒再重新分析
-  await page.waitForTimeout(2000)
-  await expect(impact.locator('section', { hasText: '镜头 01' })).toHaveCount(0)
+  const changedShot = impact
+    .locator('section')
+    .filter({ has: page.getByRole('checkbox', { name: '重做镜头图' }) })
+    .filter({ hasText: '镜头 03' })
+  await expect(changedShot.getByRole('checkbox', { name: '重做镜头图' })).toBeChecked()
+  await expect(changedShot.getByRole('checkbox', { name: '重做视频' })).not.toBeChecked()
+  await expect(
+    impact
+      .locator('section')
+      .filter({ hasNotText: '镜头 03' })
+      .getByRole('checkbox', { checked: true }),
+  ).toHaveCount(0)
   const rerun = impact.getByRole('button', { name: /^重做选中的 \d+ 个$/ })
   note('查看影响', (await impact.locator('section').allInnerTexts()).join(' | ').slice(0, 600))
-  await rerun.click()
+  check()
+  const [rerunResponse] = await Promise.all([page.waitForResponse('**/impact/run'), rerun.click()])
+  expect(rerunResponse.status()).toBe(202)
+  await waitReleaseGroup(page, (await rerunResponse.json()).groupId, check, 20 * 60_000)
   await expect(impact).toBeHidden()
-  await waitIdle(page, 20 * 60_000)
+  await waitIdle(page)
   const w2 = await paidSince(t2)
   const after = await adoption(page)
   const shot3 = new Set([shots[2]!.image, shots[2]!.video, ...shots[2]!.speech])
   const touched = Object.keys(before).filter((id) => !shot3.has(id) && before[id] !== after[id])
   note(
     '局部返工',
-    `付费提交 ${w2.length} 次（${w2.map((j) => `${j.nodeType}:${j.status}`).join('、')}），第三镜头以外被动到 ${touched.length} 个节点`,
+    `平台提交 ${w2.reduce((total, j) => total + (j.submissionHistory ?? []).filter((e) => e.kind === 'submit_started').length, 0)} 次（${w2.map((j) => `${j.nodeType}:${j.status}`).join('、')}），第三镜头以外被动到 ${touched.length} 个节点`,
   )
   expect(touched).toEqual([])
-  expect(w2.every((j) => shot3.has(j.nodeId))).toBe(true)
+  expect(w2.every((j) => shot3.has(j.nodeId) && j.status === 'succeeded')).toBe(true)
   expect(w2.some((j) => j.nodeId === shots[2]!.image)).toBe(true)
   // 视频建议保留，没有重做
   expect(w2.some((j) => j.nodeType === 'plein/video')).toBe(false)
 
   // 只重新导出序列（本地加工，不跑上游）
   const seq = await byName(page, '序列')
-  const res = await page.request.post(`/api/canvases/${canvas}/nodes/${seq.id}/run`, { data: {} })
-  expect(res.status()).toBe(202)
-  await waitNode(page, seq.id, 20 * 60_000)
-  const cut = (await page.evaluate((id) => {
-    // 结果新的在前；当前采用的是 adopted 指的那个，没指定时是最新的
-    const el = window.__plein.engine.doc.get(id)! as RawResultEl
-    return (el.results!.find((r) => r.id === el.adopted) ?? el.results![0]!).value
-  }, seq.id)) as { assetId: string }
+  const cut = await runReleaseNode(page, canvas, seq.id, check, 20 * 60_000)
   note('返工后成片', cut.assetId)
 
   // W4：导出项目包，在全新数据目录导入，素材齐全、序列能重新合成
-  const project = execFileSync(
-    'sqlite3',
-    [join(DATA!, 'plein.db'), `SELECT project_id FROM canvases WHERE id = '${canvas}'`],
-    { encoding: 'utf8' },
-  ).trim()
+  const project = await projectOf(page, canvas)
   const pkg = await page.request.get(`/api/projects/${project}/package`)
   expect(pkg.status()).toBe(200)
   const bytes = await pkg.body()
   const fresh = mkdtempSync(join(tmpdir(), 'plein-l4-import-'))
-  const port2 = PORT + 1
-  const other = await spawnServer(fresh, port2)
+  let other: Awaited<ReturnType<typeof startReleaseServer>> | undefined
   try {
-    const base2 = `http://127.0.0.1:${port2}`
+    other = await startReleaseServer(fresh, 0, 'l4-server.log', ffmpegEnv())
+    const base2 = other.server.baseURL
     const preview = (await (
       await fetch(`${base2}/api/project-imports`, { method: 'POST', body: new Uint8Array(bytes) })
     ).json()) as { token: string }
@@ -819,18 +841,7 @@ test('0.2：实际输入、查看影响返工、项目包迁移、修改方案',
     await page.goto(`${base2}/#/c/${done.canvasId}`)
     await waitEngine(page)
     const seq2 = await byName(page, '序列')
-    const r2 = await fetch(`${base2}/api/canvases/${done.canvasId}/nodes/${seq2.id}/run`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: '{}',
-    })
-    expect(r2.status).toBe(202)
-    await waitNode(page, seq2.id, 20 * 60_000)
-    const out2 = (await page.evaluate((id) => {
-      // 结果新的在前；当前采用的是 adopted 指的那个，没指定时是最新的
-      const el = window.__plein.engine.doc.get(id)! as RawResultEl
-      return (el.results!.find((r) => r.id === el.adopted) ?? el.results![0]!).value
-    }, seq2.id)) as { assetId: string }
+    const out2 = await runReleaseNode(page, done.canvasId, seq2.id, check, 20 * 60_000)
     const meta2 = (await (await fetch(`${base2}/api/assets/${out2.assetId}/meta`)).json()) as {
       width: number
       height: number
@@ -842,7 +853,7 @@ test('0.2：实际输入、查看影响返工、项目包迁移、修改方案',
     )
     expect([meta2.width, meta2.height]).toEqual([1080, 1920])
   } finally {
-    if (other.pid) process.kill(-other.pid, 'SIGKILL')
+    await other?.stop()
     rmSync(fresh, { recursive: true, force: true })
   }
 
@@ -852,62 +863,86 @@ test('0.2：实际输入、查看影响返工、项目包迁移、修改方案',
   await page.getByRole('button', { name: '设置', exact: true }).click()
   const settings = page.getByRole('dialog', { name: '设置' })
   await settings.getByRole('button', { name: 'MCP', exact: true }).click()
-  await settings.getByRole('button', { name: '生成连接令牌' }).click()
-  const config = settings.getByTestId('external-mcp-config')
-  const token = /Bearer (plein_[\w-]+)/.exec((await config.textContent()) ?? '')![1]!
-  await page.keyboard.press('Escape')
-  const mcp = async (name: string, args: Record<string, unknown>) => {
-    const r = await page.request.post('/mcp', {
-      headers: { authorization: `Bearer ${token}` },
-      data: {
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'tools/call',
-        params: { name, arguments: { canvas_id: canvas, ...args } },
-      },
+  await settings.getByLabel('令牌名称').fill('L4 短片验收')
+  await settings.getByLabel('每日运行次数上限').fill('1')
+  const [issued] = await Promise.all([
+    page.waitForResponse(
+      (r) => r.request().method() === 'POST' && r.url().endsWith('/api/mcp/external'),
+    ),
+    settings.getByRole('button', { name: /^(生成连接令牌|新增令牌)$/ }).click(),
+  ])
+  expect(issued.status()).toBe(201)
+  const { id: tokenId, token } = (await issued.json()) as { id: string; token: string }
+  try {
+    await page.keyboard.press('Escape')
+    const mcp = async (name: string, args: Record<string, unknown>) => {
+      const r = await page.request.post('/mcp', {
+        headers: { authorization: `Bearer ${token}` },
+        data: {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: { name, arguments: { canvas_id: canvas, ...args } },
+        },
+      })
+      const body = (await r.json()) as {
+        result: { content: Array<{ text: string }>; isError?: boolean }
+      }
+      expect(body.result.isError, body.result.content[0]?.text).toBeFalsy()
+      return JSON.parse(body.result.content[0]!.text) as {
+        plan_id: string
+        steps: Array<{ id: string; stage: string }>
+        estimate: Record<string, string>
+        status: string
+        applied?: { nodes: string[]; group_id?: string }
+      }
+    }
+    const shot4 = shots[3]!.image!
+    const prompt4 = () =>
+      page.evaluate((id) => String(window.__plein.engine.doc.get(id)!.params?.prompt ?? ''), shot4)
+    const base4 = await prompt4()
+    const t5 = Date.now()
+    const textPlan = await mcp('propose_edit', {
+      summary: '第四镜头更紧张',
+      edits: [{ id: shot4, params: { prompt: `${base4}，手持镜头轻微晃动，压迫感` } }],
     })
-    const body = (await r.json()) as {
-      result: { content: Array<{ text: string }>; isError?: boolean }
-    }
-    expect(body.result.isError, body.result.content[0]?.text).toBeFalsy()
-    return JSON.parse(body.result.content[0]!.text) as {
-      plan_id: string
-      steps: Array<{ id: string; stage: string }>
-      estimate: Record<string, string>
-      status: string
-    }
-  }
-  const shot4 = shots[3]!.image!
-  const prompt4 = () =>
-    page.evaluate((id) => String(window.__plein.engine.doc.get(id)!.params?.prompt ?? ''), shot4)
-  const base4 = await prompt4()
-  const t5 = Date.now()
-  const textPlan = await mcp('propose_edit', {
-    summary: '第四镜头更紧张',
-    edits: [{ id: shot4, params: { prompt: `${base4}，手持镜头轻微晃动，压迫感` } }],
-  })
-  note('修改方案', JSON.stringify(textPlan.estimate))
-  expect(textPlan.steps.some((s) => s.id === shot4)).toBe(true)
-  await mcp('apply_edit_plan', { plan_id: textPlan.plan_id, scope: 'text' })
-  await expect.poll(prompt4).toContain('压迫感')
-  await page.waitForTimeout(3000)
-  expect(await paidSince(t5)).toEqual([])
+    note('修改方案', JSON.stringify(textPlan.estimate))
+    expect(textPlan.steps.some((s) => s.id === shot4)).toBe(true)
+    const textApplied = await mcp('apply_edit_plan', { plan_id: textPlan.plan_id, scope: 'text' })
+    expect(textApplied).toMatchObject({ status: 'applied', applied: { nodes: [] } })
+    await expect.poll(prompt4).toContain('压迫感')
+    expect(await paidSince(t5)).toEqual([])
 
-  const before5 = await adoption(page)
-  const imagePlan = await mcp('propose_edit', {
-    summary: '第四镜头再暗一点',
-    edits: [{ id: shot4, params: { prompt: `${await prompt4()}，夜色更暗` } }],
-  })
-  await mcp('apply_edit_plan', { plan_id: imagePlan.plan_id, scope: 'images', only: [shot4] })
-  await expect
-    .poll(async () => (await paidSince(t5)).length, { timeout: 60_000 })
-    .toBeGreaterThan(0)
-  await waitIdle(page, 20 * 60_000)
-  const w5 = await paidSince(t5)
-  const after5 = await adoption(page)
-  note('只出候选图', w5.map((j) => `${j.nodeType}:${j.status}`).join('、'))
-  expect(w5.map((j) => j.nodeId)).toEqual([shot4])
-  expect(Object.keys(before5).filter((id) => id !== shot4 && before5[id] !== after5[id])).toEqual(
-    [],
-  )
+    const before5 = await adoption(page)
+    const imagePlan = await mcp('propose_edit', {
+      summary: '第四镜头再暗一点',
+      edits: [{ id: shot4, params: { prompt: `${await prompt4()}，夜色更暗` } }],
+    })
+    check()
+    const imageApplied = await mcp('apply_edit_plan', {
+      plan_id: imagePlan.plan_id,
+      scope: 'images',
+      only: [shot4],
+      confirm: true,
+      client_request_id: imagePlan.plan_id,
+    })
+    expect(imageApplied).toMatchObject({
+      status: 'applied',
+      applied: { nodes: [shot4], group_id: expect.any(String) },
+    })
+    await waitReleaseGroup(page, imageApplied.applied!.group_id!, check, 20 * 60_000)
+    await waitIdle(page)
+    const w5 = await paidSince(t5)
+    const after5 = await adoption(page)
+    note('只出候选图', w5.map((j) => `${j.nodeType}:${j.status}`).join('、'))
+    expect(w5.map((j) => ({ nodeId: j.nodeId, status: j.status }))).toEqual([
+      { nodeId: shot4, status: 'succeeded' },
+    ])
+    expect(Object.keys(before5).filter((id) => id !== shot4 && before5[id] !== after5[id])).toEqual(
+      [],
+    )
+  } finally {
+    const revoked = await page.request.delete(`/api/mcp/external/${encodeURIComponent(tokenId)}`)
+    expect(revoked.status()).toBe(204)
+  }
 })

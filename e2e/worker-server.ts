@@ -10,6 +10,7 @@
  * 所以单 worker 与多 worker 的生命周期语义一致：先停后端再删目录。
  */
 import { fork, type ChildProcess } from 'node:child_process'
+import { closeSync, openSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
@@ -83,31 +84,40 @@ export async function startWorkerServer(options: {
   webDist: string
   extraEnv?: Record<string, string>
   timeoutMs?: number
-}): Promise<{ server: WorkerServer; stop: () => Promise<void> }> {
+  /** L4 的长期验收目录由调用方管理，监护进程只独占使用。 */
+  persistentData?: boolean
+  logFile?: string
+}) {
   const { port, dataDir, serverCommand, webDist, extraEnv = {} } = options
   const timeoutMs = options.timeoutMs ?? 60_000
   // 只准备父目录。已有叶目录属于其他服务，必须由监护进程拒绝认领。
   await mkdir(dirname(dataDir), { recursive: true })
-  const child = fork(fileURLToPath(import.meta.url), ['--serve'], {
-    // 监护进程与后端各自成组：监护进程负责把后端整组停干净
-    detached: true,
-    execArgv: [],
-    stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
-    env: {
-      ...process.env,
-      PLEIN_E2E_SERVER_COMMAND: serverCommand,
-      // 监护进程独占创建这个目录，停止后由它回收
-      PLEIN_E2E_OWN_DATA: dataDir,
-      PLEIN_E2E_RUNNER_PID: String(process.pid),
-      PLEIN_E2E_REPORT_READY: '1',
-      PLEIN_PORT: String(port),
-      PLEIN_DATA_DIR: dataDir,
-      PLEIN_WEB_DIST: webDist,
-      PLEIN_MOCK_PROVIDER: '1',
-      PLEIN_AGENT: '0',
-      ...extraEnv,
-    },
-  })
+  const log = options.logFile ? openSync(options.logFile, 'a', 0o600) : undefined
+  let child: ChildProcess
+  try {
+    child = fork(fileURLToPath(import.meta.url), ['--serve'], {
+      // 监护进程与后端各自成组：监护进程负责把后端整组停干净
+      detached: true,
+      execArgv: [],
+      stdio: ['ignore', log ?? 'inherit', log ?? 'inherit', 'ipc'],
+      env: {
+        ...process.env,
+        PLEIN_E2E_SERVER_COMMAND: serverCommand,
+        PLEIN_E2E_OWN_DATA: options.persistentData ? '' : dataDir,
+        PLEIN_E2E_LOCK_RELEASE_DATA: options.persistentData ? '1' : '0',
+        PLEIN_E2E_RUNNER_PID: String(process.pid),
+        PLEIN_E2E_REPORT_READY: '1',
+        PLEIN_PORT: String(port),
+        PLEIN_DATA_DIR: dataDir,
+        PLEIN_WEB_DIST: webDist,
+        PLEIN_MOCK_PROVIDER: '1',
+        PLEIN_AGENT: '0',
+        ...extraEnv,
+      },
+    })
+  } finally {
+    if (log !== undefined) closeSync(log)
+  }
   let baseURL: string
   try {
     baseURL = await waitListening(child, timeoutMs)
@@ -118,24 +128,24 @@ export async function startWorkerServer(options: {
     await stopChild(child)
     throw error
   }
+  const stop = async (signal: 'SIGTERM' | 'SIGKILL') => {
+    await stopChild(child, signal)
+    if (options.persistentData && child.exitCode !== 0)
+      throw new Error(`L4 后端监护进程异常退出，保留数据目录：${dataDir}`)
+  }
   return {
     server: { port: Number(new URL(baseURL).port), dataDir, baseURL },
-    stop: async () => {
-      await stopChild(child)
-      // 只有监护进程知道是否已取得所有权、后端整组是否退出；不能在这里盲删。
-    },
+    crash: () => stop('SIGKILL'),
+    stop: () => stop('SIGTERM'),
   }
 }
 
 /** 停掉监护进程：它会先停后端再回收数据目录 */
-async function stopChild(child: ChildProcess) {
+async function stopChild(child: ChildProcess, signal: 'SIGTERM' | 'SIGKILL' = 'SIGTERM') {
   if (child.exitCode !== null || child.signalCode !== null) return
   const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()))
-  try {
-    child.send?.({ stop: 'SIGTERM' })
-  } catch {
-    // IPC 已经断了，走信号兜底
-  }
+  // 监护进程在 IPC 断开时自行停组。断开与 send 之间的竞态通过回调接收。
+  if (child.connected) child.send?.({ stop: signal }, () => {})
   const timer = setTimeout(() => {
     try {
       child.kill('SIGKILL')
