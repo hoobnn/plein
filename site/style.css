@@ -13,6 +13,8 @@
   --mascot: #f5c94a;
   --radius-node: 12px;
   --radius-inner: 7px;
+  --dur-fast: 120ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
   --gutter: clamp(16px, 4vw, 48px);
   --font:
     -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Noto Sans SC",
@@ -336,10 +338,6 @@ a {
   width: 41%;
 }
 
-.n-final .player {
-  position: relative;
-}
-
 .n-final video {
   width: 100%;
   aspect-ratio: 9 / 16;
@@ -348,28 +346,23 @@ a {
   background: #000;
 }
 
-.sound {
-  position: absolute;
-  right: 0.7em;
-  bottom: 0.7em;
-  padding: 0.35em 0.8em;
-  border: 0;
-  border-radius: 99px;
-  background: rgb(0 0 0 / 55%);
-  color: #fff;
-  font: inherit;
-  font-size: 0.95em;
-  cursor: pointer;
-  backdrop-filter: blur(6px);
+.btn:active,
+.cmd button:active {
+  opacity: 0.8;
 }
-
-.sound:hover {
-  background: rgb(0 0 0 / 75%);
-}
-
-/* 首屏唯一的动效：连线依次画出来 */
 
 @media (prefers-reduced-motion: no-preference) {
+  .top nav a {
+    transition: color var(--dur-fast) var(--ease-standard);
+  }
+
+  .btn,
+  .cmd button {
+    transition:
+      background-color var(--dur-fast) var(--ease-standard),
+      opacity var(--dur-fast) var(--ease-standard);
+  }
+
   .wires path {
     stroke-dasharray: 1;
     stroke-dashoffset: 1;
@@ -703,6 +696,26 @@ h2 {
   font: inherit;
   font-size: 14px;
   cursor: pointer;
+}
+
+.cmd button:not([hidden]) {
+  display: grid;
+  place-items: center;
+}
+
+/* 两种语言都为最长反馈预留宽度；复制时命令仍停在同一位置。 */
+.cmd button::before,
+.cmd button span {
+  grid-area: 1 / 1;
+}
+
+.cmd button::before {
+  content: attr(data-fail);
+  visibility: hidden;
+}
+
+.cmd button:focus-visible {
+  outline-offset: -3px;
 }
 
 .cmd button:hover {

@@ -282,7 +282,7 @@ app.on('before-quit', (e) => {
   if (confirming) return
   if (activity.pending && !updateInstallationConfirmed()) {
     confirming = true
-    void confirmQuit(activity.pending).then((ok) => {
+    void confirmQuit(activity.pending, '退出').then((ok) => {
       confirming = false
       if (ok) stop()
     })
@@ -303,19 +303,19 @@ async function confirmUpdateInstall() {
   if (!activity.pending) return true
   confirming = true
   try {
-    return await confirmQuit(activity.pending)
+    return await confirmQuit(activity.pending, '重启并安装')
   } finally {
     confirming = false
   }
 }
 
-async function confirmQuit(pending: number) {
+async function confirmQuit(pending: number, action: '退出' | '重启并安装') {
   const parent = window && !window.isDestroyed() ? window : undefined
   const options = {
     type: 'question' as const,
-    message: `还有 ${pending} 个任务没有完成，确定退出吗？`,
+    message: `还有 ${pending} 个任务没有完成，现在${action}吗？`,
     detail: '已经提交给模型平台的生成会在下次打开 Plein 时继续查询结果，排队中的任务也会接着运行。',
-    buttons: ['退出', '取消'],
+    buttons: [action, '继续使用 Plein'],
     defaultId: 1,
     cancelId: 1,
   }

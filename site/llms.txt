@@ -8,7 +8,7 @@ Key facts:
 - Source code: https://github.com/hoobnn/plein
 - Download: https://github.com/hoobnn/plein/releases/latest (macOS 12+, Apple silicon; signed and notarized, ships with ffmpeg, auto-updates)
 - Self-host: `git clone https://github.com/hoobnn/plein.git && cd plein && docker compose up -d`, then open http://localhost:8787
-- Price: Plein is free. Generation uses your own model platform accounts and is billed by those platforms; unchanged nodes reuse the cache.
+- Price: Plein is free. Generation uses your own model platform accounts and is billed by those platforms; Plein reuses matching cached results when available. Choosing to regenerate sends a new request to the provider.
 - Model platforms: Volcengine Ark 火山方舟 (Doubao Seed, Seedream, Seedance), Doubao Speech 豆包语音 (TTS, Seed Audio), Alibaba Cloud Model Studio 阿里云百炼 (Qwen, Qwen Image, Wan 万相, Qwen TTS), MiniMax (M-series, image-01, H3 video, speech, music). More platforms via plugins.
 - Data: one SQLite database and one asset folder on your machine; no cloud account; API keys stay in the local server and never reach the browser.
 - Workflow: short drama template → script → character / scene / prop cards → storyboard → shot images → video → line-by-line voiceover → sequence editor → vertical MP4. Templates build the skeleton without calling models, so you review before paying; after an edit, impact analysis lists affected shots and only the ticked ones are redone.

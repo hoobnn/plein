@@ -139,7 +139,7 @@
                 "name": "Plein 收费吗？",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "Plein 本身免费，以 AGPL-3.0 开源。生成图片、视频和配音时使用你自己在模型平台开通的账号，费用由平台按用量收取；没有改动的节点直接复用缓存，不会重复计费。"
+                  "text": "Plein 本身免费，以 AGPL-3.0 开源。生成图片、视频和配音时使用你自己在模型平台开通的账号，费用由平台按用量收取。命中缓存时会沿用已有结果，选择重新生成会向平台发起新请求。"
                 }
               },
               {
@@ -346,22 +346,11 @@
                   poster="/media/final.jpg"
                   width="576"
                   height="1024"
-                  autoplay
-                  muted
-                  loop
+                  controls
                   playsinline
-                  preload="metadata"
+                  preload="none"
                   aria-label="用 Plein 制作的竖屏短剧样片《不是自杀》"
                 ></video>
-                <button
-                  class="sound"
-                  type="button"
-                  aria-pressed="false"
-                  data-on="打开声音"
-                  data-off="关闭声音"
-                >
-                  打开声音
-                </button>
               </div>
               <span class="port in t-media"></span>
             </div>
@@ -524,7 +513,7 @@
           <div style="--wire: var(--wire-media)">
             <dt>改一处，只重做一处</dt>
             <dd>
-              任何一个镜头都能换候选、重新生成或手动替换。没改动的节点直接用缓存，不重复扣费。
+              任何一个镜头都能换候选、重新生成或手动替换。其他镜头有匹配的缓存就沿用已有结果。
             </dd>
           </div>
           <div style="--wire: var(--wire-audio)">
@@ -562,7 +551,7 @@
             <h3>Plein 收费吗？</h3>
             <p>
               Plein 本身免费，以 AGPL-3.0
-              开源。生成图片、视频和配音时使用你自己在模型平台开通的账号，费用由平台按用量收取；没有改动的节点直接复用缓存，不会重复计费。
+              开源。生成图片、视频和配音时使用你自己在模型平台开通的账号，费用由平台按用量收取。命中缓存时会沿用已有结果，选择重新生成会向平台发起新请求。
             </p>
           </div>
           <div>
@@ -626,8 +615,14 @@
             <div class="cmd">
               <pre>
 git clone https://github.com/hoobnn/plein.git &amp;&amp; cd plein &amp;&amp; docker compose up -d</pre>
-              <button type="button" data-label="复制" data-done="已复制" data-fail="请手动复制">
-                复制
+              <button
+                type="button"
+                data-label="复制"
+                data-done="已复制"
+                data-fail="请手动复制"
+                hidden
+              >
+                <span aria-live="polite">复制</span>
               </button>
             </div>
           </div>

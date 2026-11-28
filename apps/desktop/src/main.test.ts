@@ -105,11 +105,23 @@ beforeEach(async () => {
 describe('桌面更新退出顺序', () => {
   it('安装前确认取消后保留当前窗口，普通退出仍会确认未完成任务', async () => {
     await expect(runtime.beforeInstall!()).resolves.toBe(false)
+    expect(runtime.confirm).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        buttons: ['重启并安装', '继续使用 Plein'],
+        defaultId: 1,
+        cancelId: 1,
+      }),
+    )
     expect(runtime.stop).not.toHaveBeenCalled()
     expect(runtime.quit).not.toHaveBeenCalled()
     const event = { preventDefault: vi.fn() }
     runtime.beforeQuit!(event)
     await vi.waitFor(() => expect(runtime.confirm).toHaveBeenCalledTimes(2))
+    expect(runtime.confirm).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ buttons: ['退出', '继续使用 Plein'], defaultId: 1, cancelId: 1 }),
+    )
     expect(event.preventDefault).toHaveBeenCalledOnce()
     expect(runtime.stop).not.toHaveBeenCalled()
   })

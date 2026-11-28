@@ -1,4 +1,4 @@
-// 首屏连线按节点实际位置画；成片的声音开关；复制命令
+// 首屏连线按节点实际位置画；复制命令
 
 const board = document.querySelector('.board')
 const svg = board?.querySelector('.wires')
@@ -25,26 +25,41 @@ if (board) {
   for (const img of board.querySelectorAll('img')) img.addEventListener('load', drawWires)
 }
 
-const video = document.querySelector('.n-final video')
-const sound = document.querySelector('.sound')
-sound?.addEventListener('click', () => {
-  video.muted = !video.muted
-  if (!video.muted) video.play()
-  sound.textContent = video.muted ? sound.dataset.on : sound.dataset.off
-  sound.setAttribute('aria-pressed', String(!video.muted))
-})
-
 document.querySelectorAll('.cmd button').forEach((button) => {
+  const command = button.parentElement.querySelector('pre')
+  const label = button.querySelector('span')
+  let resetTimer
+  let latestRequest = 0
+  button.hidden = false
   button.addEventListener('click', async () => {
-    const text = button.parentElement.querySelector('pre').textContent
+    const request = ++latestRequest
+    const focused = document.activeElement
+    const selection = window.getSelection()
+    const anchor = selection?.anchorNode
+    const offset = selection?.anchorOffset
+    const end = selection?.focusNode
+    const endOffset = selection?.focusOffset
+    clearTimeout(resetTimer)
     try {
-      await navigator.clipboard.writeText(text)
-      button.textContent = button.dataset.done
+      await navigator.clipboard.writeText(command.textContent)
+      if (request !== latestRequest) return
+      label.textContent = button.dataset.done
     } catch {
-      button.textContent = button.dataset.fail
+      if (request !== latestRequest) return
+      if (
+        selection &&
+        document.activeElement === focused &&
+        selection.anchorNode === anchor &&
+        selection.anchorOffset === offset &&
+        selection.focusNode === end &&
+        selection.focusOffset === endOffset
+      ) {
+        selection.selectAllChildren(command)
+      }
+      label.textContent = button.dataset.fail
     }
-    setTimeout(() => {
-      button.textContent = button.dataset.label
+    resetTimer = setTimeout(() => {
+      label.textContent = button.dataset.label
     }, 2000)
   })
 })

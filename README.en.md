@@ -92,7 +92,7 @@ Every result is a new asset with its source recorded; originals are never touche
 
 ### Runs and jobs
 
-- Run a single node, run up to here (with upstream), run downstream, or run a whole group; unchanged nodes hit the cache instead of spending again
+- Run a single node, run up to here (with upstream), run downstream, or run a whole group. Plein reuses matching cached results when available.
 - Jobs are queued in SQLite, keep running after the page closes, and resume polling remote tasks after a server restart
 - The job panel shows progress, automatic retries and failure reasons; nodes whose parameters or upstream changed are marked "needs re-run"
 - Actual-input preview: before generating, see the model, the prompt with `@` expanded, and which reference images are sent or dropped by the model's limit
@@ -185,7 +185,7 @@ The layout is identical across all three and can be copied between them: `plein.
 
 **What is Plein?** An open-source AI short-drama creation tool built around an infinite canvas. Script, storyboard, shots, video, voiceover and the final cut are nodes that can be re-run individually.
 
-**Is Plein free?** Yes, it is free and open source under AGPL-3.0. Image, video and voice generation uses your own model-platform accounts and is billed by those platforms; unchanged nodes hit the cache and are not billed again.
+**Is Plein free?** Yes, it is free and open source under AGPL-3.0. Image, video and voice generation uses your own model-platform accounts and is billed by those platforms. Plein reuses cached results when available. Choosing to regenerate sends a new request to your provider.
 
 **Which AI models does it support?** Volcengine Ark (Doubao Seed, Seedream, Seedance), Doubao Speech, Alibaba Cloud Model Studio (Qwen, Qwen Image, Wan, Qwen TTS) and MiniMax (M series, image-01, H3 video, speech and music). See [Model platforms](#model-platforms) for details. More platforms can be added as plugins.
 

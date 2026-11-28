@@ -145,7 +145,7 @@
                 "name": "Is Plein free?",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "Plein itself is free and open source under AGPL-3.0. Images, video and voiceover are generated with your own model platform accounts, which bill you by usage. Unchanged nodes reuse the cache, so you are never charged twice for the same result."
+                  "text": "Plein itself is free and open source under AGPL-3.0. Images, video and voiceover are generated with your own model platform accounts, which bill you by usage. Plein reuses cached results when available. Choosing to regenerate sends a new request to your provider."
                 }
               },
               {
@@ -366,22 +366,11 @@
                   poster="/media/final.jpg"
                   width="576"
                   height="1024"
-                  autoplay
-                  muted
-                  loop
+                  controls
                   playsinline
-                  preload="metadata"
+                  preload="none"
                   aria-label="Sample vertical short drama made with Plein, with Chinese dialogue and subtitles"
                 ></video>
-                <button
-                  class="sound"
-                  type="button"
-                  aria-pressed="false"
-                  data-on="Sound on"
-                  data-off="Sound off"
-                >
-                  Sound on
-                </button>
               </div>
               <span class="port in t-media"></span>
             </div>
@@ -565,8 +554,8 @@
           <div style="--wire: var(--wire-media)">
             <dt>Change one thing, redo one thing</dt>
             <dd>
-              Any shot can switch candidates, regenerate or be replaced by hand. Unchanged nodes hit
-              the cache, so you never pay twice.
+              Any shot can switch candidates, regenerate or be replaced by hand. Plein reuses
+              matching cached results for the other shots.
             </dd>
           </div>
           <div style="--wire: var(--wire-audio)">
@@ -610,8 +599,9 @@
             <h3>Is Plein free?</h3>
             <p>
               Plein itself is free and open source under AGPL-3.0. Images, video and voiceover are
-              generated with your own model platform accounts, which bill you by usage. Unchanged
-              nodes reuse the cache, so you are never charged twice for the same result.
+              generated with your own model platform accounts, which bill you by usage. Plein reuses
+              cached results when available. Choosing to regenerate sends a new request to your
+              provider.
             </p>
           </div>
           <div>
@@ -670,8 +660,8 @@
           <div>
             <h3>macOS app</h3>
             <p>
-              For Apple silicon Macs. Signed and notarized by Apple, ships with ffmpeg, and updates
-              itself.
+              For Apple silicon Macs. Signed and notarized by Apple, ships with ffmpeg, and checks
+              for updates.
             </p>
             <a class="btn btn-primary" href="https://github.com/hoobnn/plein/releases/latest"
               >Download installer</a
@@ -683,8 +673,14 @@
             <div class="cmd">
               <pre>
 git clone https://github.com/hoobnn/plein.git &amp;&amp; cd plein &amp;&amp; docker compose up -d</pre>
-              <button type="button" data-label="Copy" data-done="Copied" data-fail="Copy manually">
-                Copy
+              <button
+                type="button"
+                data-label="Copy"
+                data-done="Copied"
+                data-fail="Copy manually"
+                hidden
+              >
+                <span aria-live="polite">Copy</span>
               </button>
             </div>
           </div>
