@@ -37,7 +37,7 @@
     "e2e:core": "node scripts/build-e2e-web.mjs && playwright test -c e2e/playwright.config.ts --grep @core",
     "e2e:fail": "node scripts/build-e2e-web.mjs && playwright test -c e2e/playwright.config.ts --last-failed",
     "e2e:auth": "node scripts/build-e2e-web.mjs && playwright test -c e2e/playwright.auth.config.ts",
-    "e2e:real": "node scripts/build-e2e-web.mjs && playwright test -c e2e/playwright.l4.config.ts",
+    "e2e:real": "node scripts/build-e2e-web.mjs && playwright test -c e2e/playwright.l4.config.ts pacific-rim.l4.ts",
     "perf": "pnpm --filter @plein/web exec vp build --mode e2e --outDir dist-e2e && pnpm --filter @plein/server exec node --import tsx ../../e2e/perf/bench.ts",
     "perf:compare": "pnpm --filter @plein/server exec node --import tsx ../../e2e/perf/compare.ts"
   },
