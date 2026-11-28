@@ -38,16 +38,21 @@ export function DeferredPanel<P extends object>({
   const [attempt, setAttempt] = useState(0)
   const [failed, setFailed] = useState(false)
   const [Loaded, setLoaded] = useState<ComponentType<P> | null>(null)
+  const generation = useRef(0)
   const loadRef = useRef(load)
   loadRef.current = load
   if (active && !opened) setOpened(true)
+  // 取消尚未挂载的面板时只留模块缓存；已经展示过的宿主继续负责自己的退场。
+  if (panel && !active && !Loaded && opened) setOpened(false)
   const requested = panel ? active : opened
   useEffect(() => {
     if (!requested || Loaded || failed) return
+    const current = ++generation.current
     let live = true
     loadRef.current().then(
       (component) => {
-        if (live) setLoaded(() => component)
+        // 已关闭时也保留成功的模块。新一轮导入开始后，旧结果不能覆盖它。
+        if (current === generation.current) setLoaded(() => component)
       },
       () => {
         if (live) setFailed(true)

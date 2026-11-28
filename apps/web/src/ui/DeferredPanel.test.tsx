@@ -109,6 +109,38 @@ it('取消正在打开的面板后，再次打开不会被上一次迟到的结�
   await act(async () => pending[1]!(Loaded))
   expect(document.querySelector('[data-plein-pending-panel]')).toBeNull()
   expect(screen.queryByText('浮层已加载')).toBeNull()
+  await user.click(open)
+  expect(screen.getByText('浮层已加载')).toBeTruthy()
+  expect(pending).toHaveLength(2)
+})
+
+it('重开后忽略上一轮的导入失败', async () => {
+  let rejectOld!: (error: Error) => void
+  let resolveCurrent!: (panel: ComponentType) => void
+  const load = vi
+    .fn<() => Promise<ComponentType>>()
+    .mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectOld = reject
+        }),
+    )
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveCurrent = resolve
+        }),
+    )
+  const { user } = renderApp(<NamedFixture load={load} />)
+  const open = screen.getByRole('button', { name: '打开设置' })
+  await user.click(open)
+  await user.keyboard('{Escape}')
+  await user.click(open)
+  await act(async () => rejectOld(new Error('上一轮失败')))
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.getByRole('status').textContent).toBe('正在打开设置…')
+  await act(async () => resolveCurrent(Loaded))
+  expect(screen.getByText('浮层已加载')).toBeTruthy()
 })
 
 it('打开失败只显示对应面板的错误，允许重试、关闭、再次打开', async () => {
