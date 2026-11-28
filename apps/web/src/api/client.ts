@@ -78,6 +78,12 @@ import {
   type CapabilityCallResult,
   type PluginCapabilityInfo,
   type ExternalMcpStatus,
+  type ExternalPlatform,
+  type ExternalSpace,
+  type ExternalTarget,
+  type ExternalApply,
+  type ExternalPullNew,
+  type ExternalPreview,
   type LocalCliInfo,
   type LocalPluginInfo,
   type LocalCliUpdateResult,
@@ -108,6 +114,28 @@ async function synced<T>(
 }
 
 export const api = {
+  externalCanvasTargets: (canvasId: string, signal?: AbortSignal) =>
+    request<ExternalTarget[]>(API.externalCanvas(canvasId, 'targets'), { signal }),
+  externalCanvasSpaces: (canvasId: string, provider: ExternalPlatform, signal?: AbortSignal) =>
+    request<ExternalSpace[]>(API.externalCanvas(canvasId, 'spaces'), {
+      ...json('POST', { provider }),
+      signal,
+    }),
+  externalCanvasProjects: (
+    canvasId: string,
+    body: { provider: ExternalPlatform; space?: string },
+    signal?: AbortSignal,
+  ) =>
+    request<{ id: string; title: string }[]>(API.externalCanvas(canvasId, 'projects'), {
+      ...json('POST', body),
+      signal,
+    }),
+  externalCanvasPreview: (canvasId: string, body: ExternalTarget, signal?: AbortSignal) =>
+    synced<ExternalPreview>(canvasId, API.externalCanvas(canvasId, 'preview'), body, signal),
+  externalCanvasPullNew: (canvasId: string, body: ExternalPullNew) =>
+    synced<{ imported: number }>(canvasId, API.externalCanvas(canvasId, 'pull-new'), body),
+  externalCanvasApply: (canvasId: string, body: ExternalApply) =>
+    synced<void>(canvasId, API.externalCanvas(canvasId, 'apply'), body),
   storyboardBatchPreview: (canvasId: string, boardId: string, body: StoryboardBatchRequest) =>
     synced<StoryboardBatchPlan>(canvasId, API.storyboardBatchPreview(canvasId, boardId), body),
   storyboardBatchCommit: (canvasId: string, boardId: string, token: string) =>

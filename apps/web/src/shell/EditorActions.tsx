@@ -1,5 +1,9 @@
 import { Menu } from '@base-ui/react/menu'
-import { useEffect } from 'react'
+import { AnimatePresence } from '../ui/motion'
+import { useEffect, useState } from 'react'
+import { useSession } from '../stores/session'
+import { ExternalCanvasDialog } from '../features/external-canvas/ExternalCanvasDialog'
+import { ExternalWatcher } from '../features/external-canvas/ExternalWatch'
 import { useMediaLibrary } from '../features/media-library/store'
 import { useCheckpoints } from '../features/checkpoints/store'
 import { useLibrary } from '../features/library/store'
@@ -33,6 +37,8 @@ export function EditorActions({
   }, [close])
   const pref = useTheme((s) => s.pref)
   const setPref = useTheme((s) => s.setPref)
+  const externalEnabled = useSession((s) => s.info?.externalCanvas === true)
+  const [syncCanvas, setSyncCanvas] = useState<string | null>(null)
   const actions = remote
     ? [
         {
@@ -40,6 +46,15 @@ export function EditorActions({
           icon: 'image' as const,
           run: () => useMediaLibrary.getState().show({ projectId }),
         },
+        ...(externalEnabled && canvasId
+          ? [
+              {
+                label: '即梦同步',
+                icon: 'plug' as const,
+                run: () => setSyncCanvas(canvasId),
+              },
+            ]
+          : []),
         {
           label: '检查点',
           icon: 'history' as const,
@@ -60,6 +75,18 @@ export function EditorActions({
     : []
   return (
     <>
+      {externalEnabled && remote && canvasId && (
+        <ExternalWatcher key={canvasId} canvasId={canvasId} />
+      )}
+      <AnimatePresence>
+        {externalEnabled && remote && canvasId && canvasId === syncCanvas && (
+          <ExternalCanvasDialog
+            key={canvasId}
+            canvasId={canvasId}
+            onClose={() => setSyncCanvas(null)}
+          />
+        )}
+      </AnimatePresence>
       <div className="app-actions ui-bar pointer-events-auto hidden flex-none xl:flex">
         {actions.map((action) => (
           <button
