@@ -24,30 +24,36 @@ function write(key: string, value: string) {
 }
 
 const clamp = (w: number) => Math.round(Math.min(SIDEBAR_WIDTH.max, Math.max(SIDEBAR_WIDTH.min, w)))
+const initialWidth = clamp(Number(read(WIDTH_KEY)) || SIDEBAR_WIDTH.default)
 
 interface SidebarStore {
   open: boolean
+  /** 用户确认的宽度；窗口临时变窄时仍保留。 */
   width: number
+  /** 画布布局实际要让出的宽度，随可用空间和未提交的拖动变化。 */
+  displayedWidth: number
   tab: SidebarTab
   toggle(open?: boolean): void
-  /** 拖动中只改内存，松手时 persist 写入 */
-  setWidth(width: number, persist?: boolean): void
+  setWidth(width: number): void
+  setDisplayedWidth(width: number): void
   setTab(tab: SidebarTab): void
 }
 
 export const useSidebar = create<SidebarStore>((set, get) => ({
   open: read(KEY) !== 'closed',
-  width: clamp(Number(read(WIDTH_KEY)) || SIDEBAR_WIDTH.default),
+  width: initialWidth,
+  displayedWidth: initialWidth,
   tab: 'layers',
   toggle(open) {
     const next = open ?? !get().open
     write(KEY, next ? 'open' : 'closed')
     set({ open: next })
   },
-  setWidth(width, persist = true) {
+  setWidth(width) {
     const w = clamp(width)
-    if (persist) write(WIDTH_KEY, String(w))
+    write(WIDTH_KEY, String(w))
     set({ width: w })
   },
+  setDisplayedWidth: (displayedWidth) => set({ displayedWidth }),
   setTab: (tab) => set({ tab }),
 }))

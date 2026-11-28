@@ -129,12 +129,12 @@ export function Sidebar({ open }: { open: boolean }) {
       </SidebarPanel>
       <ResizeHandle active={open} groupRef={groupRef} panelRef={panelRef} />
       {/* 占位面板：吞下侧栏之外的画布区域，仅参与布局，不做任何渲染 */}
-      <Panel className="plein-sidebar-rest" />
+      <Panel data-plein-sidebar-rest="" className="plein-sidebar-rest" />
     </Group>
   )
 }
 
-/** 侧栏本体所在的面板：像素约束与窗口缩放时的像素保持交给库，已存偏好宽度首次量到尺寸时套上。 */
+/** 主动拖动时按库的布局更新像素宽度；窗口变化时沿用当前宽度。 */
 function SidebarPanel({
   children,
   panelRef,
@@ -142,27 +142,36 @@ function SidebarPanel({
   children: React.ReactNode
   panelRef: RefObject<PanelImperativeHandle | null>
 }) {
-  const synced = useRef(false)
+  const initialWidth = useRef(useSidebar.getState().width).current
+  const elementRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const element = elementRef.current
+    if (!element) return
+    const apply = (width: number) => element.style.setProperty('--sidebar-width', width + 'px')
+    apply(useSidebar.getState().width)
+    return useSidebar.subscribe((state, previous) => {
+      if (state.width !== previous.width) apply(state.width)
+    })
+  }, [])
   const onResize = useCallback(
     (size: PanelSize) => {
       const width = Math.round(size.inPixels)
       if (width <= 0) return
-      if (!synced.current) {
-        synced.current = true
-        const stored = useSidebar.getState().width
-        if (width !== stored) panelRef.current?.resize(stored)
-        return
-      }
-      useSidebar.getState().setWidth(width, false)
+      const state = useSidebar.getState()
+      if (state.displayedWidth !== width) state.setDisplayedWidth(width)
+      // CSS 优先恢复偏好；在下次拖动前让库的比例也对齐当前已显示的宽度。
+      if (!document.documentElement.classList.contains('plein-resizing'))
+        panelRef.current?.resize(width)
     },
     [panelRef],
   )
   return (
     <Panel
+      elementRef={elementRef}
+      data-plein-sidebar-panel=""
       minSize={SIDEBAR_WIDTH.min}
       maxSize={SIDEBAR_WIDTH.max}
-      // 双击恢复的默认值；已存宽度由 onResize 首帧套上，不闪烁
-      defaultSize={SIDEBAR_WIDTH.default}
+      defaultSize={initialWidth}
       // 窗口缩放时保持像素宽度，不按比例漂移
       groupResizeBehavior="preserve-pixel-size"
       panelRef={panelRef}
@@ -189,7 +198,8 @@ function ResizeHandle({
   const controller = useMemo(
     () =>
       createSidebarResizeController({
-        getWidth: () => useSidebar.getState().width,
+        getWidth: () =>
+          panelRef.current?.getSize().inPixels ?? useSidebar.getState().displayedWidth,
         setWidth,
         resize: (width) => panelRef.current?.resize(width),
         // 库在 panel 预览模式下取消不回滚布局：合成 pointercancel 让它结束拖拽，宽度由 cancel 恢复
@@ -203,7 +213,7 @@ function ResizeHandle({
   // 面板当前像素宽度：提交偏好以它为准（store 可能落后渲染一帧）
   const panelWidth = useCallback(() => {
     const px = panelRef.current?.getSize().inPixels
-    return px && px > 0 ? Math.round(px) : useSidebar.getState().width
+    return px && px > 0 ? Math.round(px) : useSidebar.getState().displayedWidth
   }, [panelRef])
   // endDrag 与取消监听互相引用：用 ref 固定 endDrag，监听器身份保持稳定可移除
   const endDragRef = useRef<(commit: boolean) => void>(() => {})

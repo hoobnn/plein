@@ -234,6 +234,15 @@
     opacity var(--dur-base) var(--ease-standard),
     visibility 0s linear var(--dur-move);
 }
+/* 库在 ResizeObserver 回调中换算像素宽。在那之前旧的 flex 比例会随窗口先放大一帧，
+   遮住画布并截走点击。拖动仍交给库，其他时候外层布局直接使用侧栏的实际像素宽。 */
+:root:not(.plein-resizing) [data-plein-sidebar-panel] {
+  flex: 0 0 min(100%, var(--sidebar-width, 272px)) !important;
+}
+/* 库以两块面板的实测宽度之和换算拖动比例。窄屏回宽时，占位面板要立即补齐余量。 */
+:root:not(.plein-resizing) [data-plein-sidebar-rest] {
+  flex: 1 1 0 !important;
+}
 .plein-sidebar[data-open] {
   opacity: 1;
   transform: none;

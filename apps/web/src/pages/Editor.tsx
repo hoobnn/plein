@@ -133,7 +133,7 @@ export function Editor({
   }, [canvas?.projectId])
 
   const sidebarOpen = useSidebar((s) => s.open)
-  const sidebarWidth = useSidebar((s) => s.width)
+  const sidebarWidth = useSidebar((s) => s.displayedWidth)
   const assistantOpen = useAgent((s) => s.open)
   const tasksOpen = useCanvas((s) => s.tasks)
   const externalRightPanelWidth = assistantOpen

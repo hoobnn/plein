@@ -45,7 +45,10 @@ test('二级新建菜单支持悬停、键盘和视口边缘避让 @core', async
     await expect(trigger).toHaveCount(0)
   }
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.mouse.click(500, 250, { button: 'right' })
+  await page
+    .locator('canvas')
+    .first()
+    .click({ position: { x: 500, y: 250 }, button: 'right' })
   await page.getByRole('menuitem', { name: '新建节点', exact: true }).hover()
   const picker = page.getByRole('dialog', { name: '添加节点', exact: true })
   await expect(picker.getByText('主体设定', { exact: true })).toBeAttached()

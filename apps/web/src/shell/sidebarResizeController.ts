@@ -13,9 +13,9 @@ import { SIDEBAR_WIDTH } from '../stores/sidebar'
  */
 
 export interface SidebarResizeDeps {
-  /** 当前偏好宽度（store） */
+  /** 当前显示宽度（含视口约束）。 */
   getWidth(): number
-  setWidth(width: number, persist?: boolean): void
+  setWidth(width: number): void
   /** 把面板调整到指定像素宽度（库的命令式 API） */
   resize(width: number): void
   /** 让库结束进行中的拖拽（对拖拽元素合成 pointercancel） */
@@ -39,8 +39,9 @@ export function createSidebarResizeController(deps: SidebarResizeDeps) {
     /** 指针抬起：按面板最终像素宽度提交一次偏好 */
     commit(width: number) {
       if (!drag) return
+      const changed = width !== drag.startWidth
       drag = null
-      deps.setWidth(width, true)
+      if (changed) deps.setWidth(width)
     },
     /** 取消路径统一走这里：结束库的拖拽、恢复原宽度，不写偏好 */
     cancel() {
@@ -48,7 +49,6 @@ export function createSidebarResizeController(deps: SidebarResizeDeps) {
       if (!current) return
       drag = null
       deps.cancelLibraryDrag(current.pointerId)
-      deps.setWidth(current.startWidth, false)
       deps.resize(current.startWidth)
     },
     /** 方向键 ±8px（Shift ±40px）微调，Home/End 到边界；返回是否已处理（应阻止默认与冒泡） */
@@ -62,7 +62,7 @@ export function createSidebarResizeController(deps: SidebarResizeDeps) {
             : width + (key === 'ArrowLeft' ? -1 : 1) * (shiftKey ? 40 : 8)
       const clamped = clamp(next)
       if (clamped !== width) {
-        deps.setWidth(clamped, true)
+        deps.setWidth(clamped)
         deps.resize(clamped)
       }
       return true

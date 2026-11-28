@@ -8,9 +8,12 @@ function setup() {
   const resized: number[] = []
   const cancelledPointers: number[] = []
   const controller = createSidebarResizeController({
-    getWidth: () => useSidebar.getState().width,
+    getWidth: () => useSidebar.getState().displayedWidth,
     setWidth: useSidebar.getState().setWidth,
-    resize: (width) => resized.push(width),
+    resize: (width) => {
+      resized.push(width)
+      useSidebar.getState().setDisplayedWidth(width)
+    },
     cancelLibraryDrag: (pointerId) => cancelledPointers.push(pointerId),
   })
   return { controller, resized, cancelledPointers }
@@ -25,7 +28,7 @@ beforeEach(() => {
     setItem: (key: string, value: string) => written.push([key, value]),
     removeItem: () => {},
   })
-  useSidebar.setState({ width: 300 })
+  useSidebar.setState({ width: 300, displayedWidth: 300 })
 })
 afterEach(() => vi.unstubAllGlobals())
 
@@ -35,7 +38,7 @@ describe('侧栏调整接驳层', () => {
     controller.begin(7)
     expect(controller.active).toBe(true)
     // 模拟库拖动中经 onResize 回写的中间宽度：不写偏好
-    useSidebar.getState().setWidth(360, false)
+    useSidebar.getState().setDisplayedWidth(360)
     expect(written).toEqual([])
     controller.commit(360)
     expect(written).toEqual([['plein:sidebar-width', '360']])
@@ -51,7 +54,7 @@ describe('侧栏调整接驳层', () => {
     () => {
       const { controller, resized, cancelledPointers } = setup()
       controller.begin(7)
-      useSidebar.getState().setWidth(400, false)
+      useSidebar.getState().setDisplayedWidth(400)
       controller.cancel()
       expect(cancelledPointers).toEqual([7])
       expect(resized).toEqual([300])
@@ -81,7 +84,7 @@ describe('侧栏调整接驳层', () => {
 
   it('方向键在最小/最大宽度处停下，Home/End 直接到边界', () => {
     const { controller } = setup()
-    useSidebar.setState({ width: 230 })
+    useSidebar.setState({ width: 230, displayedWidth: 230 })
     controller.key('ArrowLeft', false)
     expect(useSidebar.getState().width).toBe(222)
     controller.key('ArrowLeft', false)

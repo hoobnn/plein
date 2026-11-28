@@ -20,7 +20,7 @@ test(
     await page.mouse.down()
     await page.mouse.move(x + 40, y, { steps: 4 })
     expect(await width()).toBeGreaterThan(before + 20)
-    await page.mouse.move(x + 80, y, { steps: 4 })
+    await page.mouse.move(x + 142, y, { steps: 4 })
     await page.mouse.up()
     const widened = await width()
     expect(widened).toBeGreaterThan(before + 60)
@@ -47,11 +47,45 @@ test(
       .poll(() => page.evaluate(() => localStorage.getItem('plein:sidebar-width')))
       .toBe(String(Math.round(widened) + 8))
 
-    // 刷新后宽度保持
+    // 宽度变化的第一帧也不能把侧栏按上一个视口的百分比拉伸到画布上。
+    const preferred = Math.round(widened) + 8
+    for (const target of [390, 320, 1440]) {
+      const sample = await sidebar.evaluateHandle((panel) => ({
+        width: new Promise<number>((resolve) => {
+          window.addEventListener('resize', () => resolve(panel.getBoundingClientRect().width), {
+            once: true,
+          })
+        }),
+      }))
+      await page.setViewportSize({ width: target, height: 900 })
+      expect(await sample.evaluate((result) => result.width)).toBe(Math.min(target - 12, preferred))
+      await sample.dispose()
+    }
+
+    // 窄屏启动时只限制当前显示宽度，放宽窗口后仍要恢复旧偏好。
+    await page.setViewportSize({ width: 320, height: 640 })
     await page.reload()
     await waitEngine(page)
+    await expect.poll(() => sidebar.evaluate((panel) => panel.offsetWidth)).toBe(308)
+    expect(await page.evaluate(() => localStorage.getItem('plein:sidebar-width'))).toBe(
+      String(preferred),
+    )
+    await page.setViewportSize({ width: 1440, height: 900 })
     await expect(sidebar).toBeVisible()
-    expect(await width()).toBe(Math.round(widened) + 8)
+    await expect.poll(width).toBe(preferred)
+    // 库的起始位置也必须同步，否则重新开始拖动时会跳回窄屏下的宽度。
+    const restored = (await handle.boundingBox())!
+    const restoredX = restored.x + restored.width / 2
+    await page.mouse.move(restoredX, y)
+    await page.mouse.down()
+    await page.mouse.move(restoredX + 16, y, { steps: 2 })
+    await page.mouse.up()
+    expect(await width()).toBe(preferred + 16)
+    await handle.dblclick()
+    await expect.poll(width).toBe(before)
+    expect(await page.evaluate(() => localStorage.getItem('plein:sidebar-width'))).toBe(
+      String(before),
+    )
   },
 )
 
