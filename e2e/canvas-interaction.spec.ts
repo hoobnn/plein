@@ -16,6 +16,43 @@ import { solidPng } from '../packages/providers/src/mock/media'
 type Engine = import('../packages/canvas-core/src/engine').Engine
 
 test.describe('画布实际渲染与输入关键旅程', { tag: '@core' }, () => {
+  test('长提示词放大和收起时保留选区，键盘可在原段落继续改稿', async ({ page }) => {
+    await page.setViewportSize({ width: 940, height: 860 })
+    await newProject(page)
+    await page.getByRole('button', { name: '添加节点', exact: true }).click()
+    const menu = page.getByRole('dialog', { name: '添加节点', exact: true })
+    await menu.getByRole('textbox', { name: '搜索节点' }).fill('plein/video')
+    await menu.getByRole('option', { name: '生成视频', exact: true }).click()
+    const generator = page.getByTestId('generator')
+    const inline = generator.getByRole('textbox', { name: '提示词', exact: true })
+    const first = '雨打在窗上。\n'.repeat(45)
+    const last = '\n摄影机停在门口。'
+    await inline.fill(first + '回头' + last)
+    await inline.evaluate((el, start) => {
+      const field = el as HTMLTextAreaElement
+      field.setSelectionRange(start, start + 2, 'backward')
+    }, first.length)
+    const range = (input: Locator) =>
+      input.evaluate((el) => {
+        const field = el as HTMLTextAreaElement
+        return [field.selectionStart, field.selectionEnd, field.selectionDirection]
+      })
+    await generator.getByRole('button', { name: '放大编辑提示词', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: '编辑提示词', exact: true })
+    const expanded = dialog.getByRole('textbox', { name: '提示词', exact: true })
+    await expect(expanded).toBeFocused()
+    expect(await range(expanded)).toEqual([first.length, first.length + 2, 'backward'])
+    await expect.poll(() => expanded.evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
+    await page.keyboard.insertText('抬头')
+    await expanded.press('Shift+ArrowLeft')
+    await expanded.press('Escape')
+    await expect(dialog).toHaveCount(0)
+    await expect(inline).toBeFocused()
+    expect(await range(inline)).toEqual([first.length + 1, first.length + 2, 'backward'])
+    await page.keyboard.insertText('眼')
+    await expect(inline).toHaveValue(first + '抬眼' + last)
+  })
+
   test('放大提示词立即可编辑，中文确认不误选候选或触发生成', async ({ page }) => {
     await newProject(page)
     await addNode(page, '生成图片')

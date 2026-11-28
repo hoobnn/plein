@@ -30,6 +30,7 @@ export function Modal({
   size,
   tall = false,
   initialFocus,
+  finalFocus,
   className = '',
   children,
 }: {
@@ -48,7 +49,9 @@ export function Modal({
   /** 固定为统一的面板高度（--dialog-h），内容多的资料库、设置、检查点用；其余按内容高度 */
   tall?: boolean
   /** 编辑类面板可直接聚焦正文，省去再次点击 */
-  initialFocus?: React.RefObject<HTMLElement | null>
+  initialFocus?: Dialog.Popup.Props['initialFocus']
+  /** 关闭后继续同一项编辑时，可返回对应的行内输入框。 */
+  finalFocus?: Dialog.Popup.Props['finalFocus']
   /** 面板的尺寸和布局 */
   className?: string
   children: ReactNode
@@ -155,6 +158,7 @@ export function Modal({
                 e.preventDefault()
             }}
             initialFocus={initialFocus}
+            finalFocus={finalFocus}
             data-plein-active={isolateKeys ? '' : undefined}
             className={cn(
               'ui-dialog ui-motion relative flex max-h-full w-full flex-col overflow-hidden bg-menu text-sm text-ink ring-1 ring-line outline-none',

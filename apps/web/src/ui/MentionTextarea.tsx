@@ -8,6 +8,38 @@ import {
 } from 'react'
 import { mentionParts, type MentionReferences } from '../canvas/mentionText'
 
+/** 原生 textarea 设置选区后不会自动滚动。用同排版的引用镜像测量光标所在行。 */
+export function revealMentionCaret(input: HTMLTextAreaElement, fallbackScroll: number) {
+  const available = input.scrollHeight - input.clientHeight
+  if (available <= 0) return
+  const mirror = input.nextElementSibling?.firstElementChild
+  const scale = input.getBoundingClientRect().height / input.offsetHeight
+  if (mirror && scale > 0 && mirror.getClientRects().length) {
+    const texts = input.ownerDocument.createTreeWalker(mirror, NodeFilter.SHOW_TEXT)
+    let offset = input.selectionDirection === 'backward' ? input.selectionStart : input.selectionEnd
+    for (let node = texts.nextNode(); node; node = texts.nextNode()) {
+      const length = node.textContent?.length ?? 0
+      if (offset > length) {
+        offset -= length
+        continue
+      }
+      const range = input.ownerDocument.createRange()
+      range.setStart(node, offset)
+      range.collapse(true)
+      const caret = range.getBoundingClientRect()
+      if (!caret.height) break
+      const top = (caret.top - mirror.getBoundingClientRect().top) / scale
+      const bottom = top + caret.height / scale
+      if (top < input.scrollTop) input.scrollTop = Math.floor(top)
+      else if (bottom > input.scrollTop + input.clientHeight)
+        input.scrollTop = Math.ceil(bottom - input.clientHeight)
+      return
+    }
+  }
+  // 强制配色模式隐藏镜像时，保留原编辑区的相对阅读位置。
+  input.scrollTop = fallbackScroll * available
+}
+
 /** 保留原生 textarea 的输入、选择、IME 与复制行为，镜像层显示正文和引用颜色。 */
 export function MentionTextarea({
   ref,

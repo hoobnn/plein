@@ -17,7 +17,7 @@ import { AnimatePresence } from '../../ui/motion'
 import { assetUrls } from '../../api/client'
 import { Icon } from '../../ui/icons'
 import { composingKey } from './composingKey'
-import { MentionTextarea } from '../../ui/MentionTextarea'
+import { MentionTextarea, revealMentionCaret } from '../../ui/MentionTextarea'
 import { Popover } from '../../ui/Popover'
 import { findNode, mentionTargets, targetImages, upstreams } from '../../canvas/nodes'
 import { useCatalog } from '../../stores/catalog'
@@ -36,6 +36,35 @@ export type PromptPreset = Catalog['prompts'][number]
 
 /** 候选列表最多列几项 */
 const MAX_OPTIONS = 8
+
+function promptSelection(input: HTMLTextAreaElement | null) {
+  return (
+    input && {
+      value: input.value,
+      start: input.selectionStart,
+      end: input.selectionEnd,
+      direction: input.selectionDirection,
+      scroll: input.scrollTop / Math.max(1, input.scrollHeight - input.clientHeight),
+    }
+  )
+}
+
+function restorePromptFocus(
+  target: HTMLTextAreaElement | null,
+  selection: ReturnType<typeof promptSelection>,
+) {
+  if (target && selection) {
+    const [start, end] = remapSelection(
+      selection.value,
+      target.value,
+      selection.start,
+      selection.end,
+    )
+    target.setSelectionRange(start, end, selection.direction)
+    revealMentionCaret(target, selection.scroll)
+  }
+  return target
+}
 
 /**
  * 主提示词：本地草稿保证输入流畅，每次修改立即写入文档（协作端实时可见）；
@@ -74,6 +103,11 @@ export function PromptBox({
   const catalog = useCatalog((s) => s.catalog)
   const [expanded, setExpanded] = useState(false)
   const expandedRef = useRef<HTMLTextAreaElement>(null)
+  const returnSelection = useRef<ReturnType<typeof promptSelection>>(null)
+  const closeExpanded = () => {
+    returnSelection.current = promptSelection(expandedRef.current)
+    setExpanded(false)
+  }
   const [draft, setDraft] = useState(value)
   const composing = useRef(false)
   const previous = useRef(value)
@@ -475,11 +509,14 @@ export function PromptBox({
             label="编辑提示词"
             top
             isolateKeys
-            initialFocus={expandedRef}
-            onClose={() => setExpanded(false)}
+            initialFocus={() =>
+              restorePromptFocus(expandedRef.current, promptSelection(ref.current))
+            }
+            finalFocus={() => restorePromptFocus(ref.current, returnSelection.current)}
+            onClose={closeExpanded}
             size="lg"
           >
-            <ModalHeader title="编辑提示词" onClose={() => setExpanded(false)} />
+            <ModalHeader title="编辑提示词" onClose={closeExpanded} />
             <div className="ui-scrollbar overflow-auto">
               <PromptBox
                 ref={expandedRef}
@@ -581,6 +618,7 @@ function remapSelection(
   start: number,
   end: number,
 ): [number, number] {
+  if (before === after) return [start, end]
   let prefix = 0
   while (prefix < before.length && prefix < after.length && before[prefix] === after[prefix])
     prefix++
