@@ -66,7 +66,9 @@ test(
     await page.setViewportSize({ width: 320, height: 640 })
     await page.reload()
     await waitEngine(page)
-    await expect.poll(() => sidebar.evaluate((panel) => panel.offsetWidth)).toBe(308)
+    await expect
+      .poll(() => sidebar.evaluate((panel) => panel.getBoundingClientRect().width))
+      .toBe(308)
     expect(await page.evaluate(() => localStorage.getItem('plein:sidebar-width'))).toBe(
       String(preferred),
     )
