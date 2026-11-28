@@ -1,3 +1,7 @@
+import { externalAuthRoutes } from './external-canvas/auth-routes'
+import { externalMediaRoutes } from './external-canvas/media-routes'
+import { ProjectQueue } from './external-canvas/project-queue'
+import { externalCanvasRoutes } from './external-canvas/routes'
 import { MotionPreviews } from './motion/preview'
 import { motionRoutes } from './motion/routes'
 import { subtitleRoutes } from './subtitles/routes'
@@ -121,7 +125,11 @@ export async function createServer(config: Config): Promise<Server> {
     config.auth === 'none' && LOOPBACK.has(config.host)
       ? new PluginInstaller(config.dataDir, local, (id) => !!plugins.registry.plugin(id))
       : null
-  const auth = await createAuth(config.auth, db, secrets, { publicUrl: config.publicUrl })
+  const externalCanvas = config.auth === 'none' && LOOPBACK.has(config.host)
+  const auth = await createAuth(config.auth, db, secrets, {
+    publicUrl: config.publicUrl,
+    externalCanvas,
+  })
   const runs = new NodeRuns(db, rooms, plugins, { concurrency: config.maxJobs })
   const library = new LibraryStore(db, assets)
   mediaIndex = createMediaIndex({ db, rooms })
@@ -247,6 +255,15 @@ export async function createServer(config: Config): Promise<Server> {
   app.route('/', projectApi)
   app.route('/', packageApi)
   app.route('/', canvasRoutesApp)
+  if (externalCanvas) {
+    app.route('/', externalAuthRoutes(db))
+    const projectQueue = new ProjectQueue()
+    app.route('/', externalCanvasRoutes(db, rooms, projectQueue))
+    app.route(
+      '/',
+      externalMediaRoutes(db, rooms, assets, config.maxUpload, undefined, projectQueue),
+    )
+  }
   if (maintenance) app.route('/', maintenanceRoutes(maintenance))
   // 素材来源路由要排在 creative 之前：资产文件路由 /api/assets/:id/:variant?
   // 会把 /api/assets/:id/sources 当成变体名抢先匹配，来源分页就永远 404。

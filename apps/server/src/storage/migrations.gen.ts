@@ -123,4 +123,21 @@ export const MIGRATIONS: Migration[] = [
     hash: '6102eae22980e59cebb49c97a99a0cc1c7af8f4254143a4c9a871069561b0b42',
     statements: ['ALTER TABLE `batch_items` ADD `adoption` text;'],
   },
+  {
+    tag: '0011_reflective_the_initiative',
+    when: 1795835140160,
+    hash: '33c46ea3630968c6864e93e85fb7176cfb6e81611584ea3145e8784386258fc7',
+    statements: [
+      'CREATE TABLE `external_canvas_links` (\n\t`canvasId` text NOT NULL,\n\t`provider` text NOT NULL,\n\t`target` text NOT NULL,\n\t`localId` text NOT NULL,\n\t`remoteId` text,\n\t`baseline` text NOT NULL,\n\t`operationId` text NOT NULL,\n\tPRIMARY KEY(`canvasId`, `provider`, `target`, `localId`),\n\tFOREIGN KEY (`canvasId`) REFERENCES `canvases`(`id`) ON UPDATE no action ON DELETE cascade\n);',
+      'CREATE UNIQUE INDEX `external_canvas_remote` ON `external_canvas_links` (`canvasId`,`provider`,`target`,`remoteId`);',
+    ],
+  },
+  {
+    tag: '0012_calm_exiles',
+    when: 1795835883419,
+    hash: 'b6cfc4aea02c670d39f97353fb785ae6e93618a9f8693b03f5d2fe4d137b91b3',
+    statements: [
+      'CREATE TABLE `external_media_exports` (\n\t`canvasId` text NOT NULL,\n\t`provider` text NOT NULL,\n\t`target` text NOT NULL,\n\t`localAssetId` text NOT NULL,\n\t`operationId` text NOT NULL,\n\t`remoteNodeId` text,\n\t`remoteAssetId` text,\n\tPRIMARY KEY(`canvasId`, `provider`, `target`, `localAssetId`),\n\tFOREIGN KEY (`canvasId`) REFERENCES `canvases`(`id`) ON UPDATE no action ON DELETE cascade\n);',
+    ],
+  },
 ]

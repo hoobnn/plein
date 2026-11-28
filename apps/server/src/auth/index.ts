@@ -44,7 +44,7 @@ export async function createAuth(
   mode: AuthMode,
   db: DB,
   secrets: Secrets,
-  opts: { publicUrl?: string } = {},
+  opts: { publicUrl?: string; externalCanvas?: boolean } = {},
 ) {
   const options = {
     // 认证表和业务表在同一份 Drizzle schema 和迁移里（storage/schema.ts）
@@ -113,6 +113,7 @@ export async function createAuth(
       return c.json({
         principal,
         authRequired: provider.required,
+        ...(opts.externalCanvas ? { externalCanvas: true } : {}),
         needsSetup: provider.required && !ownerId(db),
       } satisfies SessionInfo)
     })

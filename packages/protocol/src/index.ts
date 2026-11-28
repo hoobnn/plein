@@ -31,3 +31,6 @@ export * from './api'
 export * from './desktop'
 
 export * from './maintenance'
+export * from './external-canvas'
+export * from './external-canvas-media'
+export * from './external-canvas-auth'

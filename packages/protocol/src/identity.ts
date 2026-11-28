@@ -15,6 +15,7 @@ export const SessionInfo = z.object({
   /** 服务端是否要求登录（监听非本机地址时） */
   authRequired: z.boolean(),
   /** 要求登录但还没有所有者账号：前端显示创建账号 */
+  externalCanvas: z.boolean().optional(),
   needsSetup: z.boolean(),
 })
 export type SessionInfo = z.infer<typeof SessionInfo>

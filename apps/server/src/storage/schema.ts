@@ -1,4 +1,4 @@
-import type { AgentKind, AssetKind, JobStatus } from '@plein/protocol'
+import type { AgentKind, AssetKind, ExternalContent, JobStatus } from '@plein/protocol'
 import { sql } from 'drizzle-orm'
 import {
   blob,
@@ -460,4 +460,41 @@ export const verification = sqliteTable(
     updatedAt: isoDate().notNull(),
   },
   (t) => [index('verification_identifier_idx').on(t.identifier)],
+)
+
+/** Kept outside portable project documents so a duplicate cannot overwrite its source's remote nodes. */
+export const externalCanvasLinks = sqliteTable(
+  'external_canvas_links',
+  {
+    canvasId: text()
+      .notNull()
+      .references(() => canvases.id, { onDelete: 'cascade' }),
+    provider: text().notNull(),
+    target: text().notNull(),
+    localId: text().notNull(),
+    remoteId: text(),
+    baseline: text({ mode: 'json' }).$type<ExternalContent>().notNull(),
+    operationId: text().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.canvasId, t.provider, t.target, t.localId] }),
+    uniqueIndex('external_canvas_remote').on(t.canvasId, t.provider, t.target, t.remoteId),
+  ],
+)
+
+/** Stable identities for publishing existing local assets into an external project. */
+export const externalMediaExports = sqliteTable(
+  'external_media_exports',
+  {
+    canvasId: text()
+      .notNull()
+      .references(() => canvases.id, { onDelete: 'cascade' }),
+    provider: text().notNull(),
+    target: text().notNull(),
+    localAssetId: text().notNull(),
+    operationId: text().notNull(),
+    remoteNodeId: text(),
+    remoteAssetId: text(),
+  },
+  (t) => [primaryKey({ columns: [t.canvasId, t.provider, t.target, t.localAssetId] })],
 )

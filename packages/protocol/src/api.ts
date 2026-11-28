@@ -21,6 +21,10 @@ export const API = {
   projectImports: '/api/project-imports',
   /** 预检过的导入：POST 确认写入（返回 ProjectImportResult），DELETE 放弃 */
   projectImport: (token: string) => `/api/project-imports/${encodeURIComponent(token)}`,
+  externalCanvas: (
+    canvasId: string,
+    op: 'spaces' | 'projects' | 'pull-new' | 'targets' | 'preview' | 'apply',
+  ) => `/api/canvases/${encodeURIComponent(canvasId)}/external/${op}`,
   canvases: '/api/canvases',
   canvas: (id: string) => `/api/canvases/${encodeURIComponent(id)}`,
   /** 复制画布：POST，body 为 DuplicateCanvas，返回新画布 */
