@@ -52,6 +52,8 @@ export interface ExternalRow {
   actions: ExternalAction[]
 }
 export interface ExternalPreview extends ExternalTarget {
+  /** Verified remote space/project when a legacy binding still uses an unqualified ID. */
+  resolvedTarget?: string
   rows: ExternalRow[]
 }
 export const EXTERNAL_IMPORT_LIMIT = 200

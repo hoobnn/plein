@@ -5,7 +5,7 @@ import { NodeRunError } from '../plugins/provider-protocol'
 import { RUN_LIMIT } from './approvals'
 import type { ServerContext } from './tool-registry'
 import { InspectNodeInput, preparedInputPage } from './input-view'
-import { toToolResult } from './mcp'
+import { CodedToolError, toToolResult } from './mcp'
 
 const id = z.string().min(1).max(200)
 const serverCapability = capabilityFor<ServerContext>()
@@ -23,7 +23,7 @@ const elName = (ctx: ServerContext, elId: string) =>
 export const runNode = serverCapability({
   name: 'run_node',
   title: '运行节点',
-  description: `运行节点（调用模型生成，会产生费用）并等待结果，最多等 ${MAX_WAIT_S} 秒；超时则返回 running，之后用 wait_for_run 继续等。上游节点需要先有结果。`,
+  description: `运行节点并返回 run_id；调用模型的节点会产生费用。最多等待 ${MAX_WAIT_S} 秒，超时后用 wait_for_run 携带该 run_id 续等。上游节点需要先有结果。`,
   group: 'run',
   where: 'server',
   effect: 'run',
@@ -76,13 +76,21 @@ export const inspectNodeInput = serverCapability({
   name: 'inspect_node_input',
   title: '检查节点实际输入',
   description:
-    '只读检查节点最终送入模型的提示词、参考顺序、模型、音色、提示和阻断，不运行节点。默认返回字段目录，完整原文用 field_path（/prompt、/refs、/inputs、/model、/notices、/blocked）；数组沿 next_offset，文字沿 next_text_offset 续读，并携带 expected_version。complete 只表示当前字段读完，目录中的预览不是完整原文。',
+    '只读检查节点的提示词、参考顺序、模型和音色。传 run_id 读取该任务提交时冻结的输入，不传读取当前预检。默认返回字段目录，完整原文用 field_path（/prompt、/refs、/inputs、/model、/notices、/blocked）；数组沿 next_offset，文字沿 next_text_offset 续读，并携带 expected_version。complete 只表示当前字段读完。',
   group: 'read',
   where: 'server',
   effect: 'read',
-  input: InspectNodeInput,
+  input: InspectNodeInput.extend({ run_id: id.optional() }),
   run: async (ctx, a) => {
     try {
+      if (a.run_id) {
+        const row = ctx.env.runs.ownedJob(ctx.env.canvasId, a.run_id, ctx.env.ownerId)
+        if (!row || row.node_id !== a.id)
+          throw new CodedToolError('not_found', '当前节点没有这个任务')
+        const input = ctx.env.runs.jobInfo(row).input
+        if (!input) throw new CapabilityError('这个任务没有保存提交时的输入')
+        return { ...preparedInputPage(input, a), run_id: row.id }
+      }
       return preparedInputPage(
         await ctx.env.runs.preview(ctx.env.canvasId, a.id, ctx.env.ownerId),
         a,
@@ -97,15 +105,21 @@ export const inspectNodeInput = serverCapability({
 export const waitForRun = serverCapability({
   name: 'wait_for_run',
   title: '等待结果',
-  description: `继续等待节点当前这次运行，最多 ${MAX_WAIT_S} 秒。`,
+  description: `继续等待一次运行，最多 ${MAX_WAIT_S} 秒。优先传入 run_node 返回的 run_id 继续跟踪同一任务；省略时等待节点当前任务。`,
   group: 'run',
   where: 'server',
   effect: 'read',
   input: z.object({
     id,
+    run_id: id.optional(),
     wait_seconds: z.number().min(0).max(MAX_WAIT_S).default(MAX_WAIT_S),
   }),
-  run: (ctx, { id, wait_seconds }) => {
+  run: (ctx, { id, run_id, wait_seconds }) => {
+    if (run_id) {
+      const row = ctx.env.runs.ownedJob(ctx.env.canvasId, run_id, ctx.env.ownerId)
+      if (!row || row.node_id !== id) throw new CodedToolError('not_found', '当前节点没有这个任务')
+      return waitRun(ctx, id, row.id, wait_seconds)
+    }
     const run = ctx.withDoc((doc) => need(doc, id).run)
     if (!run) throw new CapabilityError('这个节点还没运行过')
     return waitRun(ctx, id, run.id, wait_seconds)
@@ -115,14 +129,29 @@ export const waitForRun = serverCapability({
 export const cancelRun = serverCapability({
   name: 'cancel_run',
   title: '取消运行',
-  description: '取消节点正在进行的运行。',
+  description:
+    '取消节点正在进行的任务。传入 run_id 时只停止这一次；节点已经开始另一任务时保留新任务并报告变化。省略时取消该节点当前运行。',
   group: 'run',
   where: 'server',
   effect: 'edit',
-  input: z.object({ id }),
-  run: (ctx, { id }) => {
-    ctx.env.runs.cancel(ctx.env.canvasId, id)
-    return '已取消'
+  input: z.object({ id, run_id: id.optional() }),
+  run: (ctx, { id, run_id }) => {
+    const current = ctx.withDoc((doc) => need(doc, id).run)
+    if (
+      (!run_id || run_id === current?.id) &&
+      current?.status !== 'running' &&
+      current?.status !== 'queued'
+    )
+      return '节点没有正在运行的任务'
+    try {
+      ctx.env.runs.cancel(ctx.env.canvasId, id, run_id)
+      return '已请求取消'
+    } catch (err) {
+      if (err instanceof NodeRunError && err.code === 'run_changed')
+        throw new CodedToolError('stale', err.message)
+      if (err instanceof NodeRunError) throw new CapabilityError(err.message)
+      throw err
+    }
   },
 })
 
@@ -225,6 +254,7 @@ export const runFrame = serverCapability({
 
 export const waitForGroup = serverCapability({
   name: 'wait_for_group',
+  requiresCanvas: false,
   title: '等待整组结果',
   description: `等待一次整组 / 上下游运行结束，最多 ${MAX_WAIT_S} 秒；返回各状态的节点数。`,
   group: 'run',
@@ -263,13 +293,19 @@ async function waitRun(ctx: ServerContext, nodeId: string, runId: string, second
     new Promise<'running'>((r) => setTimeout(() => r('running'), seconds * 1000)),
   ])
   return ctx.withDoc((doc) => {
-    const el = need(doc, nodeId)
-    const run = el.run?.id === runId ? el.run : undefined
-    const results = (el.results ?? []).filter((r) => r.runId === runId).map(resultSummary)
+    const el = doc.get(nodeId)
+    const run = el?.run?.id === runId ? el.run : undefined
+    const error =
+      run?.error ??
+      (status === 'failed'
+        ? ctx.env.runs.ownedJob(ctx.env.canvasId, runId, ctx.env.ownerId)?.error
+        : undefined)
+    const results = (el?.results ?? []).filter((r) => r.runId === runId).map(resultSummary)
     return {
+      run_id: runId,
       status,
       ...(run?.progress !== undefined && status === 'running' ? { progress: run.progress } : {}),
-      ...(run?.error ? { error: run.error } : {}),
+      ...(error ? { error } : {}),
       ...(run?.message && status === 'running' ? { message: run.message } : {}),
       results,
     }
@@ -363,6 +399,7 @@ export const runStoryboard = serverCapability({
     '批量运行分镜的一类节点：image、video、speech、sfx。与界面共用清单，列明实际输入、准备、沿用、阻塞、跳过及费用未知。preview_only=true 只预检；默认补齐未完成项，指定 shot_ids 默认出新候选。会话按确认模式批准具体清单，批准后只提交原 token；输入变化返回 input_changed 和新清单，必须重新审阅。所有类型返回 group_id，用 wait_for_group 等待。',
   group: 'run',
   where: 'server',
+  effects: ['read', 'run'],
   effect: (a) => (a.preview_only ? 'read' : 'run'),
   approval: (a, ctx) => {
     const what = { image: '分镜图', video: '镜头视频', speech: '配音', sfx: '音效' }[a.role] ?? ''

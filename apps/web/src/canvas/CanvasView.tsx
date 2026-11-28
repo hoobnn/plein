@@ -187,7 +187,9 @@ export function CanvasView({
           const offWheel = attachWheelContinuation(host)
           const offView = awareness ? publishView(engine, awareness as ViewAwareness) : () => {}
           const offAgentUi = awareness
-            ? watchAgentUi(awareness as Parameters<typeof watchAgentUi>[0], engine)
+            ? watchAgentUi(awareness as Parameters<typeof watchAgentUi>[0], engine, (id) =>
+                navigate({ name: 'canvas', id }),
+              )
             : () => {}
           const offTheme = useTheme.subscribe((s, prev) => {
             if (s.name !== prev.name) engine.setTheme(canvasTheme(s.name))
@@ -473,13 +475,16 @@ interface ViewAwareness {
  */
 function publishView(engine: Engine, awareness: ViewAwareness) {
   let timer: ReturnType<typeof setTimeout> | undefined
+  let lastActiveAt = 0
   const publish = () => {
     timer = undefined
     const r = engine.camera.viewRect
+    if (document.visibilityState === 'visible' && document.hasFocus()) lastActiveAt = Date.now()
     awareness.setLocalStateField('view', {
+      uiVersion: 2,
       selection: engine.selection.values().slice(0, 200),
       viewport: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w), h: Math.round(r.h) },
-      at: Date.now(),
+      at: lastActiveAt,
     })
   }
   const schedule = () => {
@@ -495,5 +500,6 @@ function publishView(engine: Engine, awareness: ViewAwareness) {
     offState()
     offMove()
     window.removeEventListener('focus', onFocus)
+    awareness.setLocalStateField('view', null)
   }
 }

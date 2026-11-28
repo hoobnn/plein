@@ -1,20 +1,26 @@
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
+import { stableStringify } from '@plein/canonical'
 import { CapabilityError } from '@plein/capabilities'
 import type { ExternalMcpScope, ExternalMcpStatus } from '@plein/protocol'
 import { z } from 'zod'
 import { approvalFor } from '../agent/approvals'
+import { describeCanvasActions, externalActionInput } from '../agent/action-caps'
 import { AgentChanges } from '../agent/changes'
 import { classifyError } from '../agent/error-codes'
 import {
   type CallContext,
   annotationsOf,
   CodedToolError,
+  inputSchema,
   McpServer,
   type McpTool,
   type RequestContext,
   type ToolResult,
   toToolResult,
 } from '../agent/mcp'
+import { RESULT_BYTES } from '../agent/context-budget'
+import { sendViewAction } from '../agent/ui-bridge'
 import { workspaceToolNames } from '../agent/project-caps'
 import {
   capabilitiesOf,
@@ -22,7 +28,6 @@ import {
   serverContext,
   type ServerContext,
   type ToolEnv,
-  type UiCall,
   viewOf,
 } from '../agent/tools'
 import { newId } from '../ids'
@@ -30,6 +35,7 @@ import { listCanvases, ownsCanvas } from '../storage/canvases'
 import type { DB } from '../storage/db'
 import { McpAudit } from './audit'
 import { resourceProvider } from './resources'
+import { ResultPages } from './result-pages'
 import { type SavedToken, TokenStore } from './tokens'
 
 /** 外部应用写文档时的事务 origin：只读调用用它，不进任何撤销栈 */
@@ -37,7 +43,7 @@ export const EXTERNAL_ORIGIN = { external: true }
 
 type Deps = Omit<ToolEnv, 'canvasId' | 'ownerId'> & { db: DB }
 
-const INSTRUCTIONS = `操作用户本机 Plein（AI 无限画布）里的画布。不传 canvas_id 时操作用户正在看的那块画布（没有打开的就用最近改过的），可以先调用 list_canvases 看有哪些画布。第一次使用先按顺序了解能力：list_canvas_capabilities（有哪些工具，指定 name 看完整参数）→ list_canvas_actions（perform_canvas_action 的扩展操作）→ list_node_types（节点类型、参数与端口）→ list_models（模型目录与约束；换模型用 set_node_model，改名用 rename_element）。先用 get_canvas 看清画布再动手；运行节点会产生费用，视频尤其贵。修改已有镜头或节点时先用 propose_edit 出修改方案，给用户看过、问清批准范围（只改文字 / 只出候选图 / 完整方案）后再用 apply_edit_plan 执行。`
+const INSTRUCTIONS = `操作用户本机 Plein（AI 无限画布）里的画布。需画布的工具可传 canvas_id 固定目标。省略时优先使用正在看的画布，其次使用最近改过的画布。tools/list 列出本令牌可以使用的工具和实际参数。有 read 权限时，可从 list_canvas_capabilities 查工具契约，list_canvas_actions 查扩展操作，list_node_types 查节点参数与端口，list_models 查模型约束。读取较大画布用 get_canvas_page。运行模型可能产生费用。修改已有镜头或节点时先用 propose_edit 出修改方案，给用户看过、问清批准范围（只改文字 / 只出候选图 / 完整方案）后再用 apply_edit_plan 执行。`
 
 /** 外部调用默认最多等多久：比常见客户端的 60 秒工具超时短得多 */
 export const EXTERNAL_WAIT_S = 20
@@ -46,13 +52,13 @@ export const EXTERNAL_WAIT_S = 20
 
 const PROTOCOL_NOTES = `
 外部调用的约定：
-- 每枚令牌有权限范围（read / edit / run / destructive），超出范围的工具不会出现在列表里，调用会返回 forbidden_scope。
-- 会花钱或删东西的操作先返回 status=needs_approval（错误码 needs_user）：把 reason 讲给用户，用户同意后用相同参数加 confirm: true 重试。
-- 修改类和运行类工具可带 client_request_id（自己生成的唯一串）：超时重试时同一个 id 返回第一次的结果，不会重复执行。
-- 修改类调用的结果里有 undo_token，10 分钟内可用 undo_call 撤销这一次。
+- 工具按令牌的 read / edit / run / destructive 范围展示。动态工具有任一可用分支即可发现，调用时按具体参数检查所有需要的权限。比如 rewrite_prompt 的预览需要 run，写回还需要 edit。
+- 删除、视频生成、付费改写、需要确认的远程编辑等会返回 status=needs_approval 和 reason。用户同意后才用相同参数及 confirm: true 重试。普通单节点图片、文本、配音生成可能直接运行，按用户明确授权的范围操作。
+- 变更或运行可带唯一 client_request_id。用同一枚令牌、同一目标和参数重试会复用在途或已保存的结果。已提交或接收情况未知的失败回执保留 execution_outcome 和本次运行额度，请按返回的恢复信息核对原任务。回执在本进程最多保留 30 分钟，缓存满时会提前释放，失效后先核对任务或文档。
+- 带 undo_token 的画布变更，可用有 edit 权限的原令牌在 10 分钟内调用 undo_call。项目、工作区、外部平台及其他独立保存的更改不提供画布撤销。
 - 错误结果带 structuredContent.error.code：not_found / stale / needs_user / input_changed / forbidden_scope / blocked / invalid_params / too_large / rate_limited / internal / failed。
 - wait_for_* 和 run_node 默认最多等 ${EXTERNAL_WAIT_S} 秒，仍在运行时返回 running 和续等提示，再调 wait_for_run / wait_for_group 即可。
-- 可用 resources（plein://canvas/{id}、plein://capabilities/{name}）读画布和工具契约，prompts 是创作技能的指引。`
+- resources 可读画布和工具契约。超长画布内容按 too_large 提示分页。具名节点、模型、工具和扩展操作的完整契约或操作回执超过上限时，结果带 result_omitted。用原令牌沿 recovery.uri 和 next_uri 续读。prompts 提供创作技能指引。`
 
 /** 带进度通知时每段等多久 */
 const WAIT_CHUNK_S = 5
@@ -66,12 +72,13 @@ const WAITERS = new Set(['run_node', 'wait_for_run', 'wait_for_group'])
 interface Undoable {
   changes: AgentChanges
   tokenId: string
+  canvasId: string
   timer: NodeJS.Timeout
 }
 
 interface Replay {
   fingerprint: string
-  at: number
+  settledAt?: number
   result: Promise<ToolResult>
 }
 
@@ -79,6 +86,61 @@ const textBlock = (text: string) => ({ type: 'text' as const, text })
 
 function asResult(out: ToolResult | string): ToolResult {
   return typeof out === 'string' ? { content: [textBlock(out)] } : out
+}
+
+/** MCP 客户端会解析 JSON；超过预算时交付可读回执，避免把半段 JSON 当成成功数据。 */
+function externalResult(
+  out: unknown,
+  retain?: (text: string) => ReturnType<ResultPages['save']>,
+): ToolResult | string {
+  const result = toToolResult(out, Infinity)
+  const text =
+    typeof result === 'string'
+      ? result
+      : result.content.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join('\n')
+  const bytes = Buffer.byteLength(text)
+  if (bytes <= RESULT_BYTES) return result
+  if (retain) {
+    const recovery = retain(text)
+    const message = recovery.uri
+      ? '回执已分页。用同一令牌通过 resources/read 读取 recovery.uri，沿 next_uri 拼接各页 text。结果最长保留 30 分钟，缓存满时会提前释放。'
+      : '结果超过单次 4 MiB 的短期恢复上限，完整回执未保留。请查看原操作的状态，不要重复提交。'
+    const receipt = {
+      result_omitted: true,
+      code: 'too_large',
+      bytes,
+      limit: RESULT_BYTES,
+      recovery,
+      message,
+    }
+    return {
+      content: [
+        textBlock(JSON.stringify(receipt)),
+        ...(recovery.uri
+          ? [
+              {
+                type: 'resource_link' as const,
+                name: '完整操作回执',
+                uri: recovery.uri,
+                mimeType: 'application/json',
+              },
+            ]
+          : []),
+        ...(typeof result === 'string'
+          ? []
+          : result.content.filter((block) => block.type !== 'text')),
+      ],
+      structuredContent: receipt,
+    }
+  }
+  const message =
+    '结果超过 32 KiB。请缩小查询范围，或用 get_canvas_page / get_element_field 分页读取。'
+  const error = { code: 'too_large', message, bytes, limit: RESULT_BYTES }
+  return {
+    isError: true,
+    content: [textBlock(message + '\n（错误码：too_large）')],
+    structuredContent: { error },
+  }
 }
 
 /** 给结果补充结构化字段，并让只看文字的客户端也看得到 */
@@ -107,7 +169,8 @@ export class ExternalMcp {
   private server: McpServer | null = null
   private undoable = new Map<string, Undoable>()
   private replays = new Map<string, Replay>()
-  private runCounts = new Map<string, { day: string; n: number }>()
+  private catalog = new Map<string, McpTool>()
+  private resultPages = new ResultPages()
 
   constructor(
     dataDir: string,
@@ -115,6 +178,10 @@ export class ExternalMcp {
   ) {
     this.tokens = new TokenStore(join(dataDir, 'external-mcp.json'))
     this.audit = new McpAudit(dataDir)
+  }
+
+  adoptLocalOwner(ownerId: string) {
+    this.tokens.adoptLocalOwner(ownerId)
   }
 
   status(): ExternalMcpStatus {
@@ -141,6 +208,7 @@ export class ExternalMcp {
   /** 撤销一枚令牌，同时让它名下还能撤销的变更失效 */
   revokeOne(id: string) {
     const ok = this.tokens.revokeOne(id)
+    if (ok) this.resultPages.revoke(id)
     if (ok) for (const [key, u] of this.undoable) if (u.tokenId === id) this.forget(key)
     return ok
   }
@@ -148,6 +216,7 @@ export class ExternalMcp {
   /** 撤销全部令牌，关闭外部访问 */
   revoke() {
     this.tokens.revokeAll()
+    this.resultPages.revoke()
     for (const key of [...this.undoable.keys()]) this.forget(key)
     this.server = null
   }
@@ -166,22 +235,31 @@ export class ExternalMcp {
   }
 
   handle(body: unknown, auth: SavedToken, rc: Omit<RequestContext, 'auth'> = {}) {
-    this.server ??= new McpServer(
-      { name: 'plein', version: '0.2.0', instructions: INSTRUCTIONS + PROTOCOL_NOTES },
-      this.tools(),
-      {
-        visible: (tool, a) => this.visible(tool, a as SavedToken),
-        ...resourceProvider({
-          registry: capabilitiesOf(this.deps.host),
-          recentCanvases: () => listCanvases(this.deps.db, this.owner()),
-          owns: (id) => ownsCanvas(this.deps.db, this.owner(), id),
-          read: (canvasId, name, args) =>
-            capabilitiesOf(this.deps.host).invoke(name, serverContext(this.env(canvasId)), args),
-          canRead: (a) => (a as SavedToken | undefined)?.scopes.includes('read') === true,
-        }),
-      },
-      true,
-    )
+    if (!this.server) {
+      const tools = this.tools()
+      this.catalog = new Map(tools.map((tool) => [tool.name, tool]))
+      this.server = new McpServer(
+        { name: 'plein', version: '0.2.0', instructions: INSTRUCTIONS + PROTOCOL_NOTES },
+        tools,
+        {
+          visible: (tool, a) => this.visible(tool, a as SavedToken),
+          ...resourceProvider({
+            capability: (name, a) => this.describe(name, a as SavedToken),
+            resultPage: (uri, a) => this.resultPages.read((a as SavedToken).id, uri),
+            recentCanvases: (a) => listCanvases(this.deps.db, (a as SavedToken).ownerId),
+            owns: (id, a) => ownsCanvas(this.deps.db, (a as SavedToken).ownerId, id),
+            read: (canvasId, name, args, a) =>
+              capabilitiesOf(this.deps.host).invoke(
+                name,
+                serverContext(this.env(canvasId, (a as SavedToken).ownerId)),
+                args,
+              ),
+            canRead: (a) => (a as SavedToken | undefined)?.scopes.includes('read') === true,
+          }),
+        },
+        true,
+      )
+    }
     return this.server.handle(body, { ...rc, auth })
   }
 
@@ -193,8 +271,23 @@ export class ExternalMcp {
     if (tool.name === 'undo_call') return token.scopes.includes('edit')
     const cap = capabilitiesOf(this.deps.host).get(tool.name)
     if (!cap) return false
-    if (typeof cap.effect === 'function') return token.scopes.length > 0
-    return token.scopes.includes(cap.effect)
+    return (cap.effects ?? [cap.effect]).some((effect) => token.scopes.includes(effect))
+  }
+
+  private describe(name: string, token: SavedToken) {
+    const tool = this.catalog.get(name)
+    if (!tool || !this.visible(tool, token)) return
+    const cap = capabilitiesOf(this.deps.host).get(name)
+    return {
+      name,
+      title: tool.title,
+      description: tool.description,
+      where: cap?.where ?? 'server',
+      group: cap?.group ?? 'edit',
+      effect: cap?.effects ? 'dynamic' : (cap?.effect ?? 'edit'),
+      ...(cap?.effects ? { effects: cap.effects } : {}),
+      input_schema: inputSchema(tool.input, tool.rejectUnknownFields),
+    }
   }
 
   /** 全部能力；依赖画布的每个都多一个可选的 canvas_id；外加 undo_call */
@@ -240,7 +333,10 @@ export class ExternalMcp {
         name: cap.name,
         title: cap.title,
         description: cap.description,
-        input: cap.input.extend(extra),
+        input: cap.input.def.catchall
+          ? cap.input.safeExtend(extra)
+          : cap.input.safeExtend(extra).strict(),
+        rejectUnknownFields: true,
         annotations: annotationsOf(cap as never),
         run: (raw, call) =>
           this.audited(cap.name, call, raw, () => this.invoke(cap.name, raw, call)),
@@ -258,13 +354,16 @@ export class ExternalMcp {
           idempotentHint: false,
           openWorldHint: false,
         },
-        input: z.object({ token: z.string().min(1).max(100) }),
+        input: z.strictObject({
+          token: z.string().min(1).max(100),
+          canvas_id: z.string().min(1).max(100).optional().describe('可选；核对原操作所在的画布'),
+        }),
         run: (raw, call) =>
           this.audited('undo_call', call, raw, () => {
             const token = this.requireScope(call, 'edit', 'undo_call')
-            const { token: key } = raw as { token: string }
+            const { token: key, canvas_id } = raw as { token: string; canvas_id?: string }
             const u = this.undoable.get(key)
-            if (!u || u.tokenId !== token.id)
+            if (!u || u.tokenId !== token.id || (canvas_id && canvas_id !== u.canvasId))
               throw new CodedToolError(
                 'not_found',
                 '这次操作已经不能撤销了（超过时限、已撤销，或不是这枚令牌做的）',
@@ -281,10 +380,15 @@ export class ExternalMcp {
 
   // ── 一次能力调用 ───────────────────────────────────────────
 
-  private requireScope(call: CallContext | undefined, scope: ExternalMcpScope, what: string) {
+  private authenticated(call: CallContext | undefined) {
     const token = call?.auth as SavedToken | undefined
     if (!token || !this.tokens.alive(token.id))
       throw new CodedToolError('forbidden_scope', '令牌已被撤销，请在 Plein 设置里重新生成')
+    return token
+  }
+
+  private requireScope(call: CallContext | undefined, scope: ExternalMcpScope, what: string) {
+    const token = this.authenticated(call)
     if (!token.scopes.includes(scope))
       throw new CodedToolError(
         'forbidden_scope',
@@ -353,38 +457,99 @@ export class ExternalMcp {
     // 批量分镜：不带 token 的第一次调用只出清单和费用，审阅后带 token 才提交
     if (name === 'run_storyboard' && !args.token && !args.preview_only)
       args = { ...args, preview_only: true }
-    const canvasId = workspace ? (this.watching() ?? '') : this.canvas(canvas_id)
     const parsed = cap.input.safeParse(args)
     if (!parsed.success) throw new CapabilityError(`参数不对：${z.prettifyError(parsed.error)}`)
-    const ctxProbe = serverContext(this.env(canvasId))
+    args = parsed.data
+    if (name === 'perform_canvas_action' && typeof args.action === 'string')
+      args = { ...args, input: externalActionInput(args.action, args.input) }
+    const { ownerId } = this.authenticated(call)
+    const needsCanvas =
+      !workspace &&
+      (typeof cap.requiresCanvas === 'function'
+        ? cap.requiresCanvas(parsed.data)
+        : cap.requiresCanvas !== false)
+    const canvasId =
+      needsCanvas || (!workspace && canvas_id !== undefined)
+        ? this.canvas(ownerId, canvas_id)
+        : workspace
+          ? (this.watching(ownerId) ?? '')
+          : ''
+    const ctxProbe = serverContext(this.env(canvasId, ownerId))
     const effect = registry.effectOf(cap, parsed.data, ctxProbe)
     const scoped = this.requireScope(call, effect, name)
+    for (const required of cap.additionalScopes?.(parsed.data) ?? [])
+      this.requireScope(call, required, name)
+    const retain = (text: string) => this.resultPages.save(scoped.id, text)
+    if (name === 'list_canvas_actions')
+      return externalResult(
+        describeCanvasActions(args.action as string | undefined, scoped.scopes),
+        args.action ? retain : undefined,
+      )
+    if (name === 'list_canvas_capabilities') {
+      if (typeof args.name === 'string') {
+        const detail = this.describe(args.name, scoped)
+        if (!detail) throw new CodedToolError('not_found', `当前工具目录中没有 ${args.name}`)
+        return externalResult(detail, retain)
+      }
+      const items = [...this.catalog.values()]
+        .filter((tool) => this.visible(tool, scoped))
+        .map((tool) => {
+          const def = registry.get(tool.name)
+          return {
+            name: tool.name,
+            title: tool.title,
+            group: def?.group ?? 'edit',
+            where: def?.where ?? 'server',
+          }
+        })
+      return externalResult(items)
+    }
 
     const execute = () =>
-      this.execute({ name, args, canvasId, effect, confirm: confirm === true, token: scoped, call })
+      this.execute({
+        name,
+        args,
+        canvasId,
+        needsCanvas,
+        effect,
+        confirm: confirm === true,
+        token: scoped,
+        call,
+      })
 
     if (!client_request_id || effect === 'read') return execute()
     const key = `${scoped.id}:${client_request_id}`
-    const fingerprint = JSON.stringify([name, canvasId, args])
+    const fingerprint = createHash('sha256')
+      .update(stableStringify([name, needsCanvas ? canvasId : null, args]))
+      .digest('hex')
     const hit = this.replays.get(key)
-    if (hit && Date.now() - hit.at < IDEMPOTENCY_TTL_MS) {
+    if (hit && (hit.settledAt === undefined || Date.now() - hit.settledAt < IDEMPOTENCY_TTL_MS)) {
       if (hit.fingerprint !== fingerprint)
         throw new CodedToolError(
           'invalid_params',
-          'client_request_id 已用于另一次不同的调用；换一个新的 id',
+          'client_request_id 已用于另一次不同的调用。重试请沿用原目标和参数，仅在明确要执行新操作时换用新的 id。',
         )
       return decorate(await hit.result, { replayed: true })
     }
     for (const [k, v] of this.replays) {
-      if (Date.now() - v.at >= IDEMPOTENCY_TTL_MS || this.replays.size > IDEMPOTENCY_MAX)
+      if (
+        v.settledAt !== undefined &&
+        (Date.now() - v.settledAt >= IDEMPOTENCY_TTL_MS || this.replays.size >= IDEMPOTENCY_MAX)
+      )
         this.replays.delete(k)
     }
     const result = (async () => asResult(await execute()))()
-    this.replays.set(key, { fingerprint, at: Date.now(), result })
+    const record: Replay = { fingerprint, result }
+    this.replays.set(key, record)
     try {
       const r = await result
-      // 失败和等待确认的结果不记：同一个 id 可以在修正后重试
-      if (r.isError || r.structuredContent?.code === 'needs_user') this.replays.delete(key)
+      record.settledAt = Date.now()
+      // 未执行可以修正后重试；已提交或平台接收情况未知时保留首回执。
+      if (
+        (r.isError && !r.structuredContent?.execution_outcome) ||
+        r.structuredContent?.code === 'needs_user'
+      )
+        this.replays.delete(key)
       return r
     } catch (err) {
       this.replays.delete(key)
@@ -396,6 +561,7 @@ export class ExternalMcp {
     name: string
     args: Record<string, unknown>
     canvasId: string
+    needsCanvas: boolean
     effect: 'read' | 'edit' | 'run' | 'destructive'
     confirm: boolean
     token: SavedToken
@@ -406,12 +572,12 @@ export class ExternalMcp {
     const cap = registry.get(name)!
     const callId = newId('ext')
     // 项目、画布管理这类工作区操作不落在某块画布上，没有撤销记录
-    const mutating = effect !== 'read' && !workspaceToolNames.has(name)
+    const mutating = effect !== 'read' && p.needsCanvas
     const changes = mutating
-      ? new AgentChanges(callId, canvasId, this.owner(), this.deps.rooms, this.deps.runs)
+      ? new AgentChanges(callId, canvasId, token.ownerId, this.deps.rooms, this.deps.runs)
       : null
     const ctx = serverContext({
-      ...this.env(canvasId),
+      ...this.env(canvasId, token.ownerId),
       ...(changes
         ? {
             origin: changes.origin,
@@ -428,7 +594,10 @@ export class ExternalMcp {
     }
 
     // 需要用户确认的操作：没带 confirm 就不执行（规则与内置智能体的「规则」模式一致）
-    if ((effect === 'run' || effect === 'destructive') && !p.confirm) {
+    if (
+      (effect === 'run' || effect === 'destructive' || (effect === 'edit' && cap.confirmEdits)) &&
+      !p.confirm
+    ) {
       const req = approvalFor('rules', cap, args, ctx, {
         runCount: 0,
         createdThisTurn: () => false,
@@ -450,20 +619,58 @@ export class ExternalMcp {
         )
     }
 
-    if (effect === 'run') this.chargeRun(token)
+    this.authenticated(call)
+    const chargedDay =
+      effect === 'run' && token.dailyRunLimit ? new Date().toDateString() : undefined
+    if (chargedDay && !this.tokens.chargeRun(token.id, chargedDay))
+      throw new CodedToolError(
+        'rate_limited',
+        `令牌「${token.name}」今天的运行次数已用完（${token.dailyRunLimit} 次）。明天再试，或在 Plein 设置里换一枚上限更高的令牌。`,
+      )
 
-    changes?.begin(callId)
     let out: ToolResult | string
     try {
-      out = await this.runCap(name, args, ctx, call)
+      changes?.begin(callId)
+      const namedContract =
+        (name === 'list_node_types' && args.type) || (name === 'list_models' && args.ref)
+      out = await this.runCap(
+        name,
+        args,
+        ctx,
+        call,
+        effect !== 'read' || namedContract ? token.id : undefined,
+      )
     } catch (err) {
-      if (changes) {
-        changes.end()
-        changes.undoTurn(callId)
-        changes.release()
+      const outcome = err instanceof CodedToolError ? err.details?.execution_outcome : undefined
+      if (err instanceof CodedToolError && (outcome === 'submitted' || outcome === 'unknown')) {
+        const error = { code: err.code, message: err.message, ...err.details }
+        const receipt = externalResult(error, (text) => this.resultPages.save(token.id, text))
+        if (typeof receipt === 'string') {
+          out = {
+            isError: true,
+            content: [textBlock(receipt)],
+            structuredContent: { error, execution_outcome: outcome },
+          }
+        } else {
+          out = {
+            ...receipt,
+            isError: true,
+            structuredContent: {
+              ...receipt.structuredContent,
+              error: { code: err.code, message: '请用回执的恢复信息核对原操作' },
+              execution_outcome: outcome,
+            },
+          }
+        }
+      } else {
+        if (changes) {
+          changes.end()
+          changes.undoTurn(callId)
+          changes.release()
+        }
+        if (chargedDay) this.tokens.refundRun(token.id, chargedDay)
+        throw err
       }
-      if (effect === 'run') this.refundRun(token)
-      throw err
     }
     const changed = changes?.end()
     if (!changes) return out
@@ -474,6 +681,7 @@ export class ExternalMcp {
     this.undoable.set(callId, {
       changes,
       tokenId: token.id,
+      canvasId,
       timer: setTimeout(() => this.forget(callId), UNDO_TTL_MS),
     })
     return decorate(
@@ -489,6 +697,7 @@ export class ExternalMcp {
     args: Record<string, unknown>,
     ctx: ServerContext,
     call: CallContext | undefined,
+    retainForToken: string | undefined,
   ): Promise<ToolResult | string> {
     const registry = capabilitiesOf(this.deps.host)
     const total = Number(args.wait_seconds ?? EXTERNAL_WAIT_S)
@@ -505,7 +714,7 @@ export class ExternalMcp {
           unknown
         >
         waitName = 'wait_for_run'
-        waitArgs = { id: args.id }
+        waitArgs = { id: args.id, run_id: last.run_id }
       } else {
         last = undefined
       }
@@ -517,6 +726,8 @@ export class ExternalMcp {
           ...waitArgs,
           wait_seconds: Math.min(WAIT_CHUNK_S, Math.ceil(left)),
         })) as Record<string, unknown>
+        if (waitName === 'wait_for_run' && last.run_id)
+          waitArgs = { ...waitArgs, run_id: last.run_id }
         const note =
           typeof last.message === 'string'
             ? last.message
@@ -527,7 +738,10 @@ export class ExternalMcp {
       }
       out = last
     } else out = await registry.invoke(name, ctx, args)
-    return toToolResult(withResumeHint(name, args, out))
+    return externalResult(
+      withResumeHint(name, args, out),
+      retainForToken ? (text) => this.resultPages.save(retainForToken, text) : undefined,
+    )
   }
 
   private async priceOf(name: string, args: Record<string, unknown>, ctx: ServerContext) {
@@ -541,26 +755,6 @@ export class ExternalMcp {
     }
   }
 
-  // ── 每日运行次数上限 ───────────────────────────────────────
-
-  private chargeRun(token: SavedToken) {
-    if (!token.dailyRunLimit) return
-    const day = new Date().toDateString()
-    const cur = this.runCounts.get(token.id)
-    const n = cur?.day === day ? cur.n : 0
-    if (n >= token.dailyRunLimit)
-      throw new CodedToolError(
-        'rate_limited',
-        `令牌「${token.name}」今天的运行次数已用完（${token.dailyRunLimit} 次）。明天再试，或在 Plein 设置里换一枚上限更高的令牌。`,
-      )
-    this.runCounts.set(token.id, { day, n: n + 1 })
-  }
-
-  private refundRun(token: SavedToken) {
-    const cur = this.runCounts.get(token.id)
-    if (cur && cur.n > 0) cur.n--
-  }
-
   private forget(key: string) {
     const u = this.undoable.get(key)
     if (!u) return
@@ -571,57 +765,38 @@ export class ExternalMcp {
 
   // ── 画布与环境 ─────────────────────────────────────────────
 
-  private owner() {
-    const owner = this.tokens.owner()
-    if (!owner) throw new CapabilityError('外部访问已关闭')
-    return owner
-  }
-
-  private env(canvasId: string): ToolEnv {
+  private env(canvasId: string, ownerId: string): ToolEnv {
     const { db: _, ...rest } = this.deps
+    const view = canvasId ? viewOf(this.deps.rooms, canvasId) : undefined
     return {
       ...rest,
       canvasId,
-      ownerId: this.owner(),
+      ownerId,
       origin: EXTERNAL_ORIGIN,
       // 外部应用没有会话发送入口：每次工具调用捕获一次，异步插件内的后续读取复用它。
-      selection: canvasId ? [...(viewOf(this.deps.rooms, canvasId)?.selection ?? [])] : [],
-      ui: (call) => this.pushUi(canvasId, call),
+      selection: view?.selection,
+      selectionSource: view ? 'view' : 'unavailable',
+      ui: (call) => sendViewAction(this.deps.rooms, canvasId, call),
     }
-  }
-
-  /**
-   * 把界面动作推给浏览器：写进房间 awareness 的本地状态（agentUi.actions，带单调递增的 n），
-   * 打开这块画布的标签页监听后执行（见 apps/web/src/canvas/agentUi.ts）。没有标签页打开时返回 false。
-   */
-  private pushUi(canvasId: string, call: UiCall): boolean {
-    if (!viewOf(this.deps.rooms, canvasId)) return false
-    const awareness = this.deps.rooms.get(canvasId).awareness
-    const state = awareness.getLocalState() ?? {}
-    const prev = ((state.agentUi as { actions?: Array<{ n: number }> } | undefined)?.actions ??
-      []) as Array<{ n: number }>
-    const n = (prev.at(-1)?.n ?? 0) + 1
-    awareness.setLocalState({ ...state, agentUi: { actions: [...prev.slice(-7), { n, ...call }] } })
-    return true
   }
 
   /** 用户最近在看的画布：浏览器里打开的画布会经 awareness 发布视口 */
-  private watching(): string | undefined {
+  private watching(ownerId: string): string | undefined {
     let best: { id: string; at: number } | undefined
     for (const id of this.deps.rooms.loaded()) {
       const v = viewOf(this.deps.rooms, id)
-      if (v && (!best || v.at > best.at)) best = { id, at: v.at }
+      if (v && (!best || v.at > best.at) && ownsCanvas(this.deps.db, ownerId, id))
+        best = { id, at: v.at }
     }
-    return best && ownsCanvas(this.deps.db, this.owner(), best.id) ? best.id : undefined
+    return best?.id
   }
 
-  private canvas(id?: string): string {
-    const owner = this.owner()
+  private canvas(owner: string, id?: string): string {
     if (id) {
       if (!ownsCanvas(this.deps.db, owner, id)) throw new CapabilityError(`没有画布 ${id}`)
       return id
     }
-    const current = this.watching() ?? listCanvases(this.deps.db, owner)[0]?.id
+    const current = this.watching(owner) ?? listCanvases(this.deps.db, owner)[0]?.id
     if (!current) throw new CapabilityError('还没有画布：先在 Plein 里新建一块')
     return current
   }
@@ -629,6 +804,7 @@ export class ExternalMcp {
 
 /** 仍在运行时补上续等提示 */
 function withResumeHint(name: string, args: Record<string, unknown>, out: unknown): unknown {
+  if (!WAITERS.has(name)) return out
   if (typeof out !== 'object' || out === null || (out as { status?: unknown }).status !== 'running')
     return out
   const o = out as Record<string, unknown>
@@ -636,6 +812,6 @@ function withResumeHint(name: string, args: Record<string, unknown>, out: unknow
   const next =
     name === 'wait_for_group'
       ? `还在运行。用 wait_for_group {"group_id":"${String(args.group_id)}"} 继续等待。`
-      : `还在运行。用 wait_for_run {"id":"${String(args.id)}"} 继续等待，不要重复调用 ${name}。`
+      : `还在运行。用 wait_for_run ${JSON.stringify({ id: args.id, run_id: o.run_id ?? args.run_id })} 继续等待，不要重复调用 ${name}。`
   return { ...o, next }
 }

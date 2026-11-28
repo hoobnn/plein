@@ -19,6 +19,7 @@ import {
 } from '@plein/protocol'
 import { z } from 'zod'
 import type { ServerContext } from './tools'
+import { CodedToolError, droppedInputField, inputSchema } from './mcp'
 import { LocalPathError, openLocalFile } from '../files/local-path'
 import { deliverFile, saveToField } from './tools-files'
 
@@ -308,8 +309,9 @@ const actions: Record<string, Action> = {
     pathname: /^\/api\/media\/subtitle-recognition$/,
   },
   recover_subtitle_recognition: {
-    title: '恢复字幕识别任务（重新提交须核实未受理）',
-    effect: 'run',
+    title:
+      '更新字幕识别恢复记录（重新提交须确认；登记后用 recognize_subtitles 继续，dismiss 到此结束）',
+    effect: 'edit',
     schema: SubtitleRecoverRequest,
     method: 'POST',
     path: () => API.subtitleRecover,
@@ -359,13 +361,66 @@ function action(name: string) {
     throw new CapabilityError(`没有画布操作 ${name}，先用 list_canvas_actions 查询`)
   return a
 }
-export const canvasActionInfo = (name: string) => ({
-  title: action(name).title,
-  effect: action(name).effect,
-})
+export const canvasActionInfo = (name: string) => {
+  const spec = action(name)
+  const effects =
+    name === 'create_voice' ? ['edit', 'run'] : name === 'get_asset' ? ['read', 'edit'] : undefined
+  return {
+    title: spec.title,
+    effect: effects ? 'dynamic' : spec.effect,
+    ...(effects ? { effects } : {}),
+  }
+}
+
+function actionEffect(name: string, input: Record<string, unknown>) {
+  if (name === 'create_voice') {
+    const mode = input.mode ?? (input.sampleAssetId ? 'clone' : 'register')
+    return mode === 'register' ? 'edit' : 'run'
+  }
+  return name === 'get_asset' && input.save_to ? 'edit' : action(name).effect
+}
+
+function permitsSubtitleResubmission(name: string, input: Record<string, unknown>) {
+  return (
+    name === 'recover_subtitle_recognition' &&
+    (input.operation as { action?: string })?.action === 'resubmit'
+  )
+}
+
+/** 已通过能力的值/类型校验。外部客户端还需知道具体 action 未使用的参数。 */
+export function externalActionInput(name: string, input: unknown) {
+  const parsed = action(name).schema.parse(input)
+  const unused = droppedInputField(input, parsed)
+  if (unused !== undefined) {
+    const path = `input.${unused}`
+    throw new CodedToolError('invalid_params', `参数不对：未声明的参数 ${path}`, {
+      issues: [{ path, message: '未声明的参数' }],
+    })
+  }
+  return parsed
+}
+
+export function describeCanvasActions(name?: string, scopes?: readonly string[]) {
+  const visible = (key: string) => {
+    const info = canvasActionInfo(key)
+    return !scopes || (info.effects ?? [info.effect]).some((effect) => scopes.includes(effect))
+  }
+  if (name) {
+    if (!visible(name)) throw new CapabilityError(`当前目录没有画布操作 ${name}`)
+    return {
+      action: name,
+      ...canvasActionInfo(name),
+      input_schema: inputSchema(action(name).schema.strict(), true),
+    }
+  }
+  return Object.keys(actions)
+    .filter(visible)
+    .map((key) => ({ action: key, ...canvasActionInfo(key) }))
+}
 
 export const listCanvasActions = cap({
   name: 'list_canvas_actions',
+  requiresCanvas: false,
   title: '查询扩展画布操作',
   group: 'read',
   where: 'server',
@@ -373,32 +428,29 @@ export const listCanvasActions = cap({
   description:
     '发现与界面共用服务的素材、资产库、场景全景、跨画布资产同步、模板、音色、字幕识别及剪辑工程导出操作。指定 action 返回完整输入契约；不填返回目录。',
   input: z.object({ action: id.optional() }),
-  run: (_ctx, a) =>
-    a.action
-      ? {
-          action: a.action,
-          title: action(a.action).title,
-          effect: action(a.action).effect,
-          input_schema: z.toJSONSchema(action(a.action).schema),
-        }
-      : Object.entries(actions).map(([name, a]) => ({
-          action: name,
-          title: a.title,
-          effect: a.effect,
-        })),
+  run: (_ctx, a) => describeCanvasActions(a.action),
 })
 export const performCanvasAction = cap({
   name: 'perform_canvas_action',
+  requiresCanvas: false,
   title: '执行扩展画布操作',
   group: 'project',
   where: 'server',
-  // 带 save_to 的取出会写本机文件，按 edit 处理
-  effect: (a) =>
-    action(a.action).effect === 'read' && a.input?.save_to ? 'edit' : action(a.action).effect,
-  // 确认里写操作自己的标题（与列表里一致）
-  approval: (a) => ({ reason: action(a.action).title, ids: [] }),
+  effects: ['read', 'edit', 'run', 'destructive'],
+  effect: (a) => actionEffect(a.action, a.input ?? {}),
+  additionalScopes: (a) => (permitsSubtitleResubmission(a.action, a.input ?? {}) ? ['run'] : []),
+  confirmEdits: true,
+  approval: (a) => {
+    const input = a.input ?? {}
+    if (permitsSubtitleResubmission(a.action, input))
+      return { reason: '允许这条字幕识别任务重新提交；下次识别可能再次计费', ids: [] }
+    const effect = actionEffect(a.action, input)
+    return effect === 'run' || effect === 'destructive'
+      ? { reason: action(a.action).title, ids: [] }
+      : null
+  },
   description:
-    '执行 list_canvas_actions 列出的操作。必须先查询具体 action 的 schema，input 按契约填写。调用与界面相同的服务及所有权校验。资产库、模板、音色、字幕记录和跨画布同步独立保存，不属于当前轮画布撤销；导出只返回下载地址。付费操作与删除遵循原确认规则。',
+    '执行 list_canvas_actions 列出的操作。先查询具体 action 的 schema，input 按契约填写。资产库、模板、音色、字幕记录和跨画布同步独立保存，不随当前轮画布撤销。导出返回下载地址；支持 save_to 时可同时保存到本机。付费操作与删除遵循确认规则。',
   input: z
     .object({ action: id, input: z.record(z.string(), z.unknown()).default({}) })
     .superRefine((value, ctx) => {
@@ -438,10 +490,26 @@ export const performCanvasAction = cap({
     )
     if (response.status === 204) return { success: true }
     const result = (await response.json()) as Record<string, unknown>
-    if (!response.ok)
-      throw new CapabilityError(
-        String(result.message ?? result.error ?? `操作失败 ${response.status}`),
+    if (!response.ok) {
+      const message = String(result.message ?? result.error ?? `操作失败 ${response.status}`)
+      if (
+        (a.action === 'recognize_subtitles' || a.action === 'create_voice') &&
+        (result.execution_outcome === 'submitted' || result.execution_outcome === 'unknown')
       )
+        throw new CodedToolError('failed', message, {
+          execution_outcome: result.execution_outcome,
+          provider_code: result.error,
+          ...(a.action === 'recognize_subtitles'
+            ? {
+                asset_id: result.asset_id,
+                model: result.model,
+                completed_asset_ids: result.completed_asset_ids,
+                recovery: result.recovery,
+              }
+            : { provider: result.provider, voice_id: result.voice_id }),
+        })
+      throw new CapabilityError(message)
+    }
     const saveTo = typeof input.save_to === 'string' ? input.save_to : undefined
     if (ctx.env.files && a.action === 'get_asset') {
       return deliverFile(

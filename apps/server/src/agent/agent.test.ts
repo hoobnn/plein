@@ -643,7 +643,9 @@ describe('确认关卡与界面能力', () => {
     })
     const view = (await call('ui_get_viewport')).json()
     expect(view.elements.map((e: { id: string }) => e.id)).toContain(el.id)
-    expect((await call('ui_focus', { ids: [el.id, 'nope'] })).text).toContain('已在用户屏幕上')
+    expect((await call('ui_focus', { ids: [el.id, 'nope'] })).text).toContain(
+      '已向打开的画布发送视图操作',
+    )
     expect(ui).toEqual([['focus', [el.id]]])
     rooms.get(id).awareness.setLocalState(null)
     changes.end()

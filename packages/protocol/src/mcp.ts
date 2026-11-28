@@ -14,7 +14,7 @@ export interface ExternalMcpTokenInfo {
   createdAt: number
   /** 最近一次被使用（进程内记录，重启后清空） */
   lastUsedAt?: number
-  /** 每天最多运行（花钱）类调用次数；不设置 = 不限 */
+  /** 每天最多调用运行类工具的次数；批量工具一次调用计一次，重启保留。不设置 = 不限 */
   dailyRunLimit?: number
 }
 

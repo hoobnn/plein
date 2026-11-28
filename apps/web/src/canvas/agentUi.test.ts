@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { describe, expect, it } from 'vite-plus/test'
+import { describe, expect, it, vi } from 'vite-plus/test'
 import { watchAgentUi } from './agentUi'
 
 type Awareness = Parameters<typeof watchAgentUi>[0]
@@ -16,13 +16,14 @@ function fakeAwareness(clientID: number) {
     off: (_: string, fn: () => void) => listeners.delete(fn),
     setLocalStateField: (k: string, v: unknown) => {
       local[k] = v
+      for (const fn of listeners) fn()
     },
   }
   return {
     awareness: awareness as unknown as Awareness,
     local,
-    push: (action: Record<string, unknown>, n: number) => {
-      remote.set(999, { agentUi: { actions: [{ n, ...action }] } })
+    push: (action: Record<string, unknown>, n: number, field = 'agentUi') => {
+      remote.set(999, { ...(remote.get(999) as object), [field]: { actions: [{ n, ...action }] } })
       for (const fn of listeners) fn()
     },
   }
@@ -51,7 +52,7 @@ describe('watchAgentUi ui_undo', () => {
   it('按步数撤销并回传实际步数与剩余状态；栈不够时只做能做的', () => {
     const f = fakeAwareness(1)
     const engine = fakeEngine(2)
-    watchAgentUi(f.awareness, engine as unknown as Engine)
+    watchAgentUi(f.awareness, engine as unknown as Engine, vi.fn())
     f.push({ action: 'undo', client: 1, steps: 5, redo: false }, 1)
     expect(f.local.agentUiReply).toEqual({ n: 1, done: 2, can_undo: false, can_redo: true })
     expect(engine.undoDepth).toBe(0)
@@ -60,17 +61,31 @@ describe('watchAgentUi ui_undo', () => {
   it('redo 走重做栈；栈为空返回 done 0 且不报错', () => {
     const f = fakeAwareness(1)
     const engine = fakeEngine(0, 1)
-    watchAgentUi(f.awareness, engine as unknown as Engine)
+    watchAgentUi(f.awareness, engine as unknown as Engine, vi.fn())
     f.push({ action: 'undo', client: 1, steps: 1, redo: true }, 1)
     expect(f.local.agentUiReply).toEqual({ n: 1, done: 1, can_undo: true, can_redo: false })
     f.push({ action: 'undo', client: 1, steps: 3, redo: true }, 2)
     expect(f.local.agentUiReply).toEqual({ n: 2, done: 0, can_undo: true, can_redo: false })
   })
 
+  it('导航只在指定标签页执行一次，后接入的标签页不会重放', () => {
+    const f = fakeAwareness(2)
+    const openCanvas = vi.fn()
+    f.push({ action: 'open_canvas', client: 2, id: 'old' }, 1, 'agentUiV2')
+    const engine = fakeEngine(2)
+    watchAgentUi(f.awareness, engine as unknown as Engine, openCanvas)
+    f.push({ action: 'undo', client: 2, steps: 1, redo: false }, 7)
+    f.push({ action: 'open_canvas', client: 1, id: 'other' }, 2, 'agentUiV2')
+    f.push({ action: 'open_canvas', client: 2, id: 'next' }, 3, 'agentUiV2')
+    f.push({ action: 'open_canvas', client: 2, id: 'next' }, 3, 'agentUiV2')
+    expect(openCanvas.mock.calls).toEqual([['next']])
+    expect(engine.undoDepth).toBe(1)
+  })
+
   it('指定给别的标签页的动作不执行也不回传', () => {
     const f = fakeAwareness(1)
     const engine = fakeEngine(3)
-    watchAgentUi(f.awareness, engine as unknown as Engine)
+    watchAgentUi(f.awareness, engine as unknown as Engine, vi.fn())
     f.push({ action: 'undo', client: 2, steps: 1, redo: false }, 1)
     expect(engine.undoDepth).toBe(3)
     expect(f.local.agentUiReply).toBeUndefined()

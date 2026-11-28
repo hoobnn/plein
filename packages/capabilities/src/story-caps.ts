@@ -129,6 +129,7 @@ export const syncStoryboard = defineCapability({
     '分镜表改过之后处理已展开节点的差异。unmodified：更新未手改字段，保留并记住手改字段；keep-overrides：不修改任何节点参数，将当前节点值记为已确认。不填 mode 时只返回差异，不改。',
   group: 'story',
   where: 'doc',
+  effects: ['read', 'edit'],
   effect: (a) => (a.mode ? 'edit' : 'read'),
   input: z.object({
     id: id.describe('分镜节点'),

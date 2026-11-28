@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vite-plus/test'
 import { DataActivity } from '../maintenance/activity'
-import { OutputSpool, type SpoolBinding } from './output-spool'
+import { adoptLocalCallOutputs, OutputSpool, type SpoolBinding } from './output-spool'
+import type { CallRecord } from '../plugins/provider-protocol'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -69,6 +70,27 @@ it('拒绝跨owner/job/call/attempt/output绑定和路径穿越', async () => {
     await expect(spool.read(ref, { ...binding, ...changed })).rejects.toThrow('不匹配')
   await expect(spool.read({ ...ref, id: '../escape' }, binding)).rejects.toThrow('不匹配')
   await expect(spool.remove({ ...ref, id: '/tmp/escape' }, binding)).rejects.toThrow('不匹配')
+})
+
+it('认领只接受与当前 journal 完全一致的本机引用', async () => {
+  const { spool } = await fixture()
+  const local = spool.describe(bytes, { ...binding, ownerId: 'local' })
+  for (const changed of [
+    { ownerId: 'another' },
+    { jobId: 'another' },
+    { callKey: 'another' },
+    { attemptId: 'another' },
+    { outputIndex: 1 },
+  ]) {
+    const ref = { ...local, ...changed }
+    const record: CallRecord = {
+      state: 'fetched',
+      trace: { requestId: 'request', attemptId: 'attempt-1' },
+      outputs: [{ type: 'file', kind: 'audio', mime: 'audio/wav', spool: ref }],
+    }
+    adoptLocalCallOutputs(record, 'first', binding.jobId, binding.callKey)
+    expect(record.outputs[0]).toMatchObject({ spool: { ...local, ...changed } })
+  }
 })
 
 it('拒绝文件和目录符号链接，不跟随到外部文件', async () => {

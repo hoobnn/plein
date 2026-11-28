@@ -38,6 +38,7 @@ import { z } from 'zod'
 import { collageAssets } from '../assets/collage'
 import { DeriveError, deriveAsset } from '../assets/derive'
 import { inputContextOf, PromptError, rewritePrompt, usesH3Structure } from '../prompt/rewrite'
+import { CodedToolError } from './mcp'
 import { NodeRunError } from '../plugins/provider-protocol'
 import { ffmpegBin, hasFfmpeg } from '../assets/media'
 import type { ServerContext } from './tool-registry'
@@ -436,15 +437,22 @@ async function jpeg(img: Sharp, size = 768): Promise<ContentBlock> {
 
 export const rewrite = serverCapability({
   name: 'rewrite_prompt',
+  openWorld: true,
   title: '改写提示词',
   description:
-    '用对话模型改写节点的提示词：mode=optimize 补全画面 / 镜头细节，translate 中英互译。@ 引用和【占位】原样保留。默认直接写回节点，apply=false 时只返回结果。' +
+    '调用对话模型改写节点的提示词，预览和写回均可能产生模型费用。mode=optimize 补全画面 / 镜头细节，translate 中英互译。@ 引用和【占位】原样保留。默认写回原节点；apply=false 只返回改写稿。等待期间原提示词有改动时保留用户的编辑，返回改写稿供核对。' +
     '生成模型取自节点当前的 params.model，参考素材取自节点的实际输入（与 inspect_node_input 同源），所以先用 set_node_model 选好模型、连好参考再改写。' +
     'structure：auto（默认）在生成模型是 MiniMax H3 且节点是多模态参考模式时用 H3 六段结构，其余用通用公式；default 强制通用公式；h3 强制六段结构（节点模型须是 H3）。' +
-    'detail：expand（默认）补全细节，refine 只精修表达、不新增内容。model：改写用的对话模型 ref（来自 list_models 的 text.chat），不填用第一个已启用的对话模型。',
+    'detail：expand（默认）补全细节，refine 只精修表达、不新增内容。model：改写用的对话模型 ref（来自 list_models 的 text.chat），省略时使用默认对话模型。',
   group: 'edit',
   where: 'server',
-  effect: (a) => (a.apply === false ? 'read' : 'edit'),
+  effect: 'run',
+  additionalScopes: (a) => (a.apply === false ? [] : ['edit']),
+  approval: (a, ctx) => {
+    const model = a.model ?? ctx.env.host.defaultModel('text.chat')
+    const use = a.apply === false ? '生成提示词草稿' : '改写提示词并写回节点'
+    return { reason: `调用对话模型${model ? ` ${model} ` : ''}${use}，可能产生费用`, ids: [a.id] }
+  },
   input: z.object({
     id,
     mode: z.enum(['optimize', 'translate']).default('optimize'),
@@ -454,8 +462,20 @@ export const rewrite = serverCapability({
     model: z.string().max(200).optional().describe('改写用的对话模型 ref；不填用默认对话模型'),
   }),
   run: async (ctx, a) => {
-    const { key, text, target, mentions, generationModel, nodeType } = ctx.withDoc((doc) => {
+    const {
+      key,
+      text,
+      original,
+      originalModel,
+      element,
+      target,
+      mentions,
+      generationModel,
+      nodeType,
+    } = ctx.withDoc((doc) => {
       const el = need(doc, a.id)
+      if (a.apply && (el.locked || doc.readOnly))
+        throw new CapabilityError('节点当前不可编辑；用 apply=false 单独生成草稿')
       const key = promptField(el.params)
       const text = key ? String(el.params?.[key] ?? '').trim() : ''
       if (!key || !text) throw new CapabilityError('这个节点没有可改写的提示词')
@@ -468,6 +488,9 @@ export const rewrite = serverCapability({
       return {
         key,
         text,
+        original: el.params?.[key],
+        originalModel: el.params?.model,
+        element: doc.elementMaps.get(a.id),
         target,
         mentions: [...mentionElements(doc).keys()],
         generationModel: usable ? picked : undefined,
@@ -485,6 +508,8 @@ export const rewrite = serverCapability({
         if (!(err instanceof NodeRunError)) throw err
       }
     }
+    const rewriteModel = a.model ?? ctx.env.host.defaultModel('text.chat')
+    let generated = false
     try {
       const out = await rewritePrompt(
         ctx.env.host,
@@ -494,7 +519,7 @@ export const rewrite = serverCapability({
           target,
           detail: a.detail,
           structure: a.structure,
-          ...(a.model ? { model: a.model } : {}),
+          ...(rewriteModel ? { model: rewriteModel } : {}),
           ...(generationModel ? { generationModel } : {}),
           ...(inputContext ? { inputContext } : {}),
           mentions,
@@ -507,10 +532,29 @@ export const rewrite = serverCapability({
           ]),
         },
       )
-      if (a.apply) ctx.withDoc((doc) => setParams(doc, a.id, { [key]: out.text }))
+      generated = true
+      const applied =
+        a.apply &&
+        ctx.withDoc((doc) => {
+          const current = doc.get(a.id)
+          if (
+            doc.readOnly ||
+            !current ||
+            current.locked ||
+            doc.elementMaps.get(a.id) !== element ||
+            current.params?.[key] !== original ||
+            current.params?.model !== originalModel
+          )
+            return false
+          setParams(doc, a.id, { [key]: out.text })
+          return true
+        })
       return {
         [key]: out.text,
-        applied: a.apply,
+        applied,
+        ...(a.apply && !applied
+          ? { note: '节点或原提示词已变化，改写稿已返回。请核对后决定是否采用。' }
+          : {}),
         rewrite_model: out.model,
         ...(generationModel ? { generation_model: generationModel } : {}),
         structure:
@@ -520,6 +564,22 @@ export const rewrite = serverCapability({
             : 'default',
       }
     } catch (err) {
+      const outcome = generated
+        ? 'submitted'
+        : err instanceof PromptError
+          ? err.executionOutcome
+          : undefined
+      if (outcome)
+        throw new CodedToolError(
+          'failed',
+          err instanceof Error ? err.message : '改写结果保存失败',
+          {
+            execution_outcome: outcome,
+            node_id: a.id,
+            model: rewriteModel,
+            ...(err instanceof PromptError ? { provider_code: err.code } : {}),
+          },
+        )
       if (err instanceof PromptError) throw new CapabilityError(err.message)
       throw err
     }

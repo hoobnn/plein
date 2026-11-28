@@ -14,6 +14,7 @@ import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono } from 'hono'
 import { agentMcpRoute, agentRoutes } from './agent/routes'
 import { capabilityRoutes } from './agent/cap-routes'
+import { registerExternalCanvasTools } from './agent/tool-registry'
 import { ExternalMcp } from './mcp/external'
 import { fileRoutes } from './files/routes'
 import { localAccess } from './files/local-path'
@@ -129,6 +130,7 @@ export async function createServer(config: Config): Promise<Server> {
   const auth = await createAuth(config.auth, db, secrets, {
     publicUrl: config.publicUrl,
     externalCanvas,
+    onOwnerCreated: () => resumeWorkspace(),
   })
   const runs = new NodeRuns(db, rooms, plugins, { concurrency: config.maxJobs })
   const library = new LibraryStore(db, assets)
@@ -179,6 +181,23 @@ export async function createServer(config: Config): Promise<Server> {
   internal.route('/', canvasRoutesApp)
   internal.route('/', runApi)
   internal.route('/', pluginApi)
+  const collaboration = new Hono<AuthEnv>()
+  if (externalCanvas) {
+    registerExternalCanvasTools(plugins)
+    const queue = new ProjectQueue()
+    collaboration.route('/', externalCanvasRoutes(db, rooms, queue))
+    collaboration.route(
+      '/',
+      externalMediaRoutes(db, rooms, assets, config.maxUpload, undefined, queue),
+    )
+    collaboration.route('/', externalAuthRoutes(db))
+    // Official device authorization belongs to the user. Agents can only check its status.
+    internal.use('/api/canvases/:canvas/external/auth/:action', async (c, next) => {
+      if (c.req.param('action') !== 'status') return c.notFound()
+      await next()
+    })
+    internal.route('/', collaboration)
+  }
   const canvasApi = async (ownerId: string, request: Request) =>
     internal.fetch(request, { ownerId })
   // 外部 AI 的文件进出：票据 + 本机路径范围（本机路径只在免登录模式开放）
@@ -213,21 +232,24 @@ export async function createServer(config: Config): Promise<Server> {
   })
 
   // 对外开放 MCP 和本机智能体一样，只在本机免登录模式开放
-  const external = config.mcp
-    ? new ExternalMcp(config.dataDir, {
-        db,
-        rooms,
-        runs,
-        host: plugins,
-        assets,
-        library,
-        plans,
-        mediaIndex: index,
-        checkpoints,
-        canvasApi,
-        files,
-      })
-    : null
+  const external =
+    config.auth === 'none' && config.mcp
+      ? new ExternalMcp(config.dataDir, {
+          db,
+          rooms,
+          runs,
+          host: plugins,
+          assets,
+          library,
+          plans,
+          mediaIndex: index,
+          checkpoints,
+          canvasApi,
+          files,
+        })
+      : null
+
+  if (auth.existingOwner) external?.adoptLocalOwner(auth.existingOwner)
 
   const app = new Hono<AuthEnv>()
   app.onError((err, c) => {
@@ -255,15 +277,7 @@ export async function createServer(config: Config): Promise<Server> {
   app.route('/', projectApi)
   app.route('/', packageApi)
   app.route('/', canvasRoutesApp)
-  if (externalCanvas) {
-    app.route('/', externalAuthRoutes(db))
-    const projectQueue = new ProjectQueue()
-    app.route('/', externalCanvasRoutes(db, rooms, projectQueue))
-    app.route(
-      '/',
-      externalMediaRoutes(db, rooms, assets, config.maxUpload, undefined, projectQueue),
-    )
-  }
+  if (externalCanvas) app.route('/', collaboration)
   if (maintenance) app.route('/', maintenanceRoutes(maintenance))
   // 素材来源路由要排在 creative 之前：资产文件路由 /api/assets/:id/:variant?
   // 会把 /api/assets/:id/sources 当成变体名抢先匹配，来源分页就永远 404。
@@ -308,10 +322,13 @@ export async function createServer(config: Config): Promise<Server> {
     })
   }
 
-  // 来源索引可重建；旧数据回填期间只有新素材检索返回 503，既有创作与任务恢复继续可用。
-  void mediaIndex.rebuild().catch((error) => console.error('[media-index] rebuild failed', error))
-  // 接着跑上次退出时没结束的任务
-  runs.recover()
+  const resumeWorkspace = () => {
+    // 索引与未结束任务都按持久化所有者恢复。
+    void index.rebuild().catch((error) => console.error('[media-index] rebuild failed', error))
+    runs.recover()
+  }
+  // 首次设密码时等所有权迁移完成，免得恢复中的任务继续把产物写给原来的 local。
+  if (!auth.provider.required || auth.existingOwner) resumeWorkspace()
 
   let closeWork: Promise<void> | null = null
   return {

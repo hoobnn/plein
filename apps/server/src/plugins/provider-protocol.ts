@@ -56,6 +56,16 @@ export class NodeRunError extends Error {
  * - remote_canceled：平台那边取消了任务
  */
 export type FailureStage = 'submit_unknown' | 'fetch_failed' | 'remote_failed' | 'remote_canceled'
+export type ExecutionOutcome = 'submitted' | 'unknown'
+
+/** Only report a submitted or uncertain call when the provider or its recorded stage says so. */
+export function executionOutcome(error: unknown): ExecutionOutcome | undefined {
+  const stage = stageOf(error)
+  if (stage === 'submit_unknown') return 'unknown'
+  if (stage === 'fetch_failed' || stage === 'remote_failed' || stage === 'remote_canceled')
+    return 'submitted'
+  return error instanceof ProviderError && error.outcome === 'unknown' ? 'unknown' : undefined
+}
 
 /** 给错误标上失败的步骤 */
 function staged<E extends Error>(err: E, stage: FailureStage): E {

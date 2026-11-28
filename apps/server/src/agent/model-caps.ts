@@ -69,6 +69,7 @@ function highlights(info: ModelInfo) {
 
 export const listModels = serverCapability({
   name: 'list_models',
+  requiresCanvas: false,
   title: '查看模型目录',
   description:
     '列出模型目录：按能力（capability，如 image.generate、video.generate、text.chat、audio.speech）筛选。' +

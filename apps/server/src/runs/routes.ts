@@ -281,8 +281,8 @@ export function runRoutes(db: DB, runs: NodeRuns) {
         const owner = c.var.principal.id
         const missing = { error: 'not_found', message: '任务不存在' }
         if (!ownsCanvas(db, owner, canvas)) return c.json(missing, 404)
-        const row = runs.store.get(job)
-        if (!row || row.owner_id !== owner || row.canvas_id !== canvas) return c.json(missing, 404)
+        const row = runs.ownedJob(canvas, job, owner)
+        if (!row) return c.json(missing, 404)
         return c.json(runs.jobInfo(row) satisfies JobInfo)
       })
       .post('/api/canvases/:canvas/jobs/latest', async (c) => {

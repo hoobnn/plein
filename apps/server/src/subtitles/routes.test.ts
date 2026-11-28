@@ -13,6 +13,7 @@ import { subtitleRoutes } from './routes'
 import * as journal from './journal'
 import { cacheParams } from '../runs/runs'
 import { sequenceNode } from '@plein/nodes'
+import { assets, user } from '../storage/schema'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -69,6 +70,129 @@ async function setup() {
 }
 
 describe('字幕显式识别与持久恢复', () => {
+  it('首所有者继承已落盘的字幕附件和识别结果，取回时不再提交', async () => {
+    const s = await setup()
+    const bytes = new Uint8Array([4, 3, 2, 1])
+    const submit = vi.spyOn(s.entry.def, 'submit').mockResolvedValueOnce({
+      state: 'succeeded',
+      outputs: [
+        { type: 'json', value: { segments: [{ start: 0, end: 1, text: '原结果' }] } },
+        { type: 'file', kind: 'audio', mime: 'application/octet-stream', data: bytes },
+      ],
+    })
+    vi.spyOn(s.server.assets, 'ingest').mockRejectedValueOnce(new Error('disk offline'))
+    const failed = await s.call()
+    expect(await failed.json()).toMatchObject({ recovery: { recovery: { state: 'fetch_failed' } } })
+    const input = s.server.db
+      .select()
+      .from(assets)
+      .all()
+      .find((row) => row.id === s.assetId)!
+    s.server.db
+      .insert(assets)
+      .values({ ...input, owner_id: 'first' })
+      .run()
+    s.server.db
+      .insert(user)
+      .values({
+        id: 'first',
+        name: '所有者',
+        email: 'first@example.invalid',
+        emailVerified: true,
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      })
+      .run()
+    const recovered = await s.call(s.app('first'))
+    expect(await recovered.json()).toMatchObject({
+      transcripts: { [s.assetId]: [{ start: 0, end: 1, text: '原结果' }] },
+    })
+    const id = createHash('sha256').update(bytes).digest('hex')
+    expect(new Uint8Array(await s.server.assets.readOriginal('first', id))).toEqual(bytes)
+    expect(submit).toHaveBeenCalledTimes(1)
+  })
+
+  it('首个账号沿用已受理的 local 记录，新旧 journal 并存也不会重新提交；其他音频所有者保持独立', async () => {
+    const s = await setup()
+    const asset = s.server.db
+      .select()
+      .from(assets)
+      .all()
+      .find((row) => row.id === s.assetId)!
+    for (const owner of ['first', 'other'])
+      s.server.db
+        .insert(assets)
+        .values({ ...asset, owner_id: owner })
+        .run()
+    s.entry.def.lookup = undefined
+    s.entry.def.idempotent = false
+    const submit = vi
+      .spyOn(s.entry.def, 'submit')
+      .mockRejectedValue(new ProviderError('unknown', '等待平台核查', { outcome: 'unknown' }))
+    const { recovery: legacy } = (await (await s.call()).json()) as {
+      recovery: SubtitleRecognitionInfo
+    }
+    const { assetId, model } = legacy
+    const root = join(s.dataDir, 'subtitle-recognition')
+    const files = () => readdirSync(root).filter((f) => f.endsWith('.json'))
+    const [legacyFile] = files()
+    expect(
+      (
+        await s.app().request(API.subtitleRecover, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            assetId,
+            model,
+            expected: legacy.expected,
+            operation: { action: 'attach', remoteId: 'previous-remote' },
+          }),
+        })
+      ).status,
+    ).toBe(200)
+    // An earlier version can also have left a journal under the future account ID.
+    const { recovery: accountRecord } = (await (await s.call(s.app('first'))).json()) as {
+      recovery: SubtitleRecognitionInfo
+    }
+    const accountFile = files().find((f) => f !== legacyFile)!
+    s.server.db
+      .insert(user)
+      .values({
+        id: 'first',
+        name: '所有者',
+        email: 'owner@example.invalid',
+        emailVerified: true,
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      })
+      .run()
+    const lookup = async (owner: string) =>
+      (
+        await s
+          .app(owner)
+          .request(API.subtitleRecognition + '?' + new URLSearchParams({ assetId, model }))
+      ).json()
+    expect(await lookup('first')).toMatchObject({ expected: accountRecord.expected })
+    expect(await lookup('other')).toBeNull()
+    journal.writeRecord(join(root, accountFile), {
+      assetId,
+      model,
+      record: null,
+      confirmedReset: true,
+    })
+    expect(await lookup('first')).toMatchObject({
+      recovery: { state: 'remote_pending', remoteId: 'previous-remote' },
+    })
+    const poll = vi.fn().mockResolvedValue({
+      state: 'succeeded',
+      outputs: [{ type: 'json', value: { segments: [{ start: 0, end: 1, text: '原任务' }] } }],
+    })
+    s.entry.def.poll = poll
+    expect((await s.call(s.app('first'))).status).toBe(200)
+    expect(poll.mock.calls[0]?.[0]).toBe('previous-remote')
+    expect(submit).toHaveBeenCalledTimes(2)
+  })
+
   it('未知识别可人工关联平台任务，状态重载后仍可见，关联只续查不提交', async () => {
     const s = await setup()
     s.entry.def.lookup = undefined

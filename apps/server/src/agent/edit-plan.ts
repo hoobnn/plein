@@ -180,6 +180,7 @@ const applyEdit = serverCapability({
     '按用户批准的范围执行 propose_edit 提出的方案：text 只把文字写进画布（不调用平台），images 写入文字并只生成候选图、保留原采用结果，full 执行全部步骤。only 只批准部分目标（目标节点 id 或镜头 id），skip 列出用户不想重做的步骤（节点 id）。方案绑定的对象在提出后变了时不执行，返回 stale，要重新提出。',
   group: 'run',
   where: 'server',
+  effects: ['edit', 'run'],
   effect: (a) => (a.scope === 'text' ? 'edit' : 'run'),
   // 智能体自己执行修改方案（没经过方案卡片）：要生成就先问，范围写进确认
   approval: (a) => ({

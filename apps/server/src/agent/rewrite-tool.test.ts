@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vite-plus/test'
+import { setParams } from '@plein/doc'
+import { describe, expect, it, vi } from 'vite-plus/test'
 import { addNode, bootServer, createCanvas } from '../testing'
 import { serverCapabilities, serverContext, type ToolEnv } from './tools'
 
@@ -21,6 +22,19 @@ async function fixture() {
 }
 
 describe('rewrite_prompt 入参', () => {
+  it('模型返回时保留用户刚输入的新提示词，已生成的改写稿仍可获取', async () => {
+    const f = await fixture()
+    const node = addNode(f.doc, 'plein/image', { params: { prompt: '初稿' } })
+    const call = f.server.plugins.call.bind(f.server.plugins)
+    vi.spyOn(f.server.plugins, 'call').mockImplementationOnce((...args) => {
+      setParams(f.doc, node, { prompt: '编辑期间的新稿' })
+      return call(...args)
+    })
+    const out = await f.invoke('rewrite_prompt', { id: node })
+    expect(out).toMatchObject({ applied: false, prompt: expect.stringContaining('【mock】') })
+    expect(f.doc.get(node)?.params?.prompt).toBe('编辑期间的新稿')
+  })
+
   it('structure/detail/model 可选，auto 在 H3 参考任务上判成六段结构', async () => {
     const f = await fixture()
     f.server.plugins.configs.update('minimax/api', { enabled: true })

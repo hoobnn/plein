@@ -60,6 +60,7 @@ const files = (ctx: ServerContext) => {
 
 export const importAsset = serverCapability({
   name: 'import_asset',
+  requiresCanvas: (input) => input.place !== undefined,
   title: '导入文件',
   description:
     '把外部文件送进 Plein 资产库，可选直接摆到画布上。source 三选一：base64（文件内容，解码后最多 8 MiB，可带 data: 前缀）；url（http/https 公网地址，内网和本机地址会被拒绝，最多跟随 5 次重定向）；path（本机绝对路径，只在本机模式可用，限用户主目录内，不含隐藏目录与 ~/Library）。更大的文件改用 request_upload 拿上传地址。name、mime 不填时按文件名和响应推断。返回 asset_id；给了 place 时再返回 element_id（图片 / 视频 / 音频才能摆上画布）。拿到 asset_id 后可用于 create_element、update_element 的 asset_id，或做蒙版 / 切分 / 参考图。',
@@ -101,6 +102,7 @@ export const importAsset = serverCapability({
 
 export const requestUpload = serverCapability({
   name: 'request_upload',
+  requiresCanvas: false,
   title: '申请上传地址',
   description:
     '大文件（超过 base64 的 8 MiB 上限，或不在本机）先调用它拿一次性上传地址，再用 HTTP PUT（或 POST）把文件内容作为请求体发到返回的 url，例如 curl -T 文件 "<url>"。上传完成后响应 JSON 里的 asset_id 就是资产 id，接着用 create_element 摆上画布（或 import_asset 之外的任何需要 asset_id 的工具）。地址一次有效、约 15 分钟内过期，只能上传不超过 size 字节的文件。需要 name（含扩展名）、mime 和 size（字节数）。',
@@ -228,11 +230,13 @@ export async function deliverFile(
 
 export const downloadAsset = serverCapability({
   name: 'download_asset',
+  requiresCanvas: false,
   title: '取出文件',
   description:
     '把资产库里的文件取出给外部使用：返回带短期票据的下载地址 download_url（同时以 MCP resource_link 内容块给出，GET 即可，不需要令牌或 Cookie；约 10 分钟内可重复下载，过期后重新调用）。资产 id 来自 import_asset、get_canvas 里元素的 assetId、节点结果或 search_media。本机模式可加 save_to 直接存到本地路径。批量取用 ids（最多 50 个，与 id 二选一，不能配 save_to）：逐个处理，返回 items，每项带自己的下载地址或 error，某一个失败不影响其他。',
   group: 'media',
   where: 'server',
+  effects: ['read', 'edit'],
   effect: (a) => (a.save_to ? 'edit' : 'read'),
   input: z.object({
     id: id.optional().describe('资产 id'),

@@ -63,6 +63,8 @@ export interface McpTool<S extends z.ZodObject = z.ZodObject> {
   /** 给人看的名称 */
   title?: string
   annotations?: ToolAnnotations
+  /** 外部工具的具名参数必须生效；也检查嵌套对象中被 Zod 剥掉的字段。 */
+  rejectUnknownFields?: boolean
   run(args: z.output<S>, call?: CallContext): Promise<ToolResult | string> | ToolResult | string
 }
 
@@ -78,6 +80,7 @@ export class CodedToolError extends CapabilityError {
   constructor(
     readonly code: ErrorCode,
     message: string,
+    readonly details?: Record<string, unknown>,
   ) {
     super(message)
   }
@@ -85,19 +88,15 @@ export class CodedToolError extends CapabilityError {
 
 // ── 协议块：能力 effect → 工具标注 ───────────────────────────
 
-/** 除 run 外也会调用外部平台 / 模型的能力 */
-const OPEN_WORLD = new Set(['rewrite_prompt', 'plan_analysis', 'extract_cast', 'review_candidate'])
-
 export function annotationsOf(cap: CapabilityDefinition<z.ZodObject, never>): ToolAnnotations {
-  // 按参数才能判定等级的能力取最坏情形：可能改动、可能破坏
-  const effect = typeof cap.effect === 'function' ? 'dynamic' : cap.effect
-  const openWorld = effect === 'run' || cap.group === 'plugin' || OPEN_WORLD.has(cap.name)
+  const effects = cap.effects ?? [cap.effect]
+  const readOnly = effects.every((effect) => effect === 'read')
   return {
     title: cap.title,
-    readOnlyHint: effect === 'read',
-    destructiveHint: effect === 'destructive' || effect === 'dynamic',
-    idempotentHint: effect === 'read',
-    openWorldHint: openWorld,
+    readOnlyHint: readOnly,
+    destructiveHint: effects.includes('destructive'),
+    idempotentHint: readOnly,
+    openWorldHint: effects.includes('run') || cap.group === 'plugin' || cap.openWorld === true,
   }
 }
 
@@ -315,7 +314,7 @@ export class McpServer {
               name: t.name,
               ...(t.title ? { title: t.title } : {}),
               description: t.description,
-              inputSchema: inputSchema(t.input),
+              inputSchema: inputSchema(t.input, t.rejectUnknownFields),
               ...(t.annotations ? { annotations: t.annotations } : {}),
             })),
         }
@@ -340,11 +339,11 @@ export class McpServer {
         if (!prompts) break
         const name = req.params?.name
         if (typeof name !== 'string') throw new RpcError(-32602, 'prompts/get 需要 name')
-        const raw = (req.params?.arguments ?? {}) as Record<string, unknown>
-        const args = Object.fromEntries(
-          Object.entries(raw).filter(([, v]) => typeof v === 'string'),
-        ) as Record<string, string>
-        return prompts.get(name, args)
+        const parsed = z
+          .record(z.string(), z.string())
+          .safeParse(req.params?.arguments === undefined ? {} : req.params.arguments)
+        if (!parsed.success) throw new RpcError(-32602, 'prompts/get 的参数必须是字符串键值对象')
+        return prompts.get(name, parsed.data)
       }
     }
     throw new RpcError(-32601, `Method not found: ${req.method}`)
@@ -377,12 +376,21 @@ export class McpServer {
           }
         : {}),
     }
-    return callTool(tool, params.arguments ?? {}, call, this.codeInText)
+    return callTool(
+      tool,
+      params.arguments === undefined ? {} : params.arguments,
+      call,
+      this.codeInText,
+    )
   }
 }
 
-const cursorOf = (req: RpcRequest) =>
-  typeof req.params?.cursor === 'string' ? req.params.cursor : undefined
+const cursorOf = (req: RpcRequest) => {
+  const cursor = req.params?.cursor
+  if (cursor !== undefined && typeof cursor !== 'string')
+    throw new RpcError(-32602, '无效的 cursor')
+  return cursor
+}
 
 // ── 协议块：工具调用的公共出口（错误码在这里统一给）──────────────
 
@@ -409,11 +417,19 @@ export async function callTool(
   const parsed = tool.input.safeParse(args)
   if (!parsed.success)
     return errorResult(`参数不对：${z.prettifyError(parsed.error)}`, 'invalid_params', codeInText, {
-      issues: parsed.error.issues.map((i) => ({
-        path: i.path.map(String).join('.'),
-        message: i.message,
-      })),
+      issues: parsed.error.issues.flatMap((i) =>
+        (i.code === 'unrecognized_keys' ? i.keys.map((k) => [...i.path, k]) : [i.path]).map(
+          (path) => ({ path: path.map(String).join('.'), message: i.message }),
+        ),
+      ),
     })
+  if (tool.rejectUnknownFields) {
+    const path = droppedInputField(args, parsed.data)
+    if (path !== undefined)
+      return errorResult(`参数不对：未声明的参数 ${path}`, 'invalid_params', codeInText, {
+        issues: [{ path, message: '未声明的参数' }],
+      })
+  }
   try {
     const out = await tool.run(parsed.data, call)
     const result =
@@ -440,7 +456,24 @@ export async function callTool(
       message,
       err instanceof CodedToolError ? err.code : classifyError(message),
       codeInText,
+      err instanceof CodedToolError ? err.details : undefined,
     )
+  }
+}
+
+/** 开放的 record、插件扩展和默认值均由原 schema 解析，仅检查真正被丢弃的 JSON 键。 */
+export function droppedInputField(raw: unknown, parsed: unknown, at = ''): string | undefined {
+  if (raw === parsed || !raw || !parsed || typeof raw !== 'object' || typeof parsed !== 'object')
+    return
+  for (const key of Object.keys(raw)) {
+    const path = at ? `${at}.${key}` : key
+    if (!Object.hasOwn(parsed, key)) return path
+    const missing = droppedInputField(
+      (raw as Record<string, unknown>)[key],
+      (parsed as Record<string, unknown>)[key],
+      path,
+    )
+    if (missing !== undefined) return missing
   }
 }
 
@@ -461,10 +494,17 @@ export class RpcError extends Error {
 }
 
 /** 工具参数的 JSON Schema（MCP 和内置智能体共用） */
-export function inputSchema(schema: z.ZodObject): Record<string, unknown> {
+export function inputSchema(
+  schema: z.ZodObject,
+  rejectUnknownFields = false,
+): Record<string, unknown> {
   const { $schema: _, ...rest } = z.toJSONSchema(schema, {
     io: 'input',
     unrepresentable: 'any',
+    override: ({ zodSchema, jsonSchema }) => {
+      if (rejectUnknownFields && zodSchema instanceof z.ZodObject && !zodSchema.def.catchall)
+        jsonSchema.additionalProperties = false
+    },
   }) as Record<string, unknown>
   return rest
 }

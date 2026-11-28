@@ -126,7 +126,7 @@ export function externalMediaRoutes(
   },
   queue = new ProjectQueue(),
 ) {
-  const list = queue.reader<RemoteMedia[]>()
+  const list = queue.reader<{ target: string; items: RemoteMedia[] }>()
   const base = '/api/canvases/:canvas/external/media' as const
   const app = new Hono<AuthEnv>()
   app.use(`${base}/*`, async (c, next) => {
@@ -143,15 +143,18 @@ export function externalMediaRoutes(
     return c.json({ error: stale ? 'changed' : 'external_media_error', message }, stale ? 409 : 422)
   })
   app.post(`${base}/list`, async (c) => {
-    const ref = ExternalTarget.safeParse(await c.req.json().catch(() => null))
+    const ref = ExternalTarget.extend({ includeTarget: z.boolean().optional() }).safeParse(
+      await c.req.json().catch(() => null),
+    )
     if (!ref.success) return c.json({ error: 'invalid', message: '项目 ID 无效' }, 400)
     const provider = providers[ref.data.provider]
-    if (!provider) return c.json([])
     const target = canonicalTarget(ref.data)
-    const items = await list(c.req.param('canvas'), target, async () =>
-      provider.listMedia((await provider.resolveTarget?.(target.target)) ?? target.target),
-    )
-    return c.json(items)
+    if (!provider) return c.json(ref.data.includeTarget ? { target: target.target, items: [] } : [])
+    const result = await list(c.req.param('canvas'), target, async () => {
+      const resolved = (await provider.resolveTarget?.(target.target)) ?? target.target
+      return { target: resolved, items: await provider.listMedia(resolved) }
+    })
+    return c.json(ref.data.includeTarget ? result : result.items)
   })
   app.post(`${base}/publish`, async (c) => {
     const req = ExternalMediaPublish.safeParse(await c.req.json().catch(() => null))

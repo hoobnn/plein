@@ -131,7 +131,10 @@ describe('对外开放 MCP', () => {
         builtin: { total: 1, elements: [{ id: second }] },
       })
       server.rooms.get(canvasId).awareness.setLocalState(null)
-      expect(await call('ui_get_selection')).toMatchObject({ total: 0, elements: [] })
+      expect(await call('ui_get_selection')).toMatchObject({
+        status: 'no_viewer',
+        source: 'unavailable',
+      })
     } finally {
       release()
       doc.destroy()

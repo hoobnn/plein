@@ -65,6 +65,9 @@ export function externalCanvasRoutes(db: DB, rooms: Rooms, projectQueue: Project
       const raw: unknown = await c.req.json().catch(() => null)
       const request = ExternalTarget.extend({
         expectSnapshot: SyncCredential.optional(),
+        expectTarget: ExternalTarget.shape.target.optional(),
+        inspectOnly: z.boolean().optional(),
+        includeReceipt: z.boolean().optional(),
       }).safeParse(raw)
       if (!request.success)
         return c.json({ error: 'invalid', message: '请选择平台并输入项目 ID' }, 400)
@@ -73,17 +76,36 @@ export function externalCanvasRoutes(db: DB, rooms: Rooms, projectQueue: Project
         if (!expected || !includesSnapshot(Y.snapshot(rooms.get(id).doc), expected))
           throw new SyncConflict('画布改动尚未同步到 Plein 服务，请稍后刷新')
       }
-      if (op === 'preview') return c.json(await svc.run(id, request.data))
+      const ref = { provider: request.data.provider, target: request.data.target }
+      if (op === 'preview')
+        return c.json(await svc.run(id, ref, undefined, { inspectOnly: request.data.inspectOnly }))
+      const guard = { expectTarget: request.data.expectTarget }
       if (op === 'pull-new') {
         const batch = ExternalPullNew.safeParse(raw)
         if (!batch.success)
           return c.json({ error: 'invalid', message: '每批可导入 1 至 200 个节点' }, 400)
-        await svc.run(id, request.data, batch.data)
-        return c.json({ imported: batch.data.rows.length })
+        const result = await svc.run(id, ref, batch.data, guard)
+        return c.json({
+          imported: batch.data.rows.length,
+          ...(request.data.includeReceipt && {
+            provider: result.provider,
+            target: result.resolvedTarget ?? result.target,
+            action: 'pull-new',
+            applied: result.applied,
+          }),
+        })
       }
       const apply = ExternalApply.safeParse(raw)
       if (!apply.success) return c.json({ error: 'invalid', message: '同步操作格式无效' }, 400)
-      await svc.run(id, request.data, apply.data)
+      const result = await svc.run(id, ref, apply.data, guard)
+      if (request.data.includeReceipt)
+        return c.json({
+          success: true,
+          provider: result.provider,
+          target: result.resolvedTarget ?? result.target,
+          action: apply.data.action,
+          applied: result.applied,
+        })
       return c.body(null, 204)
     })
   }

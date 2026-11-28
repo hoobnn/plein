@@ -3,12 +3,13 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Asset, Canvas, UserTemplate } from '@plein/protocol'
 import sharp from 'sharp'
-import { beforeAll, describe, expect, it } from 'vite-plus/test'
+import { beforeAll, describe, expect, it, vi } from 'vite-plus/test'
 import { WebSocket } from 'ws'
 import { WebsocketProvider } from 'y-websocket'
 import * as Y from 'yjs'
 import { hasFfmpeg } from './assets/media'
 import { parseRange } from './http/files'
+import { NodeRuns } from './runs/runs'
 import type { Config } from './config'
 import { startTestServer, tempDir, until } from './testing'
 
@@ -262,9 +263,35 @@ describe('账号登录（Better Auth）', () => {
     const canvas = (await (
       await fetch(`${local.base}/api/canvases`, { method: 'POST' })
     ).json()) as Canvas
+    const oldToken = (await (
+      await fetch(`${local.base}/api/mcp/external`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: '迁移前的只读令牌', scopes: ['read'] }),
+      })
+    ).json()) as { token: string }
+    // 旧版检查点用 owner_id + asset_id 钉住素材。只迁父行会导致真实账号注册中断。
+    const sqlite = local.server.db.$client
+    sqlite
+      .prepare(
+        "INSERT INTO assets (id,owner_id,kind,mime,name,size,variants,created_at) VALUES ('pinned','local','image','image/png','封面',1,'[]',1)",
+      )
+      .run()
+    sqlite
+      .prepare(
+        "INSERT INTO canvas_checkpoints (id,owner_id,project_id,source_canvas_id,source_canvas_title,name,state,created_at,content_hash) VALUES ('cp_auth','local',?,?,'画布','检查点',?,1,'fixture')",
+      )
+      .run(canvas.projectId, canvas.id, Buffer.alloc(0))
+    sqlite
+      .prepare(
+        "INSERT INTO checkpoint_assets (checkpoint_id,owner_id,asset_id) VALUES ('cp_auth','local','pinned')",
+      )
+      .run()
     await local.close()
 
+    const recover = vi.spyOn(NodeRuns.prototype, 'recover')
     const s = await start(dir, { auth: 'password' })
+    expect(recover).not.toHaveBeenCalled()
     const json = (body: unknown) => ({
       method: 'POST',
       headers: { 'content-type': 'application/json', origin: s.base },
@@ -278,6 +305,7 @@ describe('账号登录（Better Auth）', () => {
       const owner = { email: 'owner@example.com', password: 'correct horse', name: '所有者' }
       const signUp = await fetch(`${s.base}/api/auth/sign-up/email`, json(owner))
       expect(signUp.status).toBe(200)
+      expect(recover).toHaveBeenCalledTimes(1)
       const second = await fetch(
         `${s.base}/api/auth/sign-up/email`,
         json({ ...owner, email: 'other@example.com' }),
@@ -298,7 +326,24 @@ describe('账号登录（Better Auth）', () => {
         await fetch(`${s.base}/api/canvases`, { headers: { cookie } })
       ).json()) as Canvas[]
       expect(list.map((c) => c.id)).toEqual([canvas.id])
+      const projects = await (await fetch(`${s.base}/api/projects`, { headers: { cookie } })).json()
+      expect(projects).toMatchObject([{ id: canvas.projectId }])
       const session = await (await fetch(`${s.base}/api/session`, { headers: { cookie } })).json()
+      const pin = s.server.db.$client
+        .prepare("SELECT owner_id FROM checkpoint_assets WHERE checkpoint_id = 'cp_auth'")
+        .get()
+      expect(pin).toEqual({ owner_id: (session as { principal: { id: string } }).principal.id })
+      expect(s.server.db.$client.pragma('foreign_key_check')).toEqual([])
+      // 模拟旧版已迁过画布、素材，但项目和该平台音色仍在 local 名下。
+      const ownerId = (session as { principal: { id: string } }).principal.id
+      const db = s.server.db.$client
+      db.prepare('DELETE FROM local_workspace_adoptions WHERE owner_id=?').run(ownerId)
+      db.prepare("UPDATE projects SET owner_id='local' WHERE id=?").run(canvas.projectId)
+      const voice = db.prepare(
+        "INSERT INTO voices(id,owner_id,provider,voice_id,name,status,data,created_at,updated_at) VALUES (?,?,'mock','speaker','音色','ready','{}',1,1)",
+      )
+      voice.run('original', 'local')
+      voice.run('account_copy', ownerId)
       expect(session).toMatchObject({
         authRequired: true,
         needsSetup: false,
@@ -307,11 +352,45 @@ describe('账号登录（Better Auth）', () => {
     } finally {
       await s.close()
     }
+    recover.mockRestore()
     // 回到本机模式仍能看到这个画布
     const again = await start(dir)
     const list = (await (await fetch(`${again.base}/api/canvases`)).json()) as Canvas[]
     expect(list.map((c) => c.id)).toEqual([canvas.id])
+    const freshToken = (await (
+      await fetch(`${again.base}/api/mcp/external`, { method: 'POST' })
+    ).json()) as { token: string }
+    for (const { token } of [oldToken, freshToken]) {
+      const response = await fetch(`${again.base}/mcp`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: { name: 'list_projects', arguments: {} },
+        }),
+      })
+      const body = (await response.json()) as { result: { content: [{ text: string }] } }
+      expect(JSON.parse(body.result.content[0].text)).toMatchObject({
+        total: 1,
+        items: [{ id: canvas.projectId }],
+      })
+    }
+    const ownerId = (
+      (await (await fetch(`${again.base}/api/session`)).json()) as { principal: { id: string } }
+    ).principal.id
+    const db = again.server.db.$client
+    expect(db.prepare('SELECT id FROM voices WHERE owner_id=?').all(ownerId)).toEqual([
+      { id: 'account_copy' },
+    ])
+    db.prepare("DELETE FROM voices WHERE id='account_copy' AND owner_id=?").run(ownerId)
     await again.close()
+    const restarted = await start(dir)
+    expect(
+      restarted.server.db.$client.prepare('SELECT id FROM voices WHERE owner_id=?').all(ownerId),
+    ).toEqual([])
+    await restarted.close()
   })
 })
 

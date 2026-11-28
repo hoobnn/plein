@@ -6,6 +6,7 @@ import type { AssetStore } from '../assets/store'
 import type { AuthEnv } from '../auth'
 import { credentialFingerprint as fingerprintOf } from '../plugins/config-store'
 import type { PluginHost } from '../plugins/host'
+import { executionOutcome } from '../plugins/provider-protocol'
 import { generatedVoiceId, type VoiceStore } from './store'
 
 /** 同一音色两次查状态至少隔这么久，列表反复拉取时不刷平台接口 */
@@ -155,6 +156,7 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
           )
         return { assetId: asset.id, kind, mime: asset.mime }
       }
+      let acceptedVoiceId: string | undefined
       try {
         const signal = AbortSignal.timeout(180_000)
         const state =
@@ -193,9 +195,10 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
                 credentialFingerprint,
                 credentialLabel,
               )
+        acceptedVoiceId = state.voiceId ?? voiceId
         const voice = voices.save(owner, {
           ...fields,
-          voiceId: state.voiceId ?? voiceId,
+          voiceId: acceptedVoiceId,
           status: state.status,
           message: state.status === 'failed' ? state.message : null,
           credentialId,
@@ -206,19 +209,35 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
         return c.json(withCredentialState(await savePreview(owner, voice, state)), 201)
       } catch (err) {
         const e = providerError(err)
-        if (e.outcome === 'unknown') {
-          const voice = voices.save(owner, {
-            ...fields,
-            voiceId,
-            status: 'training',
-            message: `平台暂时没回结果，音色可能已经创建。请先到平台确认音色 ${voiceId}，不要重复创建：${e.message}`,
-            credentialId,
-            credentialFingerprint,
-            credentialLabel,
-          })
-          return c.json(withCredentialState(voice), 201)
+        if (!acceptedVoiceId && e.outcome === 'unknown') {
+          try {
+            const voice = voices.save(owner, {
+              ...fields,
+              voiceId,
+              status: 'training',
+              message: `平台暂时没回结果，音色可能已经创建。请先到平台确认音色 ${voiceId}，不要重复创建：${e.message}`,
+              credentialId,
+              credentialFingerprint,
+              credentialLabel,
+            })
+            return c.json(withCredentialState(voice), 201)
+          } catch {
+            // The platform may have created the voice even though its local recovery row could not be saved.
+          }
         }
-        return c.json({ error: e.code, message: e.message }, e.code === 'invalid_input' ? 400 : 422)
+        const outcome = acceptedVoiceId ? 'submitted' : executionOutcome(e)
+        return c.json(
+          {
+            error: e.code,
+            message: acceptedVoiceId
+              ? '平台已返回音色，本机未能保存记录，请先按音色 ID 核对'
+              : e.message,
+            ...(outcome
+              ? { execution_outcome: outcome, provider, voice_id: acceptedVoiceId ?? voiceId }
+              : {}),
+          },
+          e.code === 'invalid_input' ? 400 : 422,
+        )
       }
     })
     .patch('/api/voices/:id', async (c) => {

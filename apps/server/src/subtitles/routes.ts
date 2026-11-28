@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { stableStringify } from '@plein/canonical'
 import { parseModelRef, ProviderError, type TranscriptSegment } from '@plein/plugin-sdk'
@@ -14,11 +14,12 @@ import {
   type SubmissionAudit,
 } from '@plein/protocol'
 import { Hono } from 'hono'
-import type { AuthEnv } from '../auth'
+import { firstOwnerId, type AuthEnv } from '../auth'
+import { adoptLocalCallOutputs } from '../assets/output-spool'
 import type { AssetStore } from '../assets/store'
 import { credentialFingerprint as fingerprintOf } from '../plugins/config-store'
 import type { PluginHost } from '../plugins/host'
-import type { CallRecord } from '../plugins/provider-protocol'
+import { executionOutcome, type CallRecord } from '../plugins/provider-protocol'
 import type { DB } from '../storage/db'
 import { legacySubtitleRecord } from './legacy'
 import { readRecord, writeRecord } from './journal'
@@ -47,19 +48,29 @@ export function subtitleRoutes({
     const version = provider && host.registry.plugin(provider.plugin)?.manifest.version
     if (!provider || !spec || !spec.capabilities.includes('audio.transcribe'))
       throw new ProviderError('invalid_input', '所选模型不支持带时间戳的语音识别')
-    const key = createHash('sha256')
-      .update(
-        stableStringify({
-          ownerId,
-          assetId,
-          model,
-          version,
-          spec,
-          adapter: 'subtitle-recognition-v1',
-        }),
-      )
-      .digest('hex')
-    return { key, file: join(root, `${key}.json`), provider, spec, version }
+    const location = (ownerId: string) => {
+      const key = hash({
+        ownerId,
+        assetId,
+        model,
+        version,
+        spec,
+        adapter: 'subtitle-recognition-v1',
+      })
+      return { key, file: join(root, `${key}.json`), journalOwner: ownerId }
+    }
+    let source = location(ownerId)
+    if (ownerId !== 'local') {
+      const legacy = location('local')
+      const inFlight = pending.has(legacy.key)
+      if ((inFlight || existsSync(legacy.file)) && ownerId === firstOwnerId(db)) {
+        const current = readRecord(source.file)
+        const old = readRecord(legacy.file)
+        // Preserve the original request key for polls, including work queued before its first journal write.
+        if (!current?.record && (inFlight || old?.record || (!current && old))) source = legacy
+      }
+    }
+    return { ...source, provider, spec, version }
   }
   const credentialLost = (providerId: string, record: CallRecord): CredentialLost | undefined => {
     if (!record.credentialId) return undefined
@@ -128,7 +139,7 @@ export function subtitleRoutes({
     }
   }
   const recognize = (ownerId: string, assetId: string, model: string) => {
-    const { key, file, spec, version } = describe(ownerId, assetId, model)
+    const { key, file, spec, version, journalOwner } = describe(ownerId, assetId, model)
     const active = pending.get(key)
     if (active) return active
     const work = assets.activity
@@ -140,6 +151,8 @@ export function subtitleRoutes({
           writeRecord(file, stored)
         }
         let record = stored.record ?? undefined
+        if (record && journalOwner === 'local' && ownerId !== 'local')
+          adoptLocalCallOutputs(record, ownerId, `subtitle-${key}`, key)
         if (!record && !stored.confirmedReset && version) {
           const legacy = legacySubtitleRecord(db, {
             ownerId,
@@ -360,24 +373,52 @@ export function subtitleRoutes({
       if (ids.some((id) => assets.get(p.id, id)?.kind !== 'audio'))
         return c.json({ error: 'not_found', message: '音频素材不存在' }, 404)
       let activeAsset: string | undefined
+      const completedAssetIds: string[] = []
       try {
         // 顺序提交便于平台限流与逐条恢复；重复请求复用同一条在途 promise。
         const transcripts: SubtitleRecognizeResult['transcripts'] = {}
         for (const id of ids) {
           activeAsset = id
           transcripts[id] = await recognize(p.id, id, body.data.model)
+          completedAssetIds.push(id)
         }
         return c.json({ transcripts } satisfies SubtitleRecognizeResult)
       } catch (error) {
-        if (!(error instanceof ProviderError)) throw error
         let recovery: SubtitleRecognitionInfo | null = null
+        let outcome = executionOutcome(error)
         try {
-          recovery = activeAsset ? info(p.id, activeAsset, body.data.model) : null
+          if (activeAsset) {
+            const record = readRecord(describe(p.id, activeAsset, body.data.model).file)?.record
+            if (record)
+              outcome =
+                record.state === 'unknown' || record.state === 'submitting'
+                  ? 'unknown'
+                  : 'submitted'
+            recovery = info(p.id, activeAsset, body.data.model)
+          }
         } catch {
           /* 原始错误优先 */
         }
+        if (!outcome && completedAssetIds.length) outcome = 'submitted'
+        if (!(error instanceof ProviderError) && !outcome) throw error
         return c.json(
-          { error: error.code, message: error.message, outcome: error.outcome, recovery },
+          {
+            error: error instanceof ProviderError ? error.code : 'failed',
+            message:
+              error instanceof ProviderError
+                ? error.message
+                : '识别任务的本地记录保存失败，请核对原任务',
+            outcome: error instanceof ProviderError ? error.outcome : undefined,
+            ...(outcome
+              ? {
+                  execution_outcome: outcome,
+                  asset_id: activeAsset,
+                  model: body.data.model,
+                  completed_asset_ids: completedAssetIds,
+                }
+              : {}),
+            recovery,
+          },
           422,
         )
       }

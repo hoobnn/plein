@@ -104,7 +104,7 @@ Every result is a new asset with its source recorded; originals are never touche
 - Built-in agent: drives the canvas with the default chat model (it must support tool calling), no extra software needed
 - Local CLI: calls Claude Code or Codex already signed in on this machine, using your own account and quota
 - MCP server: Claude Code, Claude Desktop, Cursor and others can connect to your local Plein
-- Asks before spending money or deleting; supports plan mode; a whole turn of changes can be undone at once
+- Applies the selected approval mode to generation and deletion. Supports plan mode and undoing a turn of canvas edits.
 - Change plans: the fields to edit, nodes to redo and estimated calls are listed first, then approved by scope (text only / candidate images / everything); if the canvas changed before approval, the plan must be checked again
 
 See [Agent and MCP](docs/guide/agent.md) (Chinese).
@@ -193,7 +193,7 @@ The layout is identical across all three and can be copied between them: `plein.
 
 **Where are my data and API keys stored?** In one SQLite file and one asset folder on your own machine, easy to back up. There is no cloud account; platform keys stay on the local server and never reach the browser.
 
-**Can an AI agent operate the canvas?** Yes: the built-in agent "Xiaoman", a locally signed-in Claude Code / Codex, or Cursor and Claude Desktop over MCP. Paid generation and deletions need your confirmation.
+**Can an AI agent operate the canvas?** Yes: the built-in agent "Xiaoman", a locally signed-in Claude Code / Codex, or Cursor and Claude Desktop over MCP. External MCP tokens have separate read, edit, run and delete permissions. Video generation and deletion require confirmation. Individual image, text and voice generations may incur charges immediately.
 
 **Is the UI available in English?** Not yet. The app UI and most docs are in Simplified Chinese only.
 

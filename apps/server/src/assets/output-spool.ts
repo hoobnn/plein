@@ -3,6 +3,7 @@ import { constants, type ReadStream } from 'node:fs'
 import { lstat, mkdir, open, readdir, rename, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { DataActivity } from '../maintenance/activity'
+import type { CallRecord } from '../plugins/provider-protocol'
 
 export interface SpoolBinding {
   ownerId: string
@@ -47,6 +48,40 @@ export function isOutputSpoolRef(value: unknown): value is OutputSpoolRef {
     v.outputIndex >= 0 &&
     (v.state === 'writing' || v.state === 'ready')
   )
+}
+
+function matchesBinding(ref: OutputSpoolRef, binding: SpoolBinding) {
+  return (
+    isOutputSpoolRef(ref) &&
+    ref.ownerId === binding.ownerId &&
+    ref.jobId === binding.jobId &&
+    ref.callKey === binding.callKey &&
+    ref.attemptId === binding.attemptId &&
+    ref.outputIndex === binding.outputIndex
+  )
+}
+
+/** 只接管已经证明属于首个账号的 journal；历史审计和不匹配的引用保留原样。 */
+export function adoptLocalCallOutputs(
+  record: CallRecord,
+  owner: string,
+  jobId: string,
+  callKey: string,
+) {
+  if (record.state !== 'fetched') return
+  for (const [outputIndex, output] of record.outputs.entries()) {
+    if (output.type !== 'file' || !output.spool) continue
+    if (
+      matchesBinding(output.spool, {
+        ownerId: 'local',
+        jobId,
+        callKey,
+        attemptId: record.trace?.attemptId,
+        outputIndex,
+      })
+    )
+      output.spool = { ...output.spool, ownerId: owner }
+  }
 }
 
 /** 只识别命名字段里的严格引用，旧 base64/dropped 无需迁移。 */
@@ -101,15 +136,7 @@ export class OutputSpool {
   }
 
   private assert(ref: OutputSpoolRef, binding: SpoolBinding) {
-    if (
-      !isOutputSpoolRef(ref) ||
-      ref.ownerId !== binding.ownerId ||
-      ref.jobId !== binding.jobId ||
-      ref.callKey !== binding.callKey ||
-      ref.attemptId !== binding.attemptId ||
-      ref.outputIndex !== binding.outputIndex
-    )
-      throw new Error('平台输出暂存引用与当前调用不匹配')
+    if (!matchesBinding(ref, binding)) throw new Error('平台输出暂存引用与当前调用不匹配')
   }
 
   private async directory() {

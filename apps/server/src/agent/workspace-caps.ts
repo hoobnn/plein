@@ -6,6 +6,7 @@ import { CheckpointError } from '../checkpoints/service'
 import { MediaIndexError } from '../media-index/service'
 
 import { NodeRunError } from '../plugins/provider-protocol'
+import { CodedToolError } from './mcp'
 import type { ServerContext } from './tools'
 
 const cap = capabilityFor<ServerContext>()
@@ -34,6 +35,7 @@ const checkpoints = (ctx: ServerContext) => {
 
 export const searchMedia = cap({
   name: 'search_media',
+  requiresCanvas: false,
   title: '检索已有素材',
   group: 'media',
   where: 'server',
@@ -45,6 +47,7 @@ export const searchMedia = cap({
 })
 export const mediaSources = cap({
   name: 'get_media_sources',
+  requiresCanvas: false,
   title: '读取素材来源',
   group: 'media',
   where: 'server',
@@ -65,7 +68,7 @@ export const listJobs = cap({
   where: 'server',
   effect: 'read',
   description:
-    '读取当前画布任务及恢复信息；给 node_ids 时逐节点查最新任务，不受最近列表窗口限制。核查平台是否受理、取消后的远端任务或失败恢复前先读取。',
+    '读取当前画布任务及恢复信息；给 node_ids 时逐节点查最新任务。已知任务 ID 时用 get_job 读取指定历史任务；已知批次 ID 时用 get_group_items 分页查看该次批次。',
   input: z.object({
     node_ids: z.array(id).min(1).max(500).optional(),
     limit: z.number().int().min(1).max(100).default(50),
@@ -75,6 +78,56 @@ export const listJobs = cap({
       ? ctx.env.runs.latestForNodes(ctx.env.canvasId, a.node_ids)
       : ctx.env.runs.list(ctx.env.canvasId, a.limit),
 })
+
+export const getJob = cap({
+  name: 'get_job',
+  title: '读取指定生成任务',
+  group: 'read',
+  where: 'server',
+  effect: 'read',
+  description:
+    '按 job_id 读取当前画布的一次任务，包含状态、平台受理记录与现有恢复选项。即使节点已经再次运行，仍读取指定任务。has_input 为真时，用 inspect_node_input 的 id 填 nodeId、run_id 填该任务 ID，分页读取冻结输入。',
+  input: z.object({ job_id: id }),
+  run: (ctx, a) => {
+    const row = ctx.env.runs.ownedJob(ctx.env.canvasId, a.job_id, ctx.env.ownerId)
+    if (!row) throw new CodedToolError('not_found', '当前画布没有这个任务')
+    const { input, ...job } = ctx.withDoc((doc) => ctx.env.runs.jobInfo(row, doc))
+    return { ...job, has_input: !!input }
+  },
+})
+
+export const getGroupItems = cap({
+  name: 'get_group_items',
+  title: '读取批次逐项记录',
+  group: 'read',
+  where: 'server',
+  requiresCanvas: false,
+  effect: 'read',
+  description:
+    '按 group_id 分页读取该批次启动时的目标、阶段、待解析依赖数、最新结局和原因，包含沿用、跳过和待复核的节点。已提交的项带 jobId，可用 get_job 核对原任务和恢复选项。',
+  input: z.object({
+    group_id: id,
+    offset: z.number().int().min(0).default(0),
+    limit: z.number().int().min(1).max(50).default(20),
+  }),
+  run: (ctx, a) => {
+    const snapshot = ctx.env.runs.batchSnapshot(a.group_id, ctx.env.ownerId, {
+      offset: a.offset,
+      limit: a.limit + 1,
+    })
+    if (!snapshot) throw new CodedToolError('not_found', '没有这个批次记录')
+    const items = snapshot.items.slice(0, a.limit).map(({ input: _input, deps, ...item }) => ({
+      ...item,
+      dependency_count: deps.length,
+    }))
+    return {
+      group_id: a.group_id,
+      canvas_id: snapshot.canvasId,
+      items,
+      ...(snapshot.items.length > a.limit ? { next_offset: a.offset + a.limit } : {}),
+    }
+  },
+})
 const RECOVER_JOB_TITLE = '恢复生成任务'
 
 export const recoverJob = cap({
@@ -82,6 +135,7 @@ export const recoverJob = cap({
   title: RECOVER_JOB_TITLE,
   group: 'run',
   where: 'server',
+  effects: ['edit', 'run'],
   effect: (a) => (a.operation.action === 'resubmit' ? 'run' : 'edit'),
   // refetch / attach 只是查询或标记，不问；resubmit 是 run，总是问（run 分支）
   approval: () => ({ reason: RECOVER_JOB_TITLE, ids: [] }),
@@ -109,6 +163,7 @@ export const recoverJob = cap({
 })
 export const cancelGroup = cap({
   name: 'cancel_group',
+  requiresCanvas: false,
   title: '取消整组运行',
   group: 'run',
   where: 'server',
@@ -154,6 +209,7 @@ export const createCheckpoint = cap({
 })
 export const restoreCheckpoint = cap({
   name: 'restore_checkpoint',
+  requiresCanvas: false,
   title: '恢复检查点为新画布',
   group: 'project',
   where: 'server',
@@ -166,6 +222,7 @@ export const restoreCheckpoint = cap({
 })
 export const deleteCheckpoint = cap({
   name: 'delete_checkpoint',
+  requiresCanvas: false,
   title: '删除检查点',
   group: 'project',
   where: 'server',
@@ -182,6 +239,8 @@ export const workspaceCapabilities = [
   searchMedia,
   mediaSources,
   listJobs,
+  getJob,
+  getGroupItems,
   recoverJob,
   cancelGroup,
   listCheckpoints,

@@ -82,8 +82,23 @@ describe('画布与 Agent 能力契约', () => {
     expect(effect('list_models')).toBe('read')
     expect(effect('set_node_model')).toBe('edit')
     expect(effect('rename_element')).toBe('edit')
-    expect(effect('rewrite_prompt', { apply: false })).toBe('read')
-    expect(effect('rewrite_prompt')).toBe('edit')
+    expect(effect('rewrite_prompt', { apply: false })).toBe('run')
+    expect(effect('rewrite_prompt')).toBe('run')
+    expect(
+      effect('perform_canvas_action', {
+        action: 'recover_subtitle_recognition',
+        input: { operation: { action: 'attach' } },
+      }),
+    ).toBe('edit')
+    expect(
+      effect('perform_canvas_action', { action: 'create_voice', input: { voiceId: 'existing' } }),
+    ).toBe('edit')
+    expect(
+      effect('perform_canvas_action', {
+        action: 'create_voice',
+        input: { sampleAssetId: 'sample' },
+      }),
+    ).toBe('run')
     const tools = canvasTools(f.env).map((t) => t.name)
     expect(tools).toEqual(
       expect.arrayContaining(['list_models', 'set_node_model', 'rename_element']),
@@ -132,9 +147,25 @@ describe('画布与 Agent 能力契约', () => {
       for (const [action, input] of [
         [
           'create_voice',
-          { mode: 'register', provider: 'minimax/audio', name: '音色', voiceId: 'existing' },
+          {
+            mode: 'design',
+            provider: 'minimax/audio',
+            name: '音色',
+            prompt: '低沉',
+            previewText: '早上好',
+          },
         ],
         ['delete_library_item', { id: 'missing' }],
+        [
+          'recover_subtitle_recognition',
+          {
+            model: 'mock',
+            assetId: 'a'.repeat(64),
+            expected: 'version',
+            confirmedNotAccepted: true,
+            operation: { action: 'resubmit' },
+          },
+        ],
       ] as const) {
         const result = await callTool(
           tools.find((t) => t.name === 'perform_canvas_action')!,
@@ -144,12 +175,24 @@ describe('画布与 Agent 能力契约', () => {
           JSON.parse(result.content[0]!.type === 'text' ? result.content[0]!.text : '{}').status,
         ).toBe('needs_approval')
       }
+      const register = await callTool(
+        tools.find((t) => t.name === 'perform_canvas_action')!,
+        {
+          action: 'create_voice',
+          input: { provider: 'minimax/audio', name: '已用音色', voiceId: 'existing' },
+        },
+      )
+      expect(register.isError).not.toBe(true)
+      expect(register.content[0]).toMatchObject({
+        type: 'text',
+        text: expect.stringContaining('existing'),
+      })
       const invalid = await callTool(
         tools.find((t) => t.name === 'perform_canvas_action')!,
         { action: 'create_voice', input: {} },
       )
       expect(invalid.isError).toBe(true)
-      expect(cards).toBe(2)
+      expect(cards).toBe(3)
     } finally {
       approvals.expireAll()
       changes.end()

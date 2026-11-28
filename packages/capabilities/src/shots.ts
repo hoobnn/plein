@@ -198,6 +198,7 @@ export const editShots = defineCapability({
   title: '逐镜修改分镜表',
   group: 'story',
   where: 'doc',
+  effects: ['edit', 'destructive'],
   effect: (a) => (a.ops.some((o) => o.op === 'remove') ? 'destructive' : 'edit'),
   approval: (a) =>
     a.ops.some((o) => o.op === 'remove')

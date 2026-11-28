@@ -25,7 +25,7 @@ import type { NodeRuns } from '../runs/runs'
 import { storyboardBatchesOf, type StoryboardBatches } from '../runs/storyboard-batch'
 import type { LibraryStore } from '../library/store'
 import type { Rooms } from '../sync/rooms'
-import { requestUndo } from './ui-bridge'
+import { activeView, requestUndo } from './ui-bridge'
 import type { CheckpointService } from '../checkpoints/service'
 import type { FileServices } from '../files/services'
 import type { MediaIndex } from '../media-index/service'
@@ -46,6 +46,7 @@ import { imageCapabilities } from './tools-image'
 import { workspaceCapabilities } from './workspace-caps'
 import { modelCapabilities } from './model-caps'
 import { projectCapabilities } from './project-caps'
+import { externalCanvasCapabilities } from './external-canvas-caps'
 import { impactCapabilities } from './impact-caps'
 import { estimateCost } from './estimate-caps'
 import { providerCapabilities } from './provider-caps'
@@ -91,6 +92,8 @@ export interface ToolEnv {
   onGroup?(groupId: string): void
   /** 本轮发送或命令调用时附带的选区快照；未附带时为空，不回退实时选区。 */
   selection?: readonly string[]
+  /** 外部调用从当前窗口采样。会话使用发送时的 request 快照。 */
+  selectionSource?: 'view' | 'unavailable'
   /** 推给用户屏幕的界面动作；返回 false 表示没有人在看这块画布 */
   ui?(call: UiCall): boolean
 }
@@ -103,6 +106,8 @@ export type UiAction = UiCall['action']
 
 /** 前端经 awareness 发布的界面状态（选区、视口），见 apps/web/src/canvas/CanvasView.tsx */
 export interface ViewState {
+  /** Version 2 receives targeted navigation and fit-to-canvas on a separate awareness field. */
+  uiVersion?: number
   selection: string[]
   viewport: { x: number; y: number; w: number; h: number }
   at: number
@@ -110,12 +115,7 @@ export interface ViewState {
 
 /** 读这块画布最近活跃的那个标签页的选区和视口 */
 export function viewOf(rooms: Rooms, canvasId: string): ViewState | undefined {
-  let best: ViewState | undefined
-  for (const st of rooms.get(canvasId).awareness.getStates().values()) {
-    const v = (st as { view?: ViewState }).view
-    if (v && Array.isArray(v.selection) && v.viewport && (!best || v.at > best.at)) best = v
-  }
-  return best
+  return activeView(rooms, canvasId)?.view
 }
 
 export interface ServerContext extends CapabilityContext {
@@ -168,6 +168,7 @@ export function serverContext(env: ToolEnv): ServerContext {
     storyboardBatches: scoped(storyboardBatchesOf(env.runs)),
     withDoc: (fn) => {
       guard?.()
+      if (!env.canvasId) throw new CapabilityError('这项操作需要指定画布')
       return env.rooms.withDoc(env.canvasId, fn, undefined, env.origin)
     },
     nodes: {
@@ -203,7 +204,7 @@ const getSelection = serverCapability({
   name: 'ui_get_selection',
   title: '查看选区',
   description:
-    '读取本轮发送时附带的选区快照。用户后来在画布上换选区不会改变这些目标；未附带选区时返回空。',
+    '读取选区快照。内置会话使用本轮发送时附带的元素（source=request），外部调用读取当前画布的活跃窗口（source=view）。没有打开窗口时返回 no_viewer。',
   group: 'ui',
   where: 'client',
   effect: 'read',
@@ -211,8 +212,14 @@ const getSelection = serverCapability({
     offset: z.number().int().min(0).default(0),
     limit: z.number().int().min(1).max(50).default(20),
   }),
-  run: (ctx, a) =>
-    ctx.withDoc((doc) => {
+  run: (ctx, a) => {
+    if (ctx.env.selectionSource === 'unavailable')
+      return {
+        status: 'no_viewer',
+        source: 'unavailable',
+        message: '当前没有打开这张画布的窗口，无法读取选区。',
+      }
+    return ctx.withDoc((doc) => {
       const ids = ctx.env.selection ?? []
       const elements = []
       const missing: string[] = []
@@ -234,14 +241,15 @@ const getSelection = serverCapability({
         next++
       }
       return {
-        source: 'request',
+        source: ctx.env.selectionSource ?? 'request',
         total: ids.length,
         elements,
         missing,
         complete: next >= ids.length,
         ...(next < ids.length ? { next_offset: next } : {}),
       }
-    }),
+    })
+  },
 })
 
 const getViewport = serverCapability({
@@ -281,18 +289,15 @@ const uiAction = (action: 'focus' | 'select', title: string, description: string
     description,
     group: 'ui',
     where: 'client',
-    effect: 'read',
-    // 选中允许空数组：清空用户的选区
+    effect: 'edit',
+    // focus 空目标按界面的“适应画布”执行，select 空目标清空选区。
     input: z.object({
-      ids: z
-        .array(id)
-        .min(action === 'select' ? 0 : 1)
-        .max(200),
+      ids: action === 'focus' ? z.array(id).max(200).default([]) : z.array(id).max(200),
     }),
     run: (ctx, { ids }) => {
       const known = ctx.withDoc((doc) => ids.filter((i) => doc.get(i)))
       if (ids.length && !known.length) throw new CapabilityError('这些元素都不存在')
-      return ctx.env.ui?.({ action, ids: known }) ? '已在用户屏幕上完成' : NO_VIEWER
+      return ctx.env.ui?.({ action, ids: known }) ? '已向打开的画布发送视图操作' : NO_VIEWER
     },
   })
 
@@ -303,14 +308,14 @@ const setViewport = serverCapability({
     '把用户的镜头移到指定位置：x、y 是要落在屏幕中央的世界坐标，zoom 是缩放（0.05–8，1 为实际大小）。用 ui_get_viewport 读当前视口。',
   group: 'ui',
   where: 'client',
-  effect: 'read',
+  effect: 'edit',
   input: z.object({
     x: z.number().finite(),
     y: z.number().finite(),
     zoom: z.number().min(0.05).max(8),
   }),
   run: (ctx, { x, y, zoom }) =>
-    ctx.env.ui?.({ action: 'viewport', x, y, zoom }) ? '已在用户屏幕上完成' : NO_VIEWER,
+    ctx.env.ui?.({ action: 'viewport', x, y, zoom }) ? '已向打开的画布发送视图操作' : NO_VIEWER,
 })
 
 const undoUi = serverCapability({
@@ -337,7 +342,7 @@ const undoUi = serverCapability({
 const focus = uiAction(
   'focus',
   '带用户看',
-  '把用户的镜头平滑移动到这些元素并让它们闪一下。做完一件事后用它把用户带到结果那里。',
+  '把用户的镜头移到指定元素。不传 ids 或传空数组时适应整张画布，与界面的“适应画布”相同。需要用户已打开目标画布。',
 )
 const select = uiAction(
   'select',
@@ -347,6 +352,7 @@ const select = uiAction(
 
 const listCanvasCapabilities = serverCapability({
   name: 'list_canvas_capabilities',
+  requiresCanvas: false,
   title: '查询画布能力契约',
   description:
     '查询实时能力目录（含插件）。不填 name 返回名称、用途、分组与运行位置；指定 name 返回完整输入 JSON Schema。先查契约再操作，不猜参数；节点的嵌套参数用 list_node_types 指定 type 查询。若当前环境只带了一组核心工具，名字不在其中的工具先用 load_tools 加载再调用。',
@@ -423,6 +429,13 @@ export const serverCapabilities = new CapabilityRegistry<ServerContext>([
 ])
 
 const withPlugins = new WeakMap<PluginHost, CapabilityRegistry<ServerContext>>()
+const externalCanvasHosts = new WeakSet<PluginHost>()
+
+/** Register these tools only where the same authenticated local routes are mounted. */
+export function registerExternalCanvasTools(host: PluginHost) {
+  externalCanvasHosts.add(host)
+  withPlugins.delete(host)
+}
 
 /** 自带能力 + 已加载插件贡献的能力（插件在启动时登记，之后不变，所以按宿主缓存） */
 export function capabilitiesOf(host: PluginHost): CapabilityRegistry<ServerContext> {
@@ -430,6 +443,7 @@ export function capabilitiesOf(host: PluginHost): CapabilityRegistry<ServerConte
   if (!reg) {
     reg = new CapabilityRegistry<ServerContext>([
       ...serverCapabilities.list(),
+      ...(externalCanvasHosts.has(host) ? externalCanvasCapabilities : []),
       ...pluginCapabilities(host, serverCapabilities),
     ])
     withPlugins.set(host, reg)

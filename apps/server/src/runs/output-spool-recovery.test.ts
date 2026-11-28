@@ -20,7 +20,7 @@ const fileOutput = (data: Uint8Array): ProviderOutput => ({
 const callsOf = (server: Awaited<ReturnType<typeof bootServer>>['server'], run: string) =>
   JSON.parse(server.runs.store.get(run)!.calls) as Record<string, CallRecord>
 
-it.each(['ingest-failed', 'ready-before-journal'] as const)(
+it.each(['ingest-failed', 'ready-before-journal', 'first-owner-adopts'] as const)(
   '%s 后重启仅从持久字节取回；大字节不进done JSON、不再submit',
   async (mode) => {
     const first = await bootServer()
@@ -30,7 +30,7 @@ it.each(['ingest-failed', 'ready-before-journal'] as const)(
     const submit = vi
       .spyOn(mockProvider, 'submit')
       .mockResolvedValueOnce({ state: 'succeeded', outputs: [fileOutput(bytes)] })
-    if (mode === 'ingest-failed')
+    if (mode !== 'ready-before-journal')
       vi.spyOn(first.server.assets, 'ingest').mockRejectedValueOnce(
         new Error('local storage offline'),
       )
@@ -63,11 +63,34 @@ it.each(['ingest-failed', 'ready-before-journal'] as const)(
     expect(Object.values(callsOf(first.server, run))[0]).not.toHaveProperty('remoteId')
     const refs = outputSpoolRefs(callsOf(first.server, run))
     expect(refs).toHaveLength(1)
-    expect(refs[0]?.state).toBe(mode === 'ingest-failed' ? 'ready' : 'writing')
+    expect(refs[0]?.state).toBe(mode === 'ready-before-journal' ? 'writing' : 'ready')
     expect(first.server.runs.store.get(run)!.calls.length).toBeLessThan(5000)
     await first.close()
-    const second = await bootServer({ dataDir: first.dataDir })
-    second.server.runs.recoverJob(id, run, 'local', { action: 'refetch' })
+    const second = await bootServer({
+      dataDir: first.dataDir,
+      config: { auth: mode === 'first-owner-adopts' ? 'password' : 'none' },
+    })
+    let owner = 'local'
+    if (mode === 'first-owner-adopts') {
+      const signup = await request(second.server, 'http://127.0.0.1:8787/api/auth/sign-up/email', {
+        method: 'POST',
+        headers: { origin: 'http://127.0.0.1:8787' },
+        body: JSON.stringify({
+          email: 'owner@example.invalid',
+          password: 'correct horse',
+          name: '所有者',
+        }),
+      })
+      expect(signup.status).toBe(200)
+      owner = ((await signup.json()) as { user: { id: string } }).user.id
+      expect(second.server.runs.store.get(run)?.owner_id).toBe(owner)
+      const [key] = Object.keys(callsOf(second.server, run))
+      const inspect = (as: string) =>
+        outputSpoolRefs(second.server.runs.store.journal(run, as).get(key!))[0]
+      expect(inspect('unrelated')?.ownerId).toBe('local')
+      expect(inspect(owner)).toMatchObject({ ...refs[0], ownerId: owner })
+    }
+    second.server.runs.recoverJob(id, run, owner, { action: 'refetch' })
     expect(await second.server.runs.wait(run)).toBe('succeeded')
     await until(() => !second.server.runs.isRunning(id, node))
     expect(submit).toHaveBeenCalledTimes(1)
@@ -79,7 +102,7 @@ it.each(['ingest-failed', 'ready-before-journal'] as const)(
     expect(asset?.assetId).toBe(expected)
     expect(
       createHash('sha256')
-        .update(await second.server.assets.readOriginal('local', asset!.assetId))
+        .update(await second.server.assets.readOriginal(owner, asset!.assetId))
         .digest('hex'),
     ).toBe(expected)
     expect(done.result.outputs[0]).not.toHaveProperty('data')

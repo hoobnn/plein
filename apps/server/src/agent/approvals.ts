@@ -22,7 +22,7 @@ type Cap = CapabilityDefinition<z.ZodObject, ServerContext>
 
 /**
  * 确认策略（调度层，通用回退声明关不掉）：
- * - auto：全部直接执行；effect 不是 run / destructive 的直接放行；
+ * - auto：全部直接执行。其余模式下，明确声明 confirmEdits 的编辑使用自己的确认条件；
  * - 声明了 approval 的能力提供确认的说法（两种模式同样生效），或用 exempt 显式放行；
  *   返回 null 等价于没声明，继续走下面的统一回退链；
  * - 统一回退：always 都问；rules 里破坏性的、插件能力花钱或删东西的问，其它不问。
@@ -36,6 +36,11 @@ export function approvalFor(
 ): ApprovalRequest | null {
   if (mode === 'auto') return null
   const effect = typeof cap.effect === 'function' ? cap.effect(input, ctx) : cap.effect
+  if (effect === 'edit' && cap.confirmEdits) {
+    if (!cap.approval) return { reason: cap.title, ids: [] }
+    const req = cap.approval(input, ctx, { mode, changes })
+    return req && !('exempt' in req) ? req : null
+  }
   if (effect !== 'run' && effect !== 'destructive') return null
   const fallback = { reason: cap.title, ids: [] }
   if (cap.approval) {

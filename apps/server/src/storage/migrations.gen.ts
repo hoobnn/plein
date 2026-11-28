@@ -140,4 +140,12 @@ export const MIGRATIONS: Migration[] = [
       'CREATE TABLE `external_media_exports` (\n\t`canvasId` text NOT NULL,\n\t`provider` text NOT NULL,\n\t`target` text NOT NULL,\n\t`localAssetId` text NOT NULL,\n\t`operationId` text NOT NULL,\n\t`remoteNodeId` text,\n\t`remoteAssetId` text,\n\tPRIMARY KEY(`canvasId`, `provider`, `target`, `localAssetId`),\n\tFOREIGN KEY (`canvasId`) REFERENCES `canvases`(`id`) ON UPDATE no action ON DELETE cascade\n);',
     ],
   },
+  {
+    tag: '0013_awesome_magma',
+    when: 1795860361581,
+    hash: '86b87228712c5e5e0acb1aaaefcc60ce998cdb192ac1a39fe3a1327d0716d606',
+    statements: [
+      'CREATE TABLE `local_workspace_adoptions` (\n\t`owner_id` text PRIMARY KEY NOT NULL\n);',
+    ],
+  },
 ]

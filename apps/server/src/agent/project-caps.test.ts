@@ -65,6 +65,21 @@ describe('项目与画布管理能力', () => {
       title: '第二幕改',
       project_title: '长片',
     })
+    expect(await f.invoke('list_canvases', { query: ' 二幕改 ', limit: 1 })).toMatchObject([
+      { id: second.canvas_id, open_path: `/#/c/${second.canvas_id}` },
+    ])
+    expect(await f.invoke('list_projects', { query: ' 长片 ', limit: 1 })).toMatchObject({
+      total: 1,
+      items: [{ id: project.project_id }],
+    })
+    expect(await f.invoke('open_canvas', { canvas_id: second.canvas_id })).toMatchObject({
+      canvas_id: second.canvas_id,
+      status: 'link_only',
+      open_path: `/#/c/${second.canvas_id}`,
+    })
+    await expect(
+      f.invoke('open_canvas', { canvas_id: second.canvas_id, from_canvas_id: 'missing' }),
+    ).rejects.toThrow()
     const all = (await f.invoke('list_canvases', {})) as Array<{ id: string; viewing?: boolean }>
     expect(all.find((c) => c.id === f.id)?.viewing).toBe(true)
     expect(await f.invoke('list_canvases', { limit: 1 })).toHaveLength(1)

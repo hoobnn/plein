@@ -10,9 +10,9 @@ Plein 里的智能体叫「小满」，在画布右下角。它和画布上的�
 | 本机 Claude Code / Codex | 这台电脑上已安装、已登录的 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 或 [Codex](https://github.com/openai/codex) CLI | 想用自己的订阅额度，或需要 CLI 自带的 MCP、skill 和本机文件操作 |
 | 对外开放 MCP             | 外部 AI 应用自己的模型                                                                                                                   | 在 Claude Desktop、Claude Code、Cursor 里直接操作 Plein 画布    |
 
-三种方式共有的行为：
+三种入口使用同一套能力。确认方式随入口和助手设置而定。
 
-- 执行付费生成或删除操作之前，先在面板里弹出确认卡片。
+- 内置助手和本机 CLI 按所选确认模式执行。外部 MCP 使用规则模式，通过工具回执向外部应用请求确认。单次图片、文本或配音生成可以直接产生费用。
 - 计划模式：先列出计划，经确认后执行，并逐项标记完成进度。
 - 修改方案：修改已有镜头或节点（如“让第三镜头更紧张”）时，先给出方案卡片，列出要改的字段（前后值）、改完后实际送入的参考、会重新生成的节点、保留项和预计调用次数与费用。批准前可以逐项编辑：点字段旁的笔改成自己的写法、点叉去掉某项改动（都会重新检查参考、要重做的节点和费用），不勾某个镜头或某个要运行的节点（估算跟着变，不勾的节点保留当前结果）。然后只改文字（不调用平台）、只出候选图或执行完整方案；批准时目标已经变了就不执行旧方案。对外 MCP 用 `propose_edit` / `apply_edit_plan` 两个工具，由外部应用确认范围（`only` 选目标、`skip` 跳过步骤）。
 - 先选中画布元素再提问，选区会作为上下文一起发过去；多选工具条上的「让小满处理」会带着选区直接打开面板。
@@ -78,26 +78,26 @@ Codex 目录来自本机 `skills/list`，显式选用时通过 `turn/start` 的 
 
 ## 对外开放 MCP
 
-在设置 →「MCP」里生成令牌，再按你用的客户端（Claude Code、Claude Desktop、Cursor 等）复制对应的连接配置。外部应用和小满使用同一份能力目录，但外部没有会话里的确认面板和按轮撤销，所以这一层由 MCP 协议层单独补齐，行为和小满并不完全相同（见下）。调用时不传 `canvas_id`，就操作你正在看的那块画布，没有打开的画布时用最近改过的那块。
+在设置 →「MCP」里生成令牌，再按你用的客户端（Claude Code、Claude Desktop、Cursor 等）复制对应的连接配置。外部应用和小满使用同一份能力目录，但外部没有会话里的确认面板和按轮撤销，所以这一层由 MCP 协议层单独补齐，行为和小满并不完全相同（见下）。需要画布的工具优先使用传入的 `canvas_id`，省略时使用正在看的画布，再回退到最近改过的画布。空工作区也可以查询工具、动作、节点和模型，搜索项目，导入素材或项目包，以及新建第一张画布。
 
 - 初次使用按这个顺序了解能力：`list_canvas_capabilities`（工具目录与契约）→ `list_canvas_actions`（扩展操作）→ `list_node_types`（节点类型、参数、端口）→ `list_models`（模型目录与约束）。连接说明里也写了这个顺序。
-- 同样只在本机免登录模式下开放。
+- 外部 MCP 只在免登录模式下开放。即梦 CLI 还要求监听回环地址。本机文件访问遵循服务端配置的目录范围。
 - 令牌只在生成时显示一次，服务端只保存它的 SHA-256。
 
 ### 令牌与权限范围
 
-可以同时有多枚令牌，每枚带名称和权限范围，对应能力的副作用等级：`read`（查看）、`edit`（新建、修改、连线）、`run`（调用模型，会花钱）、`destructive`（删除）。设置页生成时勾选范围，可选「每天最多运行 N 次」，并能列出、单独撤销令牌；新增令牌不会让旧令牌失效。
+可以同时有多枚令牌，每枚带名称和权限范围，对应能力的副作用等级：`read`（查看）、`edit`（新建、修改、连线）、`run`（调用模型，会花钱）、`destructive`（删除、覆盖和发布到外部画布）。设置页生成时勾选范围，可限制「每天最多调用运行工具」的次数。一次批量调用计一次，服务重启后保留当天已用次数。这是工具调用次数，平台费用和批内任务数另算。设置页可查看和单独撤销令牌。
 
-- `tools/list` 只列出令牌范围内的工具；调用超出范围的工具返回 `forbidden_scope`，信息里说明缺哪项权限、去哪里新建令牌。
-- 旧版的单个令牌自动迁移为一枚「默认令牌」，拥有全部权限，原有配置继续可用。
+- `tools/list`、`list_canvas_capabilities` 与能力资源使用同一套外部输入契约。工具有一个可用分支就会出现在令牌目录内。每次调用按具体参数检查所需权限，缺少权限返回 `forbidden_scope`。未声明的具名参数返回 `invalid_params`。
+- 旧版的单个令牌自动迁移为一枚「默认令牌」，拥有全部权限，原有配置继续可用。首次创建所有者账号后，再切回免登录模式时，原令牌沿用原有权限和用量，访问迁移后的工作区。
 - 每次调用写入审计日志（`external-mcp-audit.jsonl`，在数据目录里）：时间、令牌名、工具名、是否成功和错误码，不记录参数内容。最近记录可从 `GET /api/mcp/external/audit` 读取。
 
 ### 确认、幂等与撤销
 
 - 运行类工具外部同样先做预检：输入被阻断时直接返回阻断原因，不会先让你确认再失败。批量分镜 `run_storyboard` 第一次调用只返回含费用的清单，审阅后带 `token` 才提交。
-- 会花钱或删东西的操作（规则与内置智能体的「规则」模式一致：视频、插件能力、所有删除类）不会静默执行，而是返回 `status: "needs_approval"`（错误码 `needs_user`），带 `reason`，运行节点时还带模型价格。外部应用把原因讲给你，你同意后用相同参数加 `confirm: true` 重试。图片、文本、配音生成不单独确认，外部令牌也没有内置智能体每轮的运行次数上限；要限额就在生成令牌时填每日运行次数上限。令牌范围不含 `run` / `destructive` 时直接拒绝。
-- 修改类和运行类工具可带 `client_request_id`：同一个令牌下同一个 id 重放会返回第一次的结果（结果里带 `replayed: true`），不会重复执行或重复扣费；同一个 id 用于不同参数会报 `invalid_params`。失败和等待确认的结果不记，修正后可用同一个 id 重试。幂等记录保存在进程内存，保留 30 分钟。
-- 修改类调用的结果带 `undo_token`，10 分钟内用 `undo_call({ token })` 撤销这一次，机制与「让小满撤销这一轮」相同；只能撤销发起它的那枚令牌做的改动。撤销只回退这一次调用写入的内容，之后别人改过的字段按协同规则保留。
+- 删除、单节点视频生成、批量运行、对话模型改写和声明了确认要求的远程编辑会返回 `status: "needs_approval"`（错误码 `needs_user`），带 `reason`，运行节点时还带模型价格。外部应用把原因讲给你，你同意后用相同参数加 `confirm: true` 重试。普通单节点图片、文本、配音生成可直接运行，外部令牌也没有内置智能体每轮的运行次数上限；要限额就在生成令牌时填每日运行次数上限。令牌范围不含 `run` / `destructive` 时直接拒绝。
+- 修改类和运行类工具可带 `client_request_id`。同一枚令牌以同一个 id、目标和参数重试时，会复用在途调用或第一次的回执，并带 `replayed: true`。不同参数返回 `invalid_params`。预检失败或等待确认时可以修正后沿用原 id。模型已调用或平台接收情况未知时，回执保留 `execution_outcome` 和本次运行额度。可先按恢复信息核对原任务，再决定下一步。幂等回执保存在进程内存，操作结束后最多保留 30 分钟，缓存满时会提前释放。重启或回执失效后先核对原操作。
+- 画布变更在记录了可撤销操作后返回 `undo_token`，有 `edit` 权限的原令牌在 10 分钟内用 `undo_call({ token })` 撤销这一次，机制与「让小满撤销这一轮」相同；只能撤销发起它的那枚令牌做的改动。撤销只回退这一次调用写入的内容，之后别人改过的字段按协同规则保留。项目、资产、外部平台写入及已提交的生成费用有各自的生命周期。
 
 ### 错误码
 
@@ -105,16 +105,16 @@ Codex 目录来自本机 `skills/list`，显式选用时通过 `turn/start` 的 
 
 ### 输出上限与长任务
 
-工具结果文字超过 32 KiB 时不返回原文，而是返回 `too_large`，提示改用 `get_canvas_page`、`get_element_field` 分页读取（与内置智能体同一口径）。`run_node`、`wait_for_run`、`wait_for_group` 默认最多等 20 秒（可用 `wait_seconds` 调到 50），仍在运行时返回 `running` 和续等提示。客户端请求带 `progressToken` 并接受 `text/event-stream` 时，服务端分段等待并发送 `notifications/progress`。
+外部工具的单次文本上限是 32 KiB。普通画布读取超限时返回 `too_large`，可用 `get_canvas_page`、`get_element_field` 分页读取。按名称查询的完整节点、模型、工具和扩展操作契约超过上限时，返回 `result_omitted: true` 和 `recovery.uri`。写入、运行及提交状态未明的操作也可通过此方式取回长回执，并保留幂等与可用的撤销信息。用原令牌对 `recovery.uri` 调用 `resources/read`，按 `next_uri` 顺序拼接每页的 `text` 即可还原原文。单条最多保存 4 MiB，进程中的短期结果总共最多 16 MiB，最长保留 30 分钟。容量满时优先释放最早的回执。超过单条上限或回执已释放时会说明原因，先核对原操作的状态。`run_node`、`wait_for_run`、`wait_for_group` 默认最多等 20 秒（可用 `wait_seconds` 调到 50），仍在运行时返回 `running` 和续等提示。客户端请求带 `progressToken` 并接受 `text/event-stream` 时，服务端分段等待并发送 `notifications/progress`。
 
 ### 界面动作
 
-画布在浏览器或桌面端打开时，`ui_focus`、`ui_select`、`ui_set_viewport` 经协同通道推给打开这块画布的标签页执行；没有标签页打开时返回明确提示且不影响画布内容。`ui_select` 传空数组清空选区；`ui_set_viewport({ x, y, zoom })` 的 `x`、`y` 是落在屏幕中央的世界坐标，`zoom` 范围 0.05–8。`ui_undo({ steps?, redo? })` 让打开这块画布的界面执行撤销或重做（1–20 步），与用户按 ⌘Z / ⇧⌘Z 是同一个撤销栈，因此会回退用户自己的操作，只在用户明确要求时使用；它与「撤销这一轮」不同，后者只回退小满本轮的改动。返回实际执行步数与 `can_undo` / `can_redo`，栈为空时返回 `done: 0`。
+读取视口或选区只需 `read` 权限，改变视口、选区和当前画布需 `edit`。外部 `ui_get_selection` 返回活跃窗口的选区快照（`source: "view"`），窗口打开且选区为空时 `total` 为 0。没有打开这张画布的窗口时，返回 `status: "no_viewer"` 和 `source: "unavailable"`。画布在浏览器或桌面端打开时，`ui_focus`、`ui_select`、`ui_set_viewport` 经协同通道推给打开这块画布的最近活跃标签页。成功回执表示已发送，可再读视口或选区核实结果；没有标签页打开时返回明确提示且不影响画布内容。`ui_focus` 省略 `ids` 或传空数组时适应整张画布；`ui_select` 传空数组清空选区；`ui_set_viewport({ x, y, zoom })` 的 `x`、`y` 是落在屏幕中央的世界坐标，`zoom` 范围 0.05–8。`ui_undo({ steps?, redo? })` 让打开这块画布的界面执行撤销或重做（1–20 步），与用户按 ⌘Z / ⇧⌘Z 是同一个撤销栈，因此会回退用户自己的操作，只在用户明确要求时使用；它与「撤销这一轮」不同，后者只回退小满本轮的改动。返回实际执行步数与 `can_undo` / `can_redo`，栈为空时返回 `done: 0`。
 
 ### resources 与 prompts
 
 - `prompts/list` 暴露五个创作技能（`canvas-audit`、`workflow`、`shot-revise`、`storyboard`、`media-edit`），`prompts/get` 返回展开后的指引文本；参数有 `goal`、`canvas_id`、`element_ids`。外部没有内置智能体的 `await_approval`，指引里的确认步骤已换成上面的 `needs_approval` / `confirm` 流程。
-- `resources/list` 列出最近改过的画布（`plein://canvas/{id}`，分页）；`resources/templates/list` 给出三个模板：`plein://canvas/{id}`（与 `get_canvas_page` 同一分页，查询参数 `section`、`offset`、`limit`、`expected_version`）、`plein://canvas/{id}/element/{eid}`、`plein://capabilities/{name}`（工具契约和完整输入 schema）。读取需要 `read` 权限；资源不存在返回 `-32602` 并在 `data.uri` 里给出地址。
+- `resources/list` 列出最近改过的画布（`plein://canvas/{id}`，分页）；`resources/templates/list` 给出三个模板：`plein://canvas/{id}`（与 `get_canvas_page` 同一分页，查询参数 `section`、`frame_id`、`offset`、`limit`、`expected_version`）、`plein://canvas/{id}/element/{eid}`、`plein://capabilities/{name}`（工具契约和完整输入 schema）。读取需要 `read` 权限；资源不存在返回 `-32602` 并在 `data.uri` 里给出地址。
 
 ### 文件送进画布
 
@@ -154,7 +154,7 @@ Agent 按语义调用画布功能。文档编辑复用 `packages/capabilities` �
 - `list_canvas_capabilities`：读取当前工具目录，指定 `name` 可查询完整输入契约。`list_node_types` 指定 `type` 时返回完整嵌套参数 schema，适用于场景、关键帧、角色档案、分镜、字幕和混音等参数。
 - `list_models` / `set_node_model`：模型目录与节点换模型。`list_models` 按能力列模型，不带 `ref` 返回摘要（是否启用、特性、价格、主要约束），带 `ref` 返回完整 limits 与模型专属参数的 `options_schema`；`enabled_only` 只列已启用平台。`set_node_model` 与界面换模型使用同一份校正逻辑（`packages/capabilities` 的 `adaptToModel`）：不支持的分辨率改回默认，不支持的画幅（含当前模式不接受的 auto）换成支持的，时长和张数夹进范围，草稿模式等收窄分辨率；模型不暴露的参数（如种子）保留但标为 `ignored_params`，模型专属参数按模型 ref 分别保存。返回 `changed`（参数前后值）和 `notes`（原因）。`update_element` 直接写 `params.model` 不会校正，返回里带提示改用 `set_node_model`。
 - `rename_element`：改名并同步所有 @ 引用，与界面重命名相同，返回改写的引用数和受影响元素；`update_element` 带 `name` 走同一实现（清空名称除外）。
-- `rewrite_prompt`：除 `mode`、`apply` 外支持 `structure`（auto / default / h3）、`detail`（refine / expand）和改写用的对话模型 `model`。生成模型取自节点 `params.model`，参考素材取自节点实际输入（与 `inspect_node_input` 同源），所以 auto 在 MiniMax H3 的多模态参考任务上会用六段结构。
+- `rewrite_prompt`：除 `mode`、`apply` 外支持 `structure`（auto / default / h3）、`detail`（refine / expand）和改写用的对话模型 `model`。预览和写回都会调用改写模型，需要运行权限和确认；写回还需编辑权限。改写期间用户修改了原文时，保留原文并返回生成的草稿。生成模型取自节点 `params.model`，参考素材取自节点实际输入（与 `inspect_node_input` 同源），所以 auto 在 MiniMax H3 的多模态参考任务上会用六段结构。
 - `get_sequence` / `edit_sequence`：读取剪辑实例，按版本凭据修改、排序、固定候选、复制固定片段、加入或替换固定素材、移除一次使用。固定片段使用真实素材时长；替换只影响指定实例，旧素材保留。
 - `edit_production` / `edit_delivery_notes`：选择试制镜头和目标序列、追加制作目标及决策版本、编辑指定交付版本的反馈。Agent 的目标与决策明确记录 `source=agent`，不产生用户确认。
 - `list_canvas_templates` / `place_canvas_template`：铺设插件或用户保存的工作流模板，复用界面的依赖预检、连线校验与引用映射；只创建结构，不运行。
@@ -164,12 +164,14 @@ Agent 按语义调用画布功能。文档编辑复用 `packages/capabilities` �
 - `search_media` / `get_media_sources`：检索跨画布已有文件并读取来源，得到的资产 id 可用 `create_element` 放入画布。
 - `list_jobs` / `recover_job` / `cancel_group`：读取任务、按原回执恢复，以及取消整组运行。指定节点查询最新任务不受最近任务窗口限制。未知提交重新提交前须核实平台未受理。
 - `create_checkpoint` / `list_checkpoints` / `restore_checkpoint` / `delete_checkpoint`：保存已同步到服务端的画布、查看项目检查点、恢复为新画布或删除检查点。恢复不会自动改变本轮工具的目标画布。
-- `list_projects` / `create_project` / `rename_project` / `delete_project` / `list_canvases` / `create_canvas` / `rename_canvas` / `duplicate_canvas` / `move_canvas` / `delete_canvas`：项目与画布管理，复用项目与画布路由及所有权校验，三种驱动共用。不依赖当前画布，外部 MCP 在空工作区也能调用。`list_canvases` 带所属项目，可按 `project_id` 过滤并用 `offset` / `limit` 翻页；`duplicate_canvas` 复制画布（可指定标题和目标 `project_id`，不复制检查点与会话），`move_canvas` 把画布移到另一个项目且不改内容；两个删除工具是破坏性操作，走确认，且不能删除本会话正在操作的画布。
+- `list_projects` / `create_project` / `rename_project` / `delete_project` / `list_canvases` / `open_canvas` / `create_canvas` / `rename_canvas` / `duplicate_canvas` / `move_canvas` / `delete_canvas`：项目与画布管理，复用项目与画布路由及所有权校验，三种驱动共用。不依赖当前画布，外部 MCP 在空工作区也能调用。项目和画布都可按标题 `query` 搜索。`list_canvases` 返回所属项目和相对链接 `open_path`，可按 `project_id` 过滤并用 `offset` / `limit` 翻页。`open_canvas` 在用户要求时从当前窗口或指定的 `from_canvas_id` 发起导航，保留离开确认，没有打开窗口时返回链接。读写别的画布可直接使用其 ID。`duplicate_canvas` 复制画布（可指定标题和目标 `project_id`，不复制检查点与会话），`move_canvas` 把画布移到另一个项目且不改内容；两个删除工具是破坏性操作，走确认，且不能删除本会话正在操作的画布。
 - `delete_results`：删除节点生成历史里的候选记录，语义与历史面板一致（只删记录不删素材，删到当前采用项时回到「尚未采用」，不自动换候选）。正在被固定片段精确使用的候选及其配对输出会保留，需先在固定片段里替换素材；混合删除会删掉可删的，并用 `kept_fixed` 列出被占用项和占用它的片段，全部被占用时明确拒绝、不返回该字段。返回 `removed`、`current_changed`（是否实际改变了当前输出）、`kept_fixed`（仅在被部分保留时）和没找到的 id。破坏性操作，走确认。
 - `get_impact` / `keep_stale` / `revoke_keep` / `run_impact`：影响面板。`get_impact` 只读，返回过期节点及原因、建议、可沿用的候选、费用汇总（缺价格的计入 `cost.unknown`）和每个节点的 `input_hash`；`keep_stale` 带这个哈希确认保留现有结果，输入在那之后又变了会拒绝；`run_impact` 只运行指定节点（默认优先沿用已有候选），需要确认，返回 `group_id` 后用 `wait_for_group` 等结果。
 - `run_nodes`：一次运行多个指定节点（1 到 50 个），与界面多选运行共用 `runs.runBatch`：这些节点总是重新运行，它们 @ 引用的卡片的上游先跑；需要确认，返回 `group_id` 后用 `wait_for_group` 等结果。
 - `estimate_cost`：运行前估价，不调用平台。`scope` 为 `node`、`upstream`、`downstream`、`frame`，目标范围和「沿用仍有效结果」的判定与对应的运行工具一致；逐节点标 `run`（一定调用）、`maybe`（上游重做后输入变了才会调用）、`reused`（沿用），费用按币种分别合计，模型没配价格的调用记入 `unknown`，不当作 0。
 - `list_providers` / `set_provider_enabled` / `test_provider` / `refresh_remote_models` / `set_default_model`：平台与默认模型设置，复用设置页的路由。读取只返回启用状态和每个密钥「是否已填写」，永远不返回密钥明文（设置里疑似密钥的字段也会掩码）；写入只开放启用开关，密钥录入留在设置页。`test_provider` 只检查配置或连接，不证明具体模型、权限或余额可用。
+- `get_group_items` 按页读批次内每一项的状态和任务 ID，包括等待复核或使用缓存的项。`get_job` 查看指定任务，`inspect_node_input` 可按 `run_id` 查看当时的输入。用同一 `run_id` 调用 `wait_for_run` 或 `cancel_run`，可以准确等待或取消那次运行。
+- 本机即梦画布与即梦短剧的 `external_canvas_*` 工具覆盖登录状态、空间和项目、预览及逐项读取、导入和同步，以及素材读取、导入、替换和发布。写入前可预览具体目标与版本；账号登录由用户在 Plein 中完成。详见[外部画布](external-canvases.md)。
 - `get_shots` / `edit_shots`：分镜表逐镜编辑。`edit_shots` 的 `ops` 支持 `add`（接在最后）、`patch`（只改给出的字段，记为手改）、`move`（移到第 N 位并按新顺序重排镜号）、`remove`（已展开的节点和产物保留，标为脱离计划，走确认），带 `expected_version`，全部成功才写入、一次撤销。写入走分镜编辑器同一条路径，会先补记旧计划基线，`sync_storyboard` 才能分清「计划变了」和「节点被手改」；`update_element` 整表替换 `shots` 时也走这条路径，但逐镜修改应使用 `edit_shots`。
 - `split_grid`：把宫格图按行列切成单张图片，排在原图右侧并打成记录原图的分镜组，返回 `frame_id`、每格元素与资产 id。服务端用 sharp 切片（先按 EXIF 方向展开），分界与排布来自 `@plein/doc` 的 `gridPlan`，界面「宫格切分」用同一份，两端边界一致；本地加工，不调模型。
 - `create_mask`：为局部重绘生成蒙版。对 `plein/image-edit` 节点调用时，原图取自连入 `image` 端口的图片（或 `source_asset_id`），蒙版写入节点的 `mask` 参数（`assetId`、`width`、`height`、`sourceAssetId`，与界面蒙版编辑器的约定一致）；对图片元素调用只生成蒙版资产。用 `rects`、`polygons`（原图像素，或 `normalized` 比例坐标）圈区域，sharp 画成与原图同宽高的黑底白区二值 PNG；`feather` 把边缘向外扩若干像素（平台只认黑白，不做渐变）。也可以用 `mask_asset_id` 接 `import_asset` 送入的外部蒙版：宽高比须与原图一致，会缩放到原图尺寸并二值化。全黑蒙版会被拒绝。

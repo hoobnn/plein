@@ -30,6 +30,7 @@ const library = (ctx: ServerContext) => {
 
 export const searchLibrary = serverCapability({
   name: 'search_library',
+  requiresCanvas: false,
   title: '搜索资产库',
   description:
     '在资产库里找角色、场景、道具、风格、特效条目（按名称、设定、标签匹配）。找到后用 place_library_item 放到画布上，比重新生成角色更省钱、形象也一致。',

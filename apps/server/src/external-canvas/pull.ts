@@ -73,4 +73,5 @@ export function pullRows(
   const store = linkStore(db, canvasId)
   for (const { isNew, localId, fields } of saved)
     if (!isNew) store.updateBaseline(ref, localId, fields)
+  return saved.map(({ localId, remoteId }, i) => ({ rowId: rows[i]!.rowId, localId, remoteId }))
 }

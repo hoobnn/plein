@@ -17,6 +17,8 @@ import { linkStore } from './store'
 
 export class SyncConflict extends Error {}
 const stale = () => new SyncConflict('两端内容或绑定关系已变化，请刷新预览后重新选择。')
+type AppliedRow = { rowId: string; localId: string | null; remoteId: string | null }
+type SyncResult = ExternalPreview & { applied?: AppliedRow[] }
 
 export function externalService(
   db: DB,
@@ -25,20 +27,24 @@ export function externalService(
   queue = new ProjectQueue(),
 ) {
   const preview = queue.reader<ExternalPreview>()
+  const inspect = queue.reader<ExternalPreview>()
   async function run(
     canvasId: string,
     ref: ExternalTarget,
     apply?: ExternalApply | ExternalPullNew,
-  ): Promise<ExternalPreview> {
+    options: { inspectOnly?: boolean; expectTarget?: string } = {},
+  ): Promise<SyncResult> {
     ref = canonicalTarget(ref)
     const sync = async () => {
       const provider = providers[ref.provider]
       const store = linkStore(db, canvasId)
       if (rooms.wasDropped(canvasId)) throw new SyncConflict('Plein 画布已删除')
       const target = (await provider.resolveTarget?.(ref.target)) ?? ref.target
+      if (options.expectTarget && options.expectTarget !== target) throw stale()
       // Older unqualified bindings did not record a space. Keep them accessible through
       // their original entry, without silently adopting them into another team's project.
       if (target !== ref.target && !store.list(ref).length) ref = { ...ref, target }
+      const location = { ...ref, ...(target !== ref.target ? { resolvedTarget: target } : {}) }
       const links = store.list(ref)
       const selectedLink =
         apply && 'action' in apply && ['pull', 'push', 'merge'].includes(apply.action)
@@ -51,6 +57,9 @@ export function externalService(
       if (rooms.wasDropped(canvasId)) throw new SyncConflict('Plein 画布已删除')
       const byId = new Map(items.map((item) => [item.id, item]))
       const operations = new Map(items.filter((i) => i.operationId).map((i) => [i.operationId, i]))
+      // Only the editor's normal refresh maintains unrelated bindings. A rejected or partially
+      // selected write, like an agent's read-only inspection, must leave the other rows alone.
+      const maintainBindings = !apply && !options.inspectOnly
       if (operations.size !== items.filter((i) => !!i.operationId).length)
         throw new SyncConflict('即梦返回了重复的创建标记，请核对项目内的副本')
       // A timeout after remote creation leaves a durable intent. Only an exact provider identity
@@ -61,7 +70,7 @@ export function externalService(
           operations.get(link.operationId) ?? byId.get(provider.createdId?.(link.operationId) ?? '')
         if (item) {
           link.remoteId = item.id
-          store.save(link)
+          if (maintainBindings) store.save(link)
         }
       }
       // An existing linked item's position capability comes from that item itself.
@@ -69,7 +78,7 @@ export function externalService(
       const rows = rooms.withDoc(canvasId, (doc) => {
         if (doc.readOnly && apply) throw new SyncConflict('此版本画布仅支持查看')
         return makePlan(
-          ref,
+          { ...ref, target },
           canvasId,
           doc.elements(),
           items,
@@ -83,9 +92,10 @@ export function externalService(
       for (const row of rows) {
         if (row.state !== 'synced' || !row.local) continue
         const link = linkByLocal.get(row.localId!)!
-        if (!same(link.baseline, row.local)) store.save({ ...link, baseline: row.local })
+        if (maintainBindings && !same(link.baseline, row.local))
+          store.save({ ...link, baseline: row.local })
       }
-      if (!apply) return { ...ref, rows }
+      if (!apply) return { ...location, rows }
       if ('rows' in apply) {
         const byRow = new Map(rows.map((row) => [row.rowId, row]))
         const selected = apply.rows.map((input) => {
@@ -101,14 +111,15 @@ export function externalService(
           return row
         })
         if (new Set(selected.map((row) => row.rowId)).size !== selected.length) throw stale()
-        pullRows(db, rooms, canvasId, ref, selected)
-        return { ...ref, rows: [] }
+        const applied = pullRows(db, rooms, canvasId, ref, selected)
+        return { ...location, rows: [], applied }
       }
       const row = rows.find((r) => r.rowId === apply.rowId)
       if (!row || row.revision !== apply.revision || !row.actions.includes(apply.action))
         throw stale()
       const link = linkByLocal.get(row.localId!)
       const item = byId.get(row.remoteId ?? '')
+      const changed: AppliedRow = { rowId: row.rowId, localId: row.localId, remoteId: row.remoteId }
       if (apply.action === 'unlink' && link) store.forget(ref, link.localId)
       else if (apply.action === 'reconcile' && link) {
         const match = byId.get(apply.remoteId ?? '')
@@ -123,8 +134,9 @@ export function externalService(
         )
           throw new SyncConflict('所选节点已关联或与发出的标题、正文不符')
         store.save({ ...link, remoteId: match.id })
+        changed.remoteId = match.id
       } else if (apply.action === 'pull' && item && row.remote) {
-        pullRows(db, rooms, canvasId, ref, [row])
+        changed.localId = pullRows(db, rooms, canvasId, ref, [row])[0]!.localId
       } else if (
         apply.action === 'merge' &&
         item &&
@@ -141,7 +153,7 @@ export function externalService(
           const fresh = rooms.withDoc(canvasId, (doc) => {
             const local = doc.get(link.localId)
             if (doc.readOnly || !local) return
-            return makePlan(ref, canvasId, [local], [item], [link], [], false)[0]
+            return makePlan({ ...ref, target }, canvasId, [local], [item], [link], [], false)[0]
           })
           if (fresh?.revision !== row.revision)
             throw new SyncConflict('即梦已保存合并内容。Plein 在保存期间有新改动，请刷新后核对。')
@@ -165,12 +177,14 @@ export function externalService(
           if (rooms.wasDropped(canvasId)) throw stale()
           store.save(intent)
           const remoteId = await provider.create(target, fields, intent.operationId, row.kind)
+          changed.remoteId = remoteId
           if (!rooms.wasDropped(canvasId)) store.save({ ...intent, remoteId })
         } else throw stale()
       } else throw stale()
-      return { ...ref, rows: [] }
+      return { ...location, rows: [], applied: [changed] }
     }
-    return apply ? queue.run(ref, sync) : preview(canvasId, ref, sync)
+    if (apply) return queue.run(ref, sync)
+    return (options.inspectOnly ? inspect : preview)(canvasId, ref, sync)
   }
   return {
     run,

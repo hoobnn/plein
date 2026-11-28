@@ -116,10 +116,10 @@ export interface CapabilityContext {
   library?(): { items: CastLibraryItem[]; projectId: string | null }
 }
 
-export interface CapabilityDefinition<
+export type CapabilityDefinition<
   S extends z.ZodObject = z.ZodObject,
   C extends CapabilityContext = CapabilityContext,
-> {
+> = {
   /** 全局唯一，只用小写字母、数字和下划线（MCP 工具名直接用它） */
   name: string
   /** 给人看：界面、⌘K、智能体面板 */
@@ -128,8 +128,14 @@ export interface CapabilityDefinition<
   description: string
   group: Group
   where: Where
-  /** 固定等级，或按这次调用的参数判定 */
-  effect: Effect | ((input: z.output<S>, ctx: C) => Effect)
+  /** 操作可能联系画布和本机之外的服务。 */
+  openWorld?: boolean
+  /** 编辑本身需要显式同意；有 approval 时由它决定哪些输入需要确认。 */
+  confirmEdits?: boolean
+  /** 同一次调用还会产生其他效果时，外部令牌必须一并授权。 */
+  additionalScopes?: (input: z.output<S>) => readonly Effect[]
+  /** 工作区操作无需当前画布；同一工具的可选落盘到画布行为可按已校验参数决定。 */
+  requiresCanvas?: false | ((input: z.output<S>) => boolean)
   /**
    * 确认的说法，以及显式放行（exempt）：返回 { reason, ids } 或 { exempt } = 要确认 / 放行，
    * 两种审批模式同样生效；返回 null 等价于没声明，继续走调度器的统一回退链
@@ -163,7 +169,11 @@ export interface CapabilityDefinition<
   }
   /** 返回结构化结果（字符串、对象或 content()）；失败抛 CapabilityError */
   run(ctx: C, input: z.output<S>): unknown
-}
+} & (
+  | { effect: Effect; effects?: never }
+  /** 发现阶段按可用等级筛选，执行阶段仍按本次输入独立检查。 */
+  | { effect: (input: z.output<S>, ctx: C) => Effect; effects: readonly [Effect, ...Effect[]] }
+)
 
 const NAME = /^[a-z][a-z0-9_]{0,63}$/
 

@@ -12,6 +12,7 @@ import type { ServerContext } from './tools'
 const cap = capabilityFor<ServerContext>()
 export const listTemplates = cap({
   name: 'list_canvas_templates',
+  requiresCanvas: false,
   title: '读取可用工作流模板',
   group: 'read',
   where: 'server',

@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { expect, it, vi } from 'vite-plus/test'
 import { tempDir } from '../testing'
 import { ExternalMcp } from './external'
+import { TokenStore } from './tokens'
 
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
@@ -21,6 +22,24 @@ function fixture() {
   const file = join(dataDir, 'external-mcp.json')
   return { mcp, file }
 }
+
+it('同一令牌的日额度经重启保留，跨日退回只影响原日，写盘失败不会使用额度', () => {
+  const { file } = fixture()
+  let tokens = new TokenStore(file)
+  const { id } = tokens.issue('local', { name: '批次运行', scopes: ['run'], dailyRunLimit: 1 })
+  vi.mocked(renameSync).mockImplementationOnce(() => {
+    throw new Error('注入写盘失败')
+  })
+  expect(() => tokens.chargeRun(id, 'first')).toThrow('注入写盘失败')
+  expect(tokens.chargeRun(id, 'first')).toBe(true)
+  tokens = new TokenStore(file)
+  expect(tokens.chargeRun(id, 'first')).toBe(false)
+  expect(tokens.chargeRun(id, 'second')).toBe(true)
+  tokens.refundRun(id, 'first')
+  expect(tokens.chargeRun(id, 'second')).toBe(false)
+  tokens.refundRun(id, 'second')
+  expect(new TokenStore(file).chargeRun(id, 'second')).toBe(true)
+})
 
 it.each([writeFileSync, renameSync])(
   'issue 持久化失败保留旧状态和旧磁盘文件，成功重试才新增，旧令牌不受影响 (%#)',

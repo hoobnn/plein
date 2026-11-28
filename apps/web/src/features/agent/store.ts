@@ -218,6 +218,7 @@ export const useAgent = create<AgentStore>((set, get) => {
         if (!engine) return
         if (e.action === 'select') engine.selection.set(e.ids)
         else if (e.action === 'viewport') engine.camera.lookAt(e.x, e.y, e.zoom)
+        else if (!e.ids.length) engine.zoomToFit()
         else engine.flyTo(e.ids)
         return
       }

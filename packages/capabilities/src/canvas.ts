@@ -96,9 +96,10 @@ export const findElements = defineCapability({
 
 export const listNodeTypes = defineCapability({
   name: 'list_node_types',
+  requiresCanvas: false,
   title: '查看可用节点',
   description:
-    '列出可以创建的节点类型：用途、输入输出端口、参数 JSON Schema 与默认值，以及当前已启用、可选的模型（model 参数填 ref；不填时用 defaults 里的默认模型，没有默认模型就必须填）。',
+    '列出可创建节点的类型、用途和输入输出端口。传 type 查看该类型的完整参数 JSON Schema、默认值和已启用的可选模型。model 参数填 ref；可使用 defaults 中的默认模型。',
   group: 'read',
   where: 'doc',
   effect: 'read',
@@ -106,12 +107,17 @@ export const listNodeTypes = defineCapability({
     type: z
       .string()
       .optional()
-      .describe('指定节点类型时返回完整参数 schema（含必填项、嵌套字段和约束）；不填列出全部类型'),
+      .describe(
+        '指定节点类型时返回完整参数 schema（含必填项、嵌套字段和约束）；不填按页列出节点摘要',
+      ),
+    offset: z.number().int().min(0).default(0),
+    limit: z.number().int().min(1).max(100).default(60),
   }),
   run: (ctx, a) =>
     ctx.nodes
       .all()
       .filter((n) => !a.type || n.descriptor.type === a.type)
+      .slice(a.type ? 0 : a.offset, a.type ? 1 : a.offset + a.limit)
       .map(({ descriptor: d, runnable }) => ({
         type: d.type,
         title: d.title,
@@ -119,11 +125,15 @@ export const listNodeTypes = defineCapability({
         runnable,
         inputs: d.inputs,
         outputs: d.outputs,
-        params: (d.paramsSchema as { properties?: unknown }).properties,
-        ...(a.type ? { params_schema: d.paramsSchema } : {}),
         version: d.version,
-        defaults: d.defaults,
-        models: d.capability ? ctx.nodes.models(d.capability) : undefined,
+        ...(a.type
+          ? {
+              params: (d.paramsSchema as { properties?: unknown }).properties,
+              params_schema: d.paramsSchema,
+              defaults: d.defaults,
+              models: d.capability ? ctx.nodes.models(d.capability) : undefined,
+            }
+          : {}),
       })),
 })
 

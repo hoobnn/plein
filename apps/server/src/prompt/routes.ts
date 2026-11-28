@@ -18,7 +18,14 @@ export function promptRoutes(host: PluginHost) {
       return c.json(result satisfies RewritePromptResult)
     } catch (err) {
       if (!(err instanceof PromptError)) throw err
-      return c.json({ error: err.code, message: err.message }, err.status)
+      return c.json(
+        {
+          error: err.code,
+          message: err.message,
+          ...(err.executionOutcome ? { execution_outcome: err.executionOutcome } : {}),
+        },
+        err.status,
+      )
     }
   })
 }

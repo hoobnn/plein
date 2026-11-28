@@ -795,10 +795,14 @@ export class NodeRuns implements BatchHost {
   }
 
   /** 批次快照：整组运行启动时定下的目标、阶段、批准的输入与结局 */
-  batchItems(groupId: string, ownerId: string): BatchItem[] | null {
+  batchSnapshot(groupId: string, ownerId: string, page?: { offset: number; limit: number }) {
     const g = this.store.group(groupId)
     if (!g || g.owner_id !== ownerId) return null
-    return this.store.batchItems(groupId).map(batchItem)
+    return { canvasId: g.canvas_id, items: this.store.batchItems(groupId, page).map(batchItem) }
+  }
+
+  batchItems(groupId: string, ownerId: string): BatchItem[] | null {
+    return this.batchSnapshot(groupId, ownerId)?.items ?? null
   }
 
   /** 模型配的每次提交费用；没配时为空 */
@@ -1276,6 +1280,11 @@ export class NodeRuns implements BatchHost {
         this.rooms.withDoc(canvasId, (doc) => rows.map((row) => this.jobInfo(row, doc)), null) ??
         rows.map((row) => this.jobInfo(row)),
     }
+  }
+
+  ownedJob(canvasId: string, jobId: string, ownerId: string): JobRow | undefined {
+    const row = this.store.get(jobId)
+    return row?.owner_id === ownerId && row.canvas_id === canvasId ? row : undefined
   }
 
   /** 任务面板里的一条：执行记录加上恢复状态 */
@@ -2049,7 +2058,7 @@ export class NodeRuns implements BatchHost {
       inputs: prepared.inputs,
       ownerId: a.ownerId,
       signal,
-      journal: this.store.journal(a.id),
+      journal: this.store.journal(a.id, a.ownerId),
       onProgress: (progress, message) => {
         const now = Date.now()
         if (now - lastProgress < PROGRESS_INTERVAL_MS) return

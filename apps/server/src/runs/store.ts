@@ -6,6 +6,7 @@ import type {
   SubmissionAudit,
 } from '@plein/protocol'
 import { randomUUID } from 'node:crypto'
+import { adoptLocalCallOutputs } from '../assets/output-spool'
 
 import {
   addCredentialUsage,
@@ -15,7 +16,13 @@ import {
 } from '../plugins/provider-protocol'
 import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm'
 import type { DB } from '../storage/db'
-import { batchItems, impactDecisions, jobGroups, jobs } from '../storage/schema'
+import {
+  batchItems,
+  impactDecisions,
+  jobGroups,
+  jobs,
+  localWorkspaceAdoptions,
+} from '../storage/schema'
 import { parseRecovery } from './recovery'
 
 export type { JobStatus }
@@ -151,7 +158,7 @@ export class JobStore {
   }
 
   /** 模型调用记录：读写这个任务的 calls 列 */
-  journal(id: string): CallJournal {
+  journal(id: string, ownerId?: string): CallJournal {
     const read = (): Record<string, CallRecord> => JSON.parse(this.get(id)?.calls ?? '{}')
     const write = (calls: Record<string, CallRecord>, audit?: SubmissionAudit) => {
       this.db
@@ -173,7 +180,24 @@ export class JobStore {
     }
     return {
       id,
-      get: (key) => read()[key],
+      get: (key) => {
+        const job = this.get(id)
+        if (!job) return undefined
+        const record = (JSON.parse(job.calls) as Record<string, CallRecord>)[key]
+        if (
+          record?.state === 'fetched' &&
+          ownerId &&
+          ownerId !== 'local' &&
+          ownerId === job.owner_id &&
+          this.db
+            .select()
+            .from(localWorkspaceAdoptions)
+            .where(eq(localWorkspaceAdoptions.ownerId, ownerId))
+            .get()
+        )
+          adoptLocalCallOutputs(record, ownerId, id, key)
+        return record
+      },
       set: (key, record, audit) => write({ ...read(), [key]: record }, audit),
       delete: (key) => {
         const calls = read()
@@ -366,13 +390,13 @@ export class JobStore {
     })
   }
 
-  batchItems(groupId: string): BatchItemRow[] {
-    return this.db
+  batchItems(groupId: string, page?: { offset: number; limit: number }): BatchItemRow[] {
+    const query = this.db
       .select()
       .from(batchItems)
       .where(eq(batchItems.group_id, groupId))
       .orderBy(asc(batchItems.seq))
-      .all()
+    return page ? query.limit(page.limit).offset(page.offset).all() : query.all()
   }
 
   batchItem(groupId: string, nodeId: string): BatchItemRow | undefined {

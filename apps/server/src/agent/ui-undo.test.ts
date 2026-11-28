@@ -2,7 +2,7 @@ import * as awarenessProtocol from 'y-protocols/awareness'
 import * as Y from 'yjs'
 import { describe, expect, it } from 'vite-plus/test'
 import { bootServer, createCanvas } from '../testing'
-import { requestUndo } from './ui-bridge'
+import { requestUndo, sendViewAction } from './ui-bridge'
 import { serverCapabilities, serverContext, type ToolEnv } from './tools'
 
 function envOf(
@@ -37,8 +37,8 @@ function fakeTab(server: Awaited<ReturnType<typeof bootServer>>['server'], canva
       awarenessProtocol.encodeAwarenessUpdate(tab, [tab.clientID]),
       'tab',
     )
-  const publish = (at: number) => {
-    tab.setLocalStateField('view', { ...VIEW, at })
+  const publish = (at: number, uiVersion?: number) => {
+    tab.setLocalStateField('view', { ...VIEW, at, uiVersion })
     send()
   }
   publish(Date.now())
@@ -74,6 +74,35 @@ function fakeTab(server: Awaited<ReturnType<typeof bootServer>>['server'], canva
 }
 
 describe('ui_undo', () => {
+  it('同一画布的新旧标签只收到可执行的视图动作，导航与适应画布不会进入旧通道', async () => {
+    const { server } = await bootServer()
+    const { id } = await createCanvas(server)
+    const awareness = server.rooms.get(id).awareness
+    const legacy = fakeTab(server, id),
+      modern = fakeTab(server, id)
+    legacy.publish(1)
+    modern.publish(2, 2)
+    const open = { action: 'open_canvas', id: 'target' } as const
+    expect(sendViewAction(server.rooms, id, open)).toBe(true)
+    expect(sendViewAction(server.rooms, id, { action: 'focus', ids: [] })).toBe(true)
+    const state = awareness.getLocalState()!
+    expect(state.agentUi).toBeUndefined()
+    expect(state.agentUiV2.actions).toMatchObject([
+      { ...open, client: modern.tab.clientID },
+      { action: 'focus', ids: [], client: modern.tab.clientID },
+    ])
+    legacy.publish(3)
+    expect(sendViewAction(server.rooms, id, open)).toBe(false)
+    expect(() => sendViewAction(server.rooms, id, { action: 'focus', ids: [] })).toThrow('较早版本')
+    expect(sendViewAction(server.rooms, id, { action: 'select', ids: [] })).toBe(true)
+    expect(awareness.getLocalState()!.agentUi.actions).toMatchObject([
+      { action: 'select', client: legacy.tab.clientID },
+    ])
+    modern.publish(1)
+    expect(() => sendViewAction(server.rooms, id, { action: 'select', ids: [] })).toThrow(
+      '多个旧版窗口',
+    )
+  })
   it('没有打开画布的界面时返回与其它 ui 工具一致的提示', async () => {
     const { server } = await bootServer()
     const { id } = await createCanvas(server)

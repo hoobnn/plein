@@ -37,6 +37,21 @@ jimeng-novel status
 
 选择「编辑时同步已关联节点」后，Plein 在编辑当前画布时立即检查一次，每轮结束 30 秒后再检查。单侧修改会传递到另一侧，双方均已修改的卡片留给你核对。离开当前画布或关闭开关会停止后续轮询。新卡片和媒体文件由你在面板中选择后传递。
 
+## 从 MCP 协作
+
+外部 AI 可以直接读写同一组草稿。先指定 Plein 的 `canvas_id`，再选择即梦项目。每次操作使用对应 CLI 在这台电脑上的现有账号。需要登录时，在同步面板或官方 CLI 完成授权。`external_canvas_status` 可查询登录是否完成。
+
+| 要做的事                                       | 使用的工具                                                                      | 令牌权限                                                              |
+| ---------------------------------------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| 查看已有绑定、选择短剧空间或查询两种平台的项目 | `external_canvas_targets`、`external_canvas_spaces`、`external_canvas_projects` | `read`                                                                |
+| 比较卡片、逐段读取两侧正文、合并预览和参考项   | `external_canvas_preview`、`external_canvas_read_row`                           | `read`                                                                |
+| 将选定的新卡导入当前 Plein 画布                | `external_canvas_pull_new`，每批最多 200 张                                     | `edit`                                                                |
+| 逐卡采用、写回、合并、解除或核对关联           | `external_canvas_apply`，选用预览中该卡的 `actions`                             | 导入新卡、核对创建结果用 `edit`，覆盖、合并或解除关联用 `destructive` |
+| 选择媒体并将指定版本放进当前画布               | `external_canvas_media_list`、`external_canvas_media_import`                    | 查询用 `read`，导入用 `edit`                                          |
+| 发布素材到全能画布，或替换短剧当前所选素材     | `external_canvas_media_publish`、`external_canvas_media_replace`                | `destructive`                                                         |
+
+写入前，外部 AI 会收到待确认的目标、操作和影响范围。查看并同意后，AI 用相同参数加 `confirm: true` 执行。草稿采用本次预览的 `target`、`resolvedTarget` 和每行的 `rowId`、`revision`。短剧媒体采用列表返回的带空间目标、`nodeId` 和 `assetId`。当版本变化或空间无法验证时，重新选择目标再核对。每次 MCP 调用只处理本次选择的内容。编辑器中的持续同步单独由面板开关控制。
+
 ## 从剧本到镜头
 
 | 创作对象                         | 即梦内容                                                                          | 在 Plein 中编辑                                                         |

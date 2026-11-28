@@ -15,6 +15,7 @@ export interface SavedToken {
   scopes: ExternalMcpScope[]
   createdAt: number
   dailyRunLimit?: number
+  runUsage?: { day: string; count: number }
 }
 
 interface FileV2 {
@@ -72,9 +73,10 @@ export class TokenStore {
     this.tokens = next
   }
 
-  /** 令牌所属用户（本机模式下所有令牌属于同一个用户） */
-  owner(): string | undefined {
-    return this.tokens[0]?.ownerId
+  /** 原免登录工作区归到单一所有者账号；保留各枚令牌的范围、日用量和撤销状态。 */
+  adoptLocalOwner(ownerId: string) {
+    if (ownerId !== 'local' && this.tokens.some((t) => t.ownerId === 'local'))
+      this.persist(this.tokens.map((t) => (t.ownerId === 'local' ? { ...t, ownerId } : t)))
   }
 
   get enabled() {
@@ -113,6 +115,29 @@ export class TokenStore {
     }
     this.persist([...this.tokens, saved])
     return { token, ...this.info(saved) }
+  }
+
+  /** Reserve a run before submitting it. Only a successful atomic write consumes the allowance. */
+  chargeRun(id: string, day: string): boolean {
+    const token = this.tokens.find((t) => t.id === id)
+    if (!token) return false
+    if (!token.dailyRunLimit) return true
+    const used = token.runUsage?.day === day ? token.runUsage.count : 0
+    if (used >= token.dailyRunLimit) return false
+    this.persist(
+      this.tokens.map((t) => (t.id === id ? { ...t, runUsage: { day, count: used + 1 } } : t)),
+    )
+    return true
+  }
+
+  refundRun(id: string, day: string) {
+    const usage = this.tokens.find((t) => t.id === id)?.runUsage
+    if (!usage || usage.day !== day || usage.count <= 0) return
+    this.persist(
+      this.tokens.map((t) =>
+        t.id === id ? { ...t, runUsage: { day, count: usage.count - 1 } } : t,
+      ),
+    )
   }
 
   /** 撤销一枚；没有这枚返回 false */

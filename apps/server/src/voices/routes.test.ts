@@ -5,6 +5,7 @@ import { mockProvider } from '@plein/providers'
 import { describe, expect, it, vi } from 'vite-plus/test'
 import { bootServer, request } from '../testing'
 import { credentialFingerprint } from '../plugins/config-store'
+import { VoiceStore } from './store'
 
 /** 一秒静音的 16 位单声道 WAV */
 function wav() {
@@ -245,6 +246,43 @@ it('音色设计走独立能力并持久保存试听资产；模式不混用', a
     ).status,
   ).toBe(422)
 })
+
+it.each(['submitted', 'unknown'] as const)(
+  '音色本地落库失败时返回平台执行情况 %s 和核查用的音色 ID',
+  async (outcome) => {
+    const { server, post } = await setup()
+    const design = vi.spyOn(server.plugins, 'designVoice')
+    const write = vi.spyOn(VoiceStore.prototype, 'save').mockImplementationOnce(() => {
+      throw new Error('磁盘错误')
+    })
+    try {
+      if (outcome === 'submitted')
+        design.mockResolvedValueOnce({ status: 'ready', voiceId: 'remote-voice' })
+      else
+        design.mockRejectedValueOnce(
+          new ProviderError('unknown', '等待回执中断', { outcome: 'unknown' }),
+        )
+      const response = await post({
+        mode: 'design',
+        provider: 'plein/mock',
+        voiceId: 'requested-voice',
+        name: '声音',
+        prompt: '自然',
+        previewText: '你好',
+      })
+      expect(response.status).toBe(422)
+      expect(await response.json()).toMatchObject({
+        execution_outcome: outcome,
+        provider: 'plein/mock',
+        voice_id: outcome === 'submitted' ? 'remote-voice' : 'requested-voice',
+      })
+      expect(design).toHaveBeenCalledTimes(1)
+    } finally {
+      design.mockRestore()
+      write.mockRestore()
+    }
+  },
+)
 
 it('远端提交结果未知保留音色 ID，不自动重试；试听落库失败不丢失成功音色', async () => {
   const { server, post, list } = await setup()

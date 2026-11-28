@@ -2,6 +2,7 @@ import { capabilityFor, CapabilityError } from '@plein/capabilities'
 import { API, type Canvas, type Project } from '@plein/protocol'
 import { z } from 'zod'
 import { callInternal } from './internal-api'
+import { sendViewAction } from './ui-bridge'
 import type { ServerContext } from './tools'
 
 const cap = capabilityFor<ServerContext>()
@@ -11,12 +12,21 @@ const page = {
   offset: z.number().int().min(0).default(0).describe('跳过前多少条，用于翻页'),
   limit: z.number().int().min(1).max(200).default(50).describe('最多返回多少条'),
 }
+const titleQuery = z
+  .string()
+  .trim()
+  .max(200)
+  .optional()
+  .describe('按标题包含的文字筛选，忽略大小写，在分页前匹配')
+const matchesTitle = (title: string, query?: string) =>
+  !query || title.toLowerCase().includes(query.toLowerCase())
 const iso = (ms: number) => new Date(ms).toISOString()
 const PROJECT_PATH = /^\/api\/projects\/[^/]+$/
 const CANVAS_PATH = /^\/api\/canvases\/[^/]+$/
 const CANVAS_DUPLICATE_PATH = /^\/api\/canvases\/[^/]+\/duplicate$/
 const HINT_PROJECT = '先用 list_projects 查询项目 id'
 const HINT_CANVAS = '先用 list_canvases 查询画布 id'
+const openPath = (canvasId: string) => `/#/c/${encodeURIComponent(canvasId)}`
 
 /**
  * 不依赖「当前画布」的能力：外部 MCP 不为它们追加 canvas_id，也不要求画布存在
@@ -36,15 +46,16 @@ export const listProjects = workspace(
     where: 'server',
     effect: 'read',
     description:
-      '列出用户的全部项目（最近改过的在前）：id、标题、画布数、最近修改时间、最近画布 id。项目是一部片子的容器，下面挂多张画布。条数等于 limit 时可能还有更多，把 offset 加上 limit 继续翻页。',
-    input: z.object(page),
+      '按标题 query 搜索项目，省略则列出全部。total 为匹配项目数，最近改过的在前：id、标题、画布数、最近修改时间、最近画布 id。项目是一部片子的容器，下面挂多张画布。条数等于 limit 时可能还有更多，把 offset 加上 limit 继续翻页。',
+    input: z.object({ ...page, query: titleQuery }),
     run: async (ctx, a) => {
       const rows = await callInternal<Project[]>(ctx, {
         method: 'GET',
         path: API.projects,
         pathname: /^\/api\/projects$/,
       })
-      const items = rows.slice(a.offset, a.offset + a.limit).map((p) => ({
+      const matches = rows.filter((p) => matchesTitle(p.title, a.query))
+      const items = matches.slice(a.offset, a.offset + a.limit).map((p) => ({
         id: p.id,
         title: p.title,
         canvases: p.canvases,
@@ -52,9 +63,11 @@ export const listProjects = workspace(
         last_canvas_id: p.lastCanvasId,
       }))
       return {
-        total: rows.length,
+        total: matches.length,
         items,
-        ...(a.offset + items.length < rows.length ? { next_offset: a.offset + items.length } : {}),
+        ...(a.offset + items.length < matches.length
+          ? { next_offset: a.offset + items.length }
+          : {}),
       }
     },
   }),
@@ -151,9 +164,10 @@ export const listCanvases = workspace(
     where: 'server',
     effect: 'read',
     description:
-      '列出用户的画布（最近改过的在前），带所属项目；标出本次正在操作或用户正在看的那块（viewing）。可用 project_id 只看某个项目。返回数组；条数等于 limit 时可能还有更多，把 offset 加上 limit 继续翻页。画布 id 用于其它工具的 canvas_id。',
+      '按标题 query 搜索画布，可用 project_id 限定项目。最近修改的在前，viewing 标记当前画布。返回 id 和可在 Plein 打开的相对链接 open_path。条数等于 limit 时可增加 offset 续页；向其他工具传 canvas_id 即可操作搜索到的画布。',
     input: z.object({
       project_id: id.optional().describe('只列出这个项目下的画布；不填列出全部'),
+      query: titleQuery,
       ...page,
     }),
     run: async (ctx, a) => {
@@ -172,15 +186,58 @@ export const listCanvases = workspace(
         }),
       ])
       const titles = new Map(projects.map((p) => [p.id, p.title]))
-      return canvases.slice(a.offset, a.offset + a.limit).map((c) => ({
-        id: c.id,
-        title: c.title,
-        project_id: c.projectId,
-        project_title: titles.get(c.projectId),
-        updated_at: iso(c.updatedAt),
-        ...(c.elements === undefined ? {} : { elements: c.elements }),
-        ...(c.id === ctx.env.canvasId ? { viewing: true } : {}),
-      }))
+      return canvases
+        .filter((c) => matchesTitle(c.title, a.query))
+        .slice(a.offset, a.offset + a.limit)
+        .map((c) => ({
+          id: c.id,
+          open_path: openPath(c.id),
+          title: c.title,
+          project_id: c.projectId,
+          project_title: titles.get(c.projectId),
+          updated_at: iso(c.updatedAt),
+          ...(c.elements === undefined ? {} : { elements: c.elements }),
+          ...(c.id === ctx.env.canvasId ? { viewing: true } : {}),
+        }))
+    },
+  }),
+)
+
+export const openCanvas = workspace(
+  cap({
+    name: 'open_canvas',
+    title: '打开画布',
+    group: 'ui',
+    where: 'client',
+    effect: 'edit',
+    description:
+      '用户要求切换画布时调用。向最近活跃的画布窗口发送导航，保留未保存内容的离开确认。没有可接收的窗口时返回相对链接。只需读取或编辑目标时，直接向其他工具传 canvas_id。',
+    input: z.object({
+      canvas_id: id,
+      from_canvas_id: id.optional().describe('从指定画布的活跃窗口打开；默认使用当前窗口'),
+    }),
+    run: async (ctx, a) => {
+      const target = await callInternal<Canvas>(
+        ctx,
+        { method: 'GET', path: API.canvas(a.canvas_id), pathname: CANVAS_PATH },
+        HINT_CANVAS,
+      )
+      if (a.from_canvas_id && a.from_canvas_id !== ctx.env.canvasId)
+        await callInternal<Canvas>(
+          ctx,
+          { method: 'GET', path: API.canvas(a.from_canvas_id), pathname: CANVAS_PATH },
+          HINT_CANVAS,
+        )
+      const sent = sendViewAction(ctx.env.rooms, a.from_canvas_id ?? ctx.env.canvasId, {
+        action: 'open_canvas',
+        id: target.id,
+      })
+      return {
+        status: sent ? 'sent' : 'link_only',
+        canvas_id: target.id,
+        title: target.title,
+        open_path: openPath(target.id),
+      }
     },
   }),
 )
@@ -329,6 +386,7 @@ export const projectCapabilities = [
   renameProject,
   deleteProject,
   listCanvases,
+  openCanvas,
   createCanvas,
   renameCanvas,
   duplicateCanvas,

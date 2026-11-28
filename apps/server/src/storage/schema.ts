@@ -390,6 +390,11 @@ export const checkpointAssets = sqliteTable(
   ],
 )
 
+/** 本机工作区所有权已在同一事务内迁移，避免重启重新导入已删除的历史重复记录。 */
+export const localWorkspaceAdoptions = sqliteTable('local_workspace_adoptions', {
+  ownerId: text('owner_id').primaryKey(),
+})
+
 // ---- Better Auth（drizzle 适配器）----
 // 列名和存储格式沿用 Better Auth 自带迁移建的表：时间存 ISO 字符串，布尔存 0 / 1
 

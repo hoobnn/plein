@@ -17,7 +17,7 @@ const SCOPE_LABELS: Record<ExternalMcpScope, { label: string; hint: string }> = 
   read: { label: '读取', hint: '查看画布、元素、结果' },
   edit: { label: '编辑', hint: '新建、修改、连线、整理' },
   run: { label: '运行', hint: '调用模型生成，会产生费用' },
-  destructive: { label: '删除', hint: '删除元素、结果、检查点' },
+  destructive: { label: '删除、覆盖和发布', hint: '删除元素、结果或检查点，覆盖或发布到外部画布' },
 }
 
 /** 对外开放 MCP：生成令牌，给 Claude Code、Cursor、Claude Desktop 一段能直接贴的配置 */
@@ -35,6 +35,7 @@ export function ExternalMcp() {
   const [error, setError] = useState<string | null>(null)
   const [name, setName] = useState('Claude')
   const [scopes, setScopes] = useState<ExternalMcpScope[]>(['read', 'edit', 'run'])
+  const canRun = scopes.includes('run')
   const [dailyRunLimit, setDailyRunLimit] = useState('')
   useEffect(() => {
     if (copiedText === null) return
@@ -51,7 +52,7 @@ export function ExternalMcp() {
       const issued = await api.issueExternalMcp({
         name: name.trim() || undefined,
         scopes,
-        ...(limit > 0 ? { dailyRunLimit: limit } : {}),
+        ...(canRun && limit > 0 ? { dailyRunLimit: limit } : {}),
       })
       await queryClient.cancelQueries({ queryKey: queryKeys.mcpExternal, exact: true })
       const { token: secret, ...info } = issued
@@ -163,8 +164,7 @@ export function ExternalMcp() {
         </>
       ) : status.enabled ? (
         <p className="ui-note text-ink-muted">
-          已开启。令牌只在生成时显示一次；忘了就新增一枚并撤销旧的。每枚令牌只能做被勾选的事，花钱或删除的操作
-          AI 应用会先请你确认。
+          已开启。令牌只在生成时显示一次；忘了就新增一枚并撤销旧的。授予运行权限后，单次图片、文本或配音生成可能直接产生费用。视频生成和删除操作会先请求确认。
         </p>
       ) : (
         <p className="ui-note text-ink-muted">
@@ -205,18 +205,20 @@ export function ExternalMcp() {
             </label>
           ))}
         </fieldset>
-        <label className="flex items-center gap-2 text-sm">
-          <span className="text-ink-muted">每天最多运行</span>
-          <input
-            className="ui-input w-20"
-            inputMode="numeric"
-            placeholder="不限"
-            value={dailyRunLimit}
-            aria-label="每日运行次数上限"
-            onChange={(e) => setDailyRunLimit(e.target.value.replace(/\D/g, ''))}
-          />
-          <span className="text-ink-muted">次</span>
-        </label>
+        {canRun && (
+          <label className="flex items-center gap-2 text-sm">
+            <span className="text-ink-muted">每天最多调用运行工具</span>
+            <input
+              className="ui-input w-20"
+              inputMode="numeric"
+              placeholder="不限"
+              value={dailyRunLimit}
+              aria-label="每日运行次数上限"
+              onChange={(e) => setDailyRunLimit(e.target.value.replace(/\D/g, ''))}
+            />
+            <span className="text-ink-muted">次</span>
+          </label>
+        )}
       </div>
       {tokens.length > 0 && (
         <ul className="flex flex-col gap-1" aria-label="已有令牌">
@@ -225,7 +227,9 @@ export function ExternalMcp() {
               <span className="font-medium">{t.name}</span>
               <span className="text-ink-muted">
                 {t.scopes.map((s) => SCOPE_LABELS[s].label).join(' / ')}
-                {t.dailyRunLimit ? ` · 每天 ${t.dailyRunLimit} 次运行` : ''}
+                {t.scopes.includes('run') && t.dailyRunLimit
+                  ? ` · 每天 ${t.dailyRunLimit} 次运行工具调用`
+                  : ''}
                 {t.lastUsedAt ? ` · 最近使用 ${new Date(t.lastUsedAt).toLocaleString()}` : ''}
               </span>
               <button
