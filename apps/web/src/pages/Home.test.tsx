@@ -494,8 +494,64 @@ it('筛选后删除匹配项目，清除搜索恢复其余项目', async () => {
   await f.user.click(within(card).getByRole('button', { name: '删除' }))
   await confirmDelete(f.user)
   await waitFor(() => expect(card.isConnected).toBe(false))
-  await f.user.clear(search)
+  await f.user.click(screen.getByRole('button', { name: '清除项目搜索' }))
+  expect(document.activeElement).toBe(search)
   await waitFor(() => expect(screen.getByRole('link', { name: '保留的项目' })).toBeTruthy())
+})
+
+it('多画布项目只在选择时读清单，按画布名筛选后能直接打开较早的画布', async () => {
+  const path = '/api/projects/p-1/canvases'
+  const f = await setup(
+    [project({ canvases: 2 }), project({ id: 'p-2', title: '另一部短剧', canvases: 3 })],
+    () => ({
+      ['GET ' + path]: () =>
+        Response.json([
+          { id: 'canvas-1', projectId: 'p-1', title: '后期剪辑', updatedAt: 2, createdAt: 1 },
+          {
+            id: 'canvas-older',
+            projectId: 'p-1',
+            title: '第一集 Storyboard',
+            updatedAt: 1,
+            createdAt: 1,
+          },
+        ]),
+    }),
+  )
+  const card = await cardOf('雨后的项目')
+  expect(callsOf(f.fetch, 'GET', path)).toBe(0)
+  await f.user.click(within(card).getByRole('button', { name: /选择.*画布/ }))
+  const dialog = await screen.findByRole('dialog', { name: '选择画布 · 雨后的项目' })
+  const search = await within(dialog).findByRole('searchbox', { name: '搜索画布' })
+  const links = within(dialog).getAllByRole('link')
+  expect(links.map((a) => a.getAttribute('href'))).toEqual(['#/c/canvas-1', '#/c/canvas-older'])
+  await f.user.type(search, '不存在')
+  expect(within(dialog).getByText('没有匹配的画布')).toBeTruthy()
+  await f.user.click(within(dialog).getByRole('button', { name: '清除画布搜索' }))
+  expect(document.activeElement).toBe(search)
+  await f.user.type(search, ' storyboard ')
+  expect(within(dialog).getAllByRole('link')).toHaveLength(1)
+  await f.user.click(within(dialog).getByRole('link', { name: /第一集 Storyboard/ }))
+  await waitFor(() => expect(location.hash).toBe('#/c/canvas-older'))
+  expect(callsOf(f.fetch, 'GET', path)).toBe(1)
+  expect(callsOf(f.fetch, 'GET', '/api/projects/p-2/canvases')).toBe(0)
+})
+
+it('画布清单加载失败能原地重试，关闭后焦点回到项目卡', async () => {
+  let fail = true
+  const f = await setup([project({ canvases: 2 })], () => ({
+    'GET /api/projects/p-1/canvases': () =>
+      fail ? Response.json({ message: '暂时离线' }, { status: 503 }) : Response.json([]),
+  }))
+  const open = await screen.findByRole('button', { name: /选择.*画布/ })
+  await f.user.click(open)
+  const dialog = await screen.findByRole('dialog', { name: '选择画布 · 雨后的项目' })
+  expect((await within(dialog).findByRole('alert')).textContent).toContain('暂时离线')
+  fail = false
+  await f.user.click(within(dialog).getByRole('button', { name: '重新读取' }))
+  expect(await within(dialog).findByText('项目里还没有画布')).toBeTruthy()
+  await f.user.keyboard('{Escape}')
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  await waitFor(() => expect(document.activeElement).toBe(open))
 })
 
 it('快速开始等待期间防重复，失败后可从同一入口重试', async () => {

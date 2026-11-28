@@ -25,6 +25,7 @@ import { useCheckpoints } from '../features/checkpoints/store'
 import { HomeAgentTrigger } from '../features/agent/HomeAgentTrigger'
 import { useAgent } from '../features/agent/store'
 import { preloadEditor } from './EditorLoader'
+import { HomeSearch } from './HomeSearch'
 
 /** 快速开始：新建项目并在它的第一张画布上放好对应节点、打开生成器 */
 const QUICK_START: Array<{
@@ -72,6 +73,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
   const [error, setError] = useState<string | null>(null)
   const [retryError, setRetryError] = useState<Error | null>(null)
   const [query, setQuery] = useState('')
+  const [pickerId, setPickerId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const createPending = useRef(false)
   const active = useRef(true)
@@ -171,6 +173,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
 
   const q = query.trim().toLowerCase()
   const shown = projects?.filter((p) => !q || p.title.toLowerCase().includes(q)) ?? null
+  const pickerProject = projects?.find((p) => p.id === pickerId) ?? null
 
   return (
     <div
@@ -340,17 +343,8 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
         <section aria-label="项目列表" className="home-projects">
           <div className="home-section-heading home-projects-heading">
             <h2 className="home-section-title">{q ? '搜索结果' : '最近项目'}</h2>
-            {projects && (projects.length > 1 || query) && (
-              <label className="home-search">
-                <Icon name="search" />
-                <input
-                  type="search"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="搜索项目"
-                  aria-label="搜索项目"
-                />
-              </label>
+            {projects && (projects.length > 0 || query) && (
+              <HomeSearch scope="项目" value={query} onChange={setQuery} />
             )}
           </div>
           {!projects && !listError && (
@@ -367,6 +361,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
                   project={p}
                   onRename={(t) => rename(p, t)}
                   onExport={() => setExporting(p)}
+                  onChooseCanvas={() => setPickerId(p.id)}
                   onDelete={() => remove(p)}
                 />
               ))}
@@ -395,6 +390,12 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
           )}
         </section>
       </main>
+      <DeferredPanel
+        active={!!pickerProject}
+        load={() => import('./HomeCanvasPicker').then((m) => m.HomeCanvasPicker)}
+        props={{ project: pickerProject, onClose: () => setPickerId(null) }}
+        fallback={pickerProject ? <p role="status">正在打开画布列表…</p> : null}
+      />
       <DeferredPanel
         active
         load={() => import('../features/onboarding/Welcome').then((m) => m.Welcome)}
@@ -436,11 +437,13 @@ function ProjectCard({
   project: c,
   onRename,
   onExport,
+  onChooseCanvas,
   onDelete,
 }: {
   project: Project
   onRename(title: string): Promise<void>
   onExport(): void
+  onChooseCanvas(): void
   onDelete(): Promise<void>
 }) {
   const [editing, setEditing] = useState(false)
@@ -521,6 +524,7 @@ function ProjectCard({
     >
       <a
         href={href}
+        aria-label={`打开项目「${c.title}」`}
         onClick={open}
         onAuxClick={deleting ? (e) => e.preventDefault() : undefined}
         aria-disabled={deleting || undefined}
@@ -553,8 +557,23 @@ function ProjectCard({
               {c.title}
             </a>
           )}
-          <div className="truncate text-xs text-ink-subtle" title={fullTime(c.updatedAt)}>
-            {relativeTime(c.updatedAt)}编辑 · {c.canvases} 张画布
+          <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-ink-subtle">
+            <span title={fullTime(c.updatedAt)}>{relativeTime(c.updatedAt)}编辑</span>
+            <span aria-hidden="true">·</span>
+            {c.canvases > 1 ? (
+              <button
+                type="button"
+                className="inline-flex min-h-6 items-center gap-0.5 rounded-sm text-ink-muted hover:text-ink hover:underline"
+                aria-haspopup="dialog"
+                aria-label={`选择「${c.title}」的画布，共 ${c.canvases} 张`}
+                onClick={onChooseCanvas}
+                disabled={deleting}
+              >
+                {c.canvases} 张画布 <Icon name="chevronDown" size={12} />
+              </button>
+            ) : (
+              <span>{c.canvases} 张画布</span>
+            )}
           </div>
           {renaming && (
             <p role="status" className="mt-1 text-xs text-ink-muted">
