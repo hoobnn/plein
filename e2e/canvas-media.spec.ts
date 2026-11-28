@@ -43,6 +43,10 @@ test('真实媒体低缩放只取小图，离屏及退出画布后释放资源 @
       ).__plein.engine
       engine.camera.lookAt(100, 100, 1)
     })
+    // 相机更新在下一帧剔除离屏元素；首帧的 400 个可见元素也满足「零离屏」。
+    await expect
+      .poll(async () => (await readMediaStats(cold)).visibleBodies)
+      .toBeLessThan(open.stats.visibleBodies)
     await expect
       .poll(async () => (await readMediaStats(cold)).offscreenBodies)
       .toBeLessThanOrEqual(256)
