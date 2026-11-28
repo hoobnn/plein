@@ -52,6 +52,7 @@ export function attachInput(
   let lastT = 0
   let inertiaRaf = 0
   let movingCamera = false
+  const motionPreference = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)')
 
   const idleCursor = () => (pan.space || pan.hand ? 'grab' : '')
   const move = (fn: () => void) => {
@@ -162,18 +163,23 @@ export function attachInput(
     }
     // 已经按住停稳时，不能用最后一次移动的旧速度再次甩动画布。
     // 同样按事件时间判断，渲染慢时松手事件排在一帧之后处理，不算停稳。
-    if (e.timeStamp - lastT > 100) return
-    // 惯性：指数衰减
+    if (e.timeStamp - lastT > 100 || motionPreference?.matches || (!vx && !vy)) return
+    // 以经过的时间衰减，60Hz 和 120Hz 屏幕的滑行距离与时间一致。
     let px = vx * 16
     let py = vy * 16
-    const step = () => {
-      px *= 0.92
-      py *= 0.92
-      if (Math.hypot(px, py) < 0.1) {
+    let previous = performance.now()
+    const step = (now: number) => {
+      const elapsed = Math.max(0, now - previous)
+      previous = now
+      if (elapsed > 100 || motionPreference?.matches || Math.hypot(px, py) < 0.1) {
         inertiaRaf = 0
         return
       }
-      move(() => camera.panBy(px, py))
+      const decay = 0.92 ** (elapsed / 16)
+      const distance = (0.92 * (1 - decay)) / (1 - 0.92)
+      move(() => camera.panBy(px * distance, py * distance))
+      px *= decay
+      py *= decay
       inertiaRaf = requestAnimationFrame(step)
     }
     inertiaRaf = requestAnimationFrame(step)

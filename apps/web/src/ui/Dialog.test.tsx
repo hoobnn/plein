@@ -87,7 +87,7 @@ it('三选一确认框区分第三个选项、确认与取消', async () => {
   await waitFor(() => expect(settled).toHaveBeenLastCalledWith(true))
 })
 
-it('三选一确认框可把初始焦点交给第三个选项，普通确认仍落在确认按钮', async () => {
+it('优先聚焦推荐项；危险操作按回车默认取消，普通操作默认确认', async () => {
   const { user } = renderApp(
     <button
       type="button"
@@ -110,11 +110,16 @@ it('三选一确认框可把初始焦点交给第三个选项，普通确认仍�
   await user.keyboard('{Escape}')
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 
-  act(() => {
-    void confirmDialog({ title: '删除密钥组？', confirmLabel: '删除', danger: true })
-  })
-  const confirm = await screen.findByRole('button', { name: '删除' })
-  await waitFor(() => expect(document.activeElement).toBe(confirm))
+  for (const danger of [true, false]) {
+    let result!: Promise<boolean>
+    act(() => {
+      result = confirmDialog({ title: danger ? '删除密钥组？' : '打开项目？', danger })
+    })
+    const button = await screen.findByRole('button', { name: danger ? '取消' : '确定' })
+    await waitFor(() => expect(document.activeElement).toBe(button))
+    await user.keyboard('{Enter}')
+    await expect(result).resolves.toBe(!danger)
+  }
 })
 
 it('关闭后退场动画期间焦点离开对话框，撤销快捷键不会落在已关闭的浮层上', async () => {

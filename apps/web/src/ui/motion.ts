@@ -221,7 +221,7 @@ export function useOverlayMotion(variants: Variants, custom?: PopSide) {
   const reduced = useLatestReducedMotion()
   const featureFailed = useContext(MotionFeatureFailure)
   return {
-    initial: featureFailed ? false : 'initial',
+    initial: reduced || featureFailed ? false : 'initial',
     animate: featureFailed ? { opacity: 1 } : 'visible',
     // 无 exit 时 AnimatePresence 不保留退场队列，等价于零时长且同步清理。
     exit: reduced || featureFailed ? undefined : 'exit',

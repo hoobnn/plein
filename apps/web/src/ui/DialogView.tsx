@@ -40,6 +40,7 @@ export function DialogView({
   const [text, setText] = useState(req.kind === 'prompt' ? (req.options.defaultValue ?? '') : '')
   const inputRef = useRef<HTMLInputElement>(null)
   const confirmRef = useRef<HTMLButtonElement>(null)
+  const cancelRef = useRef<HTMLButtonElement>(null)
   const alternateRef = useRef<HTMLButtonElement>(null)
   const popupRef = useRef<HTMLElement | null>(null)
   const closing = useOverlayClosing()
@@ -135,9 +136,13 @@ export function DialogView({
                     inputRef.current?.select()
                     return inputRef.current
                   }
-                : () =>
-                    (req.options.initialFocus === 'alternate' ? alternateRef.current : undefined) ??
-                    confirmRef.current
+                : () => {
+                    if (req.options.initialFocus === 'alternate' && alternateRef.current)
+                      return alternateRef.current
+                    return danger && req.options.initialFocus !== 'confirm'
+                      ? cancelRef.current
+                      : confirmRef.current
+                  }
             }
             render={
               <m.form
@@ -182,6 +187,7 @@ export function DialogView({
             )}
             <div className="flex shrink-0 flex-wrap justify-end gap-2">
               <button
+                ref={cancelRef}
                 type="button"
                 className="ui-btn ui-btn-secondary"
                 onClick={() => finish(null)}

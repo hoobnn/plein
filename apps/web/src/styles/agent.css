@@ -32,11 +32,9 @@
   fill: var(--ink);
   opacity: 0.12;
   transform-origin: 32px 59px;
-  animation: plein-mascot-shadow 3.2s var(--ease-standard) infinite;
 }
 .plein-mascot-body {
   transform-origin: 32px 54px;
-  animation: plein-mascot-float 3.2s var(--ease-standard) infinite;
 }
 .plein-mascot-eyes {
   transition: transform var(--dur-base) var(--ease-spring);
@@ -44,7 +42,6 @@
 .plein-mascot-open {
   fill: #192832;
   transform-origin: 27px 31px;
-  animation: plein-mascot-blink 4.6s infinite;
 }
 .plein-mascot-closed,
 .plein-mascot-sad,
@@ -193,15 +190,6 @@
   overflow-x: auto;
 }
 
-@keyframes plein-mascot-float {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-2.5px);
-  }
-}
 @keyframes plein-mascot-shadow {
   0%,
   100% {
@@ -239,16 +227,6 @@
   }
   75% {
     transform: translateX(2px) rotate(3deg);
-  }
-}
-@keyframes plein-mascot-blink {
-  0%,
-  92%,
-  100% {
-    transform: scaleY(1);
-  }
-  95% {
-    transform: scaleY(0.1);
   }
 }
 

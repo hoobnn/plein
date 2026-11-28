@@ -132,7 +132,7 @@ export function Select({
             </>
           )}
         </Base.Value>
-        <Base.Icon className="pointer-events-none flex text-ink-muted">
+        <Base.Icon className="ui-disclosure-chevron pointer-events-none flex text-ink-muted">
           <Icon name="chevronDown" />
         </Base.Icon>
       </Base.Trigger>

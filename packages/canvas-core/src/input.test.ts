@@ -92,7 +92,8 @@ function setup(pan: PanState = { space: false, hand: false }) {
     advance(ms: number) {
       now += ms
     },
-    frame() {
+    frame(ms = 16) {
+      now += ms
       for (const [id, fn] of [...frames]) {
         frames.delete(id)
         fn(now)
@@ -263,6 +264,29 @@ it('合并事件按各自发生时间计算甩出速度，回调处理延后时�
   f.frame()
   // 速度 1px/ms，首帧位移 16 × 0.92；按处理时刻算会把间隔压成 1ms，速度虚高 8 倍
   expect(f.camera.x).toBeCloseTo(16 + 16 * 0.92)
+})
+it('相同时间内高刷与普通屏滑行等距，开启减少动态效果可立即停稳', () => {
+  const media = { matches: false }
+  vi.stubGlobal('matchMedia', () => media)
+  const glide = (interval: number) => {
+    const f = setup({ hand: true, space: false })
+    f.pointer('pointerdown')
+    f.advance(16)
+    f.pointer('pointermove', 1, 16, 0)
+    f.pointer('pointerup')
+    for (let t = 0; t < 64; t += interval) f.frame(interval)
+    return f
+  }
+  const regular = glide(16)
+  const fast = glide(8)
+  const at = fast.camera.x
+  expect(at).toBeGreaterThan(16)
+  expect(at).toBeCloseTo(regular.camera.x)
+  media.matches = true
+  fast.frame()
+  expect(fast.camera.x).toBe(at)
+  expect(fast.frames.size).toBe(0)
+  expect(glide(16).camera.x).toBe(16)
 })
 it.each(['pointercancel', 'lostpointercapture', 'blur', 'wheel'] as const)(
   '%s 中断平移后释放捕获并丢弃旧速度',

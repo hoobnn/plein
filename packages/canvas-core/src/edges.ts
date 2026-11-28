@@ -41,6 +41,8 @@ export class EdgeLayer {
   private hoverEl: string | null = null
   /** 隐藏连线：只画连着选中 / 悬停元素的线，画布密时看得清卡片 */
   private hidden = false
+  private readonly motionPreference = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)')
+  private readonly motionChanged = () => this.markDirty()
 
   constructor(
     private scene: Scene,
@@ -50,6 +52,7 @@ export class EdgeLayer {
     this.edges.zIndex = -1
     this.flow.zIndex = -1
     this.ports.zIndex = 1
+    this.motionPreference?.addEventListener('change', this.motionChanged)
   }
 
   markDirty() {
@@ -147,7 +150,12 @@ export class EdgeLayer {
       if (running) {
         // 下游正在生成：淡底线 + 流动的虚线（虚线在 flow 层逐帧画）
         g.stroke({ color, alpha: 0.18, width: 2 * px })
-        this.running.push({ x1: from.x, y1: from.y, x2: to.x, y2: to.y })
+        if (this.motionPreference?.matches) {
+          dashedBezier(g, from.x, from.y, to.x, to.y, 8 * px, 6 * px, 0)
+          g.stroke({ color: theme.accent, alpha: 0.95, width: 2 * px })
+        } else {
+          this.running.push({ x1: from.x, y1: from.y, x2: to.x, y2: to.y })
+        }
         continue
       }
       g.stroke({
@@ -251,6 +259,7 @@ export class EdgeLayer {
   }
 
   destroy() {
+    this.motionPreference?.removeEventListener('change', this.motionChanged)
     this.edges.destroy()
     this.flow.destroy()
     this.ports.destroy()

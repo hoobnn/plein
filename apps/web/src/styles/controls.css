@@ -307,6 +307,12 @@
   .ui-input::placeholder {
     color: var(--ink-subtle);
   }
+  .ui-disclosure-chevron {
+    transition: rotate var(--dur-fast) var(--ease-standard);
+  }
+  [aria-expanded="true"] > .ui-disclosure-chevron {
+    rotate: 180deg;
+  }
   .ui-input:hover,
   .ui-select:hover {
     box-shadow: inset 0 0 0 1px var(--line-strong);
@@ -1240,10 +1246,11 @@
 
 .ui-run-step-bar > i {
   position: absolute;
-  inset: 0 auto 0 0;
+  inset: 0;
   border-radius: inherit;
   background: var(--accent);
-  transition: width var(--dur-move) var(--ease-spring);
+  transform-origin: left;
+  transition: transform var(--dur-base) var(--ease-standard);
 }
 
 .ui-run-step-bar[data-indeterminate="true"]::after {

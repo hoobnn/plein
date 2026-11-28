@@ -571,7 +571,9 @@ function ActiveDetail({
                   className="ui-run-step-bar"
                   data-indeterminate={state === 'now' && fill === undefined && !view.retrying}
                 >
-                  {fill !== undefined && <i style={{ width: `${Math.max(4, fill * 100)}%` }} />}
+                  {fill !== undefined && (
+                    <i style={{ transform: `scaleX(${Math.min(1, Math.max(0, fill))})` }} />
+                  )}
                 </span>
                 <span className="ui-run-step-label">{name}</span>
               </li>

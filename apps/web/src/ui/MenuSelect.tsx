@@ -40,7 +40,9 @@ export function MenuSelect<T extends string>({
         className="ui-btn ui-btn-quiet ui-btn-sm gap-1 rounded-md border border-transparent bg-transparent px-2 font-medium text-ink-muted hover:bg-hover hover:text-ink aria-expanded:bg-hover aria-expanded:text-ink"
       >
         {current?.label}
-        <Icon name="chevronDown" size={12} />
+        <span className="ui-disclosure-chevron inline-flex" aria-hidden="true">
+          <Icon name="chevronDown" size={12} />
+        </span>
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Positioner

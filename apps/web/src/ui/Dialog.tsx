@@ -16,7 +16,7 @@ interface ConfirmOptions {
   danger?: boolean
   /** 第三个选项的文案（如「改为添加新组」）；要区分它和取消时用 choiceDialog */
   alternateLabel?: string
-  /** 三选一时的初始焦点：默认落在确认按钮，推荐另一个做法时给 'alternate' */
+  /** 默认聚焦确认；危险操作聚焦取消。三选一可指定推荐项。 */
   initialFocus?: 'confirm' | 'alternate'
 }
 

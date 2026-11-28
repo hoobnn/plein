@@ -464,13 +464,14 @@ function DownloadProgress({
       </div>
       <span
         className="ui-run-step-bar bg-accent-soft"
+        data-indeterminate={!determinate}
         role="progressbar"
         aria-label="更新下载进度"
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={determinate ? percent : undefined}
       >
-        <i style={{ width: `${determinate ? percent : 0}%` }} />
+        {determinate && <i style={{ transform: `scaleX(${percent / 100})` }} />}
       </span>
       {!compact && p && (
         <p className="flex flex-wrap justify-between gap-2 text-xs text-ink-subtle tabular-nums">

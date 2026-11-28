@@ -932,15 +932,15 @@
   left: 12px;
   bottom: 8px;
   height: 2px;
-  max-width: calc(100% - 24px);
+  right: 12px;
   border-radius: 999px;
   background: var(--accent);
-  transition: width var(--dur-move) var(--ease-spring);
+  transform-origin: left;
+  transition: transform var(--dur-base) var(--ease-standard);
 }
 
 /* 不知道进度：一段光在轨道上来回流动 */
 .plein-node-progress.is-indeterminate {
-  width: calc(100% - 24px);
   overflow: hidden;
   background: color-mix(in srgb, var(--accent) 18%, transparent);
 }

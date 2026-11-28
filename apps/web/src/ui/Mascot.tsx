@@ -3,7 +3,7 @@ import type { Mood } from '../features/agent/store'
 
 /**
  * 吉祥物「小满」：与应用图标一致的蓝灰色独角鲸，带奶油色螺纹角与肚皮。
- * 眼睛跟着指针看，隔几秒眨一次眼。
+ * 指针停在小满身上时，眼睛看向指针。
  */
 export function Mascot({ mood, size = 56 }: { mood: Mood; size?: number }) {
   const eyes = useRef<SVGGElement>(null)
@@ -11,33 +11,33 @@ export function Mascot({ mood, size = 56 }: { mood: Mood; size?: number }) {
   // 眼睛看向指针：只改 transform，不走 React 渲染
   useEffect(() => {
     const g = eyes.current
-    if (!g) return
+    const face = g?.ownerSVGElement
+    if (!g || !face) return
     let frame = 0
     const motion = window.matchMedia('(prefers-reduced-motion: reduce)')
     const reset = () => {
-      if (motion.matches) {
-        cancelAnimationFrame(frame)
-        g.style.transform = ''
-      }
+      cancelAnimationFrame(frame)
+      g.style.transform = ''
     }
     const move = (e: PointerEvent) => {
-      if (motion.matches) return
+      if (motion.matches || e.pointerType === 'touch') return
       cancelAnimationFrame(frame)
       frame = requestAnimationFrame(() => {
-        const r = g.ownerSVGElement?.getBoundingClientRect()
-        if (!r) return
+        const r = face.getBoundingClientRect()
         const dx = e.clientX - (r.left + r.width / 2)
         const dy = e.clientY - (r.top + r.height / 2)
         const d = Math.hypot(dx, dy) || 1
-        const k = Math.min(1, d / 240) * 2.2
+        const k = Math.min(1, d / Math.max(1, r.width / 2)) * 2.2
         g.style.transform = `translate(${((dx / d) * k).toFixed(2)}px, ${((dy / d) * k).toFixed(2)}px)`
       })
     }
-    window.addEventListener('pointermove', move, { passive: true })
+    face.addEventListener('pointermove', move, { passive: true })
+    face.addEventListener('pointerleave', reset)
     motion.addEventListener('change', reset)
     return () => {
       cancelAnimationFrame(frame)
-      window.removeEventListener('pointermove', move)
+      face.removeEventListener('pointermove', move)
+      face.removeEventListener('pointerleave', reset)
       motion.removeEventListener('change', reset)
     }
   }, [])

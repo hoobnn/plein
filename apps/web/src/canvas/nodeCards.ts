@@ -379,8 +379,8 @@ export class NodeCards {
     let status = run ? STATUS_TEXT[run.status] : ''
     // 任务历史保留取消事实；画布已明确采用该任务取回的结果时展示当前可用状态。
     if (run?.status === 'canceled' && currentResult(el)?.runId === run.id) status = '已取回'
-    if (run && active) {
-      const view = describeActive(run, Date.now())
+    const view = run && active ? describeActive(run, Date.now()) : undefined
+    if (view) {
       status = view.retrying ? '重试中' : view.label
     }
     // 参数或上游改过、结果已经过期：运行中、失败时以运行状态为准
@@ -396,9 +396,11 @@ export class NodeCards {
         : ''
     card.status.textContent = status
     // 不知道进度时进度条换成来回流动的光，一眼能看出没卡住
-    const known = active && run?.status === 'running' && run.phase !== 'retrying' && !!run.progress
-    card.progress.classList.toggle('is-indeterminate', active && !known)
-    card.progress.style.width = known ? `${Math.max(4, run!.progress! * 100)}%` : active ? '' : '0'
+    const progress = view?.progress
+    card.progress.hidden = !view || view.retrying
+    card.progress.classList.toggle('is-indeterminate', !!view && !view.retrying && progress == null)
+    card.progress.style.transform =
+      progress == null ? '' : `scaleX(${Math.min(1, Math.max(0, progress))})`
 
     const v = cur?.value
     card.nav.hidden = list.length < 2
